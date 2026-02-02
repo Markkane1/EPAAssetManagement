@@ -1,0 +1,77 @@
+import { Request, Response, NextFunction } from 'express';
+import { OfficeModel } from '../../../models/office.model';
+import { mapFields, pickDefined } from '../../../utils/mapFields';
+
+const fieldMap = {
+  name: 'name',
+  division: 'division',
+  district: 'district',
+  address: 'address',
+  contactNumber: 'contact_number',
+  type: 'type',
+  parentLocationId: 'parent_location_id',
+  labCode: 'lab_code',
+  isActive: 'is_active',
+};
+
+function buildPayload(body: Record<string, unknown>) {
+  const payload = mapFields(body, fieldMap);
+  Object.values(fieldMap).forEach((dbKey) => {
+    if (body[dbKey] !== undefined) {
+      payload[dbKey] = body[dbKey];
+    }
+  });
+  if (payload.parent_location_id === '') payload.parent_location_id = null;
+  return pickDefined(payload);
+}
+
+export const consumableLocationController = {
+  list: async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const filter: Record<string, unknown> = {};
+      if (req.query.type) filter.type = req.query.type;
+      if (req.query.isActive !== undefined) filter.is_active = req.query.isActive === 'true';
+      const locations = await OfficeModel.find(filter).sort({ name: 1 });
+      res.json(locations);
+    } catch (error) {
+      next(error);
+    }
+  },
+  getById: async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const location = await OfficeModel.findById(req.params.id);
+      if (!location) return res.status(404).json({ message: 'Not found' });
+      return res.json(location);
+    } catch (error) {
+      next(error);
+    }
+  },
+  create: async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const payload = buildPayload(req.body);
+      const location = await OfficeModel.create(payload);
+      res.status(201).json(location);
+    } catch (error) {
+      next(error);
+    }
+  },
+  update: async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const payload = buildPayload(req.body);
+      const location = await OfficeModel.findByIdAndUpdate(req.params.id, payload, { new: true });
+      if (!location) return res.status(404).json({ message: 'Not found' });
+      return res.json(location);
+    } catch (error) {
+      next(error);
+    }
+  },
+  remove: async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const location = await OfficeModel.findByIdAndDelete(req.params.id);
+      if (!location) return res.status(404).json({ message: 'Not found' });
+      return res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  },
+};

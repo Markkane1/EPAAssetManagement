@@ -1,0 +1,317 @@
+import { useState, useEffect } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import * as z from "zod";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Loader2 } from "lucide-react";
+import { Asset, Category, Project, Scheme, Vendor } from "@/types";
+
+const assetSchema = z.object({
+  name: z.string().min(1, "Name is required").max(100),
+  description: z.string().max(500).optional(),
+  categoryId: z.string().min(1, "Category is required"),
+  assetSource: z.enum(["procurement", "project"]),
+  vendorId: z.string().optional(),
+  projectId: z.string().optional(),
+  schemeId: z.string().optional(),
+  price: z.coerce.number().min(0, "Price must be positive").optional(),
+  acquisitionDate: z.string().optional(),
+  quantity: z.coerce.number().min(1, "Quantity must be at least 1"),
+}).superRefine((data, ctx) => {
+  if (data.assetSource === "procurement") {
+    if (!data.vendorId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["vendorId"],
+        message: "Vendor is required for procurement",
+      });
+    }
+    if (data.price === undefined || Number.isNaN(data.price)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["price"],
+        message: "Price is required for procurement",
+      });
+    }
+  }
+
+  if (data.assetSource === "project") {
+    if (!data.projectId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["projectId"],
+        message: "Project is required for project handover",
+      });
+    }
+    if (!data.schemeId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["schemeId"],
+        message: "Scheme is required for project handover",
+      });
+    }
+  }
+});
+
+type AssetFormData = z.infer<typeof assetSchema>;
+
+interface AssetFormModalProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  asset?: Asset | null;
+  categories: Category[];
+  vendors: Vendor[];
+  projects: Project[];
+  schemes: Scheme[];
+  onSubmit: (data: AssetFormData) => Promise<void>;
+}
+
+export function AssetFormModal({ open, onOpenChange, asset, categories, vendors, projects, schemes, onSubmit }: AssetFormModalProps) {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const isEditing = !!asset;
+
+  const form = useForm<AssetFormData>({
+    resolver: zodResolver(assetSchema),
+    defaultValues: {
+      name: asset?.name || "",
+      description: asset?.description || "",
+      categoryId: asset?.category_id || "",
+      assetSource: asset?.asset_source || (asset?.project_id ? "project" : "procurement"),
+      vendorId: asset?.vendor_id || "",
+      projectId: asset?.project_id || "",
+      schemeId: asset?.scheme_id || "",
+      price: asset?.unit_price || undefined,
+      acquisitionDate: asset?.acquisition_date
+        ? new Date(asset.acquisition_date).toISOString().split("T")[0]
+        : "",
+      quantity: asset?.quantity || 1,
+    },
+  });
+
+  useEffect(() => {
+    if (asset) {
+      form.reset({
+        name: asset.name,
+        description: asset.description || "",
+        categoryId: asset.category_id || "",
+        assetSource: asset.asset_source || (asset.project_id ? "project" : "procurement"),
+        vendorId: asset.vendor_id || "",
+        projectId: asset.project_id || "",
+        schemeId: asset.scheme_id || "",
+        price: asset.unit_price || undefined,
+        acquisitionDate: asset.acquisition_date
+          ? new Date(asset.acquisition_date).toISOString().split("T")[0]
+          : "",
+        quantity: asset.quantity || 1,
+      });
+    } else {
+      form.reset({
+        name: "",
+        description: "",
+        categoryId: "",
+        assetSource: "procurement",
+        vendorId: "",
+        projectId: "",
+        schemeId: "",
+        price: undefined,
+        acquisitionDate: "",
+        quantity: 1,
+      });
+    }
+  }, [asset, form]);
+
+  const selectedSource = form.watch("assetSource");
+  const selectedProjectId = form.watch("projectId");
+  const filteredSchemes = selectedProjectId
+    ? schemes.filter((scheme) => scheme.project_id === selectedProjectId)
+    : [];
+
+  const handleSubmit = async (data: AssetFormData) => {
+    setIsSubmitting(true);
+    try {
+      await onSubmit(data);
+      form.reset();
+      onOpenChange(false);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[500px]">
+        <DialogHeader>
+          <DialogTitle>{isEditing ? "Edit Asset" : "Add Asset"}</DialogTitle>
+          <DialogDescription>
+            {isEditing ? "Update asset details below." : "Create a new asset type."}
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="name">Name *</Label>
+            <Input id="name" {...form.register("name")} placeholder="e.g., Dell Laptop XPS 15" />
+            {form.formState.errors.name && (
+              <p className="text-sm text-destructive">{form.formState.errors.name.message}</p>
+            )}
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="description">Description</Label>
+            <Textarea id="description" {...form.register("description")} placeholder="Optional description..." rows={2} />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Category *</Label>
+              <Select value={form.watch("categoryId")} onValueChange={(v) => form.setValue("categoryId", v)}>
+                <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
+                <SelectContent>
+                  {categories.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {form.formState.errors.categoryId && (
+                <p className="text-sm text-destructive">{form.formState.errors.categoryId.message}</p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label>Source *</Label>
+              <Select
+                value={selectedSource}
+                onValueChange={(v) => {
+                  const value = v as "procurement" | "project";
+                  form.setValue("assetSource", value);
+                  if (value === "procurement") {
+                    form.setValue("projectId", "");
+                    form.setValue("schemeId", "");
+                  } else {
+                    form.setValue("vendorId", "");
+                    form.setValue("price", undefined);
+                  }
+                }}
+              >
+                <SelectTrigger><SelectValue placeholder="Select source" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="procurement">Procurement</SelectItem>
+                  <SelectItem value="project">Project Handover</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          {selectedSource === "procurement" ? (
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Vendor *</Label>
+                <Select value={form.watch("vendorId") || "none"} onValueChange={(v) => form.setValue("vendorId", v === "none" ? "" : v)}>
+                  <SelectTrigger><SelectValue placeholder="Select vendor" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Select vendor</SelectItem>
+                    {vendors.map((v) => (
+                      <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {form.formState.errors.vendorId && (
+                  <p className="text-sm text-destructive">{form.formState.errors.vendorId.message}</p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="price">Unit Price (PKR) *</Label>
+                <Input id="price" type="number" step="0.01" {...form.register("price")} placeholder="0.00" />
+                {form.formState.errors.price && (
+                  <p className="text-sm text-destructive">{form.formState.errors.price.message}</p>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Project *</Label>
+                <Select
+                  value={selectedProjectId || ""}
+                  onValueChange={(v) => {
+                    form.setValue("projectId", v);
+                    form.setValue("schemeId", "");
+                  }}
+                >
+                  <SelectTrigger><SelectValue placeholder="Select project" /></SelectTrigger>
+                  <SelectContent>
+                    {projects.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {form.formState.errors.projectId && (
+                  <p className="text-sm text-destructive">{form.formState.errors.projectId.message}</p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label>Scheme *</Label>
+                <Select
+                  value={form.watch("schemeId") || ""}
+                  onValueChange={(v) => form.setValue("schemeId", v)}
+                  disabled={!selectedProjectId}
+                >
+                  <SelectTrigger><SelectValue placeholder={selectedProjectId ? "Select scheme" : "Select project first"} /></SelectTrigger>
+                  <SelectContent>
+                    {filteredSchemes.length === 0 ? (
+                      <div className="p-2 text-sm text-muted-foreground text-center">
+                        No schemes found
+                      </div>
+                    ) : (
+                      filteredSchemes.map((scheme) => (
+                        <SelectItem key={scheme.id} value={scheme.id}>{scheme.name}</SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+                {form.formState.errors.schemeId && (
+                  <p className="text-sm text-destructive">{form.formState.errors.schemeId.message}</p>
+                )}
+              </div>
+            </div>
+          )}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="quantity">Quantity *</Label>
+              <Input id="quantity" type="number" {...form.register("quantity")} placeholder="1" />
+              {form.formState.errors.quantity && (
+                <p className="text-sm text-destructive">{form.formState.errors.quantity.message}</p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="acquisitionDate">Acquisition Date</Label>
+              <Input id="acquisitionDate" type="date" {...form.register("acquisitionDate")} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={isSubmitting}>
+              {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {isEditing ? "Update" : "Create"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}

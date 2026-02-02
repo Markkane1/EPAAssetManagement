@@ -1,0 +1,127 @@
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { MainLayout } from "@/components/layout/MainLayout";
+import { PageHeader } from "@/components/shared/PageHeader";
+import { DataTable } from "@/components/shared/DataTable";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { MoreHorizontal, Eye, Pencil, Package, Mail, Loader2 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Employee } from "@/types";
+import { useEmployees, useCreateEmployee, useUpdateEmployee } from "@/hooks/useEmployees";
+import { useDirectorates } from "@/hooks/useDirectorates";
+import { useLocations } from "@/hooks/useLocations";
+import { EmployeeFormModal } from "@/components/forms/EmployeeFormModal";
+import { isHeadOfficeLocationName } from "@/lib/locationUtils";
+
+export default function Employees() {
+  const navigate = useNavigate();
+  const { data: employees, isLoading, error } = useEmployees();
+  const { data: directorates } = useDirectorates();
+  const { data: locations } = useLocations();
+  const createEmployee = useCreateEmployee();
+  const updateEmployee = useUpdateEmployee();
+
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
+
+  const employeeList = employees || [];
+  const directorateList = directorates || [];
+  const locationList = locations || [];
+
+  const enrichedEmployees = employeeList.map((emp) => {
+    const locationName = locationList.find((l) => l.id === emp.location_id)?.name || "N/A";
+    const isHeadOffice = isHeadOfficeLocationName(locationName);
+    return {
+      ...emp,
+      directorateName: isHeadOffice
+        ? directorateList.find((d) => d.id === emp.directorate_id)?.name || "N/A"
+        : "N/A",
+      locationName,
+      fullName: `${emp.first_name} ${emp.last_name}`,
+    };
+  });
+
+  const columns = [
+    { key: "fullName", label: "Employee", render: (value: string, row: any) => (
+      <div className="flex items-center gap-3">
+        <Avatar className="h-9 w-9">
+          <AvatarFallback className="bg-primary/10 text-primary font-medium">{row.first_name[0]}{row.last_name[0]}</AvatarFallback>
+        </Avatar>
+        <div><p className="font-medium">{value}</p><p className="text-xs text-muted-foreground">{row.email}</p></div>
+      </div>
+    )},
+    { key: "job_title", label: "Job Title" },
+    { key: "directorateName", label: "Directorate" },
+    { key: "locationName", label: "Location" },
+    { key: "phone", label: "Phone", render: (value: string) => <span className="text-muted-foreground">{value}</span> },
+    { key: "is_active", label: "Status", render: (value: boolean) => (
+      <Badge variant={value ? "default" : "secondary"} className={value ? "bg-success text-success-foreground" : ""}>{value ? "Active" : "Inactive"}</Badge>
+    )},
+  ];
+
+  const handleAddEmployee = () => {
+    setEditingEmployee(null);
+    setIsModalOpen(true);
+  };
+
+  const handleEdit = (employee: Employee) => {
+    setEditingEmployee(employee);
+    setIsModalOpen(true);
+  };
+
+  const handleSubmit = async (data: any) => {
+    if (editingEmployee) {
+      const { userPassword, ...payload } = data;
+      await updateEmployee.mutateAsync({ id: editingEmployee.id, data: payload });
+    } else {
+      await createEmployee.mutateAsync(data);
+    }
+  };
+
+  const actions = (row: Employee) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onClick={() => navigate(`/employees/${row.id}`)}><Eye className="h-4 w-4 mr-2" /> View Profile</DropdownMenuItem>
+        <DropdownMenuItem onClick={() => handleEdit(row)}><Pencil className="h-4 w-4 mr-2" /> Edit</DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={() => window.location.href = `mailto:${row.email}`}><Mail className="h-4 w-4 mr-2" /> Send Email</DropdownMenuItem>
+        <DropdownMenuItem onClick={() => navigate(`/employees/${row.id}`)}><Package className="h-4 w-4 mr-2" /> View Assigned Assets</DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
+  if (isLoading) {
+    return (
+      <MainLayout title="Employees" description="Manage your organization's personnel">
+        <div className="flex items-center justify-center h-64"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>
+      </MainLayout>
+    );
+  }
+
+  if (error) console.warn("API unavailable:", error);
+
+  return (
+    <MainLayout title="Employees" description="Manage your organization's personnel">
+      <PageHeader title="Employees" description="View and manage employees and their asset assignments" action={{ label: "Add Employee", onClick: handleAddEmployee }} />
+      <DataTable 
+        columns={columns} 
+        data={enrichedEmployees} 
+        searchPlaceholder="Search employees..." 
+        actions={actions} 
+        onRowClick={(row) => navigate(`/employees/${row.id}`)}
+      />
+      <EmployeeFormModal open={isModalOpen} onOpenChange={setIsModalOpen} employee={editingEmployee} directorates={directorateList} locations={locationList} onSubmit={handleSubmit} />
+    </MainLayout>
+  );
+}

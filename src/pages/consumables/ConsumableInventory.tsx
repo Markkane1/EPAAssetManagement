@@ -1,0 +1,184 @@
+import { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { MainLayout } from '@/components/layout/MainLayout';
+import { PageHeader } from '@/components/shared/PageHeader';
+import { DataTable } from '@/components/shared/DataTable';
+import { Card, CardContent } from '@/components/ui/card';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
+import { useConsumableBalances, useConsumableLedger } from '@/hooks/useConsumableInventory';
+import { useConsumableItems } from '@/hooks/useConsumableItems';
+import { useConsumableLocations } from '@/hooks/useConsumableLocations';
+import { useConsumableLots } from '@/hooks/useConsumableLots';
+import { consumableInventoryService } from '@/services/consumableInventoryService';
+import type { ConsumableInventoryBalance } from '@/types';
+
+export default function ConsumableInventory() {
+  const { data: items } = useConsumableItems();
+  const { data: locations } = useConsumableLocations();
+  const { data: lots } = useConsumableLots();
+
+  const [locationId, setLocationId] = useState('');
+  const [itemId, setItemId] = useState('');
+  const [lotId, setLotId] = useState('');
+
+  const balanceFilters = useMemo(() => {
+    const filters: any = {};
+    if (locationId) filters.locationId = locationId;
+    if (itemId) filters.itemId = itemId;
+    if (lotId) filters.lotId = lotId;
+    return Object.keys(filters).length ? filters : undefined;
+  }, [locationId, itemId, lotId]);
+
+  const { data: balances = [] } = useConsumableBalances(balanceFilters);
+
+  const { data: rollup } = useQuery({
+    queryKey: ['consumableRollup', itemId || 'all'],
+    queryFn: () => consumableInventoryService.getRollup(itemId || undefined),
+    enabled: Boolean(itemId),
+  });
+
+  const { data: ledger = [] } = useConsumableLedger(itemId ? { itemId } : undefined);
+
+  const columns = [
+    {
+      key: 'consumable_item_id',
+      label: 'Item',
+      render: (value: string) => items?.find((item) => item.id === value)?.name || 'Unknown',
+    },
+    {
+      key: 'location_id',
+      label: 'Location',
+      render: (value: string) => locations?.find((loc) => loc.id === value)?.name || 'Unknown',
+    },
+    {
+      key: 'lot_id',
+      label: 'Lot',
+      render: (value: string | null) => {
+        if (!value) return 'N/A';
+        return lots?.find((lot) => lot.id === value)?.lot_number || 'Unknown';
+      },
+    },
+    {
+      key: 'qty_on_hand_base',
+      label: 'On Hand (base)',
+      render: (value: number, row: ConsumableInventoryBalance) => {
+        const item = items?.find((i) => i.id === row.consumable_item_id);
+        return (
+          <span className="font-medium">{value} {item?.base_uom || ''}</span>
+        );
+      },
+    },
+  ];
+
+  return (
+    <MainLayout title="Consumable Inventory" description="Central and lab inventory view">
+      <PageHeader
+        title="Inventory"
+        description="View balances by location, item, and lot"
+      />
+
+      <Card className="mb-6">
+        <CardContent className="pt-6">
+          <div className="grid grid-cols-3 gap-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Location</label>
+              <Select value={locationId} onValueChange={setLocationId}>
+                <SelectTrigger><SelectValue placeholder="All locations" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">All locations</SelectItem>
+                  {(locations || []).map((loc) => (
+                    <SelectItem key={loc.id} value={loc.id}>{loc.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Item</label>
+              <Select value={itemId} onValueChange={(value) => { setItemId(value); setLotId(''); }}>
+                <SelectTrigger><SelectValue placeholder="All items" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">All items</SelectItem>
+                  {(items || []).map((item) => (
+                    <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Lot</label>
+              <Select value={lotId} onValueChange={setLotId}>
+                <SelectTrigger><SelectValue placeholder="All lots" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">All lots</SelectItem>
+                  {(lots || [])
+                    .filter((lot) => !itemId || lot.consumable_item_id === itemId)
+                    .map((lot) => (
+                      <SelectItem key={lot.id} value={lot.id}>{lot.lot_number}</SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <DataTable
+        columns={columns}
+        data={balances as any}
+        searchPlaceholder="Search inventory..."
+      />
+
+      {itemId && rollup && rollup.length > 0 && (
+        <Card className="mt-6">
+          <CardContent className="pt-6">
+            <h3 className="text-lg font-semibold mb-2">Item Rollup</h3>
+            {rollup.map((row: any) => (
+              <div key={row.itemId} className="space-y-2">
+                <p className="text-sm text-muted-foreground">Total across locations</p>
+                <p className="text-2xl font-semibold">
+                  {row.totalQtyBase} {items?.find((i) => i.id === row.itemId)?.base_uom}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {row.byLocation.map((loc: any) => (
+                    <Badge key={loc.locationId} variant="outline">
+                      {locations?.find((l) => l.id === loc.locationId)?.name || 'Unknown'}: {loc.qtyOnHandBase}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {itemId && ledger.length > 0 && (
+        <Card className="mt-6">
+          <CardContent className="pt-6">
+            <h3 className="text-lg font-semibold mb-2">Recent Transactions</h3>
+            <div className="space-y-2 text-sm">
+              {ledger.slice(0, 5).map((entry) => (
+                <div key={entry.id} className="flex items-center justify-between border-b pb-2">
+                  <div>
+                    <p className="font-medium">{entry.tx_type}</p>
+                    <p className="text-muted-foreground">{new Date(entry.tx_time).toLocaleString()}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-medium">{entry.qty_base} {items?.find((i) => i.id === entry.consumable_item_id)?.base_uom}</p>
+                    <p className="text-muted-foreground">{entry.lot_id ? lots?.find((lot) => lot.id === entry.lot_id)?.lot_number : 'No lot'}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </MainLayout>
+  );
+}

@@ -1,0 +1,49 @@
+import { Router } from 'express';
+import categoryRoutes from './category.routes';
+import officeRoutes from './office.routes';
+import vendorRoutes from './vendor.routes';
+import projectRoutes from './project.routes';
+import schemeRoutes from './scheme.routes';
+import employeeRoutes from './employee.routes';
+import assetRoutes from './asset.routes';
+import assetItemRoutes from './assetItem.routes';
+import assignmentRoutes from './assignment.routes';
+import maintenanceRoutes from './maintenance.routes';
+import transferRoutes from './transfer.routes';
+import purchaseOrderRoutes from './purchaseOrder.routes';
+import consumableRoutes from './consumable.routes';
+import consumableAssignmentRoutes from './consumableAssignment.routes';
+import consumableConsumptionRoutes from './consumableConsumption.routes';
+import consumableInventoryRoutes from '../modules/consumables/routes';
+import authRoutes from './auth.routes';
+import userRoutes from './user.routes';
+import activityRoutes from './activity.routes';
+import dashboardRoutes from './dashboard.routes';
+import settingsRoutes from './settings.routes';
+
+const router = Router();
+
+router.use('/auth', authRoutes);
+router.use('/users', userRoutes);
+router.use('/activities', activityRoutes);
+router.use('/dashboard', dashboardRoutes);
+router.use('/settings', settingsRoutes);
+
+router.use('/categories', categoryRoutes);
+router.use('/offices', officeRoutes);
+router.use('/vendors', vendorRoutes);
+router.use('/projects', projectRoutes);
+router.use('/schemes', schemeRoutes);
+router.use('/employees', employeeRoutes);
+router.use('/assets', assetRoutes);
+router.use('/asset-items', assetItemRoutes);
+router.use('/assignments', assignmentRoutes);
+router.use('/maintenance', maintenanceRoutes);
+router.use('/transfers', transferRoutes);
+router.use('/purchase-orders', purchaseOrderRoutes);
+router.use('/consumables', consumableInventoryRoutes);
+router.use('/consumables', consumableRoutes);
+router.use('/consumable-assignments', consumableAssignmentRoutes);
+router.use('/consumable-consumptions', consumableConsumptionRoutes);
+
+export default router;
