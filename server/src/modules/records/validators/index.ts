@@ -23,6 +23,12 @@ export const recordListQuerySchema = z.object({
   officeId: z.string().optional(),
   from: z.string().optional(),
   to: z.string().optional(),
+  assetItemId: z.string().optional(),
+  employeeId: z.string().optional(),
+  assignmentId: z.string().optional(),
+  transferId: z.string().optional(),
+  maintenanceRecordId: z.string().optional(),
+  referenceNo: z.string().optional(),
 });
 
 export const registerQuerySchema = z.object({

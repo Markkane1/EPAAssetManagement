@@ -9,6 +9,36 @@ import { createHttpError } from '../utils/httpError';
 import { createRecord, updateRecordStatus } from '../modules/records/services/record.service';
 import { RecordModel } from '../models/record.model';
 import { logAudit } from '../modules/records/services/audit.service';
+import { DocumentLinkModel } from '../models/documentLink.model';
+import { DocumentModel } from '../models/document.model';
+import { DocumentVersionModel } from '../models/documentVersion.model';
+
+async function hasCompletionDocs(maintenanceRecordId: string) {
+  const record = await RecordModel.findOne({
+    record_type: 'MAINTENANCE',
+    maintenance_record_id: maintenanceRecordId,
+  });
+  const entityFilters: Array<{ entity_type: string; entity_id: string }> = [
+    { entity_type: 'MaintenanceRecord', entity_id: maintenanceRecordId },
+  ];
+  if (record) {
+    entityFilters.push({ entity_type: 'Record', entity_id: record.id });
+  }
+
+  const links = await DocumentLinkModel.find({ $or: entityFilters });
+  if (links.length === 0) return false;
+  const docIds = links.map((link) => link.document_id);
+
+  const documents = await DocumentModel.find({
+    _id: { $in: docIds },
+    doc_type: { $in: ['MaintenanceJobCard', 'Invoice'] },
+  });
+  if (documents.length === 0) return false;
+
+  const docIdList = documents.map((doc) => doc.id);
+  const version = await DocumentVersionModel.exists({ document_id: { $in: docIdList } });
+  return Boolean(version);
+}
 
 const fieldMap = {
   assetItemId: 'asset_item_id',
@@ -207,6 +237,13 @@ export const maintenanceController = {
       if (!assetItem) throw createHttpError(404, 'Asset item not found');
       if (!access.isHeadofficeAdmin && assetItem.location_id) {
         ensureOfficeScope(access, assetItem.location_id.toString());
+      }
+      const hasDocs = await hasCompletionDocs(record.id);
+      if (!hasDocs) {
+        throw createHttpError(
+          400,
+          'Maintenance completion requires a Maintenance Job Card or Invoice document version'
+        );
       }
 
       await session.withTransaction(async () => {

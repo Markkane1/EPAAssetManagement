@@ -27,4 +27,7 @@ export { default as consumableInventoryService } from './consumableInventoryServ
 export { default as consumableReasonCodeService } from './consumableReasonCodeService';
 export { default as consumableLocationService } from './consumableLocationService';
 export { default as settingsService } from './settingsService';
+export { default as documentService } from './documentService';
+export { default as documentLinkService } from './documentLinkService';
+export { default as recordService } from './recordService';
 

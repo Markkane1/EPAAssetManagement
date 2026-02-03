@@ -276,6 +276,120 @@ export interface Transfer {
   updated_at: string;
 }
 
+export type RecordType = "ISSUE" | "RETURN" | "TRANSFER" | "MAINTENANCE" | "DISPOSAL" | "INCIDENT";
+export type RecordStatus = "Draft" | "PendingApproval" | "Approved" | "Completed" | "Rejected" | "Cancelled" | "Archived";
+
+export interface RecordEntry {
+  id: string;
+  record_type: RecordType;
+  reference_no: string;
+  office_id: string;
+  status: RecordStatus;
+  created_by_user_id: string;
+  asset_item_id?: string | null;
+  employee_id?: string | null;
+  assignment_id?: string | null;
+  transfer_id?: string | null;
+  maintenance_record_id?: string | null;
+  notes?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type DocumentType =
+  | "IssueSlip"
+  | "ReturnSlip"
+  | "TransferChallan"
+  | "MaintenanceJobCard"
+  | "Warranty"
+  | "Invoice"
+  | "DisposalApproval"
+  | "IncidentReport"
+  | "Other";
+
+export type DocumentStatus = "Draft" | "Final" | "Archived";
+
+export interface DocumentRecord {
+  id: string;
+  title: string;
+  doc_type: DocumentType;
+  status: DocumentStatus;
+  office_id: string;
+  created_by_user_id?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DocumentVersion {
+  id: string;
+  document_id: string;
+  version_no: number;
+  file_name: string;
+  mime_type: string;
+  size_bytes: number;
+  file_path?: string | null;
+  file_url?: string | null;
+  uploaded_by_user_id?: string;
+  uploaded_at: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export type DocumentLinkEntityType = "Record" | "AssetItem" | "Assignment" | "Transfer" | "MaintenanceRecord";
+
+export interface DocumentLink {
+  id: string;
+  document_id: string;
+  entity_type: DocumentLinkEntityType;
+  entity_id: string;
+  required_for_status?: "PendingApproval" | "Approved" | "Completed" | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export type ApprovalStatus = "Pending" | "Approved" | "Rejected" | "Cancelled";
+
+export interface ApprovalRequest {
+  id: string;
+  record_id: string;
+  requested_by_user_id: string;
+  approver_user_id?: string | null;
+  approver_role?: string | null;
+  status: ApprovalStatus;
+  requested_at: string;
+  decided_at?: string | null;
+  decision_notes?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  actor_user_id: string;
+  office_id: string;
+  action: string;
+  entity_type: string;
+  entity_id: string;
+  timestamp: string;
+  diff?: Record<string, unknown> | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface RecordDocumentView {
+  document: DocumentRecord | null;
+  versions: DocumentVersion[];
+  links: DocumentLink[];
+}
+
+export interface RecordDetailResponse {
+  record: RecordEntry;
+  documents: RecordDocumentView[];
+  approvals: ApprovalRequest[];
+  auditLogs: AuditLogEntry[];
+  missingRequirements: string[];
+}
+
 export type ConsumableAssigneeType = "employee" | "location";
 
 export interface ConsumableAsset {

@@ -85,11 +85,20 @@ export async function getRecordById(ctx: RequestContext, id: string) {
   return recordDoc;
 }
 
-async function hasRequiredDocs(recordId: string, requirements: string[][]) {
+async function hasRequiredDocs(
+  recordId: string,
+  requirements: string[][],
+  relatedMaintenanceId?: string | null
+) {
   if (requirements.length === 0) return true;
+  const entityFilters: Array<{ entity_type: string; entity_id: string }> = [
+    { entity_type: 'Record', entity_id: recordId },
+  ];
+  if (relatedMaintenanceId) {
+    entityFilters.push({ entity_type: 'MaintenanceRecord', entity_id: relatedMaintenanceId });
+  }
   const links = await DocumentLinkModel.find({
-    entity_type: 'Record',
-    entity_id: recordId,
+    $or: entityFilters,
   }).populate('document_id');
 
   const docTypes = new Set(
@@ -127,6 +136,10 @@ export async function updateRecordStatus(
   }
 
   const recordType = String(recordDoc.record_type);
+  const relatedMaintenanceId =
+    recordType === 'MAINTENANCE' && recordDoc.maintenance_record_id
+      ? recordDoc.maintenance_record_id.toString()
+      : null;
   const approvalRequired = (APPROVAL_REQUIRED[recordType] || []).includes(status);
   if (approvalRequired && !ctx.isHeadoffice) {
     const approved = await hasApprovedApproval(recordDoc.id);
@@ -135,7 +148,7 @@ export async function updateRecordStatus(
 
   const requiredDocs = REQUIRED_DOCUMENTS[recordType]?.[status] || [];
   if (requiredDocs.length > 0) {
-    const ok = await hasRequiredDocs(recordDoc.id, requiredDocs);
+    const ok = await hasRequiredDocs(recordDoc.id, requiredDocs, relatedMaintenanceId);
     if (!ok) throw createHttpError(400, 'Required document missing for this status');
   }
 

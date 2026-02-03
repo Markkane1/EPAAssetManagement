@@ -28,6 +28,7 @@ router.get('/records/register/maintenance', requireAuth, validateQuery(registerQ
 // Records
 router.post('/records', requireAuth, validateBody(recordCreateSchema), recordController.create);
 router.get('/records', requireAuth, validateQuery(recordListQuerySchema), recordController.list);
+router.get('/records/:id/detail', requireAuth, recordController.detail);
 router.get('/records/:id', requireAuth, recordController.getById);
 router.patch('/records/:id/status', requireAuth, validateBody(recordStatusSchema), recordController.updateStatus);
 

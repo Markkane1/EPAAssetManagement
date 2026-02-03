@@ -38,6 +38,23 @@ async function fetchAPI<T>(
   return handleResponse<T>(response);
 }
 
+// Upload helper for multipart/form-data
+async function uploadAPI<T>(endpoint: string, data: FormData): Promise<T> {
+  const token = localStorage.getItem('auth_token');
+  const headers: HeadersInit = {};
+  if (token) {
+    (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`;
+  }
+
+  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+    method: 'POST',
+    body: data,
+    headers,
+  });
+
+  return handleResponse<T>(response);
+}
+
 // API methods
 export const api = {
   // GET request
@@ -59,6 +76,9 @@ export const api = {
   
   // DELETE request
   delete: <T>(endpoint: string) => fetchAPI<T>(endpoint, { method: 'DELETE' }),
+
+  // Upload multipart/form-data
+  upload: <T>(endpoint: string, data: FormData) => uploadAPI<T>(endpoint, data),
 };
 
 export default api;

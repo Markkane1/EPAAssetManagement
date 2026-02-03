@@ -3,6 +3,7 @@ import type { AuthRequest } from '../../../middleware/auth';
 import { getRequestContext } from '../../../utils/scope';
 import { createHttpError } from '../../../utils/httpError';
 import { createRecord, getRecordById, listRecords, listRegister, updateRecordStatus } from '../services/record.service';
+import { getRecordDetail } from '../services/recordDetail.service';
 
 export const recordController = {
   create: async (req: AuthRequest, res: Response, next: NextFunction) => {
@@ -31,6 +32,12 @@ export const recordController = {
       if (req.query.recordType) filters.record_type = req.query.recordType;
       if (req.query.status) filters.status = req.query.status;
       if (req.query.officeId) filters.office_id = req.query.officeId;
+      if (req.query.assetItemId) filters.asset_item_id = req.query.assetItemId;
+      if (req.query.employeeId) filters.employee_id = req.query.employeeId;
+      if (req.query.assignmentId) filters.assignment_id = req.query.assignmentId;
+      if (req.query.transferId) filters.transfer_id = req.query.transferId;
+      if (req.query.maintenanceRecordId) filters.maintenance_record_id = req.query.maintenanceRecordId;
+      if (req.query.referenceNo) filters.reference_no = req.query.referenceNo;
       if (req.query.from || req.query.to) {
         filters.created_at = {} as Record<string, unknown>;
         if (req.query.from) (filters.created_at as Record<string, unknown>).$gte = new Date(String(req.query.from));
@@ -48,6 +55,15 @@ export const recordController = {
       const ctx = await getRequestContext(req);
       const record = await getRecordById(ctx, req.params.id);
       res.json(record);
+    } catch (error) {
+      next(error);
+    }
+  },
+  detail: async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const detail = await getRecordDetail(ctx, req.params.id);
+      res.json(detail);
     } catch (error) {
       next(error);
     }

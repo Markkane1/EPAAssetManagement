@@ -17,13 +17,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2 } from "lucide-react";
+import { Loader2, Eye } from "lucide-react";
 import { useTransfers, useCreateTransfer, useUpdateTransferStatus } from "@/hooks/useTransfers";
 import { useAssetItems } from "@/hooks/useAssetItems";
 import { useAssets } from "@/hooks/useAssets";
 import { useLocations } from "@/hooks/useLocations";
 import { useAuth } from "@/contexts/AuthContext";
 import type { AssetItem, Transfer, TransferStatus } from "@/types";
+import { RecordDetailModal } from "@/components/records/RecordDetailModal";
 
 const transferSchema = z.object({
   assetItemId: z.string().min(1, "Asset item is required"),
@@ -66,6 +67,9 @@ export default function Transfers() {
   const updateStatus = useUpdateTransferStatus();
 
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [recordModal, setRecordModal] = useState<{ open: boolean; transferId?: string; label?: string }>({
+    open: false,
+  });
 
   const today = new Date().toISOString().slice(0, 10);
 
@@ -177,6 +181,7 @@ export default function Transfers() {
       toOfficeId: data.toOfficeId,
       transferDate: data.transferDate,
       notes: data.notes || undefined,
+      useWorkflow: true,
     });
 
     form.reset({
@@ -198,22 +203,41 @@ export default function Transfers() {
     }
   };
 
+  const openRecordModal = (row: TransferRow) => {
+    setRecordModal({
+      open: true,
+      transferId: row.id,
+      label: `${row.assetName} (${row.assetTag || "Unlabeled"})`,
+    });
+  };
+
+  const closeRecordModal = () => {
+    setRecordModal({ open: false });
+  };
+
   const actions = (row: TransferRow) => {
     const nextStatus = nextStatusMap[row.status];
-    if (!canManage || !nextStatus) return null;
 
     return (
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() => handleAdvanceStatus(row)}
-        disabled={updateStatus.isPending && updatingId === row.id}
-      >
-        {updateStatus.isPending && updatingId === row.id && (
-          <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" />
+      <div className="flex items-center gap-2">
+        <Button variant="outline" size="sm" onClick={() => openRecordModal(row)}>
+          <Eye className="mr-2 h-3.5 w-3.5" />
+          File
+        </Button>
+        {canManage && nextStatus && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => handleAdvanceStatus(row)}
+            disabled={updateStatus.isPending && updatingId === row.id}
+          >
+            {updateStatus.isPending && updatingId === row.id && (
+              <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" />
+            )}
+            {statusActionLabels[row.status] || "Update"}
+          </Button>
         )}
-        {statusActionLabels[row.status] || "Update"}
-      </Button>
+      </div>
     );
   };
 
@@ -335,7 +359,14 @@ export default function Transfers() {
         columns={columns}
         data={tableRows}
         searchPlaceholder="Search transfers..."
-        actions={canManage ? actions : undefined}
+        actions={actions}
+      />
+
+      <RecordDetailModal
+        open={recordModal.open}
+        onOpenChange={(open) => (open ? null : closeRecordModal())}
+        lookup={{ recordType: "TRANSFER", transferId: recordModal.transferId }}
+        title={recordModal.label ? `Transfer File - ${recordModal.label}` : "Transfer File"}
       />
     </MainLayout>
   );

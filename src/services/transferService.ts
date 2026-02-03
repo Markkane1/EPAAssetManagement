@@ -9,6 +9,7 @@ export interface TransferCreateDto {
   toOfficeId: string;
   transferDate?: string;
   notes?: string;
+  useWorkflow?: boolean;
 }
 
 export interface TransferStatusUpdateDto {
