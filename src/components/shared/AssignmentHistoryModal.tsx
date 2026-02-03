@@ -8,6 +8,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Package, User, Calendar, ArrowRight } from "lucide-react";
+import type { Assignment, AssetItem, Asset, Employee } from "@/types";
 
 interface AssignmentHistoryModalProps {
   open: boolean;
@@ -15,10 +16,10 @@ interface AssignmentHistoryModalProps {
   type: "employee" | "assetItem";
   targetId: string;
   targetName: string;
-  assignments: any[];
-  assetItems: any[];
-  employees: any[];
-  assets: any[];
+  assignments: Assignment[];
+  assetItems: AssetItem[];
+  employees: Employee[];
+  assets: Asset[];
 }
 
 export function AssignmentHistoryModal({

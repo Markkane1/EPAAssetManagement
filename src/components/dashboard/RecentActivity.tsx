@@ -2,7 +2,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   UserPlus,
   Wrench,
-  ArrowRightLeft,
   Package,
   Clock,
 } from "lucide-react";
@@ -12,7 +11,7 @@ import { formatDistanceToNow } from "date-fns";
 
 interface Activity {
   id: string;
-  type: "assignment" | "maintenance" | "transfer" | "new_asset";
+  type: "assignment" | "maintenance" | "new_asset";
   title: string;
   description: string;
   time: string;
@@ -22,14 +21,12 @@ interface Activity {
 const activityIcons = {
   assignment: UserPlus,
   maintenance: Wrench,
-  transfer: ArrowRightLeft,
   new_asset: Package,
 };
 
 const activityColors = {
   assignment: "bg-info/10 text-info",
   maintenance: "bg-warning/10 text-warning",
-  transfer: "bg-accent/10 text-accent",
   new_asset: "bg-success/10 text-success",
 };
 
@@ -42,7 +39,6 @@ export function RecentActivity() {
     const titleMap: Record<string, string> = {
       assignment: "Asset Assigned",
       maintenance: "Maintenance Updated",
-      transfer: "Asset Transferred",
       new_asset: "New Asset Added",
     };
 

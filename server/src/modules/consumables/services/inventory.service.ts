@@ -1025,7 +1025,7 @@ export const inventoryService = {
           const qtyBase = convertToBaseQty(entry.qty, entry.uom, item.base_uom);
           if (qtyBase <= 0) throw createHttpError(400, 'Quantity must be greater than zero');
 
-          let lotId: string | null = entry.lotId || null;
+          const lotId: string | null = entry.lotId || null;
           if (item.requires_lot_tracking !== false) {
             if (!lotId) throw createHttpError(400, 'Lot is required for this item');
             await ensureLotMatchesItem(lotId, item.id, session);

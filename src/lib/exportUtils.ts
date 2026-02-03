@@ -1,7 +1,12 @@
 import { format } from "date-fns";
 
 function getValueByKey(row: Record<string, unknown>, key: string) {
-  return key.split(".").reduce((obj: any, part) => obj?.[part], row as any);
+  return key.split(".").reduce<unknown>((obj, part) => {
+    if (obj && typeof obj === "object" && part in obj) {
+      return (obj as Record<string, unknown>)[part];
+    }
+    return undefined;
+  }, row);
 }
 
 export function filterRowsBySearch<T extends Record<string, unknown>>(data: T[], term: string) {

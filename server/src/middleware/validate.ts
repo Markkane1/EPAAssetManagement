@@ -10,7 +10,7 @@ export function validateBody<T>(schema: ZodSchema<T>) {
         errors: result.error.flatten().fieldErrors,
       });
     }
-    req.body = result.data as any;
+    req.body = result.data as unknown as Request['body'];
     return next();
   };
 }
@@ -24,7 +24,7 @@ export function validateQuery<T>(schema: ZodSchema<T>) {
         errors: result.error.flatten().fieldErrors,
       });
     }
-    req.query = result.data as any;
+    req.query = result.data as unknown as Request['query'];
     return next();
   };
 }
@@ -38,7 +38,7 @@ export function validateParams<T>(schema: ZodSchema<T>) {
         errors: result.error.flatten().fieldErrors,
       });
     }
-    req.params = result.data as any;
+    req.params = result.data as unknown as Request['params'];
     return next();
   };
 }

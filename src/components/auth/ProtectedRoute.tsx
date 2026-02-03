@@ -34,8 +34,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   }
 
   if (allowedRoles && !isSuperAdmin && (!role || !allowedRoles.includes(role))) {
-    const fallback = role === "location_admin" ? "/asset-management/transferred-assets" : "/assignments";
-    return <Navigate to={fallback} replace />;
+    return <Navigate to="/" replace />;
   }
 
   return <>{children}</>;

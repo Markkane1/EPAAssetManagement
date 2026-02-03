@@ -115,9 +115,11 @@ export const employeeController = {
   getByDirectorate: async (req: Request, res: Response, next: NextFunction) => {
     try {
       const employees = await employeeRepository.findAll();
-      const filtered = employees.filter((employee: any) =>
-        employee.directorate_id?.toString() === req.params.directorateId
-      );
+      type EmployeeLike = { directorate_id?: { toString(): string } | string | null };
+      const filtered = employees.filter((employee) => {
+        const directorate = (employee as EmployeeLike).directorate_id;
+        return directorate?.toString() === req.params.directorateId;
+      });
       res.json(filtered);
     } catch (error) {
       next(error);

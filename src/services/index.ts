@@ -10,6 +10,7 @@ export { default as assetItemService } from './assetItemService';
 export { default as vendorService } from './vendorService';
 export { default as assignmentService } from './assignmentService';
 export { default as maintenanceService } from './maintenanceService';
+export { default as transferService } from './transferService';
 export { default as projectService } from './projectService';
 export { default as schemeService } from './schemeService';
 export { default as purchaseOrderService } from './purchaseOrderService';

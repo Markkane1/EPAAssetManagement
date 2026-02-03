@@ -1,6 +1,10 @@
-import { Request, Response, NextFunction } from 'express';
+import { Response, NextFunction } from 'express';
 import { AssetModel } from '../models/asset.model';
+import { AssetItemModel } from '../models/assetItem.model';
 import { mapFields } from '../utils/mapFields';
+import { resolveAccessContext } from '../utils/accessControl';
+import { createHttpError } from '../utils/httpError';
+import type { AuthRequest } from '../middleware/auth';
 
 const fieldMap = {
   categoryId: 'category_id',
@@ -27,6 +31,9 @@ function buildPayload(body: Record<string, unknown>) {
   if (body.description !== undefined) payload.description = body.description;
   if (body.currency !== undefined) payload.currency = body.currency;
   if (body.quantity !== undefined) payload.quantity = body.quantity;
+  if (payload.acquisition_date) {
+    payload.acquisition_date = new Date(String(payload.acquisition_date));
+  }
   if (payload.vendor_id === "") payload.vendor_id = null;
   if (payload.project_id === "") payload.project_id = null;
   if (payload.scheme_id === "") payload.scheme_id = null;
@@ -35,41 +42,93 @@ function buildPayload(body: Record<string, unknown>) {
 }
 
 export const assetController = {
-  list: async (_req: Request, res: Response, next: NextFunction) => {
+  list: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
-      const assets = await AssetModel.find().sort({ name: 1 });
+      const access = await resolveAccessContext(req.user);
+      if (access.isHeadofficeAdmin) {
+        const assets = await AssetModel.find({ is_active: { $ne: false } }).sort({ name: 1 });
+        return res.json(assets);
+      }
+      if (!access.officeId) throw createHttpError(403, 'User is not assigned to an office');
+      const assetIds = await AssetItemModel.distinct('asset_id', {
+        location_id: access.officeId,
+        is_active: { $ne: false },
+      });
+      const assets = await AssetModel.find({ _id: { $in: assetIds }, is_active: { $ne: false } }).sort({ name: 1 });
       res.json(assets);
     } catch (error) {
       next(error);
     }
   },
-  getById: async (req: Request, res: Response, next: NextFunction) => {
+  getById: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
+      const access = await resolveAccessContext(req.user);
       const asset = await AssetModel.findById(req.params.id);
       if (!asset) return res.status(404).json({ message: 'Not found' });
+      if (!access.isHeadofficeAdmin) {
+        if (!access.officeId) throw createHttpError(403, 'User is not assigned to an office');
+        const hasItem = await AssetItemModel.exists({
+          asset_id: asset.id,
+          location_id: access.officeId,
+          is_active: { $ne: false },
+        });
+        if (!hasItem) throw createHttpError(403, 'Access restricted to assigned office inventory');
+      }
       return res.json(asset);
     } catch (error) {
       next(error);
     }
   },
-  getByCategory: async (req: Request, res: Response, next: NextFunction) => {
+  getByCategory: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
-      const assets = await AssetModel.find({ category_id: req.params.categoryId }).sort({ name: 1 });
+      const access = await resolveAccessContext(req.user);
+      if (access.isHeadofficeAdmin) {
+        const assets = await AssetModel.find({ category_id: req.params.categoryId, is_active: { $ne: false } }).sort({ name: 1 });
+        return res.json(assets);
+      }
+      if (!access.officeId) throw createHttpError(403, 'User is not assigned to an office');
+      const assetIds = await AssetItemModel.distinct('asset_id', {
+        location_id: access.officeId,
+        is_active: { $ne: false },
+      });
+      const assets = await AssetModel.find({
+        _id: { $in: assetIds },
+        category_id: req.params.categoryId,
+        is_active: { $ne: false },
+      }).sort({ name: 1 });
       res.json(assets);
     } catch (error) {
       next(error);
     }
   },
-  getByVendor: async (req: Request, res: Response, next: NextFunction) => {
+  getByVendor: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
-      const assets = await AssetModel.find({ vendor_id: req.params.vendorId }).sort({ name: 1 });
+      const access = await resolveAccessContext(req.user);
+      if (access.isHeadofficeAdmin) {
+        const assets = await AssetModel.find({ vendor_id: req.params.vendorId, is_active: { $ne: false } }).sort({ name: 1 });
+        return res.json(assets);
+      }
+      if (!access.officeId) throw createHttpError(403, 'User is not assigned to an office');
+      const assetIds = await AssetItemModel.distinct('asset_id', {
+        location_id: access.officeId,
+        is_active: { $ne: false },
+      });
+      const assets = await AssetModel.find({
+        _id: { $in: assetIds },
+        vendor_id: req.params.vendorId,
+        is_active: { $ne: false },
+      }).sort({ name: 1 });
       res.json(assets);
     } catch (error) {
       next(error);
     }
   },
-  create: async (req: Request, res: Response, next: NextFunction) => {
+  create: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
+      const access = await resolveAccessContext(req.user);
+      if (!access.isHeadofficeAdmin) {
+        throw createHttpError(403, 'Only Head Office Admin can create asset definitions');
+      }
       const payload = buildPayload(req.body);
       if (payload.currency === undefined) payload.currency = 'PKR';
       if (payload.quantity === undefined) payload.quantity = 1;
@@ -79,8 +138,12 @@ export const assetController = {
       next(error);
     }
   },
-  update: async (req: Request, res: Response, next: NextFunction) => {
+  update: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
+      const access = await resolveAccessContext(req.user);
+      if (!access.isHeadofficeAdmin) {
+        throw createHttpError(403, 'Only Head Office Admin can update asset definitions');
+      }
       const payload = buildPayload(req.body);
       const asset = await AssetModel.findByIdAndUpdate(req.params.id, payload, { new: true });
       if (!asset) return res.status(404).json({ message: 'Not found' });
@@ -89,11 +152,20 @@ export const assetController = {
       next(error);
     }
   },
-  remove: async (req: Request, res: Response, next: NextFunction) => {
+  remove: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
-      const asset = await AssetModel.findByIdAndDelete(req.params.id);
+      const access = await resolveAccessContext(req.user);
+      if (!access.isHeadofficeAdmin) {
+        throw createHttpError(403, 'Only Head Office Admin can retire assets');
+      }
+      const asset = await AssetModel.findById(req.params.id);
       if (!asset) return res.status(404).json({ message: 'Not found' });
-      await AssetItemModel.deleteMany({ asset_id: req.params.id });
+      asset.is_active = false;
+      await asset.save();
+      await AssetItemModel.updateMany(
+        { asset_id: req.params.id },
+        { is_active: false, item_status: 'Retired', assignment_status: 'Unassigned' }
+      );
       return res.status(204).send();
     } catch (error) {
       next(error);

@@ -15,6 +15,7 @@ import consumableRoutes from './consumable.routes';
 import consumableAssignmentRoutes from './consumableAssignment.routes';
 import consumableConsumptionRoutes from './consumableConsumption.routes';
 import consumableInventoryRoutes from '../modules/consumables/routes';
+import recordRoutes from '../modules/records/routes';
 import authRoutes from './auth.routes';
 import userRoutes from './user.routes';
 import activityRoutes from './activity.routes';
@@ -45,5 +46,6 @@ router.use('/consumables', consumableInventoryRoutes);
 router.use('/consumables', consumableRoutes);
 router.use('/consumable-assignments', consumableAssignmentRoutes);
 router.use('/consumable-consumptions', consumableConsumptionRoutes);
+router.use('/', recordRoutes);
 
 export default router;

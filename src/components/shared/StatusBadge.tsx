@@ -31,6 +31,12 @@ const statusStyles: Record<string, string> = {
   Pending: "bg-warning/10 text-warning",
   Approved: "bg-info/10 text-info",
   Received: "bg-success/10 text-success",
+
+  // Transfer Status
+  REQUESTED: "bg-warning/10 text-warning",
+  APPROVED: "bg-info/10 text-info",
+  DISPATCHED: "bg-warning/10 text-warning",
+  RECEIVED: "bg-success/10 text-success",
 };
 
 export function StatusBadge({ status, className }: StatusBadgeProps) {

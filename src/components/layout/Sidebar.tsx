@@ -48,7 +48,6 @@ interface NavItem {
 
 const fullAccessRoles: AppRole[] = ["super_admin", "admin", "user", "viewer"];
 const adminAccessRoles: AppRole[] = ["super_admin", "admin"];
-const locationAdminAccessRoles: AppRole[] = ["super_admin", "admin", "location_admin"];
 const assignmentAccessRoles: AppRole[] = [...fullAccessRoles, "employee", "directorate_head"];
 const consumableAccessRoles: AppRole[] = [
   ...fullAccessRoles,
@@ -98,22 +97,10 @@ const movableAssetsNavItems: NavItem[] = [
   { label: "Assets", href: "/assets", icon: Package, allowedRoles: fullAccessRoles },
   { label: "Asset Items", href: "/asset-items", icon: PackageOpen, allowedRoles: fullAccessRoles },
   { label: "Assignments", href: "/assignments", icon: ClipboardList, allowedRoles: assignmentAccessRoles },
+  { label: "Transfers", href: "/transfers", icon: ArrowRightLeft, allowedRoles: fullAccessRoles },
   { label: "Maintenance", href: "/maintenance", icon: Wrench, allowedRoles: fullAccessRoles },
 ];
 
-const assetManagementRootItem: NavItem = { label: "Asset Management", href: "/asset-management/transferred-assets", icon: Package, allowedRoles: locationAdminAccessRoles };
-const assetManagementNavItems: NavItem[] = [
-  { label: "Transferred Assets", href: "/asset-management/transferred-assets", icon: PackageOpen, allowedRoles: locationAdminAccessRoles },
-  { label: "Consumable Transfers", href: "/asset-management/consumable-transfers", icon: ClipboardList, allowedRoles: locationAdminAccessRoles },
-  { label: "Functional Status", href: "/asset-management/functional-status", icon: Wrench, allowedRoles: locationAdminAccessRoles },
-  { label: "Consumption Log", href: "/asset-management/consumption-log", icon: FileText, allowedRoles: locationAdminAccessRoles },
-];
-
-const transferNavItems: NavItem[] = [
-  { label: "Transfers", href: "/transfers", icon: ArrowRightLeft, allowedRoles: fullAccessRoles },
-  { label: "Batch Transfer", href: "/transfers/batch", icon: ArrowRightLeft, allowedRoles: locationAdminAccessRoles },
-  { label: "Returns", href: "/transfers/returns", icon: ArrowRightLeft, allowedRoles: locationAdminAccessRoles },
-];
 
 const consumablesRootItem: NavItem = { label: "Consumables", href: "/consumables", icon: Layers, allowedRoles: consumableAccessRoles };
 const consumableNavItems: NavItem[] = [
@@ -146,10 +133,14 @@ interface SidebarProps {
 export function Sidebar({ className }: SidebarProps) {
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
-  const [movableOpen, setMovableOpen] = useState(location.pathname.startsWith("/assets") || location.pathname.startsWith("/asset-items") || location.pathname.startsWith("/assignments") || location.pathname.startsWith("/maintenance"));
+  const [movableOpen, setMovableOpen] = useState(
+    location.pathname.startsWith("/assets") ||
+      location.pathname.startsWith("/asset-items") ||
+      location.pathname.startsWith("/assignments") ||
+      location.pathname.startsWith("/transfers") ||
+      location.pathname.startsWith("/maintenance")
+  );
   const [consumablesOpen, setConsumablesOpen] = useState(location.pathname.startsWith("/consumables"));
-  const [assetManagementOpen, setAssetManagementOpen] = useState(location.pathname.startsWith("/asset-management"));
-  const [transfersOpen, setTransfersOpen] = useState(location.pathname.startsWith("/transfers"));
   const [reportsOpen, setReportsOpen] = useState(location.pathname.startsWith("/reports"));
   const [authOpen, setAuthOpen] = useState(location.pathname.startsWith("/user-management") || location.pathname.startsWith("/user-activity") || location.pathname.startsWith("/user-permissions"));
   const [managementOpen, setManagementOpen] = useState(
@@ -212,6 +203,7 @@ export function Sidebar({ className }: SidebarProps) {
       location.pathname.startsWith("/assets") ||
       location.pathname.startsWith("/asset-items") ||
       location.pathname.startsWith("/assignments") ||
+      location.pathname.startsWith("/transfers") ||
       location.pathname.startsWith("/maintenance")
     ) {
       setMovableOpen(true);
@@ -220,12 +212,6 @@ export function Sidebar({ className }: SidebarProps) {
       location.pathname.startsWith("/consumables")
     ) {
       setConsumablesOpen(true);
-    }
-    if (location.pathname.startsWith("/asset-management")) {
-      setAssetManagementOpen(true);
-    }
-    if (location.pathname.startsWith("/transfers")) {
-      setTransfersOpen(true);
     }
   }, [location.pathname]);
 
@@ -343,7 +329,7 @@ export function Sidebar({ className }: SidebarProps) {
 
         {/* Navigation */}
         <nav
-          ref={navRef as any}
+          ref={navRef}
           onScroll={(e) => {
             sessionStorage.setItem(SIDEBAR_SCROLL_KEY, String((e.currentTarget as HTMLElement).scrollTop));
           }}
@@ -352,81 +338,24 @@ export function Sidebar({ className }: SidebarProps) {
           {/* Main */}
           {(() => {
             const items = filterItems(mainNavItems);
-            const transferItems = filterItems(transferNavItems);
             const movableItems = filterItems(movableAssetsNavItems);
             const consumableItems = filterItems(consumableNavItems);
-            const assetManagementItems = filterItems(assetManagementNavItems);
-            const showTransfers = transferItems.length > 0;
             const showMovable = movableItems.length > 0;
             const showConsumables = consumableItems.length > 0;
-            const showAssetManagement = assetManagementItems.length > 0;
-            const isTransfersActive = location.pathname.startsWith("/transfers");
             const isMovableActive =
               location.pathname.startsWith("/assets") ||
               location.pathname.startsWith("/asset-items") ||
               location.pathname.startsWith("/assignments") ||
+              location.pathname.startsWith("/transfers") ||
               location.pathname.startsWith("/maintenance");
             const isConsumablesActive =
       location.pathname.startsWith("/consumables");
-            const isAssetManagementActive = location.pathname.startsWith("/asset-management");
-            if (items.length === 0 && !showTransfers && !showMovable && !showConsumables && !showAssetManagement) return null;
+            if (items.length === 0 && !showMovable && !showConsumables) return null;
             const dashboardItem = items.find((item) => item.href === "/");
             const remainingItems = items.filter((item) => item.href !== "/");
             return (
               <div className="space-y-1">
                 {dashboardItem && <NavLink item={dashboardItem} />}
-                {showTransfers && !collapsed && (
-                  <Collapsible open={transfersOpen} onOpenChange={setTransfersOpen}>
-                    <CollapsibleTrigger asChild>
-                      <Button
-                        variant={isTransfersActive ? "secondary" : "ghost"}
-                        size="sm"
-                        className="w-full justify-start"
-                      >
-                        <ArrowRightLeft className="mr-2 h-4 w-4 shrink-0" />
-                        <span className="truncate">Transfers</span>
-                        <ChevronDown
-                          className={cn(
-                            "ml-auto h-4 w-4 transition-transform",
-                            transfersOpen && "rotate-180"
-                          )}
-                        />
-                      </Button>
-                    </CollapsibleTrigger>
-                    <CollapsibleContent className="mt-1 space-y-1">
-                      {transferItems.map((item) => (
-                        <NavLink key={item.href} item={item} className="pl-6" />
-                      ))}
-                    </CollapsibleContent>
-                  </Collapsible>
-                )}
-                {showTransfers && collapsed && transferItems[0] && <NavLink item={transferItems[0]} />}
-                {showAssetManagement && !collapsed && (
-                  <Collapsible open={assetManagementOpen} onOpenChange={setAssetManagementOpen}>
-                    <CollapsibleTrigger asChild>
-                      <Button
-                        variant={isAssetManagementActive ? "secondary" : "ghost"}
-                        size="sm"
-                        className="w-full justify-start"
-                      >
-                        <Package className="mr-2 h-4 w-4 shrink-0" />
-                        <span className="truncate">Asset Management</span>
-                        <ChevronDown
-                          className={cn(
-                            "ml-auto h-4 w-4 transition-transform",
-                            assetManagementOpen && "rotate-180"
-                          )}
-                        />
-                      </Button>
-                    </CollapsibleTrigger>
-                    <CollapsibleContent className="mt-1 space-y-1">
-                      {assetManagementItems.map((item) => (
-                        <NavLink key={item.href} item={item} className="pl-6" />
-                      ))}
-                    </CollapsibleContent>
-                  </Collapsible>
-                )}
-                {showAssetManagement && collapsed && <NavLink item={assetManagementRootItem} />}
                 {showMovable && !collapsed && (
                   <Collapsible open={movableOpen} onOpenChange={setMovableOpen}>
                     <CollapsibleTrigger asChild>

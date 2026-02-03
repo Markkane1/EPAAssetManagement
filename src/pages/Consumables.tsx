@@ -50,11 +50,11 @@ export default function Consumables() {
     item: null,
   });
 
-  const consumableList = consumables || [];
-  const categoryList = categories || [];
-  const employeeList = employees || [];
-  const locationList = locations || [];
-  const assignmentList = assignments || [];
+  const consumableList = useMemo(() => consumables || [], [consumables]);
+  const categoryList = useMemo(() => categories || [], [categories]);
+  const employeeList = useMemo(() => employees || [], [employees]);
+  const locationList = useMemo(() => locations || [], [locations]);
+  const assignmentList = useMemo(() => assignments || [], [assignments]);
 
   const enrichedConsumables = consumableList.map((item) => {
     const categoryName = categoryList.find((cat) => cat.id === item.category_id)?.name || "N/A";
@@ -217,7 +217,7 @@ export default function Consumables() {
 
       <DataTable
         columns={columns}
-        data={enrichedConsumables as any}
+        data={enrichedConsumables}
         searchPlaceholder="Search consumables..."
         actions={actions}
       />

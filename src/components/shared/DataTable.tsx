@@ -24,7 +24,7 @@ interface Column<T> {
   key: string;
   label: string;
   sortable?: boolean;
-  render?: (value: any, row: T) => React.ReactNode;
+  render?: (value: unknown, row: T) => React.ReactNode;
 }
 
 interface DataTableProps<T> {
@@ -65,8 +65,13 @@ export function DataTable<T extends { id: string }>({
   const totalPages = Math.ceil(filteredData.length / pageSize);
   const paginatedData = filteredData.slice((page - 1) * pageSize, page * pageSize);
 
-  const getValue = (row: T, key: string): any => {
-    return key.split(".").reduce((obj: any, k) => obj?.[k], row);
+  const getValue = (row: T, key: string): unknown => {
+    return key.split(".").reduce<unknown>((obj, k) => {
+      if (obj && typeof obj === "object" && k in obj) {
+        return (obj as Record<string, unknown>)[k];
+      }
+      return undefined;
+    }, row);
   };
 
   return (

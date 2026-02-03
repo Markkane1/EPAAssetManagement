@@ -1,70 +1,130 @@
 import { useMemo, useState } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import * as z from "zod";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTable } from "@/components/shared/DataTable";
-import { ExportButton } from "@/components/shared/ExportButton";
+import { StatusBadge } from "@/components/shared/StatusBadge";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { MoreHorizontal, Eye, ArrowRightLeft, MapPin, Loader2 } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { TransferHistory } from "@/types";
-import { useTransfers, useCreateTransfer } from "@/hooks/useTransfers";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Loader2 } from "lucide-react";
+import { useTransfers, useCreateTransfer, useUpdateTransferStatus } from "@/hooks/useTransfers";
 import { useAssetItems } from "@/hooks/useAssetItems";
 import { useAssets } from "@/hooks/useAssets";
 import { useLocations } from "@/hooks/useLocations";
-import { TransferFormModal } from "@/components/forms/TransferFormModal";
-import { exportToCSV, exportToJSON, filterRowsBySearch, formatDateForExport, pickExportFields } from "@/lib/exportUtils";
-import { usePageSearch } from "@/contexts/PageSearchContext";
 import { useAuth } from "@/contexts/AuthContext";
+import type { AssetItem, Transfer, TransferStatus } from "@/types";
+
+const transferSchema = z.object({
+  assetItemId: z.string().min(1, "Asset item is required"),
+  toOfficeId: z.string().min(1, "Destination is required"),
+  transferDate: z.string().min(1, "Transfer date is required"),
+  notes: z.string().optional(),
+});
+
+type TransferFormData = z.infer<typeof transferSchema>;
+
+type TransferRow = Transfer & {
+  assetName: string;
+  assetTag: string;
+  assetSerial: string;
+  fromOfficeName: string;
+  toOfficeName: string;
+};
+
+const nextStatusMap: Record<TransferStatus, TransferStatus | null> = {
+  REQUESTED: "APPROVED",
+  APPROVED: "DISPATCHED",
+  DISPATCHED: "RECEIVED",
+  RECEIVED: null,
+};
+
+const statusActionLabels: Record<TransferStatus, string> = {
+  REQUESTED: "Approve",
+  APPROVED: "Dispatch",
+  DISPATCHED: "Receive",
+  RECEIVED: "Completed",
+};
 
 export default function Transfers() {
-  const { data: transfers, isLoading, error } = useTransfers();
-  const { data: assetItems } = useAssetItems();
-  const { data: assets } = useAssets();
-  const { data: locations } = useLocations();
-  const { role, locationId } = useAuth();
+  const { role, isSuperAdmin, locationId } = useAuth();
+  const { data: transfers = [], isLoading, error } = useTransfers();
+  const { data: assetItems = [] } = useAssetItems();
+  const { data: assets = [] } = useAssets();
+  const { data: locations = [] } = useLocations();
   const createTransfer = useCreateTransfer();
-  const pageSearch = usePageSearch();
+  const updateStatus = useUpdateTransferStatus();
 
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
 
-  const transferList = useMemo(() => {
-    const list = transfers || [];
-    if (role === "location_admin") {
-      if (!locationId) return [];
-      return list.filter((transfer) =>
-        transfer.from_location_id === locationId || transfer.to_location_id === locationId
-      );
-    }
-    return list;
-  }, [transfers, role, locationId]);
-  const assetItemList = assetItems || [];
-  const assetList = assets || [];
-  const locationList = locations || [];
+  const today = new Date().toISOString().slice(0, 10);
 
-  const enrichedTransfers = transferList.map((transfer) => {
-    const item = assetItemList.find((i) => i.id === transfer.asset_item_id);
-    const asset = item ? assetList.find((a) => a.id === item.asset_id) : null;
-    const fromLocation = locationList.find((l) => l.id === transfer.from_location_id);
-    const toLocation = locationList.find((l) => l.id === transfer.to_location_id);
-    
+  const form = useForm<TransferFormData>({
+    resolver: zodResolver(transferSchema),
+    defaultValues: {
+      assetItemId: "",
+      toOfficeId: "",
+      transferDate: today,
+      notes: "",
+    },
+  });
+
+  const locationById = useMemo(
+    () => new Map(locations.map((location) => [location.id, location])),
+    [locations]
+  );
+
+  const assetById = useMemo(
+    () => new Map(assets.map((asset) => [asset.id, asset])),
+    [assets]
+  );
+
+  const assetItemById = useMemo(
+    () => new Map(assetItems.map((item) => [item.id, item])),
+    [assetItems]
+  );
+
+  const currentOffice = locationId ? locationById.get(locationId) : undefined;
+  const isHeadoffice = Boolean(currentOffice?.is_headoffice);
+  const canManage = isSuperAdmin || role === "location_admin" || (role === "admin" && isHeadoffice);
+
+  const selectedAssetItemId = form.watch("assetItemId");
+  const selectedAssetItem = assetItems.find((item) => item.id === selectedAssetItemId);
+  const fromOfficeId = selectedAssetItem?.location_id || "";
+  const fromOfficeName = fromOfficeId ? locationById.get(fromOfficeId)?.name || "N/A" : "N/A";
+
+  const transferableItems = assetItems.filter(
+    (item) => item.assignment_status !== "Assigned" && Boolean(item.location_id)
+  );
+  const destinationOptions = locations.filter((loc) => loc.id !== fromOfficeId);
+
+  const tableRows: TransferRow[] = transfers.map((transfer) => {
+    const item = assetItemById.get(transfer.asset_item_id);
+    const asset = item ? assetById.get(item.asset_id) : undefined;
     return {
       ...transfer,
       assetName: asset?.name || "N/A",
-      itemTag: item?.tag || "N/A",
-      fromLocationName: fromLocation?.name || "N/A",
-      toLocationName: toLocation?.name || "N/A",
+      assetTag: item?.tag || "N/A",
+      assetSerial: item?.serial_number || "",
+      fromOfficeName: locationById.get(transfer.from_office_id)?.name || "N/A",
+      toOfficeName: locationById.get(transfer.to_office_id)?.name || "N/A",
     };
   });
 
   const columns = [
     {
-      key: "itemTag",
-      label: "Asset Tag",
+      key: "assetTag",
+      label: "Tag",
       render: (value: string) => (
         <span className="font-mono font-medium text-primary">{value}</span>
       ),
@@ -72,102 +132,94 @@ export default function Transfers() {
     {
       key: "assetName",
       label: "Asset",
-      render: (value: string) => (
-        <span className="font-medium">{value}</span>
-      ),
-    },
-    {
-      key: "fromLocationName",
-      label: "From",
-      render: (value: string) => (
-        <div className="flex items-center gap-2">
-          <MapPin className="h-4 w-4 text-muted-foreground" />
-          <span>{value}</span>
+      render: (value: string, row: TransferRow) => (
+        <div>
+          <p className="font-medium">{value}</p>
+          <p className="text-xs text-muted-foreground">{row.assetSerial || "-"}</p>
         </div>
       ),
     },
-    {
-      key: "toLocationName",
-      label: "To",
-      render: (value: string) => (
-        <div className="flex items-center gap-2">
-          <ArrowRightLeft className="h-4 w-4 text-primary" />
-          <span className="font-medium">{value}</span>
-        </div>
-      ),
-    },
+    { key: "fromOfficeName", label: "From" },
+    { key: "toOfficeName", label: "To" },
     {
       key: "transfer_date",
-      label: "Transfer Date",
-      render: (value: string) => new Date(value).toLocaleDateString(),
+      label: "Date",
+      render: (value: string) => (value ? new Date(value).toLocaleDateString() : "N/A"),
     },
     {
-      key: "performed_by",
-      label: "Performed By",
-      render: (value: string) => (
-        <span className="text-muted-foreground">{value}</span>
-      ),
+      key: "status",
+      label: "Status",
+      render: (value: string) => <StatusBadge status={value || ""} />,
     },
     {
-      key: "reason",
-      label: "Reason",
+      key: "notes",
+      label: "Notes",
       render: (value: string) => (
-        <span className="text-sm text-muted-foreground truncate max-w-[200px] block">
-          {value}
-        </span>
+        <span className="text-sm text-muted-foreground">{value || "-"}</span>
       ),
     },
   ];
 
-  const filteredTransfers = useMemo(
-    () => filterRowsBySearch(enrichedTransfers as any, pageSearch?.term || ""),
-    [enrichedTransfers, pageSearch?.term],
-  );
+  const handleSubmit = async (data: TransferFormData) => {
+    if (!selectedAssetItem?.location_id) {
+      form.setError("assetItemId", { message: "Selected asset item has no location" });
+      return;
+    }
 
-  const handleNewTransfer = () => {
-    setIsModalOpen(true);
+    if (data.toOfficeId === selectedAssetItem.location_id) {
+      form.setError("toOfficeId", { message: "Destination must be different from source" });
+      return;
+    }
+
+    await createTransfer.mutateAsync({
+      assetItemId: data.assetItemId,
+      fromOfficeId: selectedAssetItem.location_id,
+      toOfficeId: data.toOfficeId,
+      transferDate: data.transferDate,
+      notes: data.notes || undefined,
+    });
+
+    form.reset({
+      assetItemId: "",
+      toOfficeId: "",
+      transferDate: today,
+      notes: "",
+    });
   };
 
-  const handleSubmit = async (data: {
-    assetItemIds: string[];
-    fromLocationId: string;
-    toLocationId: string;
-    transferDate: string;
-    reason: string;
-    performedBy: string;
-  }) => {
-    await Promise.all(
-      data.assetItemIds.map((assetItemId) =>
-        createTransfer.mutateAsync({
-          assetItemId,
-          fromLocationId: data.fromLocationId,
-          toLocationId: data.toLocationId,
-          transferDate: data.transferDate,
-          reason: data.reason,
-          performedBy: data.performedBy,
-        })
-      )
+  const handleAdvanceStatus = async (row: TransferRow) => {
+    const nextStatus = nextStatusMap[row.status];
+    if (!nextStatus) return;
+    setUpdatingId(row.id);
+    try {
+      await updateStatus.mutateAsync({ id: row.id, data: { status: nextStatus } });
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  const actions = (row: TransferRow) => {
+    const nextStatus = nextStatusMap[row.status];
+    if (!canManage || !nextStatus) return null;
+
+    return (
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => handleAdvanceStatus(row)}
+        disabled={updateStatus.isPending && updatingId === row.id}
+      >
+        {updateStatus.isPending && updatingId === row.id && (
+          <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" />
+        )}
+        {statusActionLabels[row.status] || "Update"}
+      </Button>
     );
   };
 
-  const actions = (row: any) => (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="h-8 w-8">
-          <MoreHorizontal className="h-4 w-4" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem>
-          <Eye className="h-4 w-4 mr-2" /> View Details
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-
   if (isLoading) {
     return (
-      <MainLayout title="Transfers" description="Track asset location changes">
+      <MainLayout title="Transfers" description="Move assets between offices">
         <div className="flex items-center justify-center h-64">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
@@ -179,59 +231,111 @@ export default function Transfers() {
     console.warn("API unavailable:", error);
   }
 
-  const handleExportCSV = () => {
-    exportToCSV(filteredTransfers as any, [
-      { key: "itemTag", header: "Asset Tag" },
-      { key: "assetName", header: "Asset Name" },
-      { key: "fromLocationName", header: "From Location" },
-      { key: "toLocationName", header: "To Location" },
-      { key: "transfer_date", header: "Transfer Date", formatter: (v) => formatDateForExport(v as Date) },
-      { key: "performed_by", header: "Performed By" },
-      { key: "reason", header: "Reason" },
-    ], "transfers");
-  };
-
-  const handleExportJSON = () => {
-    exportToJSON(
-      pickExportFields(filteredTransfers as any, [
-        "itemTag",
-        "assetName",
-        "fromLocationName",
-        "toLocationName",
-        "transfer_date",
-        "performed_by",
-        "reason",
-      ]),
-      "transfers",
-    );
-  };
-
   return (
-    <MainLayout title="Transfers" description="Track asset location changes">
+    <MainLayout title="Transfers" description="Move assets between offices">
       <PageHeader
-        title="Asset Transfers"
-        description="Track and manage asset movements between locations"
-        action={{
-          label: "New Transfer",
-          onClick: handleNewTransfer,
-        }}
-        extra={<ExportButton onExportCSV={handleExportCSV} onExportJSON={handleExportJSON} />}
+        title="Transfers"
+        description="Request and track asset movements across offices"
       />
+
+      {canManage ? (
+        <Card className="mb-6">
+          <CardContent className="pt-6">
+            <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Asset Item *</Label>
+                  <Select
+                    value={form.watch("assetItemId")}
+                    onValueChange={(value) => form.setValue("assetItemId", value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select asset item" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {transferableItems.map((item: AssetItem) => {
+                        const assetName = assetById.get(item.asset_id)?.name || "Unknown Asset";
+                        const tagLabel = item.tag || item.serial_number || "Unlabeled";
+                        return (
+                          <SelectItem key={item.id} value={item.id}>
+                            {tagLabel} - {assetName}
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
+                  {form.formState.errors.assetItemId && (
+                    <p className="text-sm text-destructive">{form.formState.errors.assetItemId.message}</p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label>From Office</Label>
+                  <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm">
+                    {fromOfficeName}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>To Office *</Label>
+                  <Select
+                    value={form.watch("toOfficeId")}
+                    onValueChange={(value) => form.setValue("toOfficeId", value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select destination" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {destinationOptions.map((location) => (
+                        <SelectItem key={location.id} value={location.id}>
+                          {location.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {form.formState.errors.toOfficeId && (
+                    <p className="text-sm text-destructive">{form.formState.errors.toOfficeId.message}</p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="transferDate">Transfer Date *</Label>
+                  <Input id="transferDate" type="date" {...form.register("transferDate")} />
+                  {form.formState.errors.transferDate && (
+                    <p className="text-sm text-destructive">{form.formState.errors.transferDate.message}</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="notes">Notes</Label>
+                <Input id="notes" {...form.register("notes")} />
+              </div>
+
+              <div className="flex justify-end">
+                <Button type="submit" disabled={createTransfer.isPending}>
+                  {createTransfer.isPending && (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  )}
+                  Request Transfer
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card className="mb-6">
+          <CardContent className="py-4 text-sm text-muted-foreground">
+            You have read-only access to transfer records.
+          </CardContent>
+        </Card>
+      )}
 
       <DataTable
         columns={columns}
-        data={enrichedTransfers}
+        data={tableRows}
         searchPlaceholder="Search transfers..."
-        actions={actions}
-      />
-
-      <TransferFormModal
-        open={isModalOpen}
-        onOpenChange={setIsModalOpen}
-        assetItems={assetItemList as any}
-        locations={locationList as any}
-        assets={assetList as any}
-        onSubmit={handleSubmit}
+        actions={canManage ? actions : undefined}
       />
     </MainLayout>
   );

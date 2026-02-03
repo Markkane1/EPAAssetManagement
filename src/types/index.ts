@@ -91,6 +91,7 @@ export interface Office {
   type?: "CENTRAL" | "LAB" | "SUBSTORE";
   parent_location_id?: string | null;
   lab_code?: string | null;
+  is_headoffice?: boolean | null;
   is_active?: boolean | null;
   created_at: string;
   updated_at: string;
@@ -259,18 +260,20 @@ export interface MaintenanceRecord {
   asset_items?: AssetItem | null;
 }
 
-export interface TransferHistory {
+export type TransferStatus = "REQUESTED" | "APPROVED" | "DISPATCHED" | "RECEIVED";
+
+export interface Transfer {
   id: string;
   asset_item_id: string;
-  from_location_id: string | null;
-  to_location_id: string;
+  from_office_id: string;
+  to_office_id: string;
   transfer_date: string;
-  reason: string | null;
-  performed_by: string | null;
+  handled_by: string | null;
+  status: TransferStatus;
+  notes: string | null;
+  is_active: boolean | null;
   created_at: string;
-  asset_items?: AssetItem | null;
-  from_location?: Location | null;
-  to_location?: Location | null;
+  updated_at: string;
 }
 
 export type ConsumableAssigneeType = "employee" | "location";
@@ -490,7 +493,7 @@ export interface TableColumn<T> {
   key: keyof T | string;
   label: string;
   sortable?: boolean;
-  render?: (value: any, row: T) => React.ReactNode;
+  render?: (value: unknown, row: T) => React.ReactNode;
 }
 
 export interface FilterOption {

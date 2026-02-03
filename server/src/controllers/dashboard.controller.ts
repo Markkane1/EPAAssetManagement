@@ -4,7 +4,6 @@ import { AssetItemModel } from '../models/assetItem.model';
 import { AssignmentModel } from '../models/assignment.model';
 import { PurchaseOrderModel } from '../models/purchaseOrder.model';
 import { CategoryModel } from '../models/category.model';
-import { TransferHistoryModel } from '../models/transferHistory.model';
 import { EmployeeModel } from '../models/employee.model';
 import { ConsumableModel } from '../models/consumable.model';
 import { MaintenanceRecordModel } from '../models/maintenanceRecord.model';
@@ -112,7 +111,6 @@ export const dashboardController = {
       const activities: Array<{ id: string; type: string; description: string; timestamp: string; user?: string }> = [];
 
       const assignments = await AssignmentModel.find().sort({ created_at: -1 }).limit(limit);
-      const transfers = await TransferHistoryModel.find().sort({ created_at: -1 }).limit(limit);
       const maintenanceRecords = await MaintenanceRecordModel.find().sort({ created_at: -1 }).limit(limit);
       const newAssets = await AssetModel.find().sort({ created_at: -1 }).limit(limit);
 
@@ -130,15 +128,6 @@ export const dashboardController = {
             : 'Asset assigned',
           timestamp: assignment.assigned_date,
           user: employee ? `${employee.first_name} ${employee.last_name}` : undefined,
-        });
-      });
-
-      transfers.forEach((transfer) => {
-        activities.push({
-          id: transfer.id,
-          type: 'transfer',
-          description: 'Asset transferred',
-          timestamp: transfer.transfer_date,
         });
       });
 
@@ -268,7 +257,6 @@ export const dashboardController = {
     const activities: Array<{ id: string; type: string; description: string; timestamp: string; user?: string }> = [];
 
     const assignments = await AssignmentModel.find().sort({ created_at: -1 }).limit(limit);
-    const transfers = await TransferHistoryModel.find().sort({ created_at: -1 }).limit(limit);
     const maintenanceRecords = await MaintenanceRecordModel.find().sort({ created_at: -1 }).limit(limit);
     const newAssets = await AssetModel.find().sort({ created_at: -1 }).limit(limit);
 
@@ -286,15 +274,6 @@ export const dashboardController = {
           : 'Asset assigned',
         timestamp: assignment.assigned_date,
         user: employee ? `${employee.first_name} ${employee.last_name}` : undefined,
-      });
-    });
-
-    transfers.forEach((transfer) => {
-      activities.push({
-        id: transfer.id,
-        type: 'transfer',
-        description: 'Asset transferred',
-        timestamp: transfer.transfer_date,
       });
     });
 

@@ -1,16 +1,17 @@
 import { Router } from 'express';
 import { assignmentController } from '../controllers/assignment.controller';
+import { requireAuth } from '../middleware/auth';
 
 const router = Router();
 
-router.get('/', assignmentController.list);
-router.get('/employee/:employeeId', assignmentController.getByEmployee);
-router.get('/asset-item/:assetItemId', assignmentController.getByAssetItem);
-router.get('/:id', assignmentController.getById);
-router.post('/', assignmentController.create);
-router.put('/:id', assignmentController.update);
-router.put('/:id/return', assignmentController.returnAsset);
-router.put('/:id/reassign', assignmentController.reassign);
-router.delete('/:id', assignmentController.remove);
+router.get('/', requireAuth, assignmentController.list);
+router.get('/employee/:employeeId', requireAuth, assignmentController.getByEmployee);
+router.get('/asset-item/:assetItemId', requireAuth, assignmentController.getByAssetItem);
+router.get('/:id', requireAuth, assignmentController.getById);
+router.post('/', requireAuth, assignmentController.create);
+router.put('/:id', requireAuth, assignmentController.update);
+router.put('/:id/return', requireAuth, assignmentController.returnAsset);
+router.put('/:id/reassign', requireAuth, assignmentController.reassign);
+router.delete('/:id', requireAuth, assignmentController.remove);
 
 export default router;

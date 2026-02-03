@@ -24,10 +24,10 @@ export default function ConsumableAssignments() {
   const { data: locations } = useLocations();
   const deleteAssignment = useDeleteConsumableAssignment();
 
-  const assignmentList = assignments || [];
-  const consumableList = consumables || [];
-  const employeeList = employees || [];
-  const locationList = locations || [];
+  const assignmentList = useMemo(() => assignments || [], [assignments]);
+  const consumableList = useMemo(() => consumables || [], [consumables]);
+  const employeeList = useMemo(() => employees || [], [employees]);
+  const locationList = useMemo(() => locations || [], [locations]);
 
   const currentEmployee = user
     ? employeeList.find((employee) => employee.email?.toLowerCase() === user.email.toLowerCase())
@@ -161,7 +161,7 @@ export default function ConsumableAssignments() {
       />
       <DataTable
         columns={columns}
-        data={enrichedAssignments as any}
+        data={enrichedAssignments}
         searchPlaceholder="Search assignments..."
         actions={canModify ? actions : undefined}
       />

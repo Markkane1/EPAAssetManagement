@@ -4,7 +4,7 @@ import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTable } from "@/components/shared/DataTable";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { Button } from "@/components/ui/button";
-import { MoreHorizontal, Eye, Pencil, UserPlus, ArrowRightLeft, Loader2, History, QrCode } from "lucide-react";
+import { MoreHorizontal, Eye, Pencil, UserPlus, Loader2, History, QrCode } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,8 +24,6 @@ import { AssetItemFormModal } from "@/components/forms/AssetItemFormModal";
 import { AssetItemEditModal } from "@/components/forms/AssetItemEditModal";
 import { AssignmentHistoryModal } from "@/components/shared/AssignmentHistoryModal";
 import { QRCodeModal } from "@/components/shared/QRCodeModal";
-import { TransferFormModal } from "@/components/forms/TransferFormModal";
-import { useCreateTransfer } from "@/hooks/useTransfers";
 import { AssignmentFormModal } from "@/components/forms/AssignmentFormModal";
 import {
   Dialog,
@@ -45,7 +43,6 @@ export default function AssetItems() {
   const { data: schemes } = useSchemes();
   const createAssetItem = useCreateAssetItem();
   const updateAssetItem = useUpdateAssetItem();
-  const createTransfer = useCreateTransfer();
   const createAssignment = useCreateAssignment();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -54,10 +51,6 @@ export default function AssetItems() {
     item: null,
   });
   const [detailModal, setDetailModal] = useState<{ open: boolean; item: any | null }>({
-    open: false,
-    item: null,
-  });
-  const [transferModal, setTransferModal] = useState<{ open: boolean; item: AssetItem | null }>({
     open: false,
     item: null,
   });
@@ -161,28 +154,6 @@ export default function AssetItems() {
     setEditModal({ open: false, item: null });
   };
 
-  const handleTransferSubmit = async (data: {
-    assetItemIds: string[];
-    fromLocationId: string;
-    toLocationId: string;
-    transferDate: string;
-    reason: string;
-    performedBy: string;
-  }) => {
-    await Promise.all(
-      data.assetItemIds.map((assetItemId) =>
-        createTransfer.mutateAsync({
-          assetItemId,
-          fromLocationId: data.fromLocationId,
-          toLocationId: data.toLocationId,
-          transferDate: data.transferDate,
-          reason: data.reason,
-          performedBy: data.performedBy,
-        })
-      )
-    );
-  };
-
   const handleAssignmentSubmit = async (data: any) => {
     await createAssignment.mutateAsync(data);
   };
@@ -202,7 +173,6 @@ export default function AssetItems() {
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={() => setAssignmentModal({ open: true, item: row })}><UserPlus className="h-4 w-4 mr-2" /> Assign to Employee</DropdownMenuItem>
-        <DropdownMenuItem onClick={() => setTransferModal({ open: true, item: row })}><ArrowRightLeft className="h-4 w-4 mr-2" /> Transfer Location</DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -294,16 +264,6 @@ export default function AssetItems() {
           </DialogContent>
         </Dialog>
       )}
-
-      <TransferFormModal
-        open={transferModal.open}
-        onOpenChange={(open) => setTransferModal({ open, item: open ? transferModal.item : null })}
-        assetItems={assetItemList as any}
-        locations={locationList as any}
-        assets={assetList as any}
-        selectedAssetItem={transferModal.item}
-        onSubmit={handleTransferSubmit}
-      />
 
       <AssignmentFormModal
         open={assignmentModal.open}

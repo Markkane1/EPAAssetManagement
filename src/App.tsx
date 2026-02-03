@@ -27,8 +27,6 @@ import EmployeeDetail from "./pages/EmployeeDetail";
 import Assignments from "./pages/Assignments";
 import Maintenance from "./pages/Maintenance";
 import Transfers from "./pages/Transfers";
-import BatchTransfer from "./pages/transfers/BatchTransfer";
-import Returns from "./pages/transfers/Returns";
 import PurchaseOrders from "./pages/PurchaseOrders";
 import Offices from "./pages/Offices";
 import Categories from "./pages/Categories";
@@ -37,10 +35,6 @@ import Projects from "./pages/Projects";
 import Schemes from "./pages/Schemes";
 import Reports from "./pages/Reports";
 import InventoryHub from "./pages/InventoryHub";
-import TransferredAssets from "./pages/asset-management/TransferredAssets";
-import AssetManagementConsumableTransfers from "./pages/asset-management/ConsumableTransfers";
-import FunctionalStatus from "./pages/asset-management/FunctionalStatus";
-import ConsumptionLog from "./pages/asset-management/ConsumptionLog";
 import AssetSummaryReport from "./pages/reports/AssetSummaryReport";
 import AssetItemsInventoryReport from "./pages/reports/AssetItemsInventoryReport";
 import AssignmentSummaryReport from "./pages/reports/AssignmentSummaryReport";
@@ -71,7 +65,6 @@ const consumableAccessRoles: AppRole[] = [
   "auditor",
 ];
 const adminAccessRoles: AppRole[] = ["super_admin", "admin"];
-const assetManagementRoles: AppRole[] = ["super_admin", "admin", "location_admin"];
 
 const App = () => {
   const [queryClient] = useState(() => new QueryClient());
@@ -106,10 +99,8 @@ const App = () => {
             <Route path="/employees" element={<ProtectedRoute allowedRoles={fullAccessRoles}><Employees /></ProtectedRoute>} />
             <Route path="/employees/:id" element={<ProtectedRoute allowedRoles={fullAccessRoles}><EmployeeDetail /></ProtectedRoute>} />
             <Route path="/assignments" element={<ProtectedRoute allowedRoles={assignmentAccessRoles}><Assignments /></ProtectedRoute>} />
-            <Route path="/maintenance" element={<ProtectedRoute allowedRoles={fullAccessRoles}><Maintenance /></ProtectedRoute>} />
             <Route path="/transfers" element={<ProtectedRoute allowedRoles={fullAccessRoles}><Transfers /></ProtectedRoute>} />
-            <Route path="/transfers/batch" element={<ProtectedRoute allowedRoles={assetManagementRoles}><BatchTransfer /></ProtectedRoute>} />
-            <Route path="/transfers/returns" element={<ProtectedRoute allowedRoles={assetManagementRoles}><Returns /></ProtectedRoute>} />
+            <Route path="/maintenance" element={<ProtectedRoute allowedRoles={fullAccessRoles}><Maintenance /></ProtectedRoute>} />
             <Route path="/purchase-orders" element={<ProtectedRoute allowedRoles={fullAccessRoles}><PurchaseOrders /></ProtectedRoute>} />
             <Route path="/offices" element={<ProtectedRoute allowedRoles={adminAccessRoles}><Offices /></ProtectedRoute>} />
             <Route path="/categories" element={<ProtectedRoute allowedRoles={fullAccessRoles}><Categories /></ProtectedRoute>} />
@@ -126,10 +117,6 @@ const App = () => {
             <Route path="/reports/location-inventory" element={<ProtectedRoute allowedRoles={fullAccessRoles}><LocationInventoryReport /></ProtectedRoute>} />
             <Route path="/reports/financial-summary" element={<ProtectedRoute allowedRoles={fullAccessRoles}><FinancialSummaryReport /></ProtectedRoute>} />
             <Route path="/reports/employee-assets" element={<ProtectedRoute allowedRoles={fullAccessRoles}><EmployeeAssetsReport /></ProtectedRoute>} />
-            <Route path="/asset-management/transferred-assets" element={<ProtectedRoute allowedRoles={assetManagementRoles}><TransferredAssets /></ProtectedRoute>} />
-            <Route path="/asset-management/consumable-transfers" element={<ProtectedRoute allowedRoles={assetManagementRoles}><AssetManagementConsumableTransfers /></ProtectedRoute>} />
-            <Route path="/asset-management/functional-status" element={<ProtectedRoute allowedRoles={assetManagementRoles}><FunctionalStatus /></ProtectedRoute>} />
-            <Route path="/asset-management/consumption-log" element={<ProtectedRoute allowedRoles={assetManagementRoles}><ConsumptionLog /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute allowedRoles={fullAccessRoles}><Settings /></ProtectedRoute>} />
             <Route path="/audit-logs" element={<ProtectedRoute allowedRoles={fullAccessRoles}><AuditLogs /></ProtectedRoute>} />
             <Route path="/user-permissions" element={<ProtectedRoute allowedRoles={adminAccessRoles}><UserPermissions /></ProtectedRoute>} />

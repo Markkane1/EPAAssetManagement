@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTable } from "@/components/shared/DataTable";
@@ -38,14 +38,14 @@ export default function AssignmentSummaryReport() {
     [assignments, startDate, endDate]
   );
 
-  const getDirectorateName = (employeeId?: string) => {
+  const getDirectorateName = useCallback((employeeId?: string) => {
     const employee = employees?.find((e) => e.id === employeeId);
     if (!employee) return "N/A";
     const location = locations?.find((l) => l.id === employee.location_id);
     if (!isHeadOfficeLocation(location)) return "N/A";
     const directorate = directorates?.find((d) => d.id === employee.directorate_id);
     return directorate?.name || "N/A";
-  };
+  }, [employees, locations, directorates]);
 
   const reportRows = useMemo(() => {
     const employeeList = employees || [];
@@ -69,11 +69,11 @@ export default function AssignmentSummaryReport() {
         status: assignment.is_active ? "Active" : "Returned",
       };
     });
-  }, [filteredAssignments, employees, assetItems, assets, directorates, locations]);
+  }, [filteredAssignments, employees, assetItems, assets, getDirectorateName]);
 
   const searchTerm = pageSearch?.term || "";
   const filteredRows = useMemo(
-    () => filterRowsBySearch(reportRows as any, searchTerm),
+    () => filterRowsBySearch(reportRows, searchTerm),
     [reportRows, searchTerm]
   );
 

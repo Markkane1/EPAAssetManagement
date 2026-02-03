@@ -12,5 +12,4 @@ assertClose(convertToBaseQty(1, 'kg', 'g'), 1000, 'kg to g');
 assertClose(convertToBaseQty(1, 'L', 'mL'), 1000, 'L to mL');
 assertClose(convertToBaseQty(250, 'mL', 'L'), 0.25, 'mL to L');
 
-// eslint-disable-next-line no-console
 console.log('unitConversion tests passed');

@@ -19,9 +19,11 @@ export const schemeController = {
   getByProject: async (req: Request, res: Response, next: NextFunction) => {
     try {
       const schemes = await schemeRepository.findAll();
-      const filtered = schemes.filter((scheme: any) =>
-        scheme.project_id?.toString() === req.params.projectId
-      );
+      type SchemeLike = { project_id?: { toString(): string } | string | null };
+      const filtered = schemes.filter((scheme) => {
+        const projectId = (scheme as SchemeLike).project_id;
+        return projectId?.toString() === req.params.projectId;
+      });
       res.json(filtered);
     } catch (error) {
       next(error);

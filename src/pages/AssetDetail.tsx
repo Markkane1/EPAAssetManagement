@@ -14,13 +14,14 @@ import { useAssignments } from "@/hooks/useAssignments";
 import { useEmployees } from "@/hooks/useEmployees";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { AssignmentHistoryModal } from "@/components/shared/AssignmentHistoryModal";
+import type { AssetItem } from "@/types";
 
 
 export default function AssetDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   
-  const [historyModal, setHistoryModal] = useState<{ open: boolean; item: any | null }>({
+  const [historyModal, setHistoryModal] = useState<{ open: boolean; item: AssetItem | null }>({
     open: false,
     item: null,
   });

@@ -93,11 +93,13 @@ export const API_CONFIG = {
     maintenanceCompleted: 'Maintenance completed successfully',
     maintenanceDeleted: 'Maintenance record deleted successfully',
     maintenanceError: 'Failed to process maintenance record',
-    
+
     // Transfers
-    transferCreated: 'Asset transferred successfully',
-    transferDeleted: 'Transfer record deleted',
+    transferCreated: 'Transfer created successfully',
+    transferUpdated: 'Transfer status updated successfully',
+    transferDeleted: 'Transfer deleted successfully',
     transferError: 'Failed to process transfer',
+    
 
     // Consumables (Lab)
     consumableItemCreated: 'Consumable item created successfully',
@@ -135,7 +137,6 @@ export const API_CONFIG = {
     schemes: ['schemes'] as const,
     purchaseOrders: ['purchaseOrders'] as const,
     maintenance: ['maintenance'] as const,
-    transfers: ['transfers'] as const,
     dashboard: ['dashboard'] as const,
     settings: ['settings'] as const,
     consumableItems: ['consumableItems'] as const,
@@ -147,6 +148,7 @@ export const API_CONFIG = {
     consumableLedger: ['consumableLedger'] as const,
     consumableExpiry: ['consumableExpiry'] as const,
     consumableReasonCodes: ['consumableReasonCodes'] as const,
+    transfers: ['transfers'] as const,
   },
 } as const;
 

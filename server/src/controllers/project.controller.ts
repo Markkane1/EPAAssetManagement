@@ -21,7 +21,8 @@ export const projectController = {
   getActive: async (_req: Request, res: Response, next: NextFunction) => {
     try {
       const projects = await projectRepository.findAll();
-      const active = projects.filter((project: any) => project.is_active);
+      type ProjectLike = { is_active?: boolean | null };
+      const active = projects.filter((project) => Boolean((project as ProjectLike).is_active));
       res.json(active);
     } catch (error) {
       next(error);

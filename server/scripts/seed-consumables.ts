@@ -47,10 +47,8 @@ async function run() {
     await connectDatabase();
     await seedReasonCodes();
     const central = await seedCentralStore();
-    // eslint-disable-next-line no-console
     console.log(`Seeded consumable reason codes. Central Store: ${central.name}`);
   } catch (error) {
-    // eslint-disable-next-line no-console
     console.error('Failed to seed consumables:', error);
     process.exitCode = 1;
   } finally {

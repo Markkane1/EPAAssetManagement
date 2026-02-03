@@ -5,6 +5,7 @@ import { UserModel } from '../models/user.model';
 import { EmployeeModel } from '../models/employee.model';
 import { ActivityLogModel } from '../models/activityLog.model';
 import { env } from '../config/env';
+import type { AuthRequest } from '../middleware/auth';
 
 function normalizeRole(role?: string | null) {
   if (role === 'manager') return 'admin';
@@ -89,9 +90,9 @@ export const authController = {
       next(error);
     }
   },
-  me: async (req: Request, res: Response, next: NextFunction) => {
+  me: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
-      const userId = (req as any).user?.userId as string | undefined;
+      const userId = req.user?.userId;
       if (!userId) return res.status(401).json({ message: 'Unauthorized' });
 
       const user = await UserModel.findById(userId);
@@ -186,9 +187,9 @@ export const authController = {
       next(error);
     }
   },
-  changePassword: async (req: Request, res: Response, next: NextFunction) => {
+  changePassword: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
-      const userId = (req as any).user?.userId as string | undefined;
+      const userId = req.user?.userId;
       if (!userId) return res.status(401).json({ message: 'Unauthorized' });
 
       const { oldPassword, newPassword } = req.body as {

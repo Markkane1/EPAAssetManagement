@@ -3,7 +3,6 @@ import { StatsCard } from "@/components/dashboard/StatsCard";
 import { RecentActivity } from "@/components/dashboard/RecentActivity";
 import { AssetsByCategory } from "@/components/dashboard/AssetsByCategory";
 import { AssetStatusChart } from "@/components/dashboard/AssetStatusChart";
-import { RecentTransfers } from "@/components/dashboard/RecentTransfers";
 import { PendingPurchaseOrders } from "@/components/dashboard/PendingPurchaseOrders";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -39,8 +38,8 @@ export default function Dashboard() {
     totalValue: 0,
     lowStockAlerts: 0,
   };
-  const assetItemList = assetItems || [];
-  const locationList = locations || [];
+  const assetItemList = useMemo(() => assetItems || [], [assetItems]);
+  const locationList = useMemo(() => locations || [], [locations]);
 
   const recentItems = assetItemList.slice(0, 5);
   const locationCounts = useMemo(() => {
@@ -134,9 +133,8 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Transfers & Purchase Orders Widgets */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-        <RecentTransfers />
+      {/* Purchase Orders Widget */}
+      <div className="mb-8">
         <PendingPurchaseOrders />
       </div>
 

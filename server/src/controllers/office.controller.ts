@@ -3,10 +3,16 @@ import { OfficeModel } from '../models/office.model';
 import { mapFields } from '../utils/mapFields';
 
 const fieldMap = {
+  name: 'name',
   division: 'division',
   district: 'district',
   address: 'address',
   contactNumber: 'contact_number',
+  type: 'type',
+  parentLocationId: 'parent_location_id',
+  labCode: 'lab_code',
+  isActive: 'is_active',
+  isHeadoffice: 'is_headoffice',
 };
 
 const buildPayload = (body: Record<string, unknown>) => {
