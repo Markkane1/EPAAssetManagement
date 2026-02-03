@@ -11,6 +11,8 @@ import assignmentRoutes from './assignment.routes';
 import maintenanceRoutes from './maintenance.routes';
 import transferRoutes from './transfer.routes';
 import purchaseOrderRoutes from './purchaseOrder.routes';
+import divisionRoutes from './division.routes';
+import districtRoutes from './district.routes';
 import consumableRoutes from './consumable.routes';
 import consumableAssignmentRoutes from './consumableAssignment.routes';
 import consumableConsumptionRoutes from './consumableConsumption.routes';
@@ -31,6 +33,8 @@ router.use('/dashboard', dashboardRoutes);
 router.use('/settings', settingsRoutes);
 
 router.use('/categories', categoryRoutes);
+router.use('/divisions', divisionRoutes);
+router.use('/districts', districtRoutes);
 router.use('/offices', officeRoutes);
 router.use('/vendors', vendorRoutes);
 router.use('/projects', projectRoutes);

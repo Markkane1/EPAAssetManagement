@@ -24,6 +24,9 @@ import { useConsumableBalances, useDisposeConsumables } from '@/hooks/useConsuma
 import { useConsumableReasonCodes } from '@/hooks/useConsumableReasonCodes';
 import { getCompatibleUnits } from '@/lib/unitUtils';
 import type { ConsumableItem } from '@/types';
+import { useConsumableMode } from '@/hooks/useConsumableMode';
+import { filterItemsByMode, filterLocationsByMode } from '@/lib/consumableMode';
+import { ConsumableModeToggle } from '@/components/consumables/ConsumableModeToggle';
 
 const disposeSchema = z.object({
   locationId: z.string().min(1, 'Location is required'),
@@ -47,8 +50,12 @@ const normalizeUom = (unit: string) => {
 };
 
 export default function ConsumableDisposal() {
+  const ALL_VALUE = '__all__';
+  const { mode, setMode } = useConsumableMode();
   const { data: items } = useConsumableItems();
-  const { data: locations } = useConsumableLocations();
+  const { data: locations } = useConsumableLocations({
+    capability: mode === 'chemicals' ? 'chemicals' : 'consumables',
+  });
   const { data: lots } = useConsumableLots();
   const { data: reasonCodes } = useConsumableReasonCodes('DISPOSE');
   const disposeMutation = useDisposeConsumables();
@@ -58,7 +65,7 @@ export default function ConsumableDisposal() {
     defaultValues: {
       locationId: '',
       itemId: '',
-      lotId: '',
+      lotId: ALL_VALUE,
       containerId: '',
       qty: 0,
       uom: '',
@@ -68,9 +75,25 @@ export default function ConsumableDisposal() {
     },
   });
 
+  const filteredItems = useMemo(() => filterItemsByMode(items || [], mode), [items, mode]);
+  const filteredLocations = useMemo(() => filterLocationsByMode(locations || [], mode), [locations, mode]);
+  const allowedItemIds = useMemo(
+    () => new Set(filteredItems.map((item) => item.id)),
+    [filteredItems]
+  );
+
   const selectedItem: ConsumableItem | undefined = useMemo(() => {
-    return items?.find((item) => item.id === form.watch('itemId'));
-  }, [items, form]);
+    return filteredItems.find((item) => item.id === form.watch('itemId'));
+  }, [filteredItems, form]);
+
+  useEffect(() => {
+    const currentItem = form.getValues('itemId');
+    if (currentItem && !filteredItems.some((item) => item.id === currentItem)) {
+      form.setValue('itemId', '');
+      form.setValue('lotId', ALL_VALUE);
+      form.setValue('containerId', '');
+    }
+  }, [filteredItems, form, ALL_VALUE]);
 
   const locationFilterId = form.watch('locationId');
   const containerFilters = useMemo(() => {
@@ -106,6 +129,14 @@ export default function ConsumableDisposal() {
   }, [selectedItem, form]);
 
   useEffect(() => {
+    if (filteredLocations.length === 0) return;
+    const current = form.getValues('locationId');
+    if (!current || !filteredLocations.some((loc) => loc.id === current)) {
+      form.setValue('locationId', filteredLocations[0].id);
+    }
+  }, [filteredLocations, form]);
+
+  useEffect(() => {
     if (!selectedContainer) return;
     form.setValue('lotId', selectedContainer.lot_id);
     if (selectedItem?.base_uom) {
@@ -129,7 +160,7 @@ export default function ConsumableDisposal() {
     await disposeMutation.mutateAsync({
       locationId: data.locationId,
       itemId: data.itemId,
-      lotId: data.lotId || undefined,
+      lotId: data.lotId && data.lotId !== ALL_VALUE ? data.lotId : undefined,
       containerId: data.containerId || undefined,
       qty: data.qty,
       uom: data.uom,
@@ -142,7 +173,11 @@ export default function ConsumableDisposal() {
 
   return (
     <MainLayout title="Consumable Disposal" description="Record disposal of consumables">
-      <PageHeader title="Disposal" description="Dispose expired or contaminated materials" />
+      <PageHeader
+        title="Disposal"
+        description="Dispose expired or contaminated materials"
+        extra={<ConsumableModeToggle mode={mode} onChange={setMode} />}
+      />
 
       <Card>
         <CardContent className="pt-6">
@@ -153,7 +188,7 @@ export default function ConsumableDisposal() {
                 <Select value={form.watch('locationId')} onValueChange={(v) => form.setValue('locationId', v)}>
                   <SelectTrigger><SelectValue placeholder="Select location" /></SelectTrigger>
                   <SelectContent>
-                    {(locations || []).map((loc) => (
+                    {filteredLocations.map((loc) => (
                       <SelectItem key={loc.id} value={loc.id}>{loc.name}</SelectItem>
                     ))}
                   </SelectContent>
@@ -164,7 +199,7 @@ export default function ConsumableDisposal() {
                 <Select value={form.watch('itemId')} onValueChange={(v) => form.setValue('itemId', v)}>
                   <SelectTrigger><SelectValue placeholder="Select item" /></SelectTrigger>
                   <SelectContent>
-                    {(items || []).map((item) => (
+                    {filteredItems.map((item) => (
                       <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>
                     ))}
                   </SelectContent>
@@ -176,15 +211,18 @@ export default function ConsumableDisposal() {
               <div className="space-y-2">
                 <Label>Lot (optional)</Label>
                 <Select
-                  value={form.watch('lotId') || ''}
+                  value={form.watch('lotId') || ALL_VALUE}
                   onValueChange={(v) => form.setValue('lotId', v)}
                   disabled={Boolean(selectedContainer)}
                 >
                   <SelectTrigger><SelectValue placeholder="Select lot" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All lots</SelectItem>
+                    <SelectItem value={ALL_VALUE}>All lots</SelectItem>
                     {(lots || [])
-                      .filter((lot) => !form.watch('itemId') || lot.consumable_item_id === form.watch('itemId'))
+                      .filter((lot) => {
+                        if (form.watch('itemId')) return lot.consumable_item_id === form.watch('itemId');
+                        return allowedItemIds.has(lot.consumable_item_id);
+                      })
                       .map((lot) => (
                         <SelectItem key={lot.id} value={lot.id}>{lot.lot_number}</SelectItem>
                       ))}

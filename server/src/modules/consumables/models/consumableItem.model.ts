@@ -9,6 +9,7 @@ const ConsumableItemSchema = new Schema(
     base_uom: { type: String, enum: ['g', 'mg', 'kg', 'mL', 'L'], required: true },
     is_hazardous: { type: Boolean, default: false },
     is_controlled: { type: Boolean, default: false },
+    is_chemical: { type: Boolean, default: false },
     requires_lot_tracking: { type: Boolean, default: true },
     requires_container_tracking: { type: Boolean, default: false },
     default_min_stock: { type: Number, default: null },

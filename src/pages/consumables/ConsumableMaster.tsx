@@ -21,6 +21,9 @@ import {
 } from '@/hooks/useConsumableItems';
 import type { ConsumableItem } from '@/types';
 import { ConsumableItemFormModal } from '@/components/forms/ConsumableItemFormModal';
+import { useConsumableMode } from '@/hooks/useConsumableMode';
+import { filterItemsByMode } from '@/lib/consumableMode';
+import { ConsumableModeToggle } from '@/components/consumables/ConsumableModeToggle';
 
 export default function ConsumableMaster() {
   const { data: items, isLoading } = useConsumableItems();
@@ -28,12 +31,14 @@ export default function ConsumableMaster() {
   const createItem = useCreateConsumableItem();
   const updateItem = useUpdateConsumableItem();
   const deleteItem = useDeleteConsumableItem();
+  const { mode, setMode } = useConsumableMode();
+  const modeLabel = mode === 'chemicals' ? 'chemical' : 'general consumable';
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editing, setEditing] = useState<ConsumableItem | null>(null);
 
   const categoryList = categories || [];
-  const itemList = items || [];
+  const itemList = filterItemsByMode(items || [], mode);
 
   const columns = [
     {
@@ -53,6 +58,13 @@ export default function ConsumableMaster() {
       key: 'base_uom',
       label: 'Base UoM',
       render: (value: string) => <Badge variant="outline">{value}</Badge>,
+    },
+    {
+      key: 'is_chemical',
+      label: 'Type',
+      render: (value: boolean | null | undefined) => (
+        <Badge variant="secondary">{value ? 'Chemical' : 'General'}</Badge>
+      ),
     },
     {
       key: 'requires_lot_tracking',
@@ -130,7 +142,8 @@ export default function ConsumableMaster() {
     <MainLayout title="Consumable Master" description="Consumable master register">
       <PageHeader
         title="Consumable Master"
-        description="Create and maintain chemical inventory items"
+        description={`Create and maintain ${modeLabel} inventory items`}
+        extra={<ConsumableModeToggle mode={mode} onChange={setMode} />}
         action={{ label: 'Add Item', onClick: handleAdd }}
       />
 

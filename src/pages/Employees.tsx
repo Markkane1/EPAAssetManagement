@@ -19,10 +19,12 @@ import { useEmployees, useCreateEmployee, useUpdateEmployee } from "@/hooks/useE
 import { useDirectorates } from "@/hooks/useDirectorates";
 import { useLocations } from "@/hooks/useLocations";
 import { EmployeeFormModal } from "@/components/forms/EmployeeFormModal";
-import { isHeadOfficeLocationName } from "@/lib/locationUtils";
+import { isHeadOfficeLocationName, isHeadOfficeLocation } from "@/lib/locationUtils";
+import { useAuth } from "@/contexts/AuthContext";
 
 export default function Employees() {
   const navigate = useNavigate();
+  const { role, isSuperAdmin, locationId } = useAuth();
   const { data: employees, isLoading, error } = useEmployees();
   const { data: directorates } = useDirectorates();
   const { data: locations } = useLocations();
@@ -35,6 +37,17 @@ export default function Employees() {
   const employeeList = employees || [];
   const directorateList = directorates || [];
   const locationList = locations || [];
+
+  const currentLocation = locationId ? locationList.find((loc) => loc.id === locationId) : undefined;
+  const isHeadofficeAdmin = isSuperAdmin || (role === "admin" && isHeadOfficeLocation(currentLocation));
+  const isOfficeAdmin = role === "location_admin" || (role === "admin" && !isHeadofficeAdmin);
+  const canManageEmployees = isHeadofficeAdmin || isOfficeAdmin;
+
+  const allowedLocations = isHeadofficeAdmin
+    ? locationList
+    : locationId
+      ? locationList.filter((loc) => loc.id === locationId)
+      : [];
 
   const enrichedEmployees = employeeList.map((emp) => {
     const locationName = locationList.find((l) => l.id === emp.location_id)?.name || "N/A";
@@ -86,6 +99,13 @@ export default function Employees() {
     }
   };
 
+  const handleToggleActive = async (employee: Employee) => {
+    await updateEmployee.mutateAsync({
+      id: employee.id,
+      data: { isActive: !employee.is_active },
+    });
+  };
+
   const actions = (row: Employee) => (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -93,10 +113,20 @@ export default function Employees() {
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         <DropdownMenuItem onClick={() => navigate(`/employees/${row.id}`)}><Eye className="h-4 w-4 mr-2" /> View Profile</DropdownMenuItem>
-        <DropdownMenuItem onClick={() => handleEdit(row)}><Pencil className="h-4 w-4 mr-2" /> Edit</DropdownMenuItem>
+        {canManageEmployees && (
+          <DropdownMenuItem onClick={() => handleEdit(row)}><Pencil className="h-4 w-4 mr-2" /> Edit</DropdownMenuItem>
+        )}
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={() => window.location.href = `mailto:${row.email}`}><Mail className="h-4 w-4 mr-2" /> Send Email</DropdownMenuItem>
         <DropdownMenuItem onClick={() => navigate(`/employees/${row.id}`)}><Package className="h-4 w-4 mr-2" /> View Assigned Assets</DropdownMenuItem>
+        {canManageEmployees && (
+          <DropdownMenuItem
+            className={row.is_active ? "text-destructive" : ""}
+            onClick={() => handleToggleActive(row)}
+          >
+            {row.is_active ? "Deactivate" : "Activate"}
+          </DropdownMenuItem>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -113,7 +143,11 @@ export default function Employees() {
 
   return (
     <MainLayout title="Employees" description="Manage your organization's personnel">
-      <PageHeader title="Employees" description="View and manage employees and their asset assignments" action={{ label: "Add Employee", onClick: handleAddEmployee }} />
+      <PageHeader
+        title="Employees"
+        description="View and manage employees and their asset assignments"
+        action={canManageEmployees ? { label: "Add Employee", onClick: handleAddEmployee } : undefined}
+      />
       <DataTable 
         columns={columns} 
         data={enrichedEmployees} 
@@ -121,7 +155,16 @@ export default function Employees() {
         actions={actions} 
         onRowClick={(row) => navigate(`/employees/${row.id}`)}
       />
-      <EmployeeFormModal open={isModalOpen} onOpenChange={setIsModalOpen} employee={editingEmployee} directorates={directorateList} locations={locationList} onSubmit={handleSubmit} />
+      <EmployeeFormModal
+        open={isModalOpen}
+        onOpenChange={setIsModalOpen}
+        employee={editingEmployee}
+        directorates={directorateList}
+        locations={allowedLocations}
+        locationLocked={!isHeadofficeAdmin}
+        fixedLocationId={!isHeadofficeAdmin ? locationId : null}
+        onSubmit={handleSubmit}
+      />
     </MainLayout>
   );
 }

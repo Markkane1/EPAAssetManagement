@@ -22,13 +22,6 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Loader2 } from "lucide-react";
 import { Assignment, AssetItem, Employee, Asset } from "@/types";
 
@@ -65,6 +58,7 @@ export function AssignmentFormModal({
 }: AssignmentFormModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [employeePickerOpen, setEmployeePickerOpen] = useState(false);
+  const [assetPickerOpen, setAssetPickerOpen] = useState(false);
   const isEditing = !!assignment;
 
   const form = useForm<AssignmentFormData>({
@@ -125,6 +119,7 @@ export function AssignmentFormModal({
       item.id === selectedAssetItem?.id
   );
 
+  const selectedAsset = availableItems.find((item) => item.id === form.watch("assetItemId"));
   const selectedEmployee = employees.find((emp) => emp.id === form.watch("employeeId"));
 
   const getAssetName = (assetId: string) => {
@@ -143,21 +138,36 @@ export function AssignmentFormModal({
         <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
           <div className="space-y-2">
             <Label>Asset Item *</Label>
-            <Select
-              value={form.watch("assetItemId")}
-              onValueChange={(v) => form.setValue("assetItemId", v)}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select asset item" />
-              </SelectTrigger>
-              <SelectContent>
-                {availableItems.map((item) => (
-                  <SelectItem key={item.id} value={item.id}>
-                    <span className="font-mono">{item.tag}</span> - {getAssetName(item.asset_id)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Popover open={assetPickerOpen} onOpenChange={setAssetPickerOpen}>
+              <PopoverTrigger asChild>
+                <Button variant="outline" role="combobox" className="w-full justify-between">
+                  {selectedAsset
+                    ? `${selectedAsset.tag || selectedAsset.serial_number || "Asset"} - ${getAssetName(selectedAsset.asset_id)}`
+                    : "Search asset items..."}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                <Command>
+                  <CommandInput placeholder="Search by tag, serial, or asset..." />
+                  <CommandList>
+                    <CommandEmpty>No asset items found.</CommandEmpty>
+                    {availableItems.map((item) => (
+                      <CommandItem
+                        key={item.id}
+                        value={`${item.tag || ""} ${item.serial_number || ""} ${getAssetName(item.asset_id)}`}
+                        onSelect={() => {
+                          form.setValue("assetItemId", item.id);
+                          setAssetPickerOpen(false);
+                        }}
+                      >
+                        <span className="font-mono">{item.tag || item.serial_number || "Asset"}</span>
+                        <span className="ml-2 text-xs text-muted-foreground">{getAssetName(item.asset_id)}</span>
+                      </CommandItem>
+                    ))}
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
             {form.formState.errors.assetItemId && (
               <p className="text-sm text-destructive">{form.formState.errors.assetItemId.message}</p>
             )}

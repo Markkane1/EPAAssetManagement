@@ -12,16 +12,26 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Office } from "@/types";
 import { useOffices, useCreateOffice, useUpdateOffice, useDeleteOffice } from "@/hooks/useOffices";
+import { useDivisions } from "@/hooks/useDivisions";
+import { useDistricts } from "@/hooks/useDistricts";
 import { OfficeFormModal } from "@/components/forms/OfficeFormModal";
+import { DivisionManagementModal } from "@/components/shared/DivisionManagementModal";
+import { DistrictManagementModal } from "@/components/shared/DistrictManagementModal";
+import { useAuth } from "@/contexts/AuthContext";
 
 export default function Offices() {
+  const { isSuperAdmin } = useAuth();
   const { data: offices, isLoading, error } = useOffices();
   const createOffice = useCreateOffice();
   const updateOffice = useUpdateOffice();
   const deleteOffice = useDeleteOffice();
+  const { data: divisions = [] } = useDivisions();
+  const { data: districts = [] } = useDistricts();
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingOffice, setEditingOffice] = useState<Office | null>(null);
+  const [divisionModalOpen, setDivisionModalOpen] = useState(false);
+  const [districtModalOpen, setDistrictModalOpen] = useState(false);
 
   const officeList = offices || [];
 
@@ -35,7 +45,20 @@ export default function Offices() {
     setModalOpen(true);
   };
 
-  const handleOfficeSubmit = async (data: { name: string; division?: string; district?: string; address?: string; contactNumber?: string }) => {
+  const handleOfficeSubmit = async (data: {
+    name: string;
+    division?: string;
+    district?: string;
+    address?: string;
+    contactNumber?: string;
+    type?: 'CENTRAL' | 'LAB' | 'SUBSTORE';
+    isHeadoffice?: boolean;
+    capabilities?: {
+      moveables?: boolean;
+      consumables?: boolean;
+      chemicals?: boolean;
+    };
+  }) => {
     if (editingOffice) {
       await updateOffice.mutateAsync({ id: editingOffice.id, data });
     } else {
@@ -67,6 +90,18 @@ export default function Offices() {
         title="Offices"
         description="Manage all offices, divisions, and districts"
         action={{ label: "Add Office", onClick: handleAddOffice }}
+        extra={
+          isSuperAdmin ? (
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setDivisionModalOpen(true)}>
+                Manage Divisions
+              </Button>
+              <Button variant="outline" onClick={() => setDistrictModalOpen(true)}>
+                Manage Districts
+              </Button>
+            </div>
+          ) : undefined
+        }
       />
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -112,8 +147,21 @@ export default function Offices() {
         open={modalOpen}
         onOpenChange={setModalOpen}
         office={editingOffice}
+        divisions={divisions}
+        districts={districts}
         onSubmit={handleOfficeSubmit}
       />
+
+      {isSuperAdmin && (
+        <>
+          <DivisionManagementModal open={divisionModalOpen} onOpenChange={setDivisionModalOpen} />
+          <DistrictManagementModal
+            open={districtModalOpen}
+            onOpenChange={setDistrictModalOpen}
+            divisions={divisions}
+          />
+        </>
+      )}
     </MainLayout>
   );
 }

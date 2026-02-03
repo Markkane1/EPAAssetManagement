@@ -22,6 +22,9 @@ const buildPayload = (body: Record<string, unknown>) => {
       payload[dbKey] = body[dbKey];
     }
   });
+  if (body.capabilities !== undefined) {
+    payload.capabilities = body.capabilities;
+  }
   return payload;
 };
 
@@ -46,6 +49,9 @@ export const officeController = {
   create: async (req: Request, res: Response, next: NextFunction) => {
     try {
       const payload = buildPayload(req.body);
+      if (!payload.capabilities && payload.type === 'LAB') {
+        payload.capabilities = { chemicals: true };
+      }
       const data = await OfficeModel.create(payload);
       return res.status(201).json(data);
     } catch (error) {

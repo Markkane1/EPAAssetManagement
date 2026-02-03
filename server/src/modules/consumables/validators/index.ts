@@ -12,6 +12,7 @@ export const consumableItemCreateSchema = z.object({
   baseUom: uomEnum,
   isHazardous: boolOptional,
   isControlled: boolOptional,
+  isChemical: boolOptional,
   requiresLotTracking: boolOptional,
   requiresContainerTracking: boolOptional,
   defaultMinStock: z.coerce.number().min(0).optional(),
@@ -71,6 +72,11 @@ export const consumableLocationCreateSchema = z.object({
   parentLocationId: objectId.optional(),
   labCode: z.string().max(64).optional(),
   isActive: z.boolean().optional(),
+  capabilities: z.object({
+    moveables: z.boolean().optional(),
+    consumables: z.boolean().optional(),
+    chemicals: z.boolean().optional(),
+  }).optional(),
 });
 
 export const consumableLocationUpdateSchema = consumableLocationCreateSchema.partial();

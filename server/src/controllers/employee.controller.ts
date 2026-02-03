@@ -5,6 +5,8 @@ import { createCrudController } from './crudController';
 import { employeeRepository } from '../repositories/employee.repository';
 import { UserModel } from '../models/user.model';
 import { mapFields } from '../utils/mapFields';
+import { EmployeeModel } from '../models/employee.model';
+import { AuthRequest } from '../middleware/auth';
 
 const fieldMap = {
   firstName: 'first_name',
@@ -51,8 +53,61 @@ function buildPayload(body: Record<string, unknown>) {
 
 export const employeeController = {
   ...baseController,
+  list: async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+      const isGlobal = user.role === 'super_admin' || user.isHeadoffice;
+      const locationId = user.locationId ? String(user.locationId) : null;
+
+      if (!isGlobal && !locationId) {
+        return res.status(403).json({ message: 'User is not assigned to an office' });
+      }
+
+      const query = isGlobal ? {} : { location_id: locationId };
+      const employees = await EmployeeModel.find(query).sort({ created_at: -1 });
+      return res.json(employees);
+    } catch (error) {
+      next(error);
+    }
+  },
+  getById: async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+      const employee = await EmployeeModel.findById(req.params.id);
+      if (!employee) return res.status(404).json({ message: 'Not found' });
+
+      const isGlobal = user.role === 'super_admin' || user.isHeadoffice;
+      if (!isGlobal) {
+        if (!user.locationId) {
+          return res.status(403).json({ message: 'User is not assigned to an office' });
+        }
+        if (String(employee.location_id || '') !== String(user.locationId)) {
+          return res.status(403).json({ message: 'Access restricted to assigned office' });
+        }
+      }
+      return res.json(employee);
+    } catch (error) {
+      next(error);
+    }
+  },
   create: async (req: Request, res: Response, next: NextFunction) => {
     try {
+      const authReq = req as AuthRequest;
+      const authUser = authReq.user;
+      if (!authUser) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+      const canManage =
+        authUser.role === 'super_admin' || authUser.role === 'admin' || authUser.role === 'location_admin';
+      if (!canManage) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
       const payload = buildPayload(req.body);
       const email = String(payload.email || '').trim().toLowerCase();
       if (!email) {
@@ -61,7 +116,17 @@ export const employeeController = {
 
       const firstName = payload.first_name ? String(payload.first_name) : null;
       const lastName = payload.last_name ? String(payload.last_name) : null;
+      const isGlobal = authUser.role === 'super_admin' || authUser.isHeadoffice;
       const locationId = payload.location_id ? String(payload.location_id) : null;
+      if (!isGlobal) {
+        if (!authUser.locationId) {
+          return res.status(403).json({ message: 'User is not assigned to an office' });
+        }
+        if (locationId && String(locationId) !== String(authUser.locationId)) {
+          return res.status(403).json({ message: 'Access restricted to assigned office' });
+        }
+        payload.location_id = authUser.locationId;
+      }
       const providedPassword =
         typeof req.body.userPassword === 'string' && req.body.userPassword.trim()
           ? req.body.userPassword.trim()
@@ -112,9 +177,96 @@ export const employeeController = {
       next(error);
     }
   },
+  update: async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+      const canManage = user.role === 'super_admin' || user.role === 'admin' || user.role === 'location_admin';
+      if (!canManage) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+      const existing = await EmployeeModel.findById(req.params.id);
+      if (!existing) return res.status(404).json({ message: 'Not found' });
+
+      const isGlobal = user.role === 'super_admin' || user.isHeadoffice;
+      if (!isGlobal) {
+        if (!user.locationId) {
+          return res.status(403).json({ message: 'User is not assigned to an office' });
+        }
+        if (String(existing.location_id || '') !== String(user.locationId)) {
+          return res.status(403).json({ message: 'Access restricted to assigned office' });
+        }
+      }
+
+      const payload = buildPayload(req.body);
+      if (!isGlobal) {
+        const nextLocationId = payload.location_id ? String(payload.location_id) : null;
+        if (nextLocationId && String(nextLocationId) !== String(user.locationId)) {
+          return res.status(403).json({ message: 'Access restricted to assigned office' });
+        }
+        payload.location_id = user.locationId;
+      }
+
+      const updated = await employeeRepository.updateById(req.params.id, payload);
+      if (!updated) return res.status(404).json({ message: 'Not found' });
+      if (payload.location_id && existing.user_id) {
+        await UserModel.findByIdAndUpdate(existing.user_id, { location_id: payload.location_id });
+      }
+      return res.json(updated);
+    } catch (error) {
+      next(error);
+    }
+  },
+  remove: async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+      const canManage = user.role === 'super_admin' || user.role === 'admin' || user.role === 'location_admin';
+      if (!canManage) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+      const existing = await EmployeeModel.findById(req.params.id);
+      if (!existing) return res.status(404).json({ message: 'Not found' });
+
+      const isGlobal = user.role === 'super_admin' || user.isHeadoffice;
+      if (!isGlobal) {
+        if (!user.locationId) {
+          return res.status(403).json({ message: 'User is not assigned to an office' });
+        }
+        if (String(existing.location_id || '') !== String(user.locationId)) {
+          return res.status(403).json({ message: 'Access restricted to assigned office' });
+        }
+      }
+
+      existing.is_active = false;
+      await existing.save();
+      return res.status(200).json(existing);
+    } catch (error) {
+      next(error);
+    }
+  },
   getByDirectorate: async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const employees = await employeeRepository.findAll();
+      const authReq = req as AuthRequest;
+      const user = authReq.user;
+      if (!user) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+      const isGlobal = user.role === 'super_admin' || user.isHeadoffice;
+      const locationId = user.locationId ? String(user.locationId) : null;
+      if (!isGlobal && !locationId) {
+        return res.status(403).json({ message: 'User is not assigned to an office' });
+      }
+
+      const filter: Record<string, unknown> = {};
+      if (!isGlobal && locationId) {
+        filter.location_id = locationId;
+      }
+      const employees = await EmployeeModel.find(filter);
       type EmployeeLike = { directorate_id?: { toString(): string } | string | null };
       const filtered = employees.filter((employee) => {
         const directorate = (employee as EmployeeLike).directorate_id;

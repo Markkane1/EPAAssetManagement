@@ -91,6 +91,11 @@ export interface Office {
   type?: "CENTRAL" | "LAB" | "SUBSTORE";
   parent_location_id?: string | null;
   lab_code?: string | null;
+  capabilities?: {
+    moveables?: boolean;
+    consumables?: boolean;
+    chemicals?: boolean;
+  } | null;
   is_headoffice?: boolean | null;
   is_active?: boolean | null;
   created_at: string;
@@ -99,6 +104,24 @@ export interface Office {
 
 export type Location = Office;
 export type Directorate = Office;
+
+export interface Division {
+  id: string;
+  name: string;
+  is_active?: boolean | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface District {
+  id: string;
+  name: string;
+  division_id: string | null;
+  is_active?: boolean | null;
+  created_at: string;
+  updated_at: string;
+  divisions?: Division | null;
+}
 
 export interface Vendor {
   id: string;
@@ -432,6 +455,7 @@ export interface ConsumableItem {
   base_uom: ConsumableBaseUom;
   is_hazardous: boolean;
   is_controlled: boolean;
+  is_chemical?: boolean | null;
   requires_lot_tracking: boolean;
   requires_container_tracking: boolean;
   default_min_stock: number | null;

@@ -1,15 +1,19 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { consumableLocationService } from '@/services/consumableLocationService';
-import type { ConsumableLocationCreateDto, ConsumableLocationUpdateDto } from '@/services/consumableLocationService';
+import type {
+  ConsumableLocationCreateDto,
+  ConsumableLocationUpdateDto,
+  ConsumableLocationFilters,
+} from '@/services/consumableLocationService';
 import { API_CONFIG } from '@/config/api.config';
 
 const { queryKeys, messages, query } = API_CONFIG;
 
-export const useConsumableLocations = (type?: string) =>
+export const useConsumableLocations = (filters?: ConsumableLocationFilters) =>
   useQuery({
-    queryKey: [...queryKeys.consumableLocations, type || 'all'],
-    queryFn: () => consumableLocationService.getAll(type),
+    queryKey: [...queryKeys.consumableLocations, filters || {}],
+    queryFn: () => consumableLocationService.getAll(filters),
     staleTime: query.staleTime,
   });
 

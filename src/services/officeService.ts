@@ -7,6 +7,13 @@ export interface OfficeCreateDto {
   district?: string;
   address?: string;
   contactNumber?: string;
+  type?: 'CENTRAL' | 'LAB' | 'SUBSTORE';
+  capabilities?: {
+    moveables?: boolean;
+    consumables?: boolean;
+    chemicals?: boolean;
+  };
+  isHeadoffice?: boolean;
 }
 
 export interface OfficeUpdateDto {
@@ -15,6 +22,13 @@ export interface OfficeUpdateDto {
   district?: string;
   address?: string;
   contactNumber?: string;
+  type?: 'CENTRAL' | 'LAB' | 'SUBSTORE';
+  capabilities?: {
+    moveables?: boolean;
+    consumables?: boolean;
+    chemicals?: boolean;
+  };
+  isHeadoffice?: boolean;
 }
 
 export const officeService = {

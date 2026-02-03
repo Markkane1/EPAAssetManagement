@@ -53,6 +53,7 @@ export function PurchaseOrderFormModal({
   projects,
   onSubmit,
 }: PurchaseOrderFormModalProps) {
+  const NONE_VALUE = '__none__';
   const [isSubmitting, setIsSubmitting] = useState(false);
   const isEditing = !!purchaseOrder;
 
@@ -141,14 +142,14 @@ export function PurchaseOrderFormModal({
             <div className="space-y-2">
               <Label>Project</Label>
               <Select
-                value={form.watch("projectId") || ""}
-                onValueChange={(v) => form.setValue("projectId", v)}
+                value={form.watch("projectId") || NONE_VALUE}
+                onValueChange={(v) => form.setValue("projectId", v === NONE_VALUE ? "" : v)}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select project" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">None</SelectItem>
+                  <SelectItem value={NONE_VALUE}>None</SelectItem>
                   {projects.filter((p) => p.is_active).map((project) => (
                     <SelectItem key={project.id} value={project.id}>
                       {project.name}

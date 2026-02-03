@@ -10,13 +10,14 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  Command,
+  CommandEmpty,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import { Loader2, Eye } from "lucide-react";
 import { useTransfers, useCreateTransfer, useUpdateTransferStatus } from "@/hooks/useTransfers";
 import { useAssetItems } from "@/hooks/useAssetItems";
@@ -27,6 +28,7 @@ import type { AssetItem, Transfer, TransferStatus } from "@/types";
 import { RecordDetailModal } from "@/components/records/RecordDetailModal";
 
 const transferSchema = z.object({
+  fromOfficeId: z.string().min(1, "From office is required"),
   assetItemId: z.string().min(1, "Asset item is required"),
   toOfficeId: z.string().min(1, "Destination is required"),
   transferDate: z.string().min(1, "Transfer date is required"),
@@ -67,6 +69,9 @@ export default function Transfers() {
   const updateStatus = useUpdateTransferStatus();
 
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [assetPickerOpen, setAssetPickerOpen] = useState(false);
+  const [fromOfficeOpen, setFromOfficeOpen] = useState(false);
+  const [toOfficeOpen, setToOfficeOpen] = useState(false);
   const [recordModal, setRecordModal] = useState<{ open: boolean; transferId?: string; label?: string }>({
     open: false,
   });
@@ -76,6 +81,7 @@ export default function Transfers() {
   const form = useForm<TransferFormData>({
     resolver: zodResolver(transferSchema),
     defaultValues: {
+      fromOfficeId: locationId || "",
       assetItemId: "",
       toOfficeId: "",
       transferDate: today,
@@ -104,13 +110,18 @@ export default function Transfers() {
 
   const selectedAssetItemId = form.watch("assetItemId");
   const selectedAssetItem = assetItems.find((item) => item.id === selectedAssetItemId);
-  const fromOfficeId = selectedAssetItem?.location_id || "";
-  const fromOfficeName = fromOfficeId ? locationById.get(fromOfficeId)?.name || "N/A" : "N/A";
+  const fromOfficeId = form.watch("fromOfficeId") || selectedAssetItem?.location_id || "";
 
   const transferableItems = assetItems.filter(
     (item) => item.assignment_status !== "Assigned" && Boolean(item.location_id)
   );
+  const filteredItems = fromOfficeId
+    ? transferableItems.filter((item) => item.location_id === fromOfficeId)
+    : transferableItems;
   const destinationOptions = locations.filter((loc) => loc.id !== fromOfficeId);
+
+  const selectedFromOffice = fromOfficeId ? locationById.get(fromOfficeId) : undefined;
+  const selectedToOffice = form.watch("toOfficeId") ? locationById.get(form.watch("toOfficeId")) : undefined;
 
   const tableRows: TransferRow[] = transfers.map((transfer) => {
     const item = assetItemById.get(transfer.asset_item_id);
@@ -170,6 +181,11 @@ export default function Transfers() {
       return;
     }
 
+    if (data.fromOfficeId && selectedAssetItem.location_id !== data.fromOfficeId) {
+      form.setError("fromOfficeId", { message: "Selected asset item is not at this office" });
+      return;
+    }
+
     if (data.toOfficeId === selectedAssetItem.location_id) {
       form.setError("toOfficeId", { message: "Destination must be different from source" });
       return;
@@ -185,6 +201,7 @@ export default function Transfers() {
     });
 
     form.reset({
+      fromOfficeId: locationId || "",
       assetItemId: "",
       toOfficeId: "",
       transferDate: today,
@@ -267,74 +284,140 @@ export default function Transfers() {
           <CardContent className="pt-6">
             <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
               <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Asset Item *</Label>
-                  <Select
-                    value={form.watch("assetItemId")}
-                    onValueChange={(value) => form.setValue("assetItemId", value)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select asset item" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {transferableItems.map((item: AssetItem) => {
-                        const assetName = assetById.get(item.asset_id)?.name || "Unknown Asset";
-                        const tagLabel = item.tag || item.serial_number || "Unlabeled";
-                        return (
-                          <SelectItem key={item.id} value={item.id}>
-                            {tagLabel} - {assetName}
-                          </SelectItem>
-                        );
-                      })}
-                    </SelectContent>
-                  </Select>
-                  {form.formState.errors.assetItemId && (
-                    <p className="text-sm text-destructive">{form.formState.errors.assetItemId.message}</p>
-                  )}
-                </div>
-                <div className="space-y-2">
-                  <Label>From Office</Label>
-                  <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm">
-                    {fromOfficeName}
-                  </div>
-                </div>
+              <div className="space-y-2">
+                <Label>From Office *</Label>
+                <Popover open={fromOfficeOpen} onOpenChange={setFromOfficeOpen}>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" role="combobox" className="w-full justify-between">
+                      {selectedFromOffice ? selectedFromOffice.name : "Search offices..."}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                    <Command>
+                      <CommandInput placeholder="Search offices..." />
+                      <CommandList>
+                        <CommandEmpty>No offices found.</CommandEmpty>
+                        {locations.map((loc) => (
+                          <CommandItem
+                            key={loc.id}
+                            value={loc.name}
+                            onSelect={() => {
+                              form.setValue("fromOfficeId", loc.id);
+                              if (form.getValues("toOfficeId") === loc.id) {
+                                form.setValue("toOfficeId", "");
+                              }
+                              const currentItem = form.getValues("assetItemId");
+                              if (currentItem) {
+                                const item = assetItems.find((asset) => asset.id === currentItem);
+                                if (item?.location_id !== loc.id) {
+                                  form.setValue("assetItemId", "");
+                                }
+                              }
+                              setFromOfficeOpen(false);
+                            }}
+                          >
+                            {loc.name}
+                          </CommandItem>
+                        ))}
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+                {form.formState.errors.fromOfficeId && (
+                  <p className="text-sm text-destructive">{form.formState.errors.fromOfficeId.message}</p>
+                )}
               </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>To Office *</Label>
-                  <Select
-                    value={form.watch("toOfficeId")}
-                    onValueChange={(value) => form.setValue("toOfficeId", value)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select destination" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {destinationOptions.map((location) => (
-                        <SelectItem key={location.id} value={location.id}>
-                          {location.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {form.formState.errors.toOfficeId && (
-                    <p className="text-sm text-destructive">{form.formState.errors.toOfficeId.message}</p>
-                  )}
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="transferDate">Transfer Date *</Label>
-                  <Input id="transferDate" type="date" {...form.register("transferDate")} />
-                  {form.formState.errors.transferDate && (
-                    <p className="text-sm text-destructive">{form.formState.errors.transferDate.message}</p>
-                  )}
-                </div>
+              <div className="space-y-2">
+                <Label>Asset Item *</Label>
+                <Popover open={assetPickerOpen} onOpenChange={setAssetPickerOpen}>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" role="combobox" className="w-full justify-between">
+                      {selectedAssetItem
+                        ? `${selectedAssetItem.tag || selectedAssetItem.serial_number || "Asset"} - ${assetById.get(selectedAssetItem.asset_id)?.name || "Unknown Asset"}`
+                        : "Search asset items..."}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                    <Command>
+                      <CommandInput placeholder="Search by tag, serial, or asset..." />
+                      <CommandList>
+                        <CommandEmpty>No asset items found.</CommandEmpty>
+                        {filteredItems.map((item: AssetItem) => {
+                          const assetName = assetById.get(item.asset_id)?.name || "Unknown Asset";
+                          const tagLabel = item.tag || item.serial_number || "Unlabeled";
+                          return (
+                            <CommandItem
+                              key={item.id}
+                              value={`${tagLabel} ${assetName}`}
+                              onSelect={() => {
+                                form.setValue("assetItemId", item.id);
+                                if (item.location_id) {
+                                  form.setValue("fromOfficeId", item.location_id);
+                                }
+                                setAssetPickerOpen(false);
+                              }}
+                            >
+                              <span className="font-mono">{tagLabel}</span>
+                              <span className="ml-2 text-xs text-muted-foreground">{assetName}</span>
+                            </CommandItem>
+                          );
+                        })}
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+                {form.formState.errors.assetItemId && (
+                  <p className="text-sm text-destructive">{form.formState.errors.assetItemId.message}</p>
+                )}
               </div>
+              <div className="space-y-2">
+                <Label>To Office *</Label>
+                <Popover open={toOfficeOpen} onOpenChange={setToOfficeOpen}>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" role="combobox" className="w-full justify-between">
+                      {selectedToOffice ? selectedToOffice.name : "Search destination..."}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                    <Command>
+                      <CommandInput placeholder="Search offices..." />
+                      <CommandList>
+                        <CommandEmpty>No offices found.</CommandEmpty>
+                        {destinationOptions.map((location) => (
+                          <CommandItem
+                            key={location.id}
+                            value={location.name}
+                            onSelect={() => {
+                              form.setValue("toOfficeId", location.id);
+                              setToOfficeOpen(false);
+                            }}
+                          >
+                            {location.name}
+                          </CommandItem>
+                        ))}
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+                {form.formState.errors.toOfficeId && (
+                  <p className="text-sm text-destructive">{form.formState.errors.toOfficeId.message}</p>
+                )}
+              </div>
+            </div>
 
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="transferDate">Transfer Date *</Label>
+                <Input id="transferDate" type="date" {...form.register("transferDate")} />
+                {form.formState.errors.transferDate && (
+                  <p className="text-sm text-destructive">{form.formState.errors.transferDate.message}</p>
+                )}
+              </div>
               <div className="space-y-2">
                 <Label htmlFor="notes">Notes</Label>
                 <Input id="notes" {...form.register("notes")} />
               </div>
+            </div>
 
               <div className="flex justify-end">
                 <Button type="submit" disabled={createTransfer.isPending}>

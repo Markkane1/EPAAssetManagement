@@ -22,6 +22,9 @@ import { useConsumableLocations } from '@/hooks/useConsumableLocations';
 import { useReceiveConsumables } from '@/hooks/useConsumableInventory';
 import { getCompatibleUnits } from '@/lib/unitUtils';
 import type { ConsumableItem } from '@/types';
+import { useConsumableMode } from '@/hooks/useConsumableMode';
+import { filterItemsByMode } from '@/lib/consumableMode';
+import { ConsumableModeToggle } from '@/components/consumables/ConsumableModeToggle';
 
 const receiveSchema = z.object({
   locationId: z.string().min(1, 'Location is required'),
@@ -50,7 +53,11 @@ const normalizeUom = (unit: string) => {
 export default function ConsumableReceive() {
   const { data: items } = useConsumableItems();
   const { data: suppliers } = useConsumableSuppliers();
-  const { data: locations } = useConsumableLocations('CENTRAL');
+  const { mode, setMode } = useConsumableMode();
+  const { data: locations } = useConsumableLocations({
+    type: 'CENTRAL',
+    capability: mode === 'chemicals' ? 'chemicals' : 'consumables',
+  });
   const receiveMutation = useReceiveConsumables();
 
   const [containers, setContainers] = useState<ContainerInput[]>([]);
@@ -71,9 +78,19 @@ export default function ConsumableReceive() {
     },
   });
 
+  const filteredItems = useMemo(() => filterItemsByMode(items || [], mode), [items, mode]);
+
   const selectedItem: ConsumableItem | undefined = useMemo(() => {
-    return items?.find((item) => item.id === form.watch('itemId'));
-  }, [items, form]);
+    return filteredItems.find((item) => item.id === form.watch('itemId'));
+  }, [filteredItems, form]);
+
+  useEffect(() => {
+    const currentItem = form.getValues('itemId');
+    if (currentItem && !filteredItems.some((item) => item.id === currentItem)) {
+      form.setValue('itemId', '');
+      setContainers([]);
+    }
+  }, [filteredItems, form]);
 
   const compatibleUnits = useMemo(() => {
     if (!selectedItem) return [] as string[];
@@ -82,7 +99,12 @@ export default function ConsumableReceive() {
   }, [selectedItem]);
 
   useEffect(() => {
-    if (locations && locations.length > 0 && !form.watch('locationId')) {
+    if (!locations || locations.length === 0) {
+      form.setValue('locationId', '');
+      return;
+    }
+    const current = form.getValues('locationId');
+    if (!current || !locations.some((loc) => loc.id === current)) {
       form.setValue('locationId', locations[0].id);
     }
   }, [locations, form]);
@@ -144,6 +166,7 @@ export default function ConsumableReceive() {
       <PageHeader
         title="Lot Receiving"
         description="Receive lots into the Central Store"
+        extra={<ConsumableModeToggle mode={mode} onChange={setMode} />}
       />
 
       <Card>
@@ -169,7 +192,7 @@ export default function ConsumableReceive() {
                 <Select value={form.watch('itemId')} onValueChange={(v) => form.setValue('itemId', v)}>
                   <SelectTrigger><SelectValue placeholder="Select item" /></SelectTrigger>
                   <SelectContent>
-                    {(items || []).map((item) => (
+                    {filteredItems.map((item) => (
                       <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>
                     ))}
                   </SelectContent>

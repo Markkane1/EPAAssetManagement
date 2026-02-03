@@ -4,6 +4,8 @@ export { default as categoryService } from './categoryService';
 export { default as officeService } from './officeService';
 export { default as locationService } from './locationService';
 export { default as directorateService } from './directorateService';
+export { default as divisionService } from './divisionService';
+export { default as districtService } from './districtService';
 export { default as employeeService } from './employeeService';
 export { default as assetService } from './assetService';
 export { default as assetItemService } from './assetItemService';

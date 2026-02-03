@@ -9,6 +9,7 @@ const fieldMap = {
   baseUom: 'base_uom',
   isHazardous: 'is_hazardous',
   isControlled: 'is_controlled',
+  isChemical: 'is_chemical',
   requiresLotTracking: 'requires_lot_tracking',
   requiresContainerTracking: 'requires_container_tracking',
   defaultMinStock: 'default_min_stock',

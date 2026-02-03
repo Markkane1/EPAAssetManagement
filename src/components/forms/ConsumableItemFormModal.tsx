@@ -31,6 +31,7 @@ const itemSchema = z.object({
   baseUom: z.enum(['g', 'mg', 'kg', 'mL', 'L']),
   isHazardous: z.boolean().optional(),
   isControlled: z.boolean().optional(),
+  isChemical: z.boolean().optional(),
   requiresLotTracking: z.boolean().optional(),
   requiresContainerTracking: z.boolean().optional(),
   defaultMinStock: z.coerce.number().min(0).optional(),
@@ -69,6 +70,7 @@ export function ConsumableItemFormModal({
       baseUom: item?.base_uom || 'g',
       isHazardous: item?.is_hazardous || false,
       isControlled: item?.is_controlled || false,
+      isChemical: item?.is_chemical || false,
       requiresLotTracking: item?.requires_lot_tracking ?? true,
       requiresContainerTracking: item?.requires_container_tracking || false,
       defaultMinStock: item?.default_min_stock ?? undefined,
@@ -86,6 +88,7 @@ export function ConsumableItemFormModal({
         baseUom: item.base_uom,
         isHazardous: item.is_hazardous,
         isControlled: item.is_controlled,
+        isChemical: item.is_chemical || false,
         requiresLotTracking: item.requires_lot_tracking,
         requiresContainerTracking: item.requires_container_tracking,
         defaultMinStock: item.default_min_stock ?? undefined,
@@ -100,6 +103,7 @@ export function ConsumableItemFormModal({
         baseUom: 'g',
         isHazardous: false,
         isControlled: false,
+        isChemical: false,
         requiresLotTracking: true,
         requiresContainerTracking: false,
         defaultMinStock: undefined,
@@ -134,7 +138,7 @@ export function ConsumableItemFormModal({
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-3 gap-4">
             <div className="space-y-2">
               <Label htmlFor="name">Name *</Label>
               <Input id="name" {...form.register('name')} placeholder="e.g., Sodium Chloride" />
@@ -188,6 +192,13 @@ export function ConsumableItemFormModal({
           </div>
 
           <div className="grid grid-cols-2 gap-4">
+            <div className="flex items-center gap-2">
+              <Checkbox
+                checked={form.watch('isChemical')}
+                onCheckedChange={(checked) => form.setValue('isChemical', Boolean(checked))}
+              />
+              <Label>Chemical item</Label>
+            </div>
             <div className="flex items-center gap-2">
               <Checkbox
                 checked={form.watch('isHazardous')}

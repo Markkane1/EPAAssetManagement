@@ -31,6 +31,9 @@ async function seedCentralStore() {
   if (byName) {
     byName.type = 'CENTRAL';
     byName.is_active = true;
+    if (!byName.capabilities) {
+      byName.capabilities = { moveables: true, consumables: true, chemicals: true };
+    }
     await byName.save();
     return byName;
   }
@@ -39,6 +42,7 @@ async function seedCentralStore() {
     name: 'Central Store',
     type: 'CENTRAL',
     is_active: true,
+    capabilities: { moveables: true, consumables: true, chemicals: true },
   });
 }
 

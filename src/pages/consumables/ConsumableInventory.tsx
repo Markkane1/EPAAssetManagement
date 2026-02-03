@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { PageHeader } from '@/components/shared/PageHeader';
@@ -18,44 +18,71 @@ import { useConsumableLocations } from '@/hooks/useConsumableLocations';
 import { useConsumableLots } from '@/hooks/useConsumableLots';
 import { consumableInventoryService } from '@/services/consumableInventoryService';
 import type { ConsumableInventoryBalance } from '@/types';
+import { useConsumableMode } from '@/hooks/useConsumableMode';
+import { filterItemsByMode, filterLocationsByMode } from '@/lib/consumableMode';
+import { ConsumableModeToggle } from '@/components/consumables/ConsumableModeToggle';
 
 export default function ConsumableInventory() {
+  const ALL_VALUE = '__all__';
+  const { mode, setMode } = useConsumableMode();
   const { data: items } = useConsumableItems();
-  const { data: locations } = useConsumableLocations();
+  const { data: locations } = useConsumableLocations({
+    capability: mode === 'chemicals' ? 'chemicals' : 'consumables',
+  });
   const { data: lots } = useConsumableLots();
 
-  const [locationId, setLocationId] = useState('');
-  const [itemId, setItemId] = useState('');
-  const [lotId, setLotId] = useState('');
+  const [locationId, setLocationId] = useState(ALL_VALUE);
+  const [itemId, setItemId] = useState(ALL_VALUE);
+  const [lotId, setLotId] = useState(ALL_VALUE);
+
+  const filteredItems = useMemo(() => filterItemsByMode(items || [], mode), [items, mode]);
+  const filteredLocations = useMemo(() => filterLocationsByMode(locations || [], mode), [locations, mode]);
+  const allowedItemIds = useMemo(
+    () => new Set(filteredItems.map((item) => item.id)),
+    [filteredItems]
+  );
+  
+  useEffect(() => {
+    if (itemId !== ALL_VALUE && !filteredItems.some((item) => item.id === itemId)) {
+      setItemId(ALL_VALUE);
+      setLotId(ALL_VALUE);
+    }
+  }, [itemId, filteredItems, ALL_VALUE]);
+
+  useEffect(() => {
+    if (locationId !== ALL_VALUE && !filteredLocations.some((loc) => loc.id === locationId)) {
+      setLocationId(ALL_VALUE);
+    }
+  }, [locationId, filteredLocations, ALL_VALUE]);
 
   const balanceFilters = useMemo(() => {
     const filters: any = {};
-    if (locationId) filters.locationId = locationId;
-    if (itemId) filters.itemId = itemId;
-    if (lotId) filters.lotId = lotId;
+    if (locationId !== ALL_VALUE) filters.locationId = locationId;
+    if (itemId !== ALL_VALUE) filters.itemId = itemId;
+    if (lotId !== ALL_VALUE) filters.lotId = lotId;
     return Object.keys(filters).length ? filters : undefined;
-  }, [locationId, itemId, lotId]);
+  }, [locationId, itemId, lotId, ALL_VALUE]);
 
   const { data: balances = [] } = useConsumableBalances(balanceFilters);
 
   const { data: rollup } = useQuery({
-    queryKey: ['consumableRollup', itemId || 'all'],
-    queryFn: () => consumableInventoryService.getRollup(itemId || undefined),
-    enabled: Boolean(itemId),
+    queryKey: ['consumableRollup', itemId !== ALL_VALUE ? itemId : 'all'],
+    queryFn: () => consumableInventoryService.getRollup(itemId !== ALL_VALUE ? itemId : undefined),
+    enabled: itemId !== ALL_VALUE,
   });
 
-  const { data: ledger = [] } = useConsumableLedger(itemId ? { itemId } : undefined);
+  const { data: ledger = [] } = useConsumableLedger(itemId !== ALL_VALUE ? { itemId } : undefined);
 
   const columns = [
     {
       key: 'consumable_item_id',
       label: 'Item',
-      render: (value: string) => items?.find((item) => item.id === value)?.name || 'Unknown',
+      render: (value: string) => filteredItems.find((item) => item.id === value)?.name || 'Unknown',
     },
     {
       key: 'location_id',
       label: 'Location',
-      render: (value: string) => locations?.find((loc) => loc.id === value)?.name || 'Unknown',
+      render: (value: string) => filteredLocations.find((loc) => loc.id === value)?.name || 'Unknown',
     },
     {
       key: 'lot_id',
@@ -69,7 +96,7 @@ export default function ConsumableInventory() {
       key: 'qty_on_hand_base',
       label: 'On Hand (base)',
       render: (value: number, row: ConsumableInventoryBalance) => {
-        const item = items?.find((i) => i.id === row.consumable_item_id);
+        const item = filteredItems.find((i) => i.id === row.consumable_item_id);
         return (
           <span className="font-medium">{value} {item?.base_uom || ''}</span>
         );
@@ -82,6 +109,7 @@ export default function ConsumableInventory() {
       <PageHeader
         title="Inventory"
         description="View balances by location, item, and lot"
+        extra={<ConsumableModeToggle mode={mode} onChange={setMode} />}
       />
 
       <Card className="mb-6">
@@ -92,8 +120,8 @@ export default function ConsumableInventory() {
               <Select value={locationId} onValueChange={setLocationId}>
                 <SelectTrigger><SelectValue placeholder="All locations" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All locations</SelectItem>
-                  {(locations || []).map((loc) => (
+                  <SelectItem value={ALL_VALUE}>All locations</SelectItem>
+                  {filteredLocations.map((loc) => (
                     <SelectItem key={loc.id} value={loc.id}>{loc.name}</SelectItem>
                   ))}
                 </SelectContent>
@@ -101,11 +129,11 @@ export default function ConsumableInventory() {
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Item</label>
-              <Select value={itemId} onValueChange={(value) => { setItemId(value); setLotId(''); }}>
+              <Select value={itemId} onValueChange={(value) => { setItemId(value); setLotId(ALL_VALUE); }}>
                 <SelectTrigger><SelectValue placeholder="All items" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All items</SelectItem>
-                  {(items || []).map((item) => (
+                  <SelectItem value={ALL_VALUE}>All items</SelectItem>
+                  {filteredItems.map((item) => (
                     <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>
                   ))}
                 </SelectContent>
@@ -116,9 +144,12 @@ export default function ConsumableInventory() {
               <Select value={lotId} onValueChange={setLotId}>
                 <SelectTrigger><SelectValue placeholder="All lots" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All lots</SelectItem>
+                  <SelectItem value={ALL_VALUE}>All lots</SelectItem>
                   {(lots || [])
-                    .filter((lot) => !itemId || lot.consumable_item_id === itemId)
+                    .filter((lot) => {
+                      if (itemId !== ALL_VALUE) return lot.consumable_item_id === itemId;
+                      return allowedItemIds.has(lot.consumable_item_id);
+                    })
                     .map((lot) => (
                       <SelectItem key={lot.id} value={lot.id}>{lot.lot_number}</SelectItem>
                     ))}
@@ -131,11 +162,13 @@ export default function ConsumableInventory() {
 
       <DataTable
         columns={columns}
-        data={balances as any}
+        data={(balances || []).filter((balance) =>
+          filteredItems.some((item) => item.id === balance.consumable_item_id)
+        ) as any}
         searchPlaceholder="Search inventory..."
       />
 
-      {itemId && rollup && rollup.length > 0 && (
+      {itemId !== ALL_VALUE && rollup && rollup.length > 0 && (
         <Card className="mt-6">
           <CardContent className="pt-6">
             <h3 className="text-lg font-semibold mb-2">Item Rollup</h3>
@@ -143,12 +176,12 @@ export default function ConsumableInventory() {
               <div key={row.itemId} className="space-y-2">
                 <p className="text-sm text-muted-foreground">Total across locations</p>
                 <p className="text-2xl font-semibold">
-                  {row.totalQtyBase} {items?.find((i) => i.id === row.itemId)?.base_uom}
+                  {row.totalQtyBase} {filteredItems.find((i) => i.id === row.itemId)?.base_uom}
                 </p>
                 <div className="flex flex-wrap gap-2">
                   {row.byLocation.map((loc: any) => (
                     <Badge key={loc.locationId} variant="outline">
-                      {locations?.find((l) => l.id === loc.locationId)?.name || 'Unknown'}: {loc.qtyOnHandBase}
+                      {filteredLocations.find((l) => l.id === loc.locationId)?.name || 'Unknown'}: {loc.qtyOnHandBase}
                     </Badge>
                   ))}
                 </div>
@@ -158,23 +191,23 @@ export default function ConsumableInventory() {
         </Card>
       )}
 
-      {itemId && ledger.length > 0 && (
+      {itemId !== ALL_VALUE && ledger.length > 0 && (
         <Card className="mt-6">
           <CardContent className="pt-6">
             <h3 className="text-lg font-semibold mb-2">Recent Transactions</h3>
             <div className="space-y-2 text-sm">
-              {ledger.slice(0, 5).map((entry) => (
-                <div key={entry.id} className="flex items-center justify-between border-b pb-2">
-                  <div>
-                    <p className="font-medium">{entry.tx_type}</p>
-                    <p className="text-muted-foreground">{new Date(entry.tx_time).toLocaleString()}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-medium">{entry.qty_base} {items?.find((i) => i.id === entry.consumable_item_id)?.base_uom}</p>
-                    <p className="text-muted-foreground">{entry.lot_id ? lots?.find((lot) => lot.id === entry.lot_id)?.lot_number : 'No lot'}</p>
-                  </div>
+            {ledger.slice(0, 5).map((entry) => (
+              <div key={entry.id} className="flex items-center justify-between border-b pb-2">
+                <div>
+                  <p className="font-medium">{entry.tx_type}</p>
+                  <p className="text-muted-foreground">{new Date(entry.tx_time).toLocaleString()}</p>
                 </div>
-              ))}
+                <div className="text-right">
+                  <p className="font-medium">{entry.qty_base} {filteredItems.find((i) => i.id === entry.consumable_item_id)?.base_uom}</p>
+                  <p className="text-muted-foreground">{entry.lot_id ? lots?.find((lot) => lot.id === entry.lot_id)?.lot_number : 'No lot'}</p>
+                </div>
+              </div>
+            ))}
             </div>
           </CardContent>
         </Card>

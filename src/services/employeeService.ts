@@ -22,6 +22,7 @@ export interface EmployeeUpdateDto {
   hireDate?: string;
   directorateId?: string;
   locationId?: string;
+  isActive?: boolean;
 }
 
 export const employeeService = {

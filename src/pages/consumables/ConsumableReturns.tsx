@@ -24,6 +24,9 @@ import { useConsumableBalances, useReturnConsumables } from '@/hooks/useConsumab
 import { getCompatibleUnits } from '@/lib/unitUtils';
 import type { ConsumableItem } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
+import { useConsumableMode } from '@/hooks/useConsumableMode';
+import { filterItemsByMode, filterLocationsByMode } from '@/lib/consumableMode';
+import { ConsumableModeToggle } from '@/components/consumables/ConsumableModeToggle';
 
 const returnSchema = z.object({
   fromLocationId: z.string().min(1, 'From location is required'),
@@ -47,9 +50,13 @@ const normalizeUom = (unit: string) => {
 };
 
 export default function ConsumableReturns() {
+  const FEFO_VALUE = '__fefo__';
   const { locationId } = useAuth();
+  const { mode, setMode } = useConsumableMode();
   const { data: items } = useConsumableItems();
-  const { data: locations } = useConsumableLocations();
+  const { data: locations } = useConsumableLocations({
+    capability: mode === 'chemicals' ? 'chemicals' : 'consumables',
+  });
   const { data: lots } = useConsumableLots();
   const returnMutation = useReturnConsumables();
 
@@ -59,7 +66,7 @@ export default function ConsumableReturns() {
       fromLocationId: locationId || '',
       toLocationId: '',
       itemId: '',
-      lotId: '',
+      lotId: FEFO_VALUE,
       containerId: '',
       qty: 0,
       uom: '',
@@ -68,7 +75,17 @@ export default function ConsumableReturns() {
     },
   });
 
-  const centralStore = useMemo(() => locations?.find((loc) => loc.type === 'CENTRAL'), [locations]);
+  const filteredItems = useMemo(() => filterItemsByMode(items || [], mode), [items, mode]);
+  const filteredLocations = useMemo(() => filterLocationsByMode(locations || [], mode), [locations, mode]);
+  const allowedItemIds = useMemo(
+    () => new Set(filteredItems.map((item) => item.id)),
+    [filteredItems]
+  );
+
+  const centralStore = useMemo(
+    () => filteredLocations.find((loc) => loc.type === 'CENTRAL'),
+    [filteredLocations]
+  );
 
   useEffect(() => {
     if (centralStore && !form.watch('toLocationId')) {
@@ -77,8 +94,17 @@ export default function ConsumableReturns() {
   }, [centralStore, form]);
 
   const selectedItem: ConsumableItem | undefined = useMemo(() => {
-    return items?.find((item) => item.id === form.watch('itemId'));
-  }, [items, form]);
+    return filteredItems.find((item) => item.id === form.watch('itemId'));
+  }, [filteredItems, form]);
+
+  useEffect(() => {
+    const currentItem = form.getValues('itemId');
+    if (currentItem && !filteredItems.some((item) => item.id === currentItem)) {
+      form.setValue('itemId', '');
+      form.setValue('lotId', FEFO_VALUE);
+      form.setValue('containerId', '');
+    }
+  }, [filteredItems, form, FEFO_VALUE]);
 
   const fromLocationId = form.watch('fromLocationId');
   const containerFilters = useMemo(() => {
@@ -114,6 +140,14 @@ export default function ConsumableReturns() {
   }, [selectedItem, form]);
 
   useEffect(() => {
+    if (filteredLocations.length === 0) return;
+    const current = form.getValues('fromLocationId');
+    if (!current || !filteredLocations.some((loc) => loc.id === current)) {
+      form.setValue('fromLocationId', filteredLocations[0].id);
+    }
+  }, [filteredLocations, form]);
+
+  useEffect(() => {
     if (!selectedContainer) return;
     form.setValue('lotId', selectedContainer.lot_id);
     form.setValue('qty', selectedContainer.current_qty_base);
@@ -139,19 +173,23 @@ export default function ConsumableReturns() {
       fromLocationId: data.fromLocationId,
       toLocationId: data.toLocationId || undefined,
       itemId: data.itemId,
-      lotId: data.lotId || undefined,
+      lotId: data.lotId && data.lotId !== FEFO_VALUE ? data.lotId : undefined,
       containerId: data.containerId || undefined,
       qty: data.qty,
       uom: data.uom,
       reference: data.reference || undefined,
       notes: data.notes || undefined,
     });
-    form.reset({ fromLocationId: data.fromLocationId, toLocationId: data.toLocationId, itemId: '', lotId: '', containerId: '', qty: 0, uom: '' });
+    form.reset({ fromLocationId: data.fromLocationId, toLocationId: data.toLocationId, itemId: '', lotId: FEFO_VALUE, containerId: '', qty: 0, uom: '' });
   };
 
   return (
     <MainLayout title="Consumable Returns" description="Return stock to Central Store">
-      <PageHeader title="Returns" description="Return lab stock to Central Store" />
+      <PageHeader
+        title="Returns"
+        description="Return lab stock to Central Store"
+        extra={<ConsumableModeToggle mode={mode} onChange={setMode} />}
+      />
 
       <Card>
         <CardContent className="pt-6">
@@ -162,7 +200,7 @@ export default function ConsumableReturns() {
                 <Select value={form.watch('fromLocationId')} onValueChange={(v) => form.setValue('fromLocationId', v)}>
                   <SelectTrigger><SelectValue placeholder="Select lab" /></SelectTrigger>
                   <SelectContent>
-                    {(locations || []).map((loc) => (
+                    {filteredLocations.map((loc) => (
                       <SelectItem key={loc.id} value={loc.id}>{loc.name}</SelectItem>
                     ))}
                   </SelectContent>
@@ -173,7 +211,7 @@ export default function ConsumableReturns() {
                 <Select value={form.watch('toLocationId') || ''} onValueChange={(v) => form.setValue('toLocationId', v)}>
                   <SelectTrigger><SelectValue placeholder="Select central" /></SelectTrigger>
                   <SelectContent>
-                    {(locations || []).filter((loc) => loc.type === 'CENTRAL').map((loc) => (
+                    {filteredLocations.filter((loc) => loc.type === 'CENTRAL').map((loc) => (
                       <SelectItem key={loc.id} value={loc.id}>{loc.name}</SelectItem>
                     ))}
                   </SelectContent>
@@ -187,7 +225,7 @@ export default function ConsumableReturns() {
                 <Select value={form.watch('itemId')} onValueChange={(v) => form.setValue('itemId', v)}>
                   <SelectTrigger><SelectValue placeholder="Select item" /></SelectTrigger>
                   <SelectContent>
-                    {(items || []).map((item) => (
+                    {filteredItems.map((item) => (
                       <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>
                     ))}
                   </SelectContent>
@@ -196,15 +234,18 @@ export default function ConsumableReturns() {
               <div className="space-y-2">
                 <Label>Lot (optional)</Label>
                 <Select
-                  value={form.watch('lotId') || ''}
+                  value={form.watch('lotId') || FEFO_VALUE}
                   onValueChange={(v) => form.setValue('lotId', v)}
                   disabled={Boolean(selectedContainer)}
                 >
                   <SelectTrigger><SelectValue placeholder="FEFO default" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">FEFO default</SelectItem>
+                    <SelectItem value={FEFO_VALUE}>FEFO default</SelectItem>
                     {(lots || [])
-                      .filter((lot) => !form.watch('itemId') || lot.consumable_item_id === form.watch('itemId'))
+                      .filter((lot) => {
+                        if (form.watch('itemId')) return lot.consumable_item_id === form.watch('itemId');
+                        return allowedItemIds.has(lot.consumable_item_id);
+                      })
                       .map((lot) => (
                         <SelectItem key={lot.id} value={lot.id}>{lot.lot_number}</SelectItem>
                       ))}

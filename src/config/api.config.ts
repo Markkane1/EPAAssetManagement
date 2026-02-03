@@ -38,6 +38,18 @@ export const API_CONFIG = {
     directorateDeleted: 'Directorate deleted successfully',
     directorateError: 'Failed to process directorate',
 
+    // Divisions
+    divisionCreated: 'Division created successfully',
+    divisionUpdated: 'Division updated successfully',
+    divisionDeleted: 'Division deleted successfully',
+    divisionError: 'Failed to process division',
+
+    // Districts
+    districtCreated: 'District created successfully',
+    districtUpdated: 'District updated successfully',
+    districtDeleted: 'District deleted successfully',
+    districtError: 'Failed to process district',
+
     // Offices
     officeCreated: 'Office created successfully',
     officeUpdated: 'Office updated successfully',
@@ -128,6 +140,8 @@ export const API_CONFIG = {
     offices: ['offices'] as const,
     locations: ['locations'] as const,
     directorates: ['directorates'] as const,
+    divisions: ['divisions'] as const,
+    districts: ['districts'] as const,
     employees: ['employees'] as const,
     vendors: ['vendors'] as const,
     assets: ['assets'] as const,

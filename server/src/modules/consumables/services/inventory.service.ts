@@ -11,6 +11,7 @@ import { ConsumableReasonCodeModel } from '../models/consumableReasonCode.model'
 import { createHttpError } from '../utils/httpError';
 import { convertToBaseQty, formatUom } from '../utils/unitConversion';
 import { resolveConsumablePermissions } from '../utils/permissions';
+import { supportsChemicals } from '../utils/officeCapabilities';
 
 const CENTRAL_TYPE = 'CENTRAL';
 
@@ -32,6 +33,13 @@ const nowIso = () => new Date().toISOString();
 
 function ensureAllowed(condition: boolean, message: string) {
   if (!condition) throw createHttpError(403, message);
+}
+
+function ensureChemicalsLocation(item: any, location: any, label: string) {
+  if (!item?.is_chemical) return;
+  if (!supportsChemicals(location)) {
+    throw createHttpError(400, `${label} must be a lab-enabled chemical location`);
+  }
 }
 
 async function getUserContext(userId: string, session?: ClientSession) {
@@ -256,6 +264,7 @@ export const inventoryService = {
 
         const item = await getItem(payload.itemId, session);
         const location = await getLocation(payload.locationId, session);
+        ensureChemicalsLocation(item, location, 'Receiving location');
         if (location.type !== CENTRAL_TYPE) {
           throw createHttpError(400, 'Receipts must be into Central Store');
         }
@@ -370,6 +379,8 @@ export const inventoryService = {
         const item = await getItem(payload.itemId, session);
         const fromLocation = await getLocation(payload.fromLocationId, session);
         const toLocation = await getLocation(payload.toLocationId, session);
+        ensureChemicalsLocation(item, fromLocation, 'From location');
+        ensureChemicalsLocation(item, toLocation, 'To location');
 
         if (fromLocation.type === CENTRAL_TYPE) {
           ensureAllowed(permissions.canTransferCentral, 'Not permitted to transfer from Central Store');
@@ -528,6 +539,7 @@ export const inventoryService = {
 
         const item = await getItem(payload.itemId, session);
         const location = await getLocation(payload.locationId, session);
+        ensureChemicalsLocation(item, location, 'Consumption location');
         await ensureLocationAccess(user, location.id, session);
 
         const qtyBase = convertToBaseQty(payload.qty, payload.uom, item.base_uom);
@@ -673,6 +685,7 @@ export const inventoryService = {
 
         const item = await getItem(payload.itemId, session);
         const location = await getLocation(payload.locationId, session);
+        ensureChemicalsLocation(item, location, 'Adjustment location');
         await ensureLocationAccess(user, location.id, session);
 
         await verifyReasonCode(payload.reasonCodeId, 'ADJUST', session);
@@ -764,6 +777,7 @@ export const inventoryService = {
 
         const item = await getItem(payload.itemId, session);
         const location = await getLocation(payload.locationId, session);
+        ensureChemicalsLocation(item, location, 'Disposal location');
         await ensureLocationAccess(user, location.id, session);
 
         await verifyReasonCode(payload.reasonCodeId, 'DISPOSE', session);
@@ -860,11 +874,13 @@ export const inventoryService = {
 
         const item = await getItem(payload.itemId, session);
         const fromLocation = await getLocation(payload.fromLocationId, session);
+        ensureChemicalsLocation(item, fromLocation, 'Return source location');
         await ensureLocationAccess(user, fromLocation.id, session);
 
         const toLocation = payload.toLocationId
           ? await getLocation(payload.toLocationId, session)
           : await getCentralStoreLocation(session);
+        ensureChemicalsLocation(item, toLocation, 'Return destination location');
 
         if (toLocation.type !== CENTRAL_TYPE) {
           throw createHttpError(400, 'Returns must be sent to Central Store');
@@ -1022,6 +1038,7 @@ export const inventoryService = {
         for (const entry of payload.entries) {
           const item = await getItem(entry.itemId, session);
           const location = await getLocation(entry.locationId, session);
+          ensureChemicalsLocation(item, location, 'Opening balance location');
           const qtyBase = convertToBaseQty(entry.qty, entry.uom, item.base_uom);
           if (qtyBase <= 0) throw createHttpError(400, 'Quantity must be greater than zero');
 

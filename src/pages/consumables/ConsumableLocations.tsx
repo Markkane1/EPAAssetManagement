@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -50,6 +51,11 @@ const locationSchema = z.object({
   address: z.string().max(200).optional(),
   contactNumber: z.string().max(64).optional(),
   isActive: z.boolean().optional(),
+  capabilities: z.object({
+    moveables: z.boolean().optional(),
+    consumables: z.boolean().optional(),
+    chemicals: z.boolean().optional(),
+  }).optional(),
 });
 
 type LocationFormData = z.infer<typeof locationSchema>;
@@ -75,6 +81,11 @@ export default function ConsumableLocations() {
       address: '',
       contactNumber: '',
       isActive: true,
+      capabilities: {
+        moveables: true,
+        consumables: true,
+        chemicals: false,
+      },
     },
   });
 
@@ -90,6 +101,11 @@ export default function ConsumableLocations() {
         address: editing.address || '',
         contactNumber: editing.contact_number || '',
         isActive: editing.is_active ?? true,
+        capabilities: {
+          moveables: editing.capabilities?.moveables ?? true,
+          consumables: editing.capabilities?.consumables ?? true,
+          chemicals: editing.capabilities?.chemicals ?? (editing.type === 'LAB'),
+        },
       });
     } else {
       form.reset({
@@ -102,6 +118,11 @@ export default function ConsumableLocations() {
         address: '',
         contactNumber: '',
         isActive: true,
+        capabilities: {
+          moveables: true,
+          consumables: true,
+          chemicals: false,
+        },
       });
     }
   }, [editing, form]);
@@ -136,6 +157,14 @@ export default function ConsumableLocations() {
       key: 'type',
       label: 'Type',
       render: (value: string) => <Badge variant="outline">{value || 'LAB'}</Badge>,
+    },
+    {
+      key: 'capabilities.chemicals',
+      label: 'Chemicals',
+      render: (value: boolean | undefined, row: Location) => {
+        const enabled = value ?? (row.type === 'LAB');
+        return enabled ? 'Yes' : 'No';
+      },
     },
     { key: 'lab_code', label: 'Lab Code' },
     {
@@ -234,6 +263,44 @@ export default function ConsumableLocations() {
               <div className="space-y-2">
                 <Label htmlFor="district">District</Label>
                 <Input id="district" {...form.register('district')} />
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  checked={form.watch('capabilities')?.moveables ?? true}
+                  onCheckedChange={(checked) =>
+                    form.setValue('capabilities', {
+                      ...form.getValues('capabilities'),
+                      moveables: Boolean(checked),
+                    })
+                  }
+                />
+                <Label>Moveables</Label>
+              </div>
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  checked={form.watch('capabilities')?.consumables ?? true}
+                  onCheckedChange={(checked) =>
+                    form.setValue('capabilities', {
+                      ...form.getValues('capabilities'),
+                      consumables: Boolean(checked),
+                    })
+                  }
+                />
+                <Label>Consumables</Label>
+              </div>
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  checked={form.watch('capabilities')?.chemicals ?? (form.watch('type') === 'LAB')}
+                  onCheckedChange={(checked) =>
+                    form.setValue('capabilities', {
+                      ...form.getValues('capabilities'),
+                      chemicals: Boolean(checked),
+                    })
+                  }
+                />
+                <Label>Chemicals</Label>
               </div>
             </div>
             <div className="space-y-2">

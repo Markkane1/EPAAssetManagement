@@ -43,10 +43,21 @@ interface EmployeeFormModalProps {
   employee?: Employee | null;
   directorates: Directorate[];
   locations: Location[];
+  locationLocked?: boolean;
+  fixedLocationId?: string | null;
   onSubmit: (data: EmployeeFormData) => Promise<void>;
 }
 
-export function EmployeeFormModal({ open, onOpenChange, employee, directorates, locations, onSubmit }: EmployeeFormModalProps) {
+export function EmployeeFormModal({
+  open,
+  onOpenChange,
+  employee,
+  directorates,
+  locations,
+  locationLocked,
+  fixedLocationId,
+  onSubmit,
+}: EmployeeFormModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const isEditing = !!employee;
 
@@ -60,7 +71,7 @@ export function EmployeeFormModal({ open, onOpenChange, employee, directorates, 
       phone: employee?.phone || "",
       jobTitle: employee?.job_title || "",
       directorateId: employee?.directorate_id || "",
-      locationId: employee?.location_id || "",
+      locationId: employee?.location_id || fixedLocationId || "",
     },
   });
 
@@ -79,7 +90,7 @@ export function EmployeeFormModal({ open, onOpenChange, employee, directorates, 
         phone: employee.phone || "",
         jobTitle: employee.job_title || "",
         directorateId: employee.directorate_id || "",
-        locationId: employee.location_id || "",
+        locationId: fixedLocationId || employee.location_id || "",
       });
     } else {
       form.reset({
@@ -90,10 +101,10 @@ export function EmployeeFormModal({ open, onOpenChange, employee, directorates, 
         phone: "",
         jobTitle: "",
         directorateId: "",
-        locationId: "",
+        locationId: fixedLocationId || "",
       });
     }
-  }, [employee, form]);
+  }, [employee, fixedLocationId, form]);
 
   useEffect(() => {
     if (!isHeadOffice && selectedDirectorateId) {
@@ -116,6 +127,7 @@ export function EmployeeFormModal({ open, onOpenChange, employee, directorates, 
         ...data,
         userPassword: data.userPassword ? data.userPassword : undefined,
         directorateId: isHeadOffice ? data.directorateId : undefined,
+        locationId: fixedLocationId || data.locationId,
       };
 
       await onSubmit(payload);
@@ -210,7 +222,11 @@ export function EmployeeFormModal({ open, onOpenChange, employee, directorates, 
             </div>
             <div className="space-y-2">
               <Label>Office *</Label>
-              <Select value={form.watch("locationId")} onValueChange={(v) => form.setValue("locationId", v)}>
+              <Select
+                value={form.watch("locationId")}
+                onValueChange={(v) => form.setValue("locationId", v)}
+                disabled={locationLocked}
+              >
                 <SelectTrigger><SelectValue placeholder="Select office" /></SelectTrigger>
                 <SelectContent>
                   {locations.map((l) => (

@@ -21,6 +21,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import { Loader2 } from "lucide-react";
 import { MaintenanceRecord, MaintenanceType, MaintenanceStatus, AssetItem, Asset } from "@/types";
 
@@ -55,6 +63,7 @@ export function MaintenanceFormModal({
   onSubmit,
 }: MaintenanceFormModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [assetPickerOpen, setAssetPickerOpen] = useState(false);
   const isEditing = !!maintenance;
 
   const form = useForm<MaintenanceFormData>({
@@ -114,9 +123,11 @@ export function MaintenanceFormModal({
     return assets.find((a) => a.id === assetId)?.name || "Unknown";
   };
 
+  const selectedAssetItem = assetItems.find((item) => item.id === form.watch("assetItemId"));
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="sm:max-w-[500px] max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{isEditing ? "Edit Maintenance" : "Schedule Maintenance"}</DialogTitle>
           <DialogDescription>
@@ -126,21 +137,36 @@ export function MaintenanceFormModal({
         <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
           <div className="space-y-2">
             <Label>Asset Item *</Label>
-            <Select
-              value={form.watch("assetItemId")}
-              onValueChange={(v) => form.setValue("assetItemId", v)}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select asset item" />
-              </SelectTrigger>
-              <SelectContent>
-                {assetItems.map((item) => (
-                  <SelectItem key={item.id} value={item.id}>
-                    <span className="font-mono">{item.tag}</span> - {getAssetName(item.asset_id)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Popover open={assetPickerOpen} onOpenChange={setAssetPickerOpen}>
+              <PopoverTrigger asChild>
+                <Button variant="outline" role="combobox" className="w-full justify-between">
+                  {selectedAssetItem
+                    ? `${selectedAssetItem.tag || selectedAssetItem.serial_number || "Asset"} - ${getAssetName(selectedAssetItem.asset_id)}`
+                    : "Search asset items..."}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                <Command>
+                  <CommandInput placeholder="Search by tag, serial, or asset..." />
+                  <CommandList>
+                    <CommandEmpty>No asset items found.</CommandEmpty>
+                    {assetItems.map((item) => (
+                      <CommandItem
+                        key={item.id}
+                        value={`${item.tag || ""} ${item.serial_number || ""} ${getAssetName(item.asset_id)}`}
+                        onSelect={() => {
+                          form.setValue("assetItemId", item.id);
+                          setAssetPickerOpen(false);
+                        }}
+                      >
+                        <span className="font-mono">{item.tag || item.serial_number || "Asset"}</span>
+                        <span className="ml-2 text-xs text-muted-foreground">{getAssetName(item.asset_id)}</span>
+                      </CommandItem>
+                    ))}
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
             {form.formState.errors.assetItemId && (
               <p className="text-sm text-destructive">{form.formState.errors.assetItemId.message}</p>
             )}

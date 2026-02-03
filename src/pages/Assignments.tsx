@@ -12,6 +12,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Assignment } from "@/types";
 import { useAssignments, useCreateAssignment, useReturnAsset, useReassignAsset } from "@/hooks/useAssignments";
 import { useAssetItems, useUpdateAssetItem } from "@/hooks/useAssetItems";
@@ -36,6 +43,10 @@ export default function Assignments() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isReassignOpen, setIsReassignOpen] = useState(false);
   const [isReturnOpen, setIsReturnOpen] = useState(false);
+  const [detailModal, setDetailModal] = useState<{ open: boolean; assignment: any | null }>({
+    open: false,
+    assignment: null,
+  });
 
   const assignmentList = assignments || [];
   const assetItemList = assetItems || [];
@@ -194,7 +205,7 @@ export default function Assignments() {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuItem>
+        <DropdownMenuItem onClick={() => setDetailModal({ open: true, assignment: row })}>
           <Eye className="h-4 w-4 mr-2" /> View Details
         </DropdownMenuItem>
         {!isLimitedRole && row.is_active && (
@@ -290,6 +301,58 @@ export default function Assignments() {
             onSubmit={handleReturnSubmit}
           />
         </>
+      )}
+
+      {detailModal.assignment && (
+        <Dialog
+          open={detailModal.open}
+          onOpenChange={(open) => setDetailModal({ open, assignment: open ? detailModal.assignment : null })}
+        >
+          <DialogContent className="sm:max-w-[520px]">
+            <DialogHeader>
+              <DialogTitle>Assignment Details</DialogTitle>
+              <DialogDescription>Review the selected assignment information.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3 text-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Asset</span>
+                <span className="font-medium">{detailModal.assignment.assetName || "N/A"}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Tag</span>
+                <span className="font-mono">{detailModal.assignment.itemTag || "N/A"}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Employee</span>
+                <span className="font-medium">{detailModal.assignment.employeeName || "N/A"}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Email</span>
+                <span>{detailModal.assignment.employeeEmail || "N/A"}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Assigned On</span>
+                <span>{new Date(detailModal.assignment.assigned_date).toLocaleDateString()}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Expected Return</span>
+                <span>
+                  {detailModal.assignment.expected_return_date
+                    ? new Date(detailModal.assignment.expected_return_date).toLocaleDateString()
+                    : "N/A"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Status</span>
+                <span>{detailModal.assignment.is_active ? "Active" : "Returned"}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Notes</span>
+                <p className="mt-1">{detailModal.assignment.notes || "N/A"}</p>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       )}
     </MainLayout>
   );

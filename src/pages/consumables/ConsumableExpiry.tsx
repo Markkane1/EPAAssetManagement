@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { DataTable } from '@/components/shared/DataTable';
@@ -15,15 +15,37 @@ import { useConsumableItems } from '@/hooks/useConsumableItems';
 import { useConsumableLocations } from '@/hooks/useConsumableLocations';
 import { useConsumableLots } from '@/hooks/useConsumableLots';
 import type { ConsumableExpiryRow } from '@/types';
+import { useConsumableMode } from '@/hooks/useConsumableMode';
+import { filterItemsByMode, filterLocationsByMode } from '@/lib/consumableMode';
+import { ConsumableModeToggle } from '@/components/consumables/ConsumableModeToggle';
 
 export default function ConsumableExpiry() {
+  const ALL_VALUE = '__all__';
   const [days, setDays] = useState(30);
-  const [locationId, setLocationId] = useState('');
+  const [locationId, setLocationId] = useState(ALL_VALUE);
 
+  const { mode, setMode } = useConsumableMode();
   const { data: items } = useConsumableItems();
-  const { data: locations } = useConsumableLocations();
+  const { data: locations } = useConsumableLocations({
+    capability: mode === 'chemicals' ? 'chemicals' : 'consumables',
+  });
   const { data: lots } = useConsumableLots();
-  const { data: expiry = [] } = useConsumableExpiry(days, locationId || undefined);
+  const { data: expiry = [] } = useConsumableExpiry(
+    days,
+    locationId !== ALL_VALUE ? locationId : undefined
+  );
+
+  const filteredItems = filterItemsByMode(items || [], mode);
+  const filteredLocations = filterLocationsByMode(locations || [], mode);
+  const visibleExpiry = expiry.filter((row) =>
+    filteredItems.some((item) => item.id === row.itemId)
+  );
+
+  useEffect(() => {
+    if (locationId !== ALL_VALUE && !filteredLocations.some((loc) => loc.id === locationId)) {
+      setLocationId(ALL_VALUE);
+    }
+  }, [locationId, filteredLocations, ALL_VALUE]);
 
   const columns = [
     {
@@ -34,12 +56,12 @@ export default function ConsumableExpiry() {
     {
       key: 'itemId',
       label: 'Item',
-      render: (value: string) => items?.find((item) => item.id === value)?.name || 'Unknown',
+      render: (value: string) => filteredItems.find((item) => item.id === value)?.name || 'Unknown',
     },
     {
       key: 'locationId',
       label: 'Location',
-      render: (value: string) => locations?.find((loc) => loc.id === value)?.name || 'Unknown',
+      render: (value: string) => filteredLocations.find((loc) => loc.id === value)?.name || 'Unknown',
     },
     {
       key: 'expiryDate',
@@ -50,7 +72,7 @@ export default function ConsumableExpiry() {
       key: 'qtyOnHandBase',
       label: 'Qty (base)',
       render: (value: number, row: ConsumableExpiryRow) => {
-        const item = items?.find((i) => i.id === row.itemId);
+        const item = filteredItems.find((i) => i.id === row.itemId);
         return `${value} ${item?.base_uom || ''}`;
       },
     },
@@ -58,7 +80,11 @@ export default function ConsumableExpiry() {
 
   return (
     <MainLayout title="Expiry Dashboard" description="Lots nearing expiration">
-      <PageHeader title="Expiry Dashboard" description="Expiring lots in the next 30/60/90 days" />
+      <PageHeader
+        title="Expiry Dashboard"
+        description="Expiring lots in the next 30/60/90 days"
+        extra={<ConsumableModeToggle mode={mode} onChange={setMode} />}
+      />
 
       <Card className="mb-6">
         <CardContent className="pt-6">
@@ -79,8 +105,8 @@ export default function ConsumableExpiry() {
               <Select value={locationId} onValueChange={setLocationId}>
                 <SelectTrigger><SelectValue placeholder="All locations" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All locations</SelectItem>
-                  {(locations || []).map((loc) => (
+                  <SelectItem value={ALL_VALUE}>All locations</SelectItem>
+                  {filteredLocations.map((loc) => (
                     <SelectItem key={loc.id} value={loc.id}>{loc.name}</SelectItem>
                   ))}
                 </SelectContent>
@@ -92,7 +118,7 @@ export default function ConsumableExpiry() {
 
       <DataTable
         columns={columns}
-        data={expiry as any}
+        data={visibleExpiry as any}
         searchPlaceholder="Search expiring lots..."
       />
     </MainLayout>

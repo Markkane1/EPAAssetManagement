@@ -1,6 +1,15 @@
 import mongoose, { Schema } from 'mongoose';
 import { baseSchemaOptions } from './base';
 
+const CapabilitySchema = new Schema(
+  {
+    moveables: { type: Boolean, default: true },
+    consumables: { type: Boolean, default: true },
+    chemicals: { type: Boolean, default: false },
+  },
+  { _id: false }
+);
+
 const OfficeSchema = new Schema(
   {
     // Office name for display and lookups
@@ -16,6 +25,8 @@ const OfficeSchema = new Schema(
     contact_number: { type: String, default: null, trim: true },
     // Office classification used by consumables and reporting
     type: { type: String, enum: ['CENTRAL', 'LAB', 'SUBSTORE'], default: 'LAB' },
+    // Capability flags used for module filtering and enforcement
+    capabilities: { type: CapabilitySchema, default: undefined },
     // Parent office reference for hierarchy (e.g., lab within district)
     parent_location_id: { type: Schema.Types.ObjectId, ref: 'Office', default: null },
     // Optional lab code for lab offices

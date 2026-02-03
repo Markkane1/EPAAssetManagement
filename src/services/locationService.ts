@@ -7,6 +7,12 @@ export interface LocationCreateDto {
   district?: string;
   address?: string;
   contactNumber?: string;
+  type?: 'CENTRAL' | 'LAB' | 'SUBSTORE';
+  capabilities?: {
+    moveables?: boolean;
+    consumables?: boolean;
+    chemicals?: boolean;
+  };
 }
 
 export interface LocationUpdateDto {
@@ -15,6 +21,12 @@ export interface LocationUpdateDto {
   district?: string;
   address?: string;
   contactNumber?: string;
+  type?: 'CENTRAL' | 'LAB' | 'SUBSTORE';
+  capabilities?: {
+    moveables?: boolean;
+    consumables?: boolean;
+    chemicals?: boolean;
+  };
 }
 
 export const locationService = {

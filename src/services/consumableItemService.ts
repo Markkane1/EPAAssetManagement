@@ -8,6 +8,7 @@ export interface ConsumableItemCreateDto {
   baseUom: ConsumableBaseUom;
   isHazardous?: boolean;
   isControlled?: boolean;
+  isChemical?: boolean;
   requiresLotTracking?: boolean;
   requiresContainerTracking?: boolean;
   defaultMinStock?: number;
