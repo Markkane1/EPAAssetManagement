@@ -92,6 +92,13 @@ async function main() {
   });
   assert.equal(adminEscalation.status, 403, 'Admin role escalation to super_admin must be denied');
 
+  const adminUnknownRole = await adminAgent.post('/api/auth/register').send({
+    email: 'bad-role@example.com',
+    password: 'Passw0rd!',
+    role: 'not_a_real_role',
+  });
+  assert.equal(adminUnknownRole.status, 400, 'Unknown roles must be rejected');
+
   // 3) Previously public write endpoints should now require auth.
   const unauthOfficeCreate = await request(app).post('/api/offices').send({ name: 'Injected Office' });
   assert.equal(unauthOfficeCreate.status, 401, 'Unauthenticated office creation should be denied');

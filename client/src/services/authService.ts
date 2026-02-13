@@ -4,6 +4,8 @@ export type AppRole =
   | 'super_admin'
   | 'admin'
   | 'location_admin'
+  | 'caretaker'
+  | 'assistant_caretaker'
   | 'central_store_admin'
   | 'lab_manager'
   | 'lab_user'
@@ -21,6 +23,10 @@ export const normalizeRole = (role?: string | null): AppRole => {
       return 'admin';
     case 'location_admin':
       return 'location_admin';
+    case 'caretaker':
+      return 'caretaker';
+    case 'assistant_caretaker':
+      return 'assistant_caretaker';
     case 'central_store_admin':
       return 'central_store_admin';
     case 'lab_manager':

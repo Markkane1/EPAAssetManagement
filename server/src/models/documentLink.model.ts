@@ -1,7 +1,7 @@
 import mongoose, { Schema } from 'mongoose';
 import { baseSchemaOptions } from './base';
 
-const ENTITY_TYPES = ['Record', 'AssetItem', 'Assignment', 'Transfer', 'MaintenanceRecord'] as const;
+const ENTITY_TYPES = ['Record', 'AssetItem', 'Assignment', 'Transfer', 'MaintenanceRecord', 'Requisition'] as const;
 const REQUIRED_STATUSES = ['PendingApproval', 'Approved', 'Completed'] as const;
 
 const DocumentLinkSchema = new Schema(

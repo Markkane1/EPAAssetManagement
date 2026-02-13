@@ -10,7 +10,12 @@ export type AccessContext = {
   isHeadofficeAdmin: boolean;
 };
 
-const OFFICE_MANAGER_ROLES = new Set(['location_admin', 'office_head']);
+const OFFICE_MANAGER_ROLES = new Set([
+  'location_admin',
+  'office_head',
+  'caretaker',
+  'assistant_caretaker',
+]);
 
 export function isOfficeManager(role: string) {
   return OFFICE_MANAGER_ROLES.has(role);

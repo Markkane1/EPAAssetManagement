@@ -237,6 +237,8 @@ export function Sidebar({ className }: SidebarProps) {
     switch (role) {
       case 'admin': return "Administrator";
       case 'location_admin': return "Location Admin";
+      case 'caretaker': return "Caretaker";
+      case 'assistant_caretaker': return "Assistant Caretaker";
       case 'central_store_admin': return "Central Store Admin";
       case 'lab_manager': return "Lab Manager";
       case 'lab_user': return "Lab User";

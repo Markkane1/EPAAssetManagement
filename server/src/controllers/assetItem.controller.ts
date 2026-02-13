@@ -14,11 +14,15 @@ const fieldMap = {
   assignmentStatus: 'assignment_status',
   itemStatus: 'item_status',
   itemCondition: 'item_condition',
+  condition: 'item_condition',
   functionalStatus: 'functional_status',
   itemSource: 'item_source',
   purchaseDate: 'purchase_date',
   warrantyExpiry: 'warranty_expiry',
+  isActive: 'is_active',
 };
+
+const MANAGER_ALLOWED_UPDATE_FIELDS = new Set(['item_status', 'item_condition', 'notes']);
 
 function clampInt(value: unknown, fallback: number, max: number) {
   const parsed = Number(value);
@@ -256,13 +260,24 @@ export const assetItemController = {
   },
   update: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
-      const payload = buildPayload(req.body);
-      if (payload.location_id !== undefined) {
-        throw createHttpError(400, 'Location changes must be handled via transfers');
-      }
       const access = await resolveAccessContext(req.user);
       if (!access.isHeadofficeAdmin && !isOfficeManager(access.role)) {
         throw createHttpError(403, 'Not permitted to manage asset items');
+      }
+
+      const payload = buildPayload(req.body);
+      const payloadKeys = Object.keys(payload);
+      if (!access.isHeadofficeAdmin) {
+        const forbiddenFields = payloadKeys.filter((field) => !MANAGER_ALLOWED_UPDATE_FIELDS.has(field));
+        if (forbiddenFields.length > 0) {
+          throw createHttpError(
+            403,
+            `Forbidden field edit for role ${access.role}: ${forbiddenFields.sort().join(', ')}`
+          );
+        }
+      }
+      if (payload.location_id !== undefined) {
+        throw createHttpError(400, 'Location changes must be handled via transfers');
       }
       const item = await AssetItemModel.findById(req.params.id);
       if (!item) return res.status(404).json({ message: 'Not found' });
@@ -278,14 +293,11 @@ export const assetItemController = {
   remove: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const access = await resolveAccessContext(req.user);
-      if (!access.isHeadofficeAdmin && !isOfficeManager(access.role)) {
-        throw createHttpError(403, 'Not permitted to retire asset items');
+      if (!access.isHeadofficeAdmin) {
+        throw createHttpError(403, 'Only Head Office Admin can retire asset items');
       }
       const item = await AssetItemModel.findById(req.params.id);
       if (!item) return res.status(404).json({ message: 'Not found' });
-      if (!access.isHeadofficeAdmin && item.location_id) {
-        ensureOfficeScope(access, item.location_id.toString());
-      }
       item.is_active = false;
       item.assignment_status = 'Unassigned';
       item.item_status = 'Retired';

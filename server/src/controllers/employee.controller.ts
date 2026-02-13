@@ -7,6 +7,7 @@ import { UserModel } from '../models/user.model';
 import { mapFields } from '../utils/mapFields';
 import { EmployeeModel } from '../models/employee.model';
 import { AuthRequest } from '../middleware/auth';
+import { normalizeRole } from '../utils/roles';
 
 const fieldMap = {
   firstName: 'first_name',
@@ -31,12 +32,6 @@ const baseController = createCrudController({
     isActive: 'is_active',
   },
 });
-
-const normalizeRole = (role?: string | null) => {
-  if (role === 'manager') return 'admin';
-  if (role === 'location_admin') return 'location_admin';
-  return role || 'user';
-};
 
 const generateTempPassword = () => `Temp-${crypto.randomBytes(6).toString('hex')}`;
 

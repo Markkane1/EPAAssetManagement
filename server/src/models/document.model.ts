@@ -6,6 +6,7 @@ const DOCUMENT_TYPES = [
   'ReturnSlip',
   'TransferChallan',
   'MaintenanceJobCard',
+  'RequisitionForm',
   'Warranty',
   'Invoice',
   'DisposalApproval',

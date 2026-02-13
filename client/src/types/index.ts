@@ -66,6 +66,8 @@ export enum UserRole {
   Admin = "Admin",
   Manager = "Manager",
   LocationAdmin = "LocationAdmin",
+  Caretaker = "Caretaker",
+  AssistantCaretaker = "AssistantCaretaker",
   User = "User",
   Employee = "Employee",
   DirectorateHead = "DirectorateHead",

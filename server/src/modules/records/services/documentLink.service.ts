@@ -5,13 +5,14 @@ import { AssetItemModel } from '../../../models/assetItem.model';
 import { AssignmentModel } from '../../../models/assignment.model';
 import { TransferModel } from '../../../models/transfer.model';
 import { MaintenanceRecordModel } from '../../../models/maintenanceRecord.model';
+import { RequisitionModel } from '../../../models/requisition.model';
 import { createHttpError } from '../../../utils/httpError';
 import { RequestContext } from '../../../utils/scope';
 import { logAudit } from './audit.service';
 
 export interface DocumentLinkInput {
   documentId: string;
-  entityType: 'Record' | 'AssetItem' | 'Assignment' | 'Transfer' | 'MaintenanceRecord';
+  entityType: 'Record' | 'AssetItem' | 'Assignment' | 'Transfer' | 'MaintenanceRecord' | 'Requisition';
   entityId: string;
   requiredForStatus?: 'PendingApproval' | 'Approved' | 'Completed';
 }
@@ -41,6 +42,10 @@ async function resolveEntityOffice(entityType: DocumentLinkInput['entityType'], 
       if (!record) return null;
       const item = await AssetItemModel.findById(record.asset_item_id);
       return item?.location_id?.toString() || null;
+    }
+    case 'Requisition': {
+      const requisition = await RequisitionModel.findById(entityId);
+      return requisition?.office_id?.toString() || null;
     }
     default:
       return null;

@@ -3,12 +3,7 @@ import bcrypt from 'bcryptjs';
 import { UserModel } from '../models/user.model';
 import { OfficeModel } from '../models/office.model';
 import type { AuthRequest } from '../middleware/auth';
-
-const normalizeRole = (role?: string | null) => {
-  if (role === 'manager') return 'admin';
-  if (role === 'location_admin') return 'location_admin';
-  return role || 'user';
-};
+import { normalizeRole } from '../utils/roles';
 
 const isAdminRole = (role?: string | null) => role === 'super_admin' || role === 'admin';
 

@@ -62,6 +62,7 @@ export const documentCreateSchema = z.object({
     'ReturnSlip',
     'TransferChallan',
     'MaintenanceJobCard',
+    'RequisitionForm',
     'Warranty',
     'Invoice',
     'DisposalApproval',
@@ -82,7 +83,7 @@ export const documentListQuerySchema = z.object({
 
 export const documentLinkSchema = z.object({
   documentId: z.string(),
-  entityType: z.enum(['Record', 'AssetItem', 'Assignment', 'Transfer', 'MaintenanceRecord']),
+  entityType: z.enum(['Record', 'AssetItem', 'Assignment', 'Transfer', 'MaintenanceRecord', 'Requisition']),
   entityId: z.string(),
   requiredForStatus: z.enum(['PendingApproval', 'Approved', 'Completed']).optional(),
 });

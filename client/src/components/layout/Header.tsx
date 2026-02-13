@@ -46,6 +46,10 @@ export function Header({
         return "Administrator";
       case "location_admin":
         return "Location Admin";
+      case "caretaker":
+        return "Caretaker";
+      case "assistant_caretaker":
+        return "Assistant Caretaker";
       case "user":
         return "User";
       case "employee":

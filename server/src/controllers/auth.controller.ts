@@ -7,12 +7,7 @@ import { ActivityLogModel } from '../models/activityLog.model';
 import { env } from '../config/env';
 import type { AuthRequest } from '../middleware/auth';
 import { ADMIN_ROLES } from '../middleware/authorize';
-
-function normalizeRole(role?: string | null) {
-  if (role === 'manager') return 'admin';
-  if (role === 'location_admin') return 'location_admin';
-  return role || 'user';
-}
+import { normalizeRole } from '../utils/roles';
 
 function signToken(user: { id: string; email: string; role: string }) {
   return jwt.sign(

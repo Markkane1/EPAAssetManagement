@@ -67,6 +67,8 @@ const roleLabels: Record<AppRole, string> = {
   super_admin: "Super Admin",
   admin: "Admin",
   location_admin: "Location Admin",
+  caretaker: "Caretaker",
+  assistant_caretaker: "Assistant Caretaker",
   central_store_admin: "Central Store Admin",
   lab_manager: "Lab Manager",
   lab_user: "Lab User",
@@ -81,6 +83,8 @@ const roleColors: Record<AppRole, string> = {
   super_admin: "bg-yellow-500 text-yellow-950",
   admin: "bg-primary text-primary-foreground",
   location_admin: "bg-sky-500 text-white",
+  caretaker: "bg-teal-600 text-white",
+  assistant_caretaker: "bg-cyan-600 text-white",
   central_store_admin: "bg-orange-500 text-white",
   lab_manager: "bg-emerald-600 text-white",
   lab_user: "bg-emerald-400 text-white",
@@ -460,6 +464,8 @@ export default function UserManagement() {
                     )}
                     <SelectItem value="admin">Admin</SelectItem>
                     <SelectItem value="location_admin">Location Admin</SelectItem>
+                    <SelectItem value="caretaker">Caretaker</SelectItem>
+                    <SelectItem value="assistant_caretaker">Assistant Caretaker</SelectItem>
                     <SelectItem value="central_store_admin">Central Store Admin</SelectItem>
                     <SelectItem value="lab_manager">Lab Manager</SelectItem>
                     <SelectItem value="lab_user">Lab User</SelectItem>
@@ -474,6 +480,8 @@ export default function UserManagement() {
                 {selectedRole === "super_admin" && "Full access to all locations and system settings"}
                 {selectedRole === "admin" && "Full access to all locations and system features"}
                 {selectedRole === "location_admin" && "Access limited to a single location without delete or quantity edits"}
+                {selectedRole === "caretaker" && "Office-scoped issuance and return operations for assigned location/directorate workflows"}
+                {selectedRole === "assistant_caretaker" && "Office-scoped support for issuance and return operations under caretaker workflows"}
                 {selectedRole === "central_store_admin" && "Manage central store receiving, transfers, and adjustments"}
                 {selectedRole === "lab_manager" && "Manage lab transfers, adjustments, and disposal"}
                 {selectedRole === "lab_user" && "Consume and view lab inventory"}
@@ -510,6 +518,8 @@ export default function UserManagement() {
                     ? "Admins have access to all locations. Location assignment is optional."
                     : selectedRole === "location_admin"
                       ? "Location admins must be assigned to a specific location."
+                      : selectedRole === "caretaker" || selectedRole === "assistant_caretaker"
+                        ? "Caretaker roles must be assigned to a specific location."
                     : "User may be restricted to their assigned location depending on role"}
               </p>
             </div>
@@ -614,6 +624,8 @@ export default function UserManagement() {
                 )}
                 <SelectItem value="admin">Admin</SelectItem>
                 <SelectItem value="location_admin">Location Admin</SelectItem>
+                <SelectItem value="caretaker">Caretaker</SelectItem>
+                <SelectItem value="assistant_caretaker">Assistant Caretaker</SelectItem>
                 <SelectItem value="central_store_admin">Central Store Admin</SelectItem>
                 <SelectItem value="lab_manager">Lab Manager</SelectItem>
                 <SelectItem value="lab_user">Lab User</SelectItem>

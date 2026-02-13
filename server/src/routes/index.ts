@@ -23,6 +23,9 @@ import userRoutes from './user.routes';
 import activityRoutes from './activity.routes';
 import dashboardRoutes from './dashboard.routes';
 import settingsRoutes from './settings.routes';
+import requisitionRoutes from './requisition.routes';
+import returnRequestRoutes from './returnRequest.routes';
+import reportRoutes from './report.routes';
 
 const router = Router();
 
@@ -50,6 +53,9 @@ router.use('/consumables', consumableInventoryRoutes);
 router.use('/consumables', consumableRoutes);
 router.use('/consumable-assignments', consumableAssignmentRoutes);
 router.use('/consumable-consumptions', consumableConsumptionRoutes);
+router.use('/requisitions', requisitionRoutes);
+router.use('/return-requests', returnRequestRoutes);
+router.use('/reports', reportRoutes);
 router.use('/', recordRoutes);
 
 export default router;
