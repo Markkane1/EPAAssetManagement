@@ -43,5 +43,9 @@ OfficeSchema.index(
   { is_headoffice: 1 },
   { unique: true, partialFilterExpression: { is_headoffice: true } }
 );
+OfficeSchema.index({ is_active: 1, created_at: -1 });
+OfficeSchema.index({ type: 1, is_active: 1 });
+OfficeSchema.index({ 'capabilities.chemicals': 1, type: 1, is_headoffice: 1, name: 1 });
+OfficeSchema.index({ 'capabilities.consumables': 1, name: 1 });
 
 export const OfficeModel = mongoose.model('Office', OfficeSchema);

@@ -6,7 +6,7 @@ const ConsumableItemSchema = new Schema(
     name: { type: String, required: true, trim: true },
     cas_number: { type: String, default: null, trim: true },
     category_id: { type: Schema.Types.ObjectId, ref: 'Category', default: null },
-    base_uom: { type: String, enum: ['g', 'mg', 'kg', 'mL', 'L'], required: true },
+    base_uom: { type: String, required: true, trim: true },
     is_hazardous: { type: Boolean, default: false },
     is_controlled: { type: Boolean, default: false },
     is_chemical: { type: Boolean, default: false },
@@ -19,5 +19,8 @@ const ConsumableItemSchema = new Schema(
   },
   baseSchemaOptions
 );
+
+ConsumableItemSchema.index({ name: 1 });
+ConsumableItemSchema.index({ category_id: 1, name: 1 });
 
 export const ConsumableItemModel = mongoose.model('ConsumableItem', ConsumableItemSchema);

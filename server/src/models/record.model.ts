@@ -38,5 +38,7 @@ const RecordSchema = new Schema(
 
 RecordSchema.index({ office_id: 1, record_type: 1, status: 1 });
 RecordSchema.index({ record_type: 1, created_at: -1 });
+RecordSchema.index({ office_id: 1, created_at: -1 });
+RecordSchema.index({ status: 1, created_at: -1 });
 
 export const RecordModel = mongoose.model('Record', RecordSchema);

@@ -1,0 +1,88 @@
+{
+  "generatedAt": "2026-02-13T08:46:35.998Z",
+  "overallAvgImprovementPct": 92.09,
+  "overallP95ImprovementPct": 90.5,
+  "endpoints": [
+    {
+      "endpoint": "dashboard_activity",
+      "baseAvgMs": 22.41,
+      "optimizedAvgMs": 22.8,
+      "avgImprovementPct": -1.74,
+      "baseP95Ms": 29.13,
+      "optimizedP95Ms": 35.49,
+      "p95ImprovementPct": -21.83
+    },
+    {
+      "endpoint": "dashboard_all",
+      "baseAvgMs": 36.58,
+      "optimizedAvgMs": 34.63,
+      "avgImprovementPct": 5.33,
+      "baseP95Ms": 51.3,
+      "optimizedP95Ms": 58.76,
+      "p95ImprovementPct": -14.54
+    },
+    {
+      "endpoint": "consumable_assignments",
+      "baseAvgMs": 1118.76,
+      "optimizedAvgMs": 41.78,
+      "avgImprovementPct": 96.27,
+      "baseP95Ms": 1244.01,
+      "optimizedP95Ms": 62.11,
+      "p95ImprovementPct": 95.01
+    },
+    {
+      "endpoint": "divisions_list",
+      "baseAvgMs": 50.6,
+      "optimizedAvgMs": 24.8,
+      "avgImprovementPct": 50.99,
+      "baseP95Ms": 94.56,
+      "optimizedP95Ms": 41.91,
+      "p95ImprovementPct": 55.68
+    },
+    {
+      "endpoint": "districts_list",
+      "baseAvgMs": 249.85,
+      "optimizedAvgMs": 16.15,
+      "avgImprovementPct": 93.54,
+      "baseP95Ms": 323.01,
+      "optimizedP95Ms": 18.46,
+      "p95ImprovementPct": 94.29
+    },
+    {
+      "endpoint": "suppliers_list",
+      "baseAvgMs": 211.78,
+      "optimizedAvgMs": 25.1,
+      "avgImprovementPct": 88.15,
+      "baseP95Ms": 283.83,
+      "optimizedP95Ms": 49.32,
+      "p95ImprovementPct": 82.62
+    },
+    {
+      "endpoint": "locations_capability_chemicals",
+      "baseAvgMs": 28.98,
+      "optimizedAvgMs": 17.85,
+      "avgImprovementPct": 38.41,
+      "baseP95Ms": 59.25,
+      "optimizedP95Ms": 25.08,
+      "p95ImprovementPct": 57.67
+    },
+    {
+      "endpoint": "lots_list",
+      "baseAvgMs": 673.52,
+      "optimizedAvgMs": 39.28,
+      "avgImprovementPct": 94.17,
+      "baseP95Ms": 964.58,
+      "optimizedP95Ms": 58.49,
+      "p95ImprovementPct": 93.94
+    },
+    {
+      "endpoint": "containers_list",
+      "baseAvgMs": 903.71,
+      "optimizedAvgMs": 38.27,
+      "avgImprovementPct": 95.77,
+      "baseP95Ms": 1212.95,
+      "optimizedP95Ms": 55.36,
+      "p95ImprovementPct": 95.44
+    }
+  ]
+}

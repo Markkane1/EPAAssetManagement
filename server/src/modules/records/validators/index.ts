@@ -29,12 +29,16 @@ export const recordListQuerySchema = z.object({
   transferId: z.string().optional(),
   maintenanceRecordId: z.string().optional(),
   referenceNo: z.string().optional(),
+  page: z.coerce.number().int().positive().optional(),
+  limit: z.coerce.number().int().positive().optional(),
 });
 
 export const registerQuerySchema = z.object({
   office: z.string().optional(),
   from: z.string().optional(),
   to: z.string().optional(),
+  page: z.coerce.number().int().positive().optional(),
+  limit: z.coerce.number().int().positive().optional(),
 });
 
 export const approvalRequestSchema = z.object({
@@ -72,6 +76,8 @@ export const documentListQuerySchema = z.object({
   officeId: z.string().optional(),
   docType: z.string().optional(),
   status: z.string().optional(),
+  page: z.coerce.number().int().positive().optional(),
+  limit: z.coerce.number().int().positive().optional(),
 });
 
 export const documentLinkSchema = z.object({

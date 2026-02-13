@@ -12,23 +12,63 @@ const normalizeRole = (role?: string | null) => {
 
 const isAdminRole = (role?: string | null) => role === 'super_admin' || role === 'admin';
 
+function clampInt(value: unknown, fallback: number, max: number) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(1, Math.min(Math.floor(parsed), max));
+}
+
+function escapeRegex(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 export const userController = {
   list: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       if (!isAdminRole(req.user?.role)) {
         return res.status(403).json({ message: 'Forbidden' });
       }
-      const users = await UserModel.find().sort({ created_at: -1 });
-      const visibleUsers = req.user?.role === 'super_admin'
-        ? users
-        : users.filter((user) => normalizeRole(user.role) !== 'super_admin');
-      const locationIds = visibleUsers.map((u) => u.location_id).filter(Boolean);
+
+      const limit = clampInt(req.query.limit, 200, 500);
+      const page = clampInt(req.query.page, 1, 10_000);
+      const skip = (page - 1) * limit;
+      const search = String(req.query.search || '').trim();
+
+      const query: Record<string, unknown> = {};
+      if (req.user?.role !== 'super_admin') {
+        query.role = { $ne: 'super_admin' };
+      }
+      if (search.length > 0) {
+        const regex = new RegExp(escapeRegex(search), 'i');
+        query.$or = [
+          { email: regex },
+          { first_name: regex },
+          { last_name: regex },
+        ];
+      }
+
+      const users = await UserModel.find(
+        query,
+        {
+          email: 1,
+          first_name: 1,
+          last_name: 1,
+          location_id: 1,
+          created_at: 1,
+          role: 1,
+        }
+      )
+        .sort({ created_at: -1 })
+        .skip(skip)
+        .limit(limit);
+
+      const locationIds = users.map((u) => u.location_id).filter(Boolean);
       const locations = await OfficeModel.find({
         _id: { $in: locationIds },
-      });
+      }, { name: 1 });
       const locationMap = new Map(locations.map((l) => [l.id, l.name]));
 
-      const mapped = visibleUsers.map((user) => ({
+      const mapped = users.map((user) => ({
         id: user.id,
         user_id: user.id,
         email: user.email,

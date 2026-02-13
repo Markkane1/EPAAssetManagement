@@ -6,6 +6,7 @@ import { EmployeeModel } from '../models/employee.model';
 import { ActivityLogModel } from '../models/activityLog.model';
 import { env } from '../config/env';
 import type { AuthRequest } from '../middleware/auth';
+import { ADMIN_ROLES } from '../middleware/authorize';
 
 function normalizeRole(role?: string | null) {
   if (role === 'manager') return 'admin';
@@ -21,9 +22,45 @@ function signToken(user: { id: string; email: string; role: string }) {
   );
 }
 
+function parseExpiresToMs(input: string) {
+  const normalized = String(input || '').trim();
+  const plain = Number(normalized);
+  if (Number.isFinite(plain) && plain > 0) {
+    return plain * 1000;
+  }
+  const match = normalized.match(/^(\d+)([smhd])$/i);
+  if (!match) {
+    return 7 * 24 * 60 * 60 * 1000;
+  }
+  const value = Number(match[1]);
+  const unit = match[2].toLowerCase();
+  const multiplier = unit === 's' ? 1000 : unit === 'm' ? 60_000 : unit === 'h' ? 3_600_000 : 86_400_000;
+  return value * multiplier;
+}
+
+function setAuthCookie(res: Response, token: string) {
+  res.cookie('auth_token', token, {
+    httpOnly: true,
+    secure: env.nodeEnv === 'production',
+    sameSite: 'lax',
+    maxAge: parseExpiresToMs(env.jwtExpiresIn),
+  });
+}
+
+function clearAuthCookie(res: Response) {
+  res.clearCookie('auth_token', {
+    httpOnly: true,
+    secure: env.nodeEnv === 'production',
+    sameSite: 'lax',
+  });
+}
+
 export const authController = {
-  register: async (req: Request, res: Response, next: NextFunction) => {
+  register: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
+      if (!req.user || !ADMIN_ROLES.has(req.user.role)) {
+        return res.status(403).json({ message: 'Self-registration is disabled' });
+      }
       const { email, password, firstName, lastName, role, locationId } = req.body as {
         email: string;
         password: string;
@@ -33,13 +70,24 @@ export const authController = {
         locationId?: string;
       };
 
-      const existing = await UserModel.findOne({ email: email.toLowerCase() });
+      const normalizedEmail = String(email || '').trim().toLowerCase();
+      if (!normalizedEmail || !password) {
+        return res.status(400).json({ message: 'Email and password are required' });
+      }
+      if (String(password).length < 8) {
+        return res.status(400).json({ message: 'Password must be at least 8 characters' });
+      }
+
+      const existing = await UserModel.findOne({ email: normalizedEmail });
       if (existing) return res.status(409).json({ message: 'Email already in use' });
 
       const passwordHash = await bcrypt.hash(password, 10);
       const normalizedRole = normalizeRole(role);
+      if (normalizedRole === 'super_admin' && req.user.role !== 'super_admin') {
+        return res.status(403).json({ message: 'Forbidden' });
+      }
       const user = await UserModel.create({
-        email,
+        email: normalizedEmail,
         password_hash: passwordHash,
         first_name: firstName || null,
         last_name: lastName || null,
@@ -47,9 +95,7 @@ export const authController = {
         location_id: locationId || null,
       });
 
-      const token = signToken({ id: user.id, email: user.email, role: normalizedRole });
       res.status(201).json({
-        token,
         user: {
           id: user.id,
           email: user.email,
@@ -65,8 +111,14 @@ export const authController = {
   login: async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { email, password } = req.body as { email: string; password: string };
-      const user = await UserModel.findOne({ email: email.toLowerCase() });
+      const normalizedEmail = String(email || '').trim().toLowerCase();
+      if (!normalizedEmail || !password) {
+        return res.status(400).json({ message: 'Email and password are required' });
+      }
+
+      const user = await UserModel.findOne({ email: normalizedEmail });
       if (!user) return res.status(401).json({ message: 'Invalid credentials' });
+      if (user.is_active === false) return res.status(403).json({ message: 'Account is disabled' });
 
       const valid = await bcrypt.compare(password, user.password_hash);
       if (!valid) return res.status(401).json({ message: 'Invalid credentials' });
@@ -76,8 +128,9 @@ export const authController = {
 
       const normalizedRole = normalizeRole(user.role);
       const token = signToken({ id: user.id, email: user.email, role: normalizedRole });
+      setAuthCookie(res, token);
       res.json({
-        token,
+        token: undefined,
         user: {
           id: user.id,
           email: user.email,
@@ -212,6 +265,14 @@ export const authController = {
       await user.save();
 
       res.json({ message: 'Password updated' });
+    } catch (error) {
+      next(error);
+    }
+  },
+  logout: async (_req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      clearAuthCookie(res);
+      res.status(204).send();
     } catch (error) {
       next(error);
     }

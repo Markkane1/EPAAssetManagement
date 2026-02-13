@@ -20,6 +20,12 @@ const fieldMap = {
   warrantyExpiry: 'warranty_expiry',
 };
 
+function clampInt(value: unknown, fallback: number, max: number) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(1, Math.min(Math.floor(parsed), max));
+}
+
 function buildPayload(body: Record<string, unknown>) {
   const payload = mapFields(body, fieldMap);
   Object.values(fieldMap).forEach((dbKey) => {
@@ -50,13 +56,18 @@ async function getDefaultLocationId() {
 export const assetItemController = {
   list: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
+      const limit = clampInt(req.query.limit, 250, 1000);
+      const page = clampInt(req.query.page, 1, 10_000);
       const access = await resolveAccessContext(req.user);
       const filter: Record<string, unknown> = { is_active: { $ne: false } };
       if (!access.isHeadofficeAdmin) {
         if (!access.officeId) throw createHttpError(403, 'User is not assigned to an office');
         filter.location_id = access.officeId;
       }
-      const items = await AssetItemModel.find(filter).sort({ created_at: -1 });
+      const items = await AssetItemModel.find(filter)
+        .sort({ created_at: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit);
       res.json(items);
     } catch (error) {
       next(error);
@@ -78,13 +89,18 @@ export const assetItemController = {
   },
   getByAsset: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
+      const limit = clampInt(req.query.limit, 250, 1000);
+      const page = clampInt(req.query.page, 1, 10_000);
       const access = await resolveAccessContext(req.user);
       const filter: Record<string, unknown> = { asset_id: req.params.assetId, is_active: { $ne: false } };
       if (!access.isHeadofficeAdmin) {
         if (!access.officeId) throw createHttpError(403, 'User is not assigned to an office');
         filter.location_id = access.officeId;
       }
-      const items = await AssetItemModel.find(filter).sort({ created_at: -1 });
+      const items = await AssetItemModel.find(filter)
+        .sort({ created_at: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit);
       res.json(items);
     } catch (error) {
       next(error);
@@ -92,6 +108,8 @@ export const assetItemController = {
   },
   getByLocation: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
+      const limit = clampInt(req.query.limit, 250, 1000);
+      const page = clampInt(req.query.page, 1, 10_000);
       const access = await resolveAccessContext(req.user);
       if (!access.isHeadofficeAdmin) {
         ensureOfficeScope(access, req.params.locationId);
@@ -99,7 +117,10 @@ export const assetItemController = {
       const items = await AssetItemModel.find({
         location_id: req.params.locationId,
         is_active: { $ne: false },
-      }).sort({ created_at: -1 });
+      })
+        .sort({ created_at: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit);
       res.json(items);
     } catch (error) {
       next(error);
@@ -107,6 +128,8 @@ export const assetItemController = {
   },
   getAvailable: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
+      const limit = clampInt(req.query.limit, 250, 1000);
+      const page = clampInt(req.query.page, 1, 10_000);
       const access = await resolveAccessContext(req.user);
       const filter: Record<string, unknown> = {
         item_status: 'Available',
@@ -117,7 +140,10 @@ export const assetItemController = {
         if (!access.officeId) throw createHttpError(403, 'User is not assigned to an office');
         filter.location_id = access.officeId;
       }
-      const items = await AssetItemModel.find(filter).sort({ created_at: -1 });
+      const items = await AssetItemModel.find(filter)
+        .sort({ created_at: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit);
       res.json(items);
     } catch (error) {
       next(error);

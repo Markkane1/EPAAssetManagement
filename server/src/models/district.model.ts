@@ -11,5 +11,7 @@ const DistrictSchema = new Schema(
 );
 
 DistrictSchema.index({ name: 1, division_id: 1 }, { unique: true });
+DistrictSchema.index({ division_id: 1, created_at: -1 });
+DistrictSchema.index({ created_at: -1 });
 
 export const DistrictModel = mongoose.model('District', DistrictSchema);

@@ -13,6 +13,12 @@ import { DocumentLinkModel } from '../models/documentLink.model';
 import { DocumentModel } from '../models/document.model';
 import { DocumentVersionModel } from '../models/documentVersion.model';
 
+function clampInt(value: unknown, fallback: number, max: number) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(1, Math.min(Math.floor(parsed), max));
+}
+
 async function hasCompletionDocs(maintenanceRecordId: string) {
   const record = await RecordModel.findOne({
     record_type: 'MAINTENANCE',
@@ -67,9 +73,14 @@ function buildPayload(body: Record<string, unknown>) {
 export const maintenanceController = {
   list: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
+      const limit = clampInt(req.query.limit, 200, 1000);
+      const page = clampInt(req.query.page, 1, 10_000);
       const access = await resolveAccessContext(req.user);
       if (access.isHeadofficeAdmin) {
-        const records = await MaintenanceRecordModel.find({ is_active: { $ne: false } }).sort({ created_at: -1 });
+        const records = await MaintenanceRecordModel.find({ is_active: { $ne: false } })
+          .sort({ created_at: -1 })
+          .skip((page - 1) * limit)
+          .limit(limit);
         return res.json(records);
       }
       if (!access.officeId) throw createHttpError(403, 'User is not assigned to an office');
@@ -80,7 +91,10 @@ export const maintenanceController = {
       const records = await MaintenanceRecordModel.find({
         asset_item_id: { $in: assetItemIds },
         is_active: { $ne: false },
-      }).sort({ created_at: -1 });
+      })
+        .sort({ created_at: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit);
       res.json(records);
     } catch (error) {
       next(error);
@@ -88,6 +102,8 @@ export const maintenanceController = {
   },
   getScheduled: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
+      const limit = clampInt(req.query.limit, 200, 1000);
+      const page = clampInt(req.query.page, 1, 10_000);
       const access = await resolveAccessContext(req.user);
       const filter: Record<string, unknown> = {
         maintenance_status: 'Scheduled',
@@ -101,7 +117,10 @@ export const maintenanceController = {
         });
         filter.asset_item_id = { $in: assetItemIds };
       }
-      const records = await MaintenanceRecordModel.find(filter).sort({ created_at: -1 });
+      const records = await MaintenanceRecordModel.find(filter)
+        .sort({ created_at: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit);
       res.json(records);
     } catch (error) {
       next(error);
@@ -124,6 +143,8 @@ export const maintenanceController = {
   },
   getByAssetItem: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
+      const limit = clampInt(req.query.limit, 200, 1000);
+      const page = clampInt(req.query.page, 1, 10_000);
       const access = await resolveAccessContext(req.user);
       if (!access.isHeadofficeAdmin) {
         const item = await AssetItemModel.findById(req.params.assetItemId);
@@ -133,7 +154,10 @@ export const maintenanceController = {
       const records = await MaintenanceRecordModel.find({
         asset_item_id: req.params.assetItemId,
         is_active: { $ne: false },
-      }).sort({ created_at: -1 });
+      })
+        .sort({ created_at: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit);
       res.json(records);
     } catch (error) {
       next(error);

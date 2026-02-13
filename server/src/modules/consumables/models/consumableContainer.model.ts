@@ -18,4 +18,8 @@ const ConsumableContainerSchema = new Schema(
   baseSchemaOptions
 );
 
+ConsumableContainerSchema.index({ lot_id: 1, container_code: 1 });
+ConsumableContainerSchema.index({ current_location_id: 1, status: 1, container_code: 1 });
+ConsumableContainerSchema.index({ status: 1, container_code: 1 });
+
 export const ConsumableContainerModel = mongoose.model('ConsumableContainer', ConsumableContainerSchema);

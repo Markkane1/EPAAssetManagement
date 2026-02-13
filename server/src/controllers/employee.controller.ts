@@ -40,6 +40,19 @@ const normalizeRole = (role?: string | null) => {
 
 const generateTempPassword = () => `Temp-${crypto.randomBytes(6).toString('hex')}`;
 
+function clampInt(value: unknown, fallback: number, min: number, max: number) {
+  const parsed = Number.parseInt(String(value ?? ''), 10);
+  if (Number.isNaN(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
+}
+
+function readPagination(query: Record<string, unknown>) {
+  const limit = clampInt(query.limit, 1000, 1, 2000);
+  const page = clampInt(query.page, 1, 1, 100000);
+  const skip = (page - 1) * limit;
+  return { limit, skip };
+}
+
 function buildPayload(body: Record<string, unknown>) {
   const payload = mapFields(body, fieldMap);
   Object.values(fieldMap).forEach((dbKey) => {
@@ -59,6 +72,7 @@ export const employeeController = {
       if (!user) {
         return res.status(401).json({ message: 'Unauthorized' });
       }
+      const { limit, skip } = readPagination(req.query as Record<string, unknown>);
       const isGlobal = user.role === 'super_admin' || user.isHeadoffice;
       const locationId = user.locationId ? String(user.locationId) : null;
 
@@ -67,7 +81,11 @@ export const employeeController = {
       }
 
       const query = isGlobal ? {} : { location_id: locationId };
-      const employees = await EmployeeModel.find(query).sort({ created_at: -1 });
+      const employees = await EmployeeModel.find(query)
+        .sort({ created_at: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean();
       return res.json(employees);
     } catch (error) {
       next(error);
@@ -79,7 +97,7 @@ export const employeeController = {
       if (!user) {
         return res.status(401).json({ message: 'Unauthorized' });
       }
-      const employee = await EmployeeModel.findById(req.params.id);
+      const employee = await EmployeeModel.findById(req.params.id).lean();
       if (!employee) return res.status(404).json({ message: 'Not found' });
 
       const isGlobal = user.role === 'super_admin' || user.isHeadoffice;
@@ -87,7 +105,7 @@ export const employeeController = {
         if (!user.locationId) {
           return res.status(403).json({ message: 'User is not assigned to an office' });
         }
-        if (String(employee.location_id || '') !== String(user.locationId)) {
+        if (String((employee as { location_id?: unknown }).location_id || '') !== String(user.locationId)) {
           return res.status(403).json({ message: 'Access restricted to assigned office' });
         }
       }
@@ -256,23 +274,25 @@ export const employeeController = {
       if (!user) {
         return res.status(401).json({ message: 'Unauthorized' });
       }
+      const { limit, skip } = readPagination(req.query as Record<string, unknown>);
       const isGlobal = user.role === 'super_admin' || user.isHeadoffice;
       const locationId = user.locationId ? String(user.locationId) : null;
       if (!isGlobal && !locationId) {
         return res.status(403).json({ message: 'User is not assigned to an office' });
       }
 
-      const filter: Record<string, unknown> = {};
+      const filter: Record<string, unknown> = {
+        directorate_id: req.params.directorateId,
+      };
       if (!isGlobal && locationId) {
         filter.location_id = locationId;
       }
-      const employees = await EmployeeModel.find(filter);
-      type EmployeeLike = { directorate_id?: { toString(): string } | string | null };
-      const filtered = employees.filter((employee) => {
-        const directorate = (employee as EmployeeLike).directorate_id;
-        return directorate?.toString() === req.params.directorateId;
-      });
-      res.json(filtered);
+      const employees = await EmployeeModel.find(filter)
+        .sort({ created_at: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean();
+      res.json(employees);
     } catch (error) {
       next(error);
     }

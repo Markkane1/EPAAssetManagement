@@ -16,4 +16,9 @@ const PurchaseOrderSchema = new Schema(
   baseSchemaOptions
 );
 
+PurchaseOrderSchema.index({ status: 1, order_date: -1 });
+PurchaseOrderSchema.index({ vendor_id: 1, order_date: -1 });
+PurchaseOrderSchema.index({ project_id: 1, order_date: -1 });
+PurchaseOrderSchema.index({ order_date: -1 });
+
 export const PurchaseOrderModel = mongoose.model('PurchaseOrder', PurchaseOrderSchema);

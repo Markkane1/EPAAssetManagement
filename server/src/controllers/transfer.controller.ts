@@ -17,6 +17,12 @@ const STATUS_FLOW: Record<string, string[]> = {
   RECEIVED: [],
 };
 
+function clampInt(value: unknown, fallback: number, max: number) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(1, Math.min(Math.floor(parsed), max));
+}
+
 function readId(body: Record<string, any>, keys: string[]) {
   for (const key of keys) {
     if (body[key]) return body[key];
@@ -61,6 +67,8 @@ async function ensureOfficeExists(officeId: string) {
 export const transferController = {
   list: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
+      const limit = clampInt(req.query.limit, 200, 1000);
+      const page = clampInt(req.query.page, 1, 10_000);
       const access = await resolveAccessContext(req.user);
       const filter: Record<string, unknown> = { is_active: { $ne: false } };
       if (!access.isHeadofficeAdmin) {
@@ -70,7 +78,10 @@ export const transferController = {
           { to_office_id: access.officeId },
         ];
       }
-      const transfers = await TransferModel.find(filter).sort({ transfer_date: -1 });
+      const transfers = await TransferModel.find(filter)
+        .sort({ transfer_date: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit);
       res.json(transfers);
     } catch (error) {
       next(error);
@@ -100,6 +111,8 @@ export const transferController = {
   },
   getByAssetItem: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
+      const limit = clampInt(req.query.limit, 200, 1000);
+      const page = clampInt(req.query.page, 1, 10_000);
       const access = await resolveAccessContext(req.user);
       const filter: Record<string, unknown> = {
         asset_item_id: req.params.assetItemId,
@@ -112,7 +125,10 @@ export const transferController = {
           { to_office_id: access.officeId },
         ];
       }
-      const transfers = await TransferModel.find(filter).sort({ transfer_date: -1 });
+      const transfers = await TransferModel.find(filter)
+        .sort({ transfer_date: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit);
       res.json(transfers);
     } catch (error) {
       next(error);
@@ -120,6 +136,8 @@ export const transferController = {
   },
   getByOffice: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
+      const limit = clampInt(req.query.limit, 200, 1000);
+      const page = clampInt(req.query.page, 1, 10_000);
       const access = await resolveAccessContext(req.user);
       if (!access.isHeadofficeAdmin) {
         ensureOfficeScope(access, req.params.officeId);
@@ -130,7 +148,10 @@ export const transferController = {
           { from_office_id: req.params.officeId },
           { to_office_id: req.params.officeId },
         ],
-      }).sort({ transfer_date: -1 });
+      })
+        .sort({ transfer_date: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit);
       res.json(transfers);
     } catch (error) {
       next(error);

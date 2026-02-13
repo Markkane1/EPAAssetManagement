@@ -17,6 +17,15 @@ export interface AuthRequest extends Request {
 }
 
 type RequestWithCache = AuthRequest & { __userLoaded?: boolean };
+type RequestWithCookies = Request & { cookies?: Record<string, string> };
+
+function readToken(req: Request) {
+  const header = req.headers.authorization;
+  if (header?.startsWith('Bearer ')) {
+    return header.replace('Bearer ', '').trim();
+  }
+  return (req as RequestWithCookies).cookies?.auth_token || null;
+}
 
 async function attachUserContext(req: AuthRequest) {
   const cached = (req as RequestWithCache).__userLoaded;
@@ -26,6 +35,10 @@ async function attachUserContext(req: AuthRequest) {
 
   const userDoc = await UserModel.findById(req.user.userId);
   if (!userDoc) {
+    req.user = undefined;
+    return;
+  }
+  if (userDoc.is_active === false) {
     req.user = undefined;
     return;
   }
@@ -50,12 +63,11 @@ async function attachUserContext(req: AuthRequest) {
 }
 
 export async function requireAuth(req: AuthRequest, res: Response, next: NextFunction) {
-  const header = req.headers.authorization;
-  if (!header?.startsWith('Bearer ')) {
+  const token = readToken(req);
+  if (!token) {
     return res.status(401).json({ message: 'Unauthorized' });
   }
 
-  const token = header.replace('Bearer ', '');
   try {
     const payload = jwt.verify(token, env.jwtSecret) as AuthPayload;
     req.user = {
@@ -73,12 +85,11 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
 }
 
 export async function optionalAuth(req: AuthRequest, _res: Response, next: NextFunction) {
-  const header = req.headers.authorization;
-  if (!header?.startsWith('Bearer ')) {
+  const token = readToken(req);
+  if (!token) {
     return next();
   }
 
-  const token = header.replace('Bearer ', '');
   try {
     const payload = jwt.verify(token, env.jwtSecret) as AuthPayload;
     req.user = {

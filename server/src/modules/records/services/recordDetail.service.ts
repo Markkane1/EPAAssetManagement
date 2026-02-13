@@ -45,11 +45,18 @@ export async function getRecordDetail(ctx: RequestContext, recordId: string) {
     list.push(version);
     versionMap.set(key, list);
   });
+  const linkMap = new Map<string, any[]>();
+  links.forEach((link) => {
+    const key = link.document_id.toString();
+    const list = linkMap.get(key) || [];
+    list.push(link);
+    linkMap.set(key, list);
+  });
 
   const documentViews = docIds.map((docId) => {
     const doc = docMap.get(docId);
     const docVersions = versionMap.get(docId) || [];
-    const docLinks = links.filter((link) => link.document_id.toString() === docId);
+    const docLinks = linkMap.get(docId) || [];
     return {
       document: doc,
       versions: docVersions,

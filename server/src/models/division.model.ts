@@ -10,5 +10,7 @@ const DivisionSchema = new Schema(
 );
 
 DivisionSchema.index({ name: 1 }, { unique: true });
+DivisionSchema.index({ created_at: -1 });
+DivisionSchema.index({ is_active: 1, created_at: -1 });
 
 export const DivisionModel = mongoose.model('Division', DivisionSchema);

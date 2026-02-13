@@ -13,11 +13,24 @@ const baseController = createCrudController({
   },
 });
 
+function clampInt(value: unknown, fallback: number, min: number, max: number) {
+  const parsed = Number.parseInt(String(value ?? ''), 10);
+  if (Number.isNaN(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
+}
+
 export const divisionController = {
   ...baseController,
-  list: async (_req: Request, res: Response, next: NextFunction) => {
+  list: async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await DivisionModel.find().sort({ created_at: -1 });
+      const limit = clampInt((req.query as Record<string, unknown>).limit, 500, 1, 2000);
+      const page = clampInt((req.query as Record<string, unknown>).page, 1, 1, 100000);
+      const skip = (page - 1) * limit;
+      const data = await DivisionModel.find()
+        .sort({ created_at: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean();
       res.json(data);
     } catch (error) {
       next(error);

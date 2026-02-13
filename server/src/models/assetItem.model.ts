@@ -5,7 +5,7 @@ const ASSIGNMENT_STATUSES = ['Assigned', 'Unassigned'] as const;
 const ITEM_STATUSES = ['Available', 'Assigned', 'Maintenance', 'Damaged', 'Retired', 'InTransit'] as const;
 const ITEM_CONDITIONS = ['New', 'Good', 'Fair', 'Poor', 'Damaged'] as const;
 const FUNCTIONAL_STATUSES = ['Functional', 'Need Repairs', 'Dead'] as const;
-const ITEM_SOURCES = ['Purchased', 'Donated', 'Leased', 'Transferred'] as const;
+const ITEM_SOURCES = ['Purchased', 'Transferred'] as const;
 
 const AssetItemSchema = new Schema(
   {
@@ -38,5 +38,14 @@ const AssetItemSchema = new Schema(
   },
   baseSchemaOptions
 );
+
+AssetItemSchema.index({ location_id: 1, is_active: 1 });
+AssetItemSchema.index({ asset_id: 1, is_active: 1 });
+AssetItemSchema.index({ item_status: 1, is_active: 1 });
+AssetItemSchema.index({ assignment_status: 1, is_active: 1 });
+AssetItemSchema.index({ location_id: 1, is_active: 1, created_at: -1 });
+AssetItemSchema.index({ asset_id: 1, is_active: 1, created_at: -1 });
+AssetItemSchema.index({ is_active: 1, created_at: -1 });
+AssetItemSchema.index({ created_at: -1 });
 
 export const AssetItemModel = mongoose.model('AssetItem', AssetItemSchema);

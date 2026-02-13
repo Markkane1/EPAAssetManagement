@@ -5,6 +5,12 @@ import { createHttpError } from '../../../utils/httpError';
 import { createRecord, getRecordById, listRecords, listRegister, updateRecordStatus } from '../services/record.service';
 import { getRecordDetail } from '../services/recordDetail.service';
 
+function clampInt(value: unknown, fallback: number, min: number, max: number) {
+  const parsed = Number.parseInt(String(value ?? ''), 10);
+  if (Number.isNaN(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
+}
+
 export const recordController = {
   create: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
@@ -43,8 +49,10 @@ export const recordController = {
         if (req.query.from) (filters.created_at as Record<string, unknown>).$gte = new Date(String(req.query.from));
         if (req.query.to) (filters.created_at as Record<string, unknown>).$lte = new Date(String(req.query.to));
       }
+      const page = clampInt(req.query.page, 1, 1, 100000);
+      const limit = clampInt(req.query.limit, 500, 1, 2000);
 
-      const records = await listRecords(ctx, filters);
+      const records = await listRecords(ctx, filters, { page, limit });
       res.json(records);
     } catch (error) {
       next(error);
@@ -53,7 +61,7 @@ export const recordController = {
   getById: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const ctx = await getRequestContext(req);
-      const record = await getRecordById(ctx, req.params.id);
+      const record = await getRecordById(ctx, String(req.params.id));
       res.json(record);
     } catch (error) {
       next(error);
@@ -62,7 +70,7 @@ export const recordController = {
   detail: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const ctx = await getRequestContext(req);
-      const detail = await getRecordDetail(ctx, req.params.id);
+      const detail = await getRecordDetail(ctx, String(req.params.id));
       res.json(detail);
     } catch (error) {
       next(error);
@@ -72,7 +80,7 @@ export const recordController = {
     try {
       const ctx = await getRequestContext(req);
       if (!req.body.status) throw createHttpError(400, 'Status is required');
-      const record = await updateRecordStatus(ctx, req.params.id, req.body.status, req.body.notes);
+      const record = await updateRecordStatus(ctx, String(req.params.id), req.body.status, req.body.notes);
       res.json(record);
     } catch (error) {
       next(error);
@@ -81,12 +89,15 @@ export const recordController = {
   issueRegister: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const ctx = await getRequestContext(req);
+      const page = clampInt(req.query.page, 1, 1, 100000);
+      const limit = clampInt(req.query.limit, 500, 1, 2000);
       const records = await listRegister(
         ctx,
         'ISSUE',
         req.query.from as string | undefined,
         req.query.to as string | undefined,
-        req.query.office as string | undefined
+        req.query.office as string | undefined,
+        { page, limit }
       );
       res.json(records);
     } catch (error) {
@@ -96,12 +107,15 @@ export const recordController = {
   transferRegister: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const ctx = await getRequestContext(req);
+      const page = clampInt(req.query.page, 1, 1, 100000);
+      const limit = clampInt(req.query.limit, 500, 1, 2000);
       const records = await listRegister(
         ctx,
         'TRANSFER',
         req.query.from as string | undefined,
         req.query.to as string | undefined,
-        req.query.office as string | undefined
+        req.query.office as string | undefined,
+        { page, limit }
       );
       res.json(records);
     } catch (error) {
@@ -111,12 +125,15 @@ export const recordController = {
   maintenanceRegister: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const ctx = await getRequestContext(req);
+      const page = clampInt(req.query.page, 1, 1, 100000);
+      const limit = clampInt(req.query.limit, 500, 1, 2000);
       const records = await listRegister(
         ctx,
         'MAINTENANCE',
         req.query.from as string | undefined,
         req.query.to as string | undefined,
-        req.query.office as string | undefined
+        req.query.office as string | undefined,
+        { page, limit }
       );
       res.json(records);
     } catch (error) {

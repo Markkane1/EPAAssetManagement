@@ -38,6 +38,7 @@ const TransferSchema = new Schema(
 TransferSchema.index({ asset_item_id: 1, transfer_date: -1 });
 TransferSchema.index({ from_office_id: 1, transfer_date: -1 });
 TransferSchema.index({ to_office_id: 1, transfer_date: -1 });
+TransferSchema.index({ is_active: 1, transfer_date: -1 });
 TransferSchema.index({ status: 1 });
 
 export const TransferModel = mongoose.model('Transfer', TransferSchema);

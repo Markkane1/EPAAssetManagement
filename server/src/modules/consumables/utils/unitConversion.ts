@@ -1,15 +1,19 @@
-export const SUPPORTED_UOMS = ['g', 'mg', 'kg', 'mL', 'L'] as const;
-export type SupportedUom = (typeof SUPPORTED_UOMS)[number];
+export type UnitGroup = 'mass' | 'volume' | 'count';
 
-type UomType = 'mass' | 'volume';
-
-const UNIT_DEFS: Record<SupportedUom, { type: UomType; toCanonical: number }> = {
-  mg: { type: 'mass', toCanonical: 0.001 },
-  g: { type: 'mass', toCanonical: 1 },
-  kg: { type: 'mass', toCanonical: 1000 },
-  mL: { type: 'volume', toCanonical: 1 },
-  L: { type: 'volume', toCanonical: 1000 },
+export type UnitDefinition = {
+  code: string;
+  group: UnitGroup;
+  toBase: number;
+  aliases?: string[];
 };
+
+export type UnitLookup = {
+  units: UnitDefinition[];
+  byCode: Map<string, UnitDefinition>;
+  byKey: Map<string, UnitDefinition>;
+};
+
+const normalizeKey = (value: string) => value.trim().toLowerCase();
 
 function createUomError(message: string) {
   const error = new Error(message) as Error & { status?: number };
@@ -17,44 +21,73 @@ function createUomError(message: string) {
   return error;
 }
 
-export function normalizeUom(input: string): SupportedUom {
-  const trimmed = input.trim();
-  const lower = trimmed.toLowerCase();
-  if (lower === 'ml') return 'mL';
-  if (lower === 'l') return 'L';
-  if (lower === 'mg') return 'mg';
-  if (lower === 'g') return 'g';
-  if (lower === 'kg') return 'kg';
-  if (trimmed === 'mL') return 'mL';
-  if (trimmed === 'L') return 'L';
-  throw createUomError(`Unsupported unit: ${input}`);
+export function buildUnitLookup(units: UnitDefinition[]): UnitLookup {
+  const byCode = new Map<string, UnitDefinition>();
+  const byKey = new Map<string, UnitDefinition>();
+
+  for (const unit of units) {
+    byCode.set(unit.code, unit);
+    const keys = [unit.code, unit.code.toLowerCase(), ...(unit.aliases || [])];
+    for (const key of keys) {
+      const normalized = normalizeKey(key);
+      if (!byKey.has(normalized)) {
+        byKey.set(normalized, unit);
+      }
+    }
+  }
+
+  return { units, byCode, byKey };
 }
 
-export function getUomType(uom: SupportedUom): UomType {
-  return UNIT_DEFS[uom].type;
+export function normalizeUom(input: string, lookup: UnitLookup): string {
+  if (!lookup.units.length) {
+    throw createUomError('No units configured');
+  }
+  const normalized = normalizeKey(input);
+  const unit = lookup.byKey.get(normalized);
+  if (!unit) {
+    throw createUomError(`Unsupported unit: ${input}`);
+  }
+  return unit.code;
 }
 
-export function isCompatibleUom(from: string, to: string): boolean {
+export function getUomType(uom: string, lookup: UnitLookup): UnitGroup {
+  const normalized = normalizeUom(uom, lookup);
+  const unit = lookup.byCode.get(normalized);
+  if (!unit) {
+    throw createUomError(`Unsupported unit: ${uom}`);
+  }
+  return unit.group;
+}
+
+export function isCompatibleUom(from: string, to: string, lookup: UnitLookup): boolean {
   try {
-    const fromNorm = normalizeUom(from);
-    const toNorm = normalizeUom(to);
-    return getUomType(fromNorm) === getUomType(toNorm);
+    return getUomType(from, lookup) === getUomType(to, lookup);
   } catch {
     return false;
   }
 }
 
-export function convertToBaseQty(enteredQty: number, enteredUom: string, baseUom: string) {
-  const from = normalizeUom(enteredUom);
-  const to = normalizeUom(baseUom);
-  if (UNIT_DEFS[from].type !== UNIT_DEFS[to].type) {
+export function convertToBaseQty(
+  enteredQty: number,
+  enteredUom: string,
+  baseUom: string,
+  lookup: UnitLookup
+) {
+  const fromCode = normalizeUom(enteredUom, lookup);
+  const toCode = normalizeUom(baseUom, lookup);
+  const fromUnit = lookup.byCode.get(fromCode);
+  const toUnit = lookup.byCode.get(toCode);
+  if (!fromUnit || !toUnit) {
+    throw createUomError(`Unsupported unit conversion from ${enteredUom} to ${baseUom}`);
+  }
+  if (fromUnit.group !== toUnit.group) {
     throw createUomError(`Incompatible unit conversion from ${enteredUom} to ${baseUom}`);
   }
-  const canonicalQty = enteredQty * UNIT_DEFS[from].toCanonical;
-  const baseQty = canonicalQty / UNIT_DEFS[to].toCanonical;
-  return baseQty;
+  const canonicalQty = enteredQty * fromUnit.toBase;
+  return canonicalQty / toUnit.toBase;
 }
 
-export function formatUom(uom: string): SupportedUom {
-  return normalizeUom(uom);
+export function formatUom(uom: string, lookup: UnitLookup): string {
+  return normalizeUom(uom, lookup);
 }

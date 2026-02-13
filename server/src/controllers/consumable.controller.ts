@@ -11,6 +11,12 @@ const fieldMap = {
   acquisitionDate: 'acquisition_date',
 };
 
+function clampInt(value: unknown, fallback: number, min: number, max: number) {
+  const parsed = Number.parseInt(String(value ?? ''), 10);
+  if (Number.isNaN(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
+}
+
 function buildPayload(body: Record<string, unknown>) {
   const payload = mapFields(body, fieldMap);
   Object.values(fieldMap).forEach((dbKey) => {
@@ -28,9 +34,16 @@ function buildPayload(body: Record<string, unknown>) {
 }
 
 export const consumableController = {
-  list: async (_req: Request, res: Response, next: NextFunction) => {
+  list: async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const items = await ConsumableModel.find().sort({ created_at: -1 });
+      const limit = clampInt((req.query as Record<string, unknown>).limit, 1000, 1, 2000);
+      const page = clampInt((req.query as Record<string, unknown>).page, 1, 1, 100000);
+      const skip = (page - 1) * limit;
+      const items = await ConsumableModel.find()
+        .sort({ created_at: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean();
       res.json(items);
     } catch (error) {
       next(error);
@@ -38,7 +51,7 @@ export const consumableController = {
   },
   getById: async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const item = await ConsumableModel.findById(req.params.id);
+      const item = await ConsumableModel.findById(req.params.id).lean();
       if (!item) return res.status(404).json({ message: 'Not found' });
       return res.json(item);
     } catch (error) {

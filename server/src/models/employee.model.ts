@@ -17,4 +17,7 @@ const EmployeeSchema = new Schema(
   baseSchemaOptions
 );
 
+EmployeeSchema.index({ location_id: 1, created_at: -1 });
+EmployeeSchema.index({ directorate_id: 1, location_id: 1, created_at: -1 });
+
 export const EmployeeModel = mongoose.model('Employee', EmployeeSchema);

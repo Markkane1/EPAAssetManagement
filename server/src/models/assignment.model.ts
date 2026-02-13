@@ -25,5 +25,9 @@ AssignmentSchema.index(
   { asset_item_id: 1, is_active: 1 },
   { unique: true, partialFilterExpression: { is_active: true } }
 );
+AssignmentSchema.index({ is_active: 1, assigned_date: -1 });
+AssignmentSchema.index({ employee_id: 1, assigned_date: -1 });
+AssignmentSchema.index({ asset_item_id: 1, assigned_date: -1 });
+AssignmentSchema.index({ created_at: -1 });
 
 export const AssignmentModel = mongoose.model('Assignment', AssignmentSchema);

@@ -41,6 +41,7 @@ router.post('/documents', requireAuth, validateBody(documentCreateSchema), docum
 router.get('/documents', requireAuth, validateQuery(documentListQuerySchema), documentController.list);
 router.get('/documents/:id', requireAuth, documentController.getById);
 router.post('/documents/:id/upload', requireAuth, upload.single('file'), documentController.upload);
+router.get('/documents/versions/:versionId/download', requireAuth, documentController.downloadVersion);
 
 // Document links
 router.post('/document-links', requireAuth, validateBody(documentLinkSchema), documentLinkController.create);

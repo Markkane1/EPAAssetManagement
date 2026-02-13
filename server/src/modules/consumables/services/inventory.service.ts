@@ -12,6 +12,7 @@ import { createHttpError } from '../utils/httpError';
 import { convertToBaseQty, formatUom } from '../utils/unitConversion';
 import { resolveConsumablePermissions } from '../utils/permissions';
 import { supportsChemicals } from '../utils/officeCapabilities';
+import { getUnitLookup } from './consumableUnit.service';
 
 const CENTRAL_TYPE = 'CENTRAL';
 
@@ -235,7 +236,7 @@ async function ensureContainerMatchesItem(containerId: string, itemId: string, s
   return container;
 }
 
-async function ensureLocationAccess(user: AuthUser, locationId: string, session: ClientSession) {
+async function ensureLocationAccess(user: AuthUser, locationId: string, session?: ClientSession) {
   const role = user.role;
   if (role === 'super_admin' || role === 'admin' || role === 'auditor' || role === 'viewer') return;
   const userContext = await getUserContext(user.userId, session);
@@ -245,6 +246,12 @@ async function ensureLocationAccess(user: AuthUser, locationId: string, session:
   if (userContext.location_id.toString() !== locationId) {
     throw createHttpError(403, 'User does not have access to this location');
   }
+}
+
+function clampInt(value: unknown, fallback: number, max: number) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(1, Math.min(Math.floor(parsed), max));
 }
 
 async function getCentralStoreLocation(session: ClientSession) {
@@ -264,12 +271,13 @@ export const inventoryService = {
 
         const item = await getItem(payload.itemId, session);
         const location = await getLocation(payload.locationId, session);
+        const unitLookup = await getUnitLookup({ session });
         ensureChemicalsLocation(item, location, 'Receiving location');
         if (location.type !== CENTRAL_TYPE) {
           throw createHttpError(400, 'Receipts must be into Central Store');
         }
 
-        const qtyBase = convertToBaseQty(payload.qty, payload.uom, item.base_uom);
+        const qtyBase = convertToBaseQty(payload.qty, payload.uom, item.base_uom, unitLookup);
         if (qtyBase <= 0) throw createHttpError(400, 'Quantity must be greater than zero');
 
         let lotId: string | null = payload.lotId || null;
@@ -310,7 +318,7 @@ export const inventoryService = {
               container_id: null,
               qty_base: qtyBase,
               entered_qty: payload.qty,
-              entered_uom: formatUom(payload.uom),
+              entered_uom: formatUom(payload.uom, unitLookup),
               reason_code_id: null,
               reference: payload.reference || null,
               notes: payload.notes || null,
@@ -333,7 +341,7 @@ export const inventoryService = {
 
         if (Array.isArray(payload.containers) && payload.containers.length > 0) {
           const sumContainers = payload.containers.reduce((total: number, container: any) => {
-            return total + convertToBaseQty(container.initialQty, payload.uom, item.base_uom);
+            return total + convertToBaseQty(container.initialQty, payload.uom, item.base_uom, unitLookup);
           }, 0);
           const diff = Math.abs(sumContainers - qtyBase);
           if (diff > 0.0001) {
@@ -343,8 +351,8 @@ export const inventoryService = {
             payload.containers.map((container: any) => ({
               lot_id: lotId,
               container_code: container.containerCode,
-              initial_qty_base: convertToBaseQty(container.initialQty, payload.uom, item.base_uom),
-              current_qty_base: convertToBaseQty(container.initialQty, payload.uom, item.base_uom),
+              initial_qty_base: convertToBaseQty(container.initialQty, payload.uom, item.base_uom, unitLookup),
+              current_qty_base: convertToBaseQty(container.initialQty, payload.uom, item.base_uom, unitLookup),
               current_location_id: location.id,
               status: 'IN_STOCK',
               opened_date: container.openedDate || null,
@@ -379,6 +387,7 @@ export const inventoryService = {
         const item = await getItem(payload.itemId, session);
         const fromLocation = await getLocation(payload.fromLocationId, session);
         const toLocation = await getLocation(payload.toLocationId, session);
+        const unitLookup = await getUnitLookup({ session });
         ensureChemicalsLocation(item, fromLocation, 'From location');
         ensureChemicalsLocation(item, toLocation, 'To location');
 
@@ -389,7 +398,7 @@ export const inventoryService = {
           await ensureLocationAccess(user, fromLocation.id, session);
         }
 
-        const qtyBase = convertToBaseQty(payload.qty, payload.uom, item.base_uom);
+        const qtyBase = convertToBaseQty(payload.qty, payload.uom, item.base_uom, unitLookup);
         if (qtyBase <= 0) throw createHttpError(400, 'Quantity must be greater than zero');
 
         const allowNegative = normalizeAllowNegative(payload.allowNegative, payload.overrideNote);
@@ -441,7 +450,7 @@ export const inventoryService = {
                 container_id: container.id,
                 qty_base: containerQty,
                 entered_qty: payload.qty,
-                entered_uom: formatUom(payload.uom),
+                entered_uom: formatUom(payload.uom, unitLookup),
                 reason_code_id: null,
                 reference: payload.reference || null,
                 notes: payload.notes || null,
@@ -502,7 +511,7 @@ export const inventoryService = {
                 container_id: null,
                 qty_base: allocation.qtyBase,
                 entered_qty: allocation.qtyBase,
-                entered_uom: item.base_uom,
+                entered_uom: formatUom(item.base_uom, unitLookup),
                 reason_code_id: null,
                 reference: payload.reference || null,
                 notes: payload.notes || null,
@@ -539,10 +548,11 @@ export const inventoryService = {
 
         const item = await getItem(payload.itemId, session);
         const location = await getLocation(payload.locationId, session);
+        const unitLookup = await getUnitLookup({ session });
         ensureChemicalsLocation(item, location, 'Consumption location');
         await ensureLocationAccess(user, location.id, session);
 
-        const qtyBase = convertToBaseQty(payload.qty, payload.uom, item.base_uom);
+        const qtyBase = convertToBaseQty(payload.qty, payload.uom, item.base_uom, unitLookup);
         if (qtyBase <= 0) throw createHttpError(400, 'Quantity must be greater than zero');
 
         const allowNegative = normalizeAllowNegative(payload.allowNegative, payload.overrideNote);
@@ -593,7 +603,7 @@ export const inventoryService = {
                 container_id: container.id,
                 qty_base: qtyBase,
                 entered_qty: payload.qty,
-                entered_uom: formatUom(payload.uom),
+                entered_uom: formatUom(payload.uom, unitLookup),
                 reason_code_id: null,
                 reference: payload.reference || null,
                 notes: payload.notes || null,
@@ -647,7 +657,7 @@ export const inventoryService = {
                 container_id: null,
                 qty_base: allocation.qtyBase,
                 entered_qty: allocation.qtyBase,
-                entered_uom: item.base_uom,
+                entered_uom: formatUom(item.base_uom, unitLookup),
                 reason_code_id: null,
                 reference: payload.reference || null,
                 notes: payload.notes || null,
@@ -685,12 +695,13 @@ export const inventoryService = {
 
         const item = await getItem(payload.itemId, session);
         const location = await getLocation(payload.locationId, session);
+        const unitLookup = await getUnitLookup({ session });
         ensureChemicalsLocation(item, location, 'Adjustment location');
         await ensureLocationAccess(user, location.id, session);
 
         await verifyReasonCode(payload.reasonCodeId, 'ADJUST', session);
 
-        const qtyBase = convertToBaseQty(payload.qty, payload.uom, item.base_uom);
+        const qtyBase = convertToBaseQty(payload.qty, payload.uom, item.base_uom, unitLookup);
         if (qtyBase <= 0) throw createHttpError(400, 'Quantity must be greater than zero');
         const direction = payload.direction === 'DECREASE' ? -1 : 1;
 
@@ -742,7 +753,7 @@ export const inventoryService = {
               container_id: payload.containerId || null,
               qty_base: qtyBase,
               entered_qty: payload.qty,
-              entered_uom: formatUom(payload.uom),
+              entered_uom: formatUom(payload.uom, unitLookup),
               reason_code_id: payload.reasonCodeId,
               reference: payload.reference || null,
               notes: payload.notes || null,
@@ -777,12 +788,13 @@ export const inventoryService = {
 
         const item = await getItem(payload.itemId, session);
         const location = await getLocation(payload.locationId, session);
+        const unitLookup = await getUnitLookup({ session });
         ensureChemicalsLocation(item, location, 'Disposal location');
         await ensureLocationAccess(user, location.id, session);
 
         await verifyReasonCode(payload.reasonCodeId, 'DISPOSE', session);
 
-        const qtyBase = convertToBaseQty(payload.qty, payload.uom, item.base_uom);
+        const qtyBase = convertToBaseQty(payload.qty, payload.uom, item.base_uom, unitLookup);
         if (qtyBase <= 0) throw createHttpError(400, 'Quantity must be greater than zero');
 
         const allowNegative = normalizeAllowNegative(payload.allowNegative, payload.overrideNote);
@@ -838,7 +850,7 @@ export const inventoryService = {
               container_id: payload.containerId || null,
               qty_base: qtyBase,
               entered_qty: payload.qty,
-              entered_uom: formatUom(payload.uom),
+              entered_uom: formatUom(payload.uom, unitLookup),
               reason_code_id: payload.reasonCodeId,
               reference: payload.reference || null,
               notes: payload.notes || null,
@@ -874,6 +886,7 @@ export const inventoryService = {
 
         const item = await getItem(payload.itemId, session);
         const fromLocation = await getLocation(payload.fromLocationId, session);
+        const unitLookup = await getUnitLookup({ session });
         ensureChemicalsLocation(item, fromLocation, 'Return source location');
         await ensureLocationAccess(user, fromLocation.id, session);
 
@@ -886,7 +899,7 @@ export const inventoryService = {
           throw createHttpError(400, 'Returns must be sent to Central Store');
         }
 
-        const qtyBase = convertToBaseQty(payload.qty, payload.uom, item.base_uom);
+        const qtyBase = convertToBaseQty(payload.qty, payload.uom, item.base_uom, unitLookup);
         if (qtyBase <= 0) throw createHttpError(400, 'Quantity must be greater than zero');
 
         const allowNegative = normalizeAllowNegative(payload.allowNegative, payload.overrideNote);
@@ -938,7 +951,7 @@ export const inventoryService = {
                 container_id: container.id,
                 qty_base: containerQty,
                 entered_qty: payload.qty,
-                entered_uom: formatUom(payload.uom),
+                entered_uom: formatUom(payload.uom, unitLookup),
                 reason_code_id: null,
                 reference: payload.reference || null,
                 notes: payload.notes || null,
@@ -999,7 +1012,7 @@ export const inventoryService = {
                 container_id: null,
                 qty_base: allocation.qtyBase,
                 entered_qty: allocation.qtyBase,
-                entered_uom: item.base_uom,
+                entered_uom: formatUom(item.base_uom, unitLookup),
                 reason_code_id: null,
                 reference: payload.reference || null,
                 notes: payload.notes || null,
@@ -1034,12 +1047,13 @@ export const inventoryService = {
         const permissions = resolveConsumablePermissions(user.role);
         ensureAllowed(permissions.canOpenBalance, 'Not permitted to set opening balances');
 
+        const unitLookup = await getUnitLookup({ session });
         const transactions: any[] = [];
         for (const entry of payload.entries) {
           const item = await getItem(entry.itemId, session);
           const location = await getLocation(entry.locationId, session);
           ensureChemicalsLocation(item, location, 'Opening balance location');
-          const qtyBase = convertToBaseQty(entry.qty, entry.uom, item.base_uom);
+          const qtyBase = convertToBaseQty(entry.qty, entry.uom, item.base_uom, unitLookup);
           if (qtyBase <= 0) throw createHttpError(400, 'Quantity must be greater than zero');
 
           const lotId: string | null = entry.lotId || null;
@@ -1064,14 +1078,14 @@ export const inventoryService = {
                 from_location_id: null,
                 to_location_id: location.id,
                 consumable_item_id: item.id,
-                lot_id: lotId,
-                container_id: null,
-                qty_base: qtyBase,
-                entered_qty: entry.qty,
-                entered_uom: formatUom(entry.uom),
-                reason_code_id: null,
-                reference: entry.reference || null,
-                notes: entry.notes || null,
+              lot_id: lotId,
+              container_id: null,
+              qty_base: qtyBase,
+              entered_qty: entry.qty,
+              entered_uom: formatUom(entry.uom, unitLookup),
+              reason_code_id: null,
+              reference: entry.reference || null,
+              notes: entry.notes || null,
                 metadata: entry.metadata || {},
               },
             ],
@@ -1097,57 +1111,45 @@ export const inventoryService = {
   },
 
   async getBalance(user: AuthUser, query: any) {
-    const session = await mongoose.startSession();
-    let result: any;
-    try {
-      await session.withTransaction(async () => {
-        const permissions = resolveConsumablePermissions(user.role);
-        ensureAllowed(permissions.canViewReports, 'Not permitted to view balances');
-        await ensureLocationAccess(user, query.locationId, session);
-        result = await ConsumableInventoryBalanceModel.findOne({
-          location_id: query.locationId,
-          consumable_item_id: query.itemId,
-          lot_id: query.lotId || null,
-        }).session(session);
-      });
-    } finally {
-      session.endSession();
-    }
-    return result;
+    const permissions = resolveConsumablePermissions(user.role);
+    ensureAllowed(permissions.canViewReports, 'Not permitted to view balances');
+    await ensureLocationAccess(user, query.locationId);
+    return ConsumableInventoryBalanceModel.findOne({
+      location_id: query.locationId,
+      consumable_item_id: query.itemId,
+      lot_id: query.lotId || null,
+    });
   },
 
   async getBalances(user: AuthUser, query: any) {
-    const session = await mongoose.startSession();
-    let result: any;
-    try {
-      await session.withTransaction(async () => {
-        const permissions = resolveConsumablePermissions(user.role);
-        ensureAllowed(permissions.canViewReports, 'Not permitted to view balances');
+    const permissions = resolveConsumablePermissions(user.role);
+    ensureAllowed(permissions.canViewReports, 'Not permitted to view balances');
 
-        let allowedLocationId: string | null = null;
-        const role = user.role;
-        if (role !== 'super_admin' && role !== 'admin' && role !== 'auditor' && role !== 'viewer') {
-          allowedLocationId = await resolveAccessibleLocationId(user.userId, role, session);
-        }
-
-        const filter: any = {};
-        if (query.locationId) filter.location_id = query.locationId;
-        if (query.itemId) filter.consumable_item_id = query.itemId;
-        if (query.lotId) filter.lot_id = query.lotId;
-
-        if (allowedLocationId) {
-          if (filter.location_id && filter.location_id !== allowedLocationId) {
-            throw createHttpError(403, 'User does not have access to this location');
-          }
-          filter.location_id = allowedLocationId;
-        }
-
-        result = await ConsumableInventoryBalanceModel.find(filter).sort({ updated_at: -1 }).session(session);
-      });
-    } finally {
-      session.endSession();
+    let allowedLocationId: string | null = null;
+    const role = user.role;
+    if (role !== 'super_admin' && role !== 'admin' && role !== 'auditor' && role !== 'viewer') {
+      allowedLocationId = await resolveAccessibleLocationId(user.userId, role);
     }
-    return result;
+
+    const filter: any = {};
+    if (query.locationId) filter.location_id = query.locationId;
+    if (query.itemId) filter.consumable_item_id = query.itemId;
+    if (query.lotId) filter.lot_id = query.lotId;
+
+    if (allowedLocationId) {
+      if (filter.location_id && filter.location_id !== allowedLocationId) {
+        throw createHttpError(403, 'User does not have access to this location');
+      }
+      filter.location_id = allowedLocationId;
+    }
+
+    const limit = clampInt(query.limit, 500, 2000);
+    const page = clampInt(query.page, 1, 10_000);
+
+    return ConsumableInventoryBalanceModel.find(filter)
+      .sort({ updated_at: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit);
   },
   async getRollup(user: AuthUser, query: any) {
     const permissions = resolveConsumablePermissions(user.role);
@@ -1217,7 +1219,13 @@ export const inventoryService = {
       ];
     }
 
-    return ConsumableInventoryTransactionModel.find(filter).sort({ tx_time: -1 });
+    const limit = clampInt(query.limit, 200, 1000);
+    const page = clampInt(query.page, 1, 10_000);
+
+    return ConsumableInventoryTransactionModel.find(filter)
+      .sort({ tx_time: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit);
   },
 
   async getExpiry(user: AuthUser, query: any) {
@@ -1239,7 +1247,8 @@ export const inventoryService = {
       balanceFilter.location_id = query.locationId;
     }
 
-    const balances = await ConsumableInventoryBalanceModel.find(balanceFilter);
+    const balanceLimit = clampInt(query.limit, 1000, 5000);
+    const balances = await ConsumableInventoryBalanceModel.find(balanceFilter).limit(balanceLimit);
     const lotIds = balances
       .map((balance) => balance.lot_id?.toString())
       .filter((id): id is string => Boolean(id));

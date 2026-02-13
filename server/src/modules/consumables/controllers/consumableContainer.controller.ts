@@ -12,6 +12,12 @@ const fieldMap = {
   openedDate: 'opened_date',
 };
 
+function clampInt(value: unknown, fallback: number, min: number, max: number) {
+  const parsed = Number.parseInt(String(value ?? ''), 10);
+  if (Number.isNaN(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
+}
+
 function buildPayload(body: Record<string, unknown>) {
   const payload = mapFields(body, fieldMap);
   Object.values(fieldMap).forEach((dbKey) => {
@@ -29,7 +35,14 @@ export const consumableContainerController = {
       if (req.query.lotId) filter.lot_id = req.query.lotId;
       if (req.query.locationId) filter.current_location_id = req.query.locationId;
       if (req.query.status) filter.status = req.query.status;
-      const containers = await ConsumableContainerModel.find(filter).sort({ container_code: 1 });
+      const limit = clampInt((req.query as Record<string, unknown>).limit, 500, 1, 2000);
+      const page = clampInt((req.query as Record<string, unknown>).page, 1, 1, 100000);
+      const skip = (page - 1) * limit;
+      const containers = await ConsumableContainerModel.find(filter)
+        .sort({ container_code: 1 })
+        .skip(skip)
+        .limit(limit)
+        .lean();
       res.json(containers);
     } catch (error) {
       next(error);
@@ -37,7 +50,7 @@ export const consumableContainerController = {
   },
   getById: async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const container = await ConsumableContainerModel.findById(req.params.id);
+      const container = await ConsumableContainerModel.findById(req.params.id).lean();
       if (!container) return res.status(404).json({ message: 'Not found' });
       return res.json(container);
     } catch (error) {

@@ -1,15 +1,14 @@
 import { z } from 'zod';
-import { SUPPORTED_UOMS } from '../utils/unitConversion';
-
 const objectId = z.string().regex(/^[a-f\d]{24}$/i, 'Invalid id');
-const uomEnum = z.enum(SUPPORTED_UOMS);
+const uomSchema = z.string().min(1).max(32);
 const boolOptional = z.boolean().optional();
+const unitGroupSchema = z.enum(['mass', 'volume', 'count']);
 
 export const consumableItemCreateSchema = z.object({
   name: z.string().min(1).max(120),
   casNumber: z.string().max(64).optional(),
   categoryId: objectId.optional(),
-  baseUom: uomEnum,
+  baseUom: uomSchema,
   isHazardous: boolOptional,
   isControlled: boolOptional,
   isChemical: boolOptional,
@@ -21,6 +20,22 @@ export const consumableItemCreateSchema = z.object({
 });
 
 export const consumableItemUpdateSchema = consumableItemCreateSchema.partial();
+
+export const consumableUnitCreateSchema = z.object({
+  code: z.string().min(1).max(32),
+  name: z.string().min(1).max(120),
+  group: unitGroupSchema,
+  toBase: z.coerce.number().positive(),
+  aliases: z.array(z.string().min(1).max(64)).optional(),
+  isActive: z.boolean().optional(),
+});
+
+export const consumableUnitUpdateSchema = consumableUnitCreateSchema.partial();
+
+export const consumableUnitQuerySchema = z.object({
+  active: z.string().optional(),
+  group: unitGroupSchema.optional(),
+});
 
 export const consumableSupplierCreateSchema = z.object({
   name: z.string().min(1).max(120),
@@ -93,7 +108,7 @@ export const receiveSchema = z.object({
     docs: lotDocsSchema.optional(),
   }).optional(),
   qty: z.coerce.number().positive(),
-  uom: uomEnum,
+  uom: uomSchema,
   containers: z.array(z.object({
     containerCode: z.string().min(1).max(120),
     initialQty: z.coerce.number().positive(),
@@ -111,7 +126,7 @@ export const transferSchema = z.object({
   lotId: objectId.optional(),
   containerId: objectId.optional(),
   qty: z.coerce.number().positive(),
-  uom: uomEnum,
+  uom: uomSchema,
   reference: z.string().max(120).optional(),
   notes: z.string().max(500).optional(),
   metadata: z.record(z.any()).optional(),
@@ -125,7 +140,7 @@ export const consumeSchema = z.object({
   lotId: objectId.optional(),
   containerId: objectId.optional(),
   qty: z.coerce.number().positive(),
-  uom: uomEnum,
+  uom: uomSchema,
   reference: z.string().max(120).optional(),
   notes: z.string().max(500).optional(),
   metadata: z.record(z.any()).optional(),
@@ -139,7 +154,7 @@ export const adjustSchema = z.object({
   lotId: objectId.optional(),
   containerId: objectId.optional(),
   qty: z.coerce.number().positive(),
-  uom: uomEnum,
+  uom: uomSchema,
   direction: z.enum(['INCREASE', 'DECREASE']),
   reasonCodeId: objectId,
   reference: z.string().max(120).optional(),
@@ -155,7 +170,7 @@ export const disposeSchema = z.object({
   lotId: objectId.optional(),
   containerId: objectId.optional(),
   qty: z.coerce.number().positive(),
-  uom: uomEnum,
+  uom: uomSchema,
   reasonCodeId: objectId,
   reference: z.string().max(120).optional(),
   notes: z.string().max(500).optional(),
@@ -171,7 +186,7 @@ export const returnSchema = z.object({
   lotId: objectId.optional(),
   containerId: objectId.optional(),
   qty: z.coerce.number().positive(),
-  uom: uomEnum,
+  uom: uomSchema,
   reference: z.string().max(120).optional(),
   notes: z.string().max(500).optional(),
   metadata: z.record(z.any()).optional(),
@@ -186,7 +201,7 @@ export const openingBalanceSchema = z.object({
       itemId: objectId,
       lotId: objectId.optional(),
       qty: z.coerce.number().positive(),
-      uom: uomEnum,
+      uom: uomSchema,
       reference: z.string().max(120).optional(),
       notes: z.string().max(500).optional(),
       metadata: z.record(z.any()).optional(),

@@ -21,6 +21,17 @@ export interface RecordCreateInput {
   notes?: string;
 }
 
+interface PaginationOptions {
+  page?: number;
+  limit?: number;
+}
+
+function clampInt(value: unknown, fallback: number, min: number, max: number) {
+  const parsed = Number.parseInt(String(value ?? ''), 10);
+  if (Number.isNaN(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
+}
+
 export async function createRecord(
   ctx: RequestContext,
   input: RecordCreateInput,
@@ -67,22 +78,28 @@ export async function createRecord(
   return record[0];
 }
 
-export async function listRecords(ctx: RequestContext, filters: Record<string, unknown>) {
+export async function listRecords(
+  ctx: RequestContext,
+  filters: Record<string, unknown>,
+  pagination: PaginationOptions = {}
+) {
+  const limit = clampInt(pagination.limit, 500, 1, 2000);
+  const page = clampInt(pagination.page, 1, 1, 100000);
+  const skip = (page - 1) * limit;
   const query: Record<string, unknown> = { ...filters };
   const officeFilter = buildOfficeFilter(ctx, 'office_id');
   if (officeFilter) Object.assign(query, officeFilter);
 
-  return RecordModel.find(query).sort({ created_at: -1 });
+  return RecordModel.find(query).sort({ created_at: -1 }).skip(skip).limit(limit).lean();
 }
 
 export async function getRecordById(ctx: RequestContext, id: string) {
-  const record = await RecordModel.findById(id);
+  const record = await RecordModel.findById(id).lean();
   if (!record) throw createHttpError(404, 'Record not found');
-  const recordDoc = record as any;
-  if (!ctx.isHeadoffice && recordDoc.office_id.toString() !== ctx.locationId) {
+  if (!ctx.isHeadoffice && String((record as { office_id?: unknown }).office_id) !== ctx.locationId) {
     throw createHttpError(403, 'Access restricted to assigned office');
   }
-  return recordDoc;
+  return record;
 }
 
 async function hasRequiredDocs(
@@ -99,19 +116,20 @@ async function hasRequiredDocs(
   }
   const links = await DocumentLinkModel.find({
     $or: entityFilters,
-  }).populate('document_id');
+  }, { document_id: 1 }).lean();
 
-  const docTypes = new Set(
-    links
-      .map((link) => (link.document_id as any)?.doc_type)
-      .filter(Boolean)
-  );
+  const docIds = links
+    .map((link) => String((link as { document_id?: unknown }).document_id || ''))
+    .filter(Boolean);
+  if (docIds.length === 0) return false;
+  const documents = await DocumentModel.find({ _id: { $in: docIds } }, { doc_type: 1 }).lean();
+  const docTypes = new Set(documents.map((doc) => String(doc.doc_type || '')).filter(Boolean));
 
   return requirements.every((group) => group.some((type) => docTypes.has(type)));
 }
 
 async function hasApprovedApproval(recordId: string) {
-  const approved = await ApprovalRequestModel.findOne({ record_id: recordId, status: 'Approved' });
+  const approved = await ApprovalRequestModel.exists({ record_id: recordId, status: 'Approved' });
   return Boolean(approved);
 }
 
@@ -175,8 +193,12 @@ export async function listRegister(
   recordType: string,
   from?: string,
   to?: string,
-  officeId?: string
+  officeId?: string,
+  pagination: PaginationOptions = {}
 ) {
+  const limit = clampInt(pagination.limit, 500, 1, 2000);
+  const page = clampInt(pagination.page, 1, 1, 100000);
+  const skip = (page - 1) * limit;
   const query: Record<string, unknown> = { record_type: recordType };
   const officeFilter = buildOfficeFilter(ctx, 'office_id');
 
@@ -194,6 +216,8 @@ export async function listRegister(
 
   return RecordModel.find(query)
     .sort({ created_at: -1 })
+    .skip(skip)
+    .limit(limit)
     .populate('asset_item_id')
     .populate('employee_id')
     .populate('assignment_id')
@@ -205,9 +229,14 @@ export async function ensureDocumentOwnership(recordId: string, docType: string)
   const links = await DocumentLinkModel.find({
     entity_type: 'Record',
     entity_id: recordId,
-  }).populate('document_id');
+  }, { document_id: 1 }).lean();
 
-  return links.some((link) => (link.document_id as any)?.doc_type === docType);
+  const docIds = links
+    .map((link) => String((link as { document_id?: unknown }).document_id || ''))
+    .filter(Boolean);
+  if (docIds.length === 0) return false;
+  const matched = await DocumentModel.exists({ _id: { $in: docIds }, doc_type: docType });
+  return Boolean(matched);
 }
 
 export async function attachDocumentToRecord(recordId: string, documentId: string, requiredForStatus?: RecordStatus) {

@@ -19,6 +19,12 @@ const fieldMap = {
   isActive: 'is_active',
 };
 
+function clampInt(value: unknown, fallback: number, max: number) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(1, Math.min(Math.floor(parsed), max));
+}
+
 function buildPayload(body: Record<string, unknown>) {
   const payload = mapFields(body, fieldMap);
   Object.values(fieldMap).forEach((dbKey) => {
@@ -36,9 +42,15 @@ function buildPayload(body: Record<string, unknown>) {
 export const assignmentController = {
   list: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
+      const limit = clampInt(req.query.limit, 200, 1000);
+      const page = clampInt(req.query.page, 1, 10_000);
+      const skip = (page - 1) * limit;
       const access = await resolveAccessContext(req.user);
       if (access.isHeadofficeAdmin) {
-        const assignments = await AssignmentModel.find().sort({ assigned_date: -1 });
+        const assignments = await AssignmentModel.find()
+          .sort({ assigned_date: -1 })
+          .skip(skip)
+          .limit(limit);
         return res.json(assignments);
       }
       if (!access.officeId) throw createHttpError(403, 'User is not assigned to an office');
@@ -48,7 +60,10 @@ export const assignmentController = {
       });
       const assignments = await AssignmentModel.find({
         asset_item_id: { $in: assetItemIds },
-      }).sort({ assigned_date: -1 });
+      })
+        .sort({ assigned_date: -1 })
+        .skip(skip)
+        .limit(limit);
       res.json(assignments);
     } catch (error) {
       next(error);
@@ -74,6 +89,8 @@ export const assignmentController = {
   },
   getByEmployee: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
+      const limit = clampInt(req.query.limit, 200, 1000);
+      const page = clampInt(req.query.page, 1, 10_000);
       const access = await resolveAccessContext(req.user);
       if (!access.isHeadofficeAdmin) {
         if (!access.officeId) throw createHttpError(403, 'User is not assigned to an office');
@@ -83,7 +100,10 @@ export const assignmentController = {
       }
       const assignments = await AssignmentModel.find({
         employee_id: req.params.employeeId,
-      }).sort({ assigned_date: -1 });
+      })
+        .sort({ assigned_date: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit);
       res.json(assignments);
     } catch (error) {
       next(error);
@@ -91,6 +111,8 @@ export const assignmentController = {
   },
   getByAssetItem: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
+      const limit = clampInt(req.query.limit, 200, 1000);
+      const page = clampInt(req.query.page, 1, 10_000);
       const access = await resolveAccessContext(req.user);
       if (!access.isHeadofficeAdmin) {
         const item = await AssetItemModel.findById(req.params.assetItemId);
@@ -99,7 +121,10 @@ export const assignmentController = {
       }
       const assignments = await AssignmentModel.find({
         asset_item_id: req.params.assetItemId,
-      }).sort({ assigned_date: -1 });
+      })
+        .sort({ assigned_date: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit);
       res.json(assignments);
     } catch (error) {
       next(error);

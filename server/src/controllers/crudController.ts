@@ -1,5 +1,4 @@
 import { Request, Response, NextFunction } from 'express';
-import { mapFields } from '../utils/mapFields';
 
 type Repository = {
   findAll: () => Promise<unknown[]>;
@@ -16,7 +15,7 @@ type CrudConfig = {
 };
 
 function buildPayload(body: Record<string, unknown>, fieldMap?: Record<string, string>) {
-  if (!fieldMap) return body;
+  if (!fieldMap) return { ...body };
   const payload = { ...body };
   Object.entries(fieldMap).forEach(([dtoKey, dbKey]) => {
     if (body[dtoKey] !== undefined) {

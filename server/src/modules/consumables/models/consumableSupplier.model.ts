@@ -13,4 +13,6 @@ const ConsumableSupplierSchema = new Schema(
   baseSchemaOptions
 );
 
+ConsumableSupplierSchema.index({ name: 1 });
+
 export const ConsumableSupplierModel = mongoose.model('ConsumableSupplier', ConsumableSupplierSchema);

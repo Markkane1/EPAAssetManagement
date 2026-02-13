@@ -32,5 +32,7 @@ const DocumentSchema = new Schema(
 );
 
 DocumentSchema.index({ office_id: 1, doc_type: 1 });
+DocumentSchema.index({ office_id: 1, status: 1, created_at: -1 });
+DocumentSchema.index({ doc_type: 1, created_at: -1 });
 
 export const DocumentModel = mongoose.model('Document', DocumentSchema);

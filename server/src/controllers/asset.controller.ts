@@ -19,6 +19,19 @@ const fieldMap = {
   isActive: 'is_active',
 };
 
+function clampInt(value: unknown, fallback: number, min: number, max: number) {
+  const parsed = Number.parseInt(String(value ?? ''), 10);
+  if (Number.isNaN(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
+}
+
+function readPagination(query: Record<string, unknown>) {
+  const limit = clampInt(query.limit, 1000, 1, 2000);
+  const page = clampInt(query.page, 1, 1, 100000);
+  const skip = (page - 1) * limit;
+  return { limit, skip };
+}
+
 function buildPayload(body: Record<string, unknown>) {
   const payload = mapFields(body, fieldMap);
   Object.values(fieldMap).forEach((dbKey) => {
@@ -44,9 +57,14 @@ function buildPayload(body: Record<string, unknown>) {
 export const assetController = {
   list: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
+      const { limit, skip } = readPagination(req.query as Record<string, unknown>);
       const access = await resolveAccessContext(req.user);
       if (access.isHeadofficeAdmin) {
-        const assets = await AssetModel.find({ is_active: { $ne: false } }).sort({ name: 1 });
+        const assets = await AssetModel.find({ is_active: { $ne: false } })
+          .sort({ name: 1 })
+          .skip(skip)
+          .limit(limit)
+          .lean();
         return res.json(assets);
       }
       if (!access.officeId) throw createHttpError(403, 'User is not assigned to an office');
@@ -54,7 +72,11 @@ export const assetController = {
         location_id: access.officeId,
         is_active: { $ne: false },
       });
-      const assets = await AssetModel.find({ _id: { $in: assetIds }, is_active: { $ne: false } }).sort({ name: 1 });
+      const assets = await AssetModel.find({ _id: { $in: assetIds }, is_active: { $ne: false } })
+        .sort({ name: 1 })
+        .skip(skip)
+        .limit(limit)
+        .lean();
       res.json(assets);
     } catch (error) {
       next(error);
@@ -63,12 +85,12 @@ export const assetController = {
   getById: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const access = await resolveAccessContext(req.user);
-      const asset = await AssetModel.findById(req.params.id);
+      const asset = await AssetModel.findById(req.params.id).lean();
       if (!asset) return res.status(404).json({ message: 'Not found' });
       if (!access.isHeadofficeAdmin) {
         if (!access.officeId) throw createHttpError(403, 'User is not assigned to an office');
         const hasItem = await AssetItemModel.exists({
-          asset_id: asset.id,
+          asset_id: asset._id,
           location_id: access.officeId,
           is_active: { $ne: false },
         });
@@ -81,9 +103,14 @@ export const assetController = {
   },
   getByCategory: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
+      const { limit, skip } = readPagination(req.query as Record<string, unknown>);
       const access = await resolveAccessContext(req.user);
       if (access.isHeadofficeAdmin) {
-        const assets = await AssetModel.find({ category_id: req.params.categoryId, is_active: { $ne: false } }).sort({ name: 1 });
+        const assets = await AssetModel.find({ category_id: req.params.categoryId, is_active: { $ne: false } })
+          .sort({ name: 1 })
+          .skip(skip)
+          .limit(limit)
+          .lean();
         return res.json(assets);
       }
       if (!access.officeId) throw createHttpError(403, 'User is not assigned to an office');
@@ -95,7 +122,11 @@ export const assetController = {
         _id: { $in: assetIds },
         category_id: req.params.categoryId,
         is_active: { $ne: false },
-      }).sort({ name: 1 });
+      })
+        .sort({ name: 1 })
+        .skip(skip)
+        .limit(limit)
+        .lean();
       res.json(assets);
     } catch (error) {
       next(error);
@@ -103,9 +134,14 @@ export const assetController = {
   },
   getByVendor: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
+      const { limit, skip } = readPagination(req.query as Record<string, unknown>);
       const access = await resolveAccessContext(req.user);
       if (access.isHeadofficeAdmin) {
-        const assets = await AssetModel.find({ vendor_id: req.params.vendorId, is_active: { $ne: false } }).sort({ name: 1 });
+        const assets = await AssetModel.find({ vendor_id: req.params.vendorId, is_active: { $ne: false } })
+          .sort({ name: 1 })
+          .skip(skip)
+          .limit(limit)
+          .lean();
         return res.json(assets);
       }
       if (!access.officeId) throw createHttpError(403, 'User is not assigned to an office');
@@ -117,7 +153,11 @@ export const assetController = {
         _id: { $in: assetIds },
         vendor_id: req.params.vendorId,
         is_active: { $ne: false },
-      }).sort({ name: 1 });
+      })
+        .sort({ name: 1 })
+        .skip(skip)
+        .limit(limit)
+        .lean();
       res.json(assets);
     } catch (error) {
       next(error);

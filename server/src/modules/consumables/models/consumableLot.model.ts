@@ -22,4 +22,9 @@ const ConsumableLotSchema = new Schema(
   baseSchemaOptions
 );
 
+ConsumableLotSchema.index({ consumable_item_id: 1, expiry_date: 1, received_date: -1 });
+ConsumableLotSchema.index({ supplier_id: 1, expiry_date: 1, received_date: -1 });
+ConsumableLotSchema.index({ lot_number: 1 });
+ConsumableLotSchema.index({ expiry_date: 1, received_date: -1 });
+
 export const ConsumableLotModel = mongoose.model('ConsumableLot', ConsumableLotSchema);

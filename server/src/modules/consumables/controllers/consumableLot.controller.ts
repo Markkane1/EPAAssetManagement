@@ -10,6 +10,12 @@ const fieldMap = {
   expiryDate: 'expiry_date',
 };
 
+function clampInt(value: unknown, fallback: number, min: number, max: number) {
+  const parsed = Number.parseInt(String(value ?? ''), 10);
+  if (Number.isNaN(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
+}
+
 function buildPayload(body: Record<string, unknown>) {
   const payload = mapFields(body, fieldMap);
   Object.values(fieldMap).forEach((dbKey) => {
@@ -30,7 +36,14 @@ export const consumableLotController = {
       if (req.query.itemId) filter.consumable_item_id = req.query.itemId;
       if (req.query.supplierId) filter.supplier_id = req.query.supplierId;
       if (req.query.lotNumber) filter.lot_number = req.query.lotNumber;
-      const lots = await ConsumableLotModel.find(filter).sort({ expiry_date: 1, received_date: -1 });
+      const limit = clampInt((req.query as Record<string, unknown>).limit, 500, 1, 2000);
+      const page = clampInt((req.query as Record<string, unknown>).page, 1, 1, 100000);
+      const skip = (page - 1) * limit;
+      const lots = await ConsumableLotModel.find(filter)
+        .sort({ expiry_date: 1, received_date: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean();
       res.json(lots);
     } catch (error) {
       next(error);
@@ -38,7 +51,7 @@ export const consumableLotController = {
   },
   getById: async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const lot = await ConsumableLotModel.findById(req.params.id);
+      const lot = await ConsumableLotModel.findById(req.params.id).lean();
       if (!lot) return res.status(404).json({ message: 'Not found' });
       return res.json(lot);
     } catch (error) {

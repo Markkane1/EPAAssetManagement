@@ -4,6 +4,9 @@ import { validateBody, validateQuery } from '../../../middleware/validate';
 import {
   consumableItemCreateSchema,
   consumableItemUpdateSchema,
+  consumableUnitCreateSchema,
+  consumableUnitUpdateSchema,
+  consumableUnitQuerySchema,
   consumableSupplierCreateSchema,
   consumableSupplierUpdateSchema,
   consumableLotCreateSchema,
@@ -28,6 +31,7 @@ import {
   reasonCodeCreateSchema,
 } from '../validators';
 import { consumableItemController } from '../controllers/consumableItem.controller';
+import { consumableUnitController } from '../controllers/consumableUnit.controller';
 import { consumableSupplierController } from '../controllers/consumableSupplier.controller';
 import { consumableLotController } from '../controllers/consumableLot.controller';
 import { consumableContainerController } from '../controllers/consumableContainer.controller';
@@ -51,6 +55,12 @@ router.get('/items/:id', requireAuth, consumableItemController.getById);
 router.post('/items', requireAuth, requireRoles(['central_store_admin']), validateBody(consumableItemCreateSchema), consumableItemController.create);
 router.put('/items/:id', requireAuth, requireRoles(['central_store_admin']), validateBody(consumableItemUpdateSchema), consumableItemController.update);
 router.delete('/items/:id', requireAuth, requireRoles(['central_store_admin']), consumableItemController.remove);
+
+router.get('/units', requireAuth, validateQuery(consumableUnitQuerySchema), consumableUnitController.list);
+router.get('/units/:id', requireAuth, consumableUnitController.getById);
+router.post('/units', requireAuth, requireRoles(['central_store_admin']), validateBody(consumableUnitCreateSchema), consumableUnitController.create);
+router.put('/units/:id', requireAuth, requireRoles(['central_store_admin']), validateBody(consumableUnitUpdateSchema), consumableUnitController.update);
+router.delete('/units/:id', requireAuth, requireRoles(['central_store_admin']), consumableUnitController.remove);
 
 router.get('/suppliers', requireAuth, consumableSupplierController.list);
 router.get('/suppliers/:id', requireAuth, consumableSupplierController.getById);

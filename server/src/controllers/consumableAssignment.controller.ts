@@ -14,6 +14,12 @@ const fieldMap = {
   assignedDate: 'assigned_date',
 };
 
+function clampInt(value: unknown, fallback: number, min: number, max: number) {
+  const parsed = Number.parseInt(String(value ?? ''), 10);
+  if (Number.isNaN(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
+}
+
 function buildPayload(body: Record<string, unknown>) {
   const payload = mapFields(body, fieldMap);
   Object.values(fieldMap).forEach((dbKey) => {
@@ -35,41 +41,39 @@ export const consumableAssignmentController = {
         consumableId?: string;
         assigneeId?: string;
       };
+      const limit = clampInt((req.query as Record<string, unknown>).limit, 500, 1, 2000);
+      const page = clampInt((req.query as Record<string, unknown>).page, 1, 1, 100000);
+      const skip = (page - 1) * limit;
       const filter: Record<string, unknown> = {};
       if (consumableId) filter.consumable_id = consumableId;
       if (assigneeId) filter.assignee_id = assigneeId;
-      let items = await ConsumableAssignmentModel.find(filter).sort({ assigned_date: -1 });
 
       if (req.user?.role === 'directorate_head') {
-        const directorateHead = await EmployeeModel.findOne({ email: req.user.email });
-        if (directorateHead?.directorate_id) {
-          const employeeIds = await EmployeeModel.find({ directorate_id: directorateHead.directorate_id }).distinct('_id');
-          items = await ConsumableAssignmentModel.find({
-            ...filter,
-            assignee_type: 'employee',
-            assignee_id: { $in: employeeIds },
-          }).sort({ assigned_date: -1 });
-        } else {
-          items = [];
-        }
+        const directorateHead = await EmployeeModel.findOne(
+          { email: req.user.email },
+          { directorate_id: 1 }
+        ).lean();
+        const directorateId = (directorateHead as { directorate_id?: unknown } | null)?.directorate_id;
+        if (!directorateId) return res.json([]);
+        const employeeIds = await EmployeeModel.distinct('_id', { directorate_id: directorateId });
+        filter.assignee_type = 'employee';
+        filter.assignee_id = { $in: employeeIds };
+      } else if (req.user?.role === 'location_admin') {
+        const user = await UserModel.findById(req.user.userId, { location_id: 1 }).lean();
+        const locationId = (user as { location_id?: unknown } | null)?.location_id;
+        if (!locationId) return res.json([]);
+        const employeeIds = await EmployeeModel.distinct('_id', { location_id: locationId });
+        filter.$or = [
+          { assignee_type: 'location', assignee_id: locationId },
+          { assignee_type: 'employee', assignee_id: { $in: employeeIds } },
+        ];
       }
 
-      if (req.user?.role === 'location_admin') {
-        const user = await UserModel.findById(req.user.userId);
-        if (!user?.location_id) {
-          items = [];
-        } else {
-          const employeeIds = await EmployeeModel.find({ location_id: user.location_id }).distinct('_id');
-          items = await ConsumableAssignmentModel.find({
-            ...filter,
-            $or: [
-              { assignee_type: 'location', assignee_id: user.location_id },
-              { assignee_type: 'employee', assignee_id: { $in: employeeIds } },
-            ],
-          }).sort({ assigned_date: -1 });
-        }
-      }
-
+      const items = await ConsumableAssignmentModel.find(filter)
+        .sort({ assigned_date: -1, created_at: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean();
       res.json(items);
     } catch (error) {
       next(error);

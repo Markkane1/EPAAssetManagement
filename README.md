@@ -10,6 +10,11 @@ This project is built with:
 - [shadcn-ui](https://ui.shadcn.com/)
 - [Tailwind CSS](https://tailwindcss.com/)
 
+Layered structure:
+- Client app lives in `client/`
+- Backend API lives in `server/`
+- Backend tests live in `server/tests/`
+
 ## Getting Started
 
 ### Prerequisites
@@ -46,7 +51,7 @@ npm install
 cp .env.example .env
 ```
 
-Update `server/.env` with your MongoDB connection string and JWT secret, then run:
+Update `server/.env` with your MongoDB connection string and a strong JWT secret (32+ chars), then run:
 
 ```sh
 npm run dev
@@ -61,14 +66,15 @@ cd server
 npm run migrate:offices
 ```
 
-### Static super admin
+### Optional startup super admin
 
-The server seeds a super admin on startup using:
+Super admin seeding is disabled by default. To enable one-time bootstrap seeding:
 
-- `SUPER_ADMIN_EMAIL` (default: `admin@example.com`)
-- `SUPER_ADMIN_PASSWORD` (default: `Admin123!`)
+- Set `SEED_SUPER_ADMIN=true`
+- Set `SUPER_ADMIN_EMAIL`
+- Set `SUPER_ADMIN_PASSWORD` (non-default, strong password)
 
-### Frontend API config
+### Client API config
 
 Set the API base URL in the root `.env`:
 
@@ -76,7 +82,7 @@ Set the API base URL in the root `.env`:
 VITE_API_BASE_URL="http://localhost:5000/api"
 ```
 
-Then start the frontend:
+Then start the client:
 
 ```sh
 npm run dev
@@ -84,7 +90,7 @@ npm run dev
 
 ### Run full stack
 
-From the project root, run both frontend and backend together:
+From the project root, run both client and backend together:
 
 ```sh
 npm run dev:full
