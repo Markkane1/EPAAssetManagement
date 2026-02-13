@@ -3,16 +3,22 @@ import fs from 'fs';
 import path from 'path';
 
 const cwd = process.cwd();
-const rootEnvPath = path.resolve(cwd, '.env');
-const serverEnvPath = path.resolve(cwd, 'server', '.env');
+const runningFromWorkspaceRoot = fs.existsSync(path.resolve(cwd, 'server'));
+const workspaceRoot = runningFromWorkspaceRoot ? cwd : path.resolve(cwd, '..');
+const rootEnvPath = path.resolve(workspaceRoot, '.env');
+const serverEnvPath = path.resolve(workspaceRoot, 'server', '.env');
 
+let loadedAnyEnv = false;
 if (fs.existsSync(rootEnvPath)) {
   dotenv.config({ path: rootEnvPath });
+  loadedAnyEnv = true;
 }
 if (fs.existsSync(serverEnvPath)) {
+  // Server-local env can override root workspace env values when needed.
   dotenv.config({ path: serverEnvPath, override: true });
+  loadedAnyEnv = true;
 }
-if (!fs.existsSync(rootEnvPath) && !fs.existsSync(serverEnvPath)) {
+if (!loadedAnyEnv) {
   dotenv.config();
 }
 
@@ -53,7 +59,9 @@ export const env = {
   mongoUri: process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/ams',
   jwtSecret: assertSecret('JWT_SECRET', process.env.JWT_SECRET),
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
-  corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+  corsOrigin:
+    process.env.CORS_ORIGIN
+    || 'http://localhost:8080,http://127.0.0.1:8080,http://[::1]:8080,http://localhost:5173,http://127.0.0.1:5173,http://[::1]:5173',
   seedSuperAdmin,
   superAdminEmail,
   superAdminPassword,

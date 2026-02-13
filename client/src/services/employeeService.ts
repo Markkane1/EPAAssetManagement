@@ -27,6 +27,11 @@ export interface EmployeeUpdateDto {
   isActive?: boolean;
 }
 
+export interface EmployeeTransferDto {
+  newOfficeId: string;
+  reason?: string;
+}
+
 export const employeeService = {
   getAll: () => api.get<Employee[]>(`/employees?limit=${LIST_LIMIT}`),
   
@@ -39,6 +44,9 @@ export const employeeService = {
     api.post<Employee & { tempPassword?: string }>('/employees', data),
   
   update: (id: string, data: EmployeeUpdateDto) => api.put<Employee>(`/employees/${id}`, data),
+
+  transfer: (id: string, data: EmployeeTransferDto) =>
+    api.post<Employee>(`/employees/${id}/transfer`, data),
   
   delete: (id: string) => api.delete(`/employees/${id}`),
 };

@@ -39,7 +39,14 @@ const Vendors = lazy(() => import("./pages/Vendors"));
 const Projects = lazy(() => import("./pages/Projects"));
 const Schemes = lazy(() => import("./pages/Schemes"));
 const Reports = lazy(() => import("./pages/Reports"));
+const Compliance = lazy(() => import("./pages/Compliance"));
 const InventoryHub = lazy(() => import("./pages/InventoryHub"));
+const Requisitions = lazy(() => import("./pages/Requisitions"));
+const RequisitionNew = lazy(() => import("./pages/RequisitionNew"));
+const RequisitionDetail = lazy(() => import("./pages/RequisitionDetail"));
+const Returns = lazy(() => import("./pages/Returns"));
+const ReturnRequestNew = lazy(() => import("./pages/ReturnRequestNew"));
+const ReturnDetail = lazy(() => import("./pages/ReturnDetail"));
 const AssetSummaryReport = lazy(() => import("./pages/reports/AssetSummaryReport"));
 const AssetItemsInventoryReport = lazy(() => import("./pages/reports/AssetItemsInventoryReport"));
 const AssignmentSummaryReport = lazy(() => import("./pages/reports/AssignmentSummaryReport"));
@@ -69,6 +76,32 @@ const consumableAccessRoles: AppRole[] = [
   "auditor",
 ];
 const adminAccessRoles: AppRole[] = ["super_admin", "admin"];
+const complianceAccessRoles: AppRole[] = [
+  ...fullAccessRoles,
+  "location_admin",
+  "caretaker",
+  "assistant_caretaker",
+  "employee",
+  "directorate_head",
+];
+const requisitionSubmitRoles: AppRole[] = ["employee", "location_admin", "caretaker"];
+const requisitionReadRoles: AppRole[] = [
+  ...fullAccessRoles,
+  "location_admin",
+  "caretaker",
+  "assistant_caretaker",
+  "employee",
+  "directorate_head",
+];
+const returnCreateRoles: AppRole[] = ["employee"];
+const returnIssuerRoles: AppRole[] = [
+  "super_admin",
+  "admin",
+  "location_admin",
+  "caretaker",
+  "assistant_caretaker",
+];
+const returnReadRoles: AppRole[] = [...returnIssuerRoles, "employee"];
 
 const RouteFallback = () => (
   <div className="flex min-h-screen items-center justify-center text-sm text-muted-foreground">
@@ -134,7 +167,14 @@ const App = () => {
                 <Route path="/projects" element={<ProtectedRoute allowedRoles={fullAccessRoles}><Projects /></ProtectedRoute>} />
                 <Route path="/schemes" element={<ProtectedRoute allowedRoles={fullAccessRoles}><Schemes /></ProtectedRoute>} />
                 <Route path="/reports" element={<ProtectedRoute allowedRoles={fullAccessRoles}><Reports /></ProtectedRoute>} />
+                <Route path="/compliance" element={<ProtectedRoute allowedRoles={complianceAccessRoles}><Compliance /></ProtectedRoute>} />
                 <Route path="/inventory" element={<ProtectedRoute allowedRoles={fullAccessRoles}><InventoryHub /></ProtectedRoute>} />
+                <Route path="/requisitions" element={<ProtectedRoute allowedRoles={requisitionReadRoles}><Requisitions /></ProtectedRoute>} />
+                <Route path="/requisitions/new" element={<ProtectedRoute allowedRoles={requisitionSubmitRoles}><RequisitionNew /></ProtectedRoute>} />
+                <Route path="/requisitions/:id" element={<ProtectedRoute allowedRoles={requisitionReadRoles}><RequisitionDetail /></ProtectedRoute>} />
+                <Route path="/returns/new" element={<ProtectedRoute allowedRoles={returnCreateRoles}><ReturnRequestNew /></ProtectedRoute>} />
+                <Route path="/returns" element={<ProtectedRoute allowedRoles={returnIssuerRoles}><Returns /></ProtectedRoute>} />
+                <Route path="/returns/:id" element={<ProtectedRoute allowedRoles={returnReadRoles}><ReturnDetail /></ProtectedRoute>} />
                 <Route path="/reports/asset-summary" element={<ProtectedRoute allowedRoles={fullAccessRoles}><AssetSummaryReport /></ProtectedRoute>} />
                 <Route path="/reports/asset-items-inventory" element={<ProtectedRoute allowedRoles={fullAccessRoles}><AssetItemsInventoryReport /></ProtectedRoute>} />
                 <Route path="/reports/assignment-summary" element={<ProtectedRoute allowedRoles={fullAccessRoles}><AssignmentSummaryReport /></ProtectedRoute>} />

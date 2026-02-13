@@ -1,21 +1,25 @@
+import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { ArrowLeft, Pencil, Mail, Phone, MapPin, Building2, Package, Loader2 } from "lucide-react";
-import { useEmployees } from "@/hooks/useEmployees";
+import { ArrowLeft, Pencil, Mail, Phone, MapPin, Building2, Package, Loader2, ArrowRightLeft } from "lucide-react";
+import { useEmployees, useTransferEmployee } from "@/hooks/useEmployees";
 import { useDirectorates } from "@/hooks/useDirectorates";
 import { useLocations } from "@/hooks/useLocations";
 import { useAssignments } from "@/hooks/useAssignments";
 import { useAssetItems } from "@/hooks/useAssetItems";
 import { useAssets } from "@/hooks/useAssets";
 import { isHeadOfficeLocation } from "@/lib/locationUtils";
+import { useAuth } from "@/contexts/AuthContext";
+import { EmployeeTransferModal } from "@/components/forms/EmployeeTransferModal";
 
 export default function EmployeeDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { role, isSuperAdmin, locationId } = useAuth();
 
   const { data: employees, isLoading } = useEmployees();
   const { data: directorates } = useDirectorates();
@@ -23,6 +27,8 @@ export default function EmployeeDetail() {
   const { data: assignments } = useAssignments();
   const { data: assetItems } = useAssetItems();
   const { data: assets } = useAssets();
+  const transferEmployee = useTransferEmployee();
+  const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
 
   const employeeList = employees || [];
   const directorateList = directorates || [];
@@ -33,8 +39,21 @@ export default function EmployeeDetail() {
 
   const employee = employeeList.find((e) => e.id === id);
   const location = employee ? locationList.find((l) => l.id === employee.location_id) : null;
+  const currentLocation = locationId ? locationList.find((l) => l.id === locationId) : null;
+  const isHeadofficeIssuer =
+    isHeadOfficeLocation(currentLocation) &&
+    (role === "location_admin" || role === "caretaker" || role === "assistant_caretaker");
+  const canTransferEmployee = isSuperAdmin || role === "admin" || isHeadofficeIssuer;
   const directorate = employee && isHeadOfficeLocation(location)
     ? directorateList.find((d) => d.id === employee.directorate_id)
+    : null;
+  const transferredFromOfficeName = employee?.transferred_from_office_id
+    ? locationList.find((l) => l.id === employee.transferred_from_office_id)?.name ||
+      employee.transferred_from_office_id
+    : null;
+  const transferredToOfficeName = employee?.transferred_to_office_id
+    ? locationList.find((l) => l.id === employee.transferred_to_office_id)?.name ||
+      employee.transferred_to_office_id
     : null;
   
   // Get active assignments for this employee
@@ -44,6 +63,15 @@ export default function EmployeeDetail() {
     const asset = item ? assetList.find((a) => a.id === item.asset_id) : null;
     return { assignment, item, asset };
   }).filter((x) => x.item);
+
+  const handleTransferSubmit = async (payload: { newOfficeId: string; reason?: string }) => {
+    if (!employee) return;
+    await transferEmployee.mutateAsync({
+      id: employee.id,
+      data: payload,
+    });
+    setIsTransferModalOpen(false);
+  };
 
   if (isLoading) {
     return (
@@ -96,6 +124,20 @@ export default function EmployeeDetail() {
             <Button variant="outline" onClick={() => window.location.href = `mailto:${employee.email}`}>
               <Mail className="mr-2 h-4 w-4" /> Send Email
             </Button>
+            {canTransferEmployee && (
+              <Button
+                variant="outline"
+                onClick={() => setIsTransferModalOpen(true)}
+                disabled={transferEmployee.isPending}
+              >
+                {transferEmployee.isPending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <ArrowRightLeft className="mr-2 h-4 w-4" />
+                )}
+                Transfer
+              </Button>
+            )}
             <Button onClick={() => navigate(`/employees?edit=${employee.id}`)}>
               <Pencil className="mr-2 h-4 w-4" /> Edit
             </Button>
@@ -138,6 +180,31 @@ export default function EmployeeDetail() {
                   <p className="text-sm text-muted-foreground">Directorate</p>
                   <span>{directorate?.name || "N/A"}</span>
                 </div>
+              </div>
+              <div className="rounded-lg border p-3">
+                <p className="text-sm font-medium">Transfer Metadata</p>
+                {employee.transferred_at ? (
+                  <div className="mt-2 space-y-1 text-sm text-muted-foreground">
+                    <p>
+                      <span className="font-medium text-foreground">Transferred At:</span>{" "}
+                      {new Date(employee.transferred_at).toLocaleString()}
+                    </p>
+                    <p>
+                      <span className="font-medium text-foreground">From:</span>{" "}
+                      {transferredFromOfficeName || "N/A"}
+                    </p>
+                    <p>
+                      <span className="font-medium text-foreground">To:</span>{" "}
+                      {transferredToOfficeName || "N/A"}
+                    </p>
+                    <p>
+                      <span className="font-medium text-foreground">Reason:</span>{" "}
+                      {employee.transfer_reason || "N/A"}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="mt-2 text-sm text-muted-foreground">No transfer recorded.</p>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -244,6 +311,13 @@ export default function EmployeeDetail() {
           </CardContent>
         </Card>
       </div>
+      <EmployeeTransferModal
+        open={isTransferModalOpen}
+        onOpenChange={setIsTransferModalOpen}
+        employee={employee}
+        offices={locationList}
+        onSubmit={handleTransferSubmit}
+      />
     </MainLayout>
   );
 }

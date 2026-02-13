@@ -171,6 +171,10 @@ export interface Employee {
   hire_date: string | null;
   directorate_id: string | null;
   location_id: string | null;
+  transferred_at?: string | null;
+  transferred_from_office_id?: string | null;
+  transferred_to_office_id?: string | null;
+  transfer_reason?: string | null;
   is_active: boolean | null;
   created_at: string;
   updated_at: string;
@@ -297,6 +301,92 @@ export interface Transfer {
   status: TransferStatus;
   notes: string | null;
   is_active: boolean | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export enum RequisitionStatus {
+  PendingVerification = "PENDING_VERIFICATION",
+  VerifiedApproved = "VERIFIED_APPROVED",
+  InFulfillment = "IN_FULFILLMENT",
+  PartiallyFulfilled = "PARTIALLY_FULFILLED",
+  FulfilledPendingSignature = "FULFILLED_PENDING_SIGNATURE",
+  Fulfilled = "FULFILLED",
+  RejectedInvalid = "REJECTED_INVALID",
+  Cancelled = "CANCELLED",
+}
+
+export enum RequisitionLineType {
+  Moveable = "MOVEABLE",
+  Consumable = "CONSUMABLE",
+}
+
+export enum RequisitionLineStatus {
+  PendingAssignment = "PENDING_ASSIGNMENT",
+  Assigned = "ASSIGNED",
+  PartiallyAssigned = "PARTIALLY_ASSIGNED",
+  NotAvailable = "NOT_AVAILABLE",
+  Cancelled = "CANCELLED",
+}
+
+export interface Requisition {
+  id: string;
+  _id?: string;
+  file_number: string;
+  office_id: string;
+  issuing_office_id: string;
+  requested_by_employee_id: string | null;
+  submitted_by_user_id: string;
+  fulfilled_by_user_id: string | null;
+  record_id: string | null;
+  signed_issuance_document_id: string | null;
+  signed_issuance_uploaded_at: string | null;
+  attachment_file_name: string | null;
+  attachment_mime_type: string | null;
+  attachment_size_bytes: number | null;
+  attachment_path: string | null;
+  status: RequisitionStatus;
+  remarks: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RequisitionLine {
+  id: string;
+  _id?: string;
+  requisition_id: string;
+  line_type: RequisitionLineType;
+  requested_name: string;
+  requested_quantity: number;
+  approved_quantity: number;
+  fulfilled_quantity: number;
+  status: RequisitionLineStatus;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export enum ReturnRequestStatus {
+  Submitted = "SUBMITTED",
+  ReceivedConfirmed = "RECEIVED_CONFIRMED",
+  ClosedPendingSignature = "CLOSED_PENDING_SIGNATURE",
+  Closed = "CLOSED",
+  Rejected = "REJECTED",
+}
+
+export interface ReturnRequestLine {
+  asset_item_id: string;
+}
+
+export interface ReturnRequest {
+  id: string;
+  _id?: string;
+  employee_id: string;
+  office_id: string;
+  record_id: string | null;
+  receipt_document_id: string | null;
+  status: ReturnRequestStatus;
+  lines: ReturnRequestLine[];
   created_at: string;
   updated_at: string;
 }

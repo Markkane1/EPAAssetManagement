@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { employeeService } from '@/services/employeeService';
-import type { EmployeeCreateDto, EmployeeUpdateDto } from '@/services/employeeService';
+import type { EmployeeCreateDto, EmployeeTransferDto, EmployeeUpdateDto } from '@/services/employeeService';
 import { toast } from 'sonner';
 import { API_CONFIG } from '@/config/api.config';
 
@@ -74,6 +74,22 @@ export const useDeleteEmployee = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.employees });
       toast.success(messages.employeeDeleted);
+    },
+    onError: (error: Error) => {
+      toast.error(`${messages.employeeError}: ${error.message}`);
+    },
+  });
+};
+
+export const useTransferEmployee = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: EmployeeTransferDto }) =>
+      employeeService.transfer(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.employees });
+      toast.success('Employee transferred successfully');
     },
     onError: (error: Error) => {
       toast.error(`${messages.employeeError}: ${error.message}`);

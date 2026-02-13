@@ -50,6 +50,9 @@ interface NavItem {
 const fullAccessRoles: AppRole[] = ["super_admin", "admin", "user", "viewer"];
 const adminAccessRoles: AppRole[] = ["super_admin", "admin"];
 const assignmentAccessRoles: AppRole[] = [...fullAccessRoles, "employee", "directorate_head"];
+const requisitionReadRoles: AppRole[] = [...fullAccessRoles, "location_admin", "caretaker", "assistant_caretaker", "employee", "directorate_head"];
+const returnIssuerRoles: AppRole[] = ["super_admin", "admin", "location_admin", "caretaker", "assistant_caretaker"];
+const complianceAccessRoles: AppRole[] = [...fullAccessRoles, "location_admin", "caretaker", "assistant_caretaker", "employee", "directorate_head"];
 const consumableAccessRoles: AppRole[] = [
   ...fullAccessRoles,
   "directorate_head",
@@ -83,6 +86,7 @@ const reportsRootItem: NavItem = { label: "Reports", href: "/reports", icon: Fil
 
 const reportNavItems: NavItem[] = [
   { label: "Overview", href: "/reports", icon: FileText, allowedRoles: fullAccessRoles },
+  { label: "Compliance", href: "/compliance", icon: Shield, allowedRoles: complianceAccessRoles },
   { label: "Asset Summary", href: "/reports/asset-summary", icon: FileText, allowedRoles: fullAccessRoles },
   { label: "Asset Items Inventory", href: "/reports/asset-items-inventory", icon: FileText, allowedRoles: fullAccessRoles },
   { label: "Assignment Summary", href: "/reports/assignment-summary", icon: FileText, allowedRoles: fullAccessRoles },
@@ -98,6 +102,10 @@ const movableAssetsNavItems: NavItem[] = [
   { label: "Assets", href: "/assets", icon: Package, allowedRoles: fullAccessRoles },
   { label: "Asset Items", href: "/asset-items", icon: PackageOpen, allowedRoles: fullAccessRoles },
   { label: "Assignments", href: "/assignments", icon: ClipboardList, allowedRoles: assignmentAccessRoles },
+  { label: "Requisitions", href: "/requisitions", icon: ClipboardList, allowedRoles: requisitionReadRoles },
+  { label: "New Requisition", href: "/requisitions/new", icon: ClipboardList, allowedRoles: ["employee", "location_admin", "caretaker"] },
+  { label: "Return Requests", href: "/returns", icon: ArrowRightLeft, allowedRoles: returnIssuerRoles },
+  { label: "New Return Request", href: "/returns/new", icon: ArrowRightLeft, allowedRoles: ["employee"] },
   { label: "Transfers", href: "/transfers", icon: ArrowRightLeft, allowedRoles: fullAccessRoles },
   { label: "Maintenance", href: "/maintenance", icon: Wrench, allowedRoles: fullAccessRoles },
 ];
@@ -140,11 +148,15 @@ export function Sidebar({ className }: SidebarProps) {
     location.pathname.startsWith("/assets") ||
       location.pathname.startsWith("/asset-items") ||
       location.pathname.startsWith("/assignments") ||
+      location.pathname.startsWith("/requisitions") ||
+      location.pathname.startsWith("/returns") ||
       location.pathname.startsWith("/transfers") ||
       location.pathname.startsWith("/maintenance")
   );
   const [consumablesOpen, setConsumablesOpen] = useState(location.pathname.startsWith("/consumables"));
-  const [reportsOpen, setReportsOpen] = useState(location.pathname.startsWith("/reports"));
+  const [reportsOpen, setReportsOpen] = useState(
+    location.pathname.startsWith("/reports") || location.pathname.startsWith("/compliance")
+  );
   const [authOpen, setAuthOpen] = useState(location.pathname.startsWith("/user-management") || location.pathname.startsWith("/user-activity") || location.pathname.startsWith("/user-permissions"));
   const [managementOpen, setManagementOpen] = useState(
     location.pathname.startsWith("/employees") ||
@@ -178,7 +190,7 @@ export function Sidebar({ className }: SidebarProps) {
   }, [location.pathname]);
 
   useEffect(() => {
-    if (location.pathname.startsWith("/reports")) {
+    if (location.pathname.startsWith("/reports") || location.pathname.startsWith("/compliance")) {
       setReportsOpen(true);
     }
     if (
@@ -206,9 +218,11 @@ export function Sidebar({ className }: SidebarProps) {
       location.pathname.startsWith("/assets") ||
       location.pathname.startsWith("/asset-items") ||
       location.pathname.startsWith("/assignments") ||
+      location.pathname.startsWith("/requisitions") ||
+      location.pathname.startsWith("/returns") ||
       location.pathname.startsWith("/transfers") ||
       location.pathname.startsWith("/maintenance")
-    ) {
+  ) {
       setMovableOpen(true);
     }
     if (
@@ -351,6 +365,8 @@ export function Sidebar({ className }: SidebarProps) {
               location.pathname.startsWith("/assets") ||
               location.pathname.startsWith("/asset-items") ||
               location.pathname.startsWith("/assignments") ||
+              location.pathname.startsWith("/requisitions") ||
+              location.pathname.startsWith("/returns") ||
               location.pathname.startsWith("/transfers") ||
               location.pathname.startsWith("/maintenance");
             const isConsumablesActive =
@@ -470,7 +486,8 @@ export function Sidebar({ className }: SidebarProps) {
             const items = filterItems(systemNavItems);
             const reportItems = filterItems(reportNavItems);
             const showReports = reportItems.length > 0;
-            const isReportsActive = location.pathname.startsWith("/reports");
+            const isReportsActive =
+              location.pathname.startsWith("/reports") || location.pathname.startsWith("/compliance");
             const authItems = filterItems(authManagementNavItems);
             const showAuth = authItems.length > 0;
             const isAuthActive =

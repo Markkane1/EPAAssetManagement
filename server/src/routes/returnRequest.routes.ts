@@ -5,6 +5,9 @@ import { upload } from '../modules/records/utils/upload';
 
 const router = Router();
 
+router.get('/', requireAuth, returnRequestController.list);
+router.get('/:id/return-receipt.pdf', requireAuth, returnRequestController.receiptPdf);
+router.get('/:id', requireAuth, returnRequestController.getById);
 router.post('/', requireAuth, returnRequestController.create);
 router.post('/:id/receive', requireAuth, returnRequestController.receive);
 router.post(

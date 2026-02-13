@@ -6,8 +6,11 @@ import { employeeRepository } from '../repositories/employee.repository';
 import { UserModel } from '../models/user.model';
 import { mapFields } from '../utils/mapFields';
 import { EmployeeModel } from '../models/employee.model';
+import { OfficeModel } from '../models/office.model';
 import { AuthRequest } from '../middleware/auth';
 import { normalizeRole } from '../utils/roles';
+import { getRequestContext } from '../utils/scope';
+import { logAudit } from '../modules/records/services/audit.service';
 
 const fieldMap = {
   firstName: 'first_name',
@@ -258,6 +261,78 @@ export const employeeController = {
       existing.is_active = false;
       await existing.save();
       return res.status(200).json(existing);
+    } catch (error) {
+      next(error);
+    }
+  },
+  transfer: async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const canTransferAcrossOffices = user.role === 'super_admin' || user.role === 'admin' || Boolean(user.isHeadoffice);
+      if (!canTransferAcrossOffices) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const newOfficeId = typeof req.body?.newOfficeId === 'string' ? req.body.newOfficeId.trim() : '';
+      const reason =
+        typeof req.body?.reason === 'string' && req.body.reason.trim() ? req.body.reason.trim() : null;
+      if (!newOfficeId) {
+        return res.status(400).json({ message: 'newOfficeId is required' });
+      }
+      if (!/^[0-9a-fA-F]{24}$/.test(newOfficeId)) {
+        return res.status(400).json({ message: 'newOfficeId is invalid' });
+      }
+
+      const employee = await EmployeeModel.findById(req.params.id);
+      if (!employee) {
+        return res.status(404).json({ message: 'Not found' });
+      }
+
+      const destinationOffice = await OfficeModel.findById(newOfficeId, { _id: 1, is_active: 1 }).lean();
+      if (!destinationOffice) {
+        return res.status(404).json({ message: 'Office not found' });
+      }
+      if (destinationOffice.is_active === false) {
+        return res.status(400).json({ message: 'Destination office is inactive' });
+      }
+
+      const previousOfficeId = employee.location_id ? String(employee.location_id) : null;
+      if (previousOfficeId === newOfficeId) {
+        return res.status(400).json({ message: 'Employee already belongs to the selected office' });
+      }
+
+      employee.location_id = newOfficeId;
+      employee.transferred_at = new Date();
+      employee.transferred_from_office_id = previousOfficeId;
+      employee.transferred_to_office_id = newOfficeId;
+      employee.transfer_reason = reason;
+      await employee.save();
+
+      if (employee.user_id) {
+        await UserModel.findByIdAndUpdate(employee.user_id, { location_id: newOfficeId });
+      }
+
+      const ctx = await getRequestContext(req);
+      await logAudit({
+        ctx,
+        action: 'EMPLOYEE_TRANSFER',
+        entityType: 'Employee',
+        entityId: employee.id,
+        officeId: newOfficeId,
+        diff: {
+          transferred_from_office_id: previousOfficeId,
+          transferred_to_office_id: newOfficeId,
+          transfer_reason: reason,
+          transferred_at: employee.transferred_at,
+          linked_user_id: employee.user_id ? String(employee.user_id) : null,
+        },
+      });
+
+      return res.json(employee);
     } catch (error) {
       next(error);
     }

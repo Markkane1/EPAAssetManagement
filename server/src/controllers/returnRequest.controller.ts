@@ -51,6 +51,21 @@ function parseBoolean(value: unknown, fieldName: string) {
   throw createHttpError(400, `${fieldName} must be a boolean`);
 }
 
+function parseDateInput(value: unknown, fieldName: string) {
+  if (value === undefined || value === null || value === '') return null;
+  const parsed = new Date(String(value));
+  if (Number.isNaN(parsed.getTime())) {
+    throw createHttpError(400, `${fieldName} must be a valid date`);
+  }
+  return parsed;
+}
+
+function parsePositiveInt(value: unknown, fallback: number, max: number) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(1, Math.min(Math.floor(parsed), max));
+}
+
 function parseAssetItemIds(value: unknown) {
   if (value === undefined || value === null || value === '') return [] as string[];
   if (!Array.isArray(value)) {
@@ -101,6 +116,307 @@ function getSignedReturnFile(req: AuthRequestWithFiles) {
 }
 
 export const returnRequestController = {
+  list: async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const canViewAll = ctx.role === 'super_admin' || ctx.isHeadoffice;
+      const page = parsePositiveInt(req.query.page, 1, 100_000);
+      const limit = parsePositiveInt(req.query.limit, 50, 200);
+      const skip = (page - 1) * limit;
+      const officeId = asNullableString(req.query.officeId);
+      const status = asNullableString(req.query.status);
+      const employeeId = asNullableString(req.query.employeeId);
+      const from = parseDateInput(req.query.from, 'from');
+      const to = parseDateInput(req.query.to, 'to');
+
+      if (officeId && !Types.ObjectId.isValid(officeId)) {
+        throw createHttpError(400, 'officeId is invalid');
+      }
+      if (employeeId && !Types.ObjectId.isValid(employeeId)) {
+        throw createHttpError(400, 'employeeId is invalid');
+      }
+      if (from && to && from.getTime() > to.getTime()) {
+        throw createHttpError(400, 'from must be earlier than or equal to to');
+      }
+
+      const filter: Record<string, unknown> = {};
+      if (!canViewAll) {
+        if (!ctx.locationId) throw createHttpError(403, 'User is not assigned to an office');
+        if (officeId && officeId !== ctx.locationId) {
+          throw createHttpError(403, 'Access restricted to assigned office');
+        }
+        filter.office_id = ctx.locationId;
+      } else if (officeId) {
+        filter.office_id = officeId;
+      }
+
+      if (status) filter.status = status;
+      if (employeeId) filter.employee_id = employeeId;
+      if (from || to) {
+        const createdAt: Record<string, Date> = {};
+        if (from) createdAt.$gte = from;
+        if (to) createdAt.$lte = to;
+        filter.created_at = createdAt;
+      }
+
+      const [data, total] = await Promise.all([
+        ReturnRequestModel.find(filter).sort({ created_at: -1 }).skip(skip).limit(limit).lean(),
+        ReturnRequestModel.countDocuments(filter),
+      ]);
+
+      return res.json({
+        data,
+        page,
+        limit,
+        total,
+      });
+    } catch (error) {
+      return next(error);
+    }
+  },
+  getById: async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const canViewAll = ctx.role === 'super_admin' || ctx.isHeadoffice;
+      const returnRequest = await ReturnRequestModel.findById(req.params.id).lean();
+      if (!returnRequest) {
+        throw createHttpError(404, 'Return request not found');
+      }
+
+      const officeId = returnRequest.office_id ? String(returnRequest.office_id) : null;
+      if (!officeId) throw createHttpError(400, 'Return request office is missing');
+      if (!canViewAll) {
+        if (!ctx.locationId) throw createHttpError(403, 'User is not assigned to an office');
+        if (ctx.locationId !== officeId) {
+          throw createHttpError(403, 'Access restricted to assigned office');
+        }
+      }
+
+      const linkQuery: Record<string, unknown>[] = [
+        { entity_type: 'ReturnRequest', entity_id: returnRequest._id },
+      ];
+      if (returnRequest.record_id) {
+        linkQuery.push({ entity_type: 'Record', entity_id: returnRequest.record_id });
+      }
+      const linkedRows = await DocumentLinkModel.find(
+        { $or: linkQuery },
+        { document_id: 1, entity_type: 1, entity_id: 1, required_for_status: 1 }
+      ).lean();
+
+      const linkedDocumentIds = uniqueIds(
+        linkedRows.map((row) => (row.document_id ? String(row.document_id) : null))
+      );
+      const directReceiptId = returnRequest.receipt_document_id ? String(returnRequest.receipt_document_id) : null;
+      const docIds = uniqueIds([...linkedDocumentIds, directReceiptId]);
+
+      const docs = docIds.length
+        ? await DocumentModel.find({ _id: { $in: docIds } }).sort({ created_at: -1 }).lean()
+        : [];
+      const latestVersionMap = new Map<string, unknown>();
+      await Promise.all(
+        docs.map(async (doc) => {
+          const version = await DocumentVersionModel.findOne(
+            { document_id: doc._id },
+            { version_no: 1, file_name: 1, mime_type: 1, size_bytes: 1, uploaded_at: 1, file_url: 1 }
+          )
+            .sort({ version_no: -1 })
+            .lean();
+          latestVersionMap.set(String(doc._id), version || null);
+        })
+      );
+
+      const linkRefsByDocId = new Map<string, Array<Record<string, unknown>>>();
+      linkedRows.forEach((row) => {
+        const docId = row.document_id ? String(row.document_id) : null;
+        if (!docId) return;
+        const current = linkRefsByDocId.get(docId) || [];
+        current.push({
+          entity_type: row.entity_type,
+          entity_id: row.entity_id,
+          required_for_status: row.required_for_status ?? null,
+        });
+        linkRefsByDocId.set(docId, current);
+      });
+
+      const summarizedDocs = docs.map((doc) => ({
+        id: doc._id,
+        title: doc.title,
+        doc_type: doc.doc_type,
+        status: doc.status,
+        created_at: doc.created_at,
+        latestVersion: latestVersionMap.get(String(doc._id)) || null,
+        links: linkRefsByDocId.get(String(doc._id)) || [],
+      }));
+      const receiptDocument = directReceiptId
+        ? summarizedDocs.find((doc) => String(doc.id) === directReceiptId) || null
+        : null;
+
+      return res.json({
+        returnRequest,
+        lines: Array.isArray(returnRequest.lines) ? returnRequest.lines : [],
+        documents: {
+          receiptDocument,
+          linked: summarizedDocs,
+        },
+      });
+    } catch (error) {
+      return next(error);
+    }
+  },
+  receiptPdf: async (req: AuthRequest, res: Response, next: NextFunction) => {
+    let session: mongoose.ClientSession | null = null;
+    try {
+      const ctx = await getRequestContext(req);
+      const returnRequest = await ReturnRequestModel.findById(req.params.id).lean();
+      if (!returnRequest) {
+        throw createHttpError(404, 'Return request not found');
+      }
+
+      const officeId = returnRequest.office_id ? String(returnRequest.office_id) : null;
+      if (!officeId) throw createHttpError(400, 'Return request office is missing');
+
+      const isIssuer = ctx.isHeadoffice || isOfficeManager(ctx.role);
+      let isOwnerEmployee = false;
+      if (!isIssuer) {
+        const requesterEmployee = await EmployeeModel.findOne({ user_id: ctx.userId }, { _id: 1 }).lean();
+        isOwnerEmployee =
+          Boolean(requesterEmployee?._id) &&
+          String(requesterEmployee?._id) === String(returnRequest.employee_id || '');
+      }
+      if (!isIssuer && !isOwnerEmployee) {
+        throw createHttpError(403, 'Not permitted to view return receipt');
+      }
+      if (!ctx.isHeadoffice && isIssuer) {
+        if (!ctx.locationId) throw createHttpError(403, 'User is not assigned to an office');
+        if (ctx.locationId !== officeId) {
+          throw createHttpError(403, 'Access restricted to assigned office');
+        }
+      }
+
+      let receiptDocumentId = returnRequest.receipt_document_id ? String(returnRequest.receipt_document_id) : null;
+      if (!receiptDocumentId) {
+        session = await mongoose.startSession();
+        await session.withTransaction(async () => {
+          const requestDoc = await ReturnRequestModel.findById(req.params.id).session(session!);
+          if (!requestDoc) {
+            throw createHttpError(404, 'Return request not found');
+          }
+          if (requestDoc.receipt_document_id) {
+            receiptDocumentId = String(requestDoc.receipt_document_id);
+            return;
+          }
+          if (!requestDoc.record_id) {
+            throw createHttpError(400, 'Return receipt cannot be generated before receive step');
+          }
+          const employeeId = requestDoc.employee_id ? String(requestDoc.employee_id) : null;
+          if (!employeeId) throw createHttpError(400, 'Return request employee is missing');
+          const employee = await EmployeeModel.findById(employeeId, {
+            first_name: 1,
+            last_name: 1,
+            email: 1,
+          })
+            .session(session!)
+            .lean();
+          if (!employee) throw createHttpError(404, 'Employee not found');
+
+          const office = await OfficeModel.findById(officeId, { name: 1 }).session(session!).lean();
+          if (!office) throw createHttpError(404, 'Office not found');
+
+          const lineAssetItemIds = uniqueIds(
+            (Array.isArray(requestDoc.lines) ? requestDoc.lines : []).map((line: any) =>
+              line?.asset_item_id ? String(line.asset_item_id) : null
+            )
+          );
+          if (lineAssetItemIds.length === 0) {
+            throw createHttpError(400, 'Return request has no lines');
+          }
+
+          const assetItems = await AssetItemModel.find(
+            { _id: { $in: lineAssetItemIds } },
+            { asset_id: 1, tag: 1, serial_number: 1 }
+          )
+            .session(session!)
+            .lean();
+          const assetIds = uniqueIds(assetItems.map((item) => (item.asset_id ? String(item.asset_id) : null)));
+          const assets = assetIds.length
+            ? await AssetModel.find({ _id: { $in: assetIds } }, { name: 1 }).session(session!).lean()
+            : [];
+          const assetNameById = new Map(assets.map((asset) => [String(asset._id), String(asset.name || '')]));
+          const itemById = new Map(assetItems.map((item) => [String(item._id), item]));
+          const lines = lineAssetItemIds.map((assetItemId) => {
+            const item = itemById.get(assetItemId);
+            return {
+              assetItemId,
+              assetName: item?.asset_id ? assetNameById.get(String(item.asset_id)) || 'Unknown Asset' : 'Unknown Asset',
+              tag: String(item?.tag || ''),
+              serialNumber: String(item?.serial_number || ''),
+            };
+          });
+
+          const receipt = await generateAndStoreReturnReceipt({
+            session: session!,
+            officeId,
+            officeName: String(office.name || 'Unknown Office'),
+            employeeName: displayEmployeeName(employee),
+            returnRequestId: requestDoc.id,
+            recordId: String(requestDoc.record_id),
+            createdByUserId: ctx.userId,
+            lines,
+          });
+          requestDoc.receipt_document_id = receipt.document._id as any;
+          await requestDoc.save({ session: session! });
+          receiptDocumentId = receipt.document.id;
+
+          await logAudit({
+            ctx,
+            action: 'RETURN_REQUEST_RECEIPT_GENERATE',
+            entityType: 'ReturnRequest',
+            entityId: requestDoc.id,
+            officeId,
+            diff: {
+              documentId: receipt.document.id,
+              documentVersionId: receipt.version.id,
+            },
+            session: session!,
+          });
+        });
+      }
+
+      if (!receiptDocumentId) {
+        throw createHttpError(500, 'Failed to resolve return receipt document');
+      }
+
+      const [document, version] = await Promise.all([
+        DocumentModel.findById(receiptDocumentId, { office_id: 1, doc_type: 1, status: 1 }).lean(),
+        DocumentVersionModel.findOne({ document_id: receiptDocumentId })
+          .sort({ version_no: -1 })
+          .lean(),
+      ]);
+      if (!document) throw createHttpError(404, 'Return receipt document not found');
+      if (!version) throw createHttpError(404, 'Return receipt file not found');
+      if (!ctx.isHeadoffice && !isOwnerEmployee && String(document.office_id || '') !== ctx.locationId) {
+        throw createHttpError(403, 'Access restricted to assigned office');
+      }
+
+      const storageKey = String(version.storage_key || version.file_path || '');
+      if (!storageKey) throw createHttpError(404, 'Return receipt file path is missing');
+      const uploadsRoot = path.resolve(process.cwd(), 'uploads');
+      const absolutePath = path.resolve(process.cwd(), storageKey);
+      if (!absolutePath.startsWith(uploadsRoot)) {
+        throw createHttpError(400, 'Invalid return receipt file path');
+      }
+      await fs.access(absolutePath);
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Cache-Control', 'private, no-store');
+      res.setHeader('Content-Disposition', `inline; filename="return-receipt-${returnRequest.id}.pdf"`);
+      return res.sendFile(absolutePath);
+    } catch (error) {
+      return next(error);
+    } finally {
+      if (session) session.endSession();
+    }
+  },
   create: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const ctx = await getRequestContext(req);

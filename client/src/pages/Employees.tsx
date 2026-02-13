@@ -6,7 +6,7 @@ import { DataTable } from "@/components/shared/DataTable";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { MoreHorizontal, Eye, Pencil, Package, Mail, Loader2 } from "lucide-react";
+import { MoreHorizontal, Eye, Pencil, Package, Mail, Loader2, ArrowRightLeft } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -15,10 +15,16 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Employee } from "@/types";
-import { useEmployees, useCreateEmployee, useUpdateEmployee } from "@/hooks/useEmployees";
+import {
+  useEmployees,
+  useCreateEmployee,
+  useUpdateEmployee,
+  useTransferEmployee,
+} from "@/hooks/useEmployees";
 import { useDirectorates } from "@/hooks/useDirectorates";
 import { useLocations } from "@/hooks/useLocations";
 import { EmployeeFormModal } from "@/components/forms/EmployeeFormModal";
+import { EmployeeTransferModal } from "@/components/forms/EmployeeTransferModal";
 import { isHeadOfficeLocationName, isHeadOfficeLocation } from "@/lib/locationUtils";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -30,9 +36,12 @@ export default function Employees() {
   const { data: locations } = useLocations();
   const createEmployee = useCreateEmployee();
   const updateEmployee = useUpdateEmployee();
+  const transferEmployee = useTransferEmployee();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
+  const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
+  const [transferTarget, setTransferTarget] = useState<Employee | null>(null);
 
   const employeeList = employees || [];
   const directorateList = directorates || [];
@@ -41,7 +50,11 @@ export default function Employees() {
   const currentLocation = locationId ? locationList.find((loc) => loc.id === locationId) : undefined;
   const isHeadofficeAdmin = isSuperAdmin || (role === "admin" && isHeadOfficeLocation(currentLocation));
   const isOfficeAdmin = role === "location_admin" || (role === "admin" && !isHeadofficeAdmin);
+  const isHeadofficeIssuer =
+    isHeadOfficeLocation(currentLocation) &&
+    (role === "location_admin" || role === "caretaker" || role === "assistant_caretaker");
   const canManageEmployees = isHeadofficeAdmin || isOfficeAdmin;
+  const canTransferEmployees = isSuperAdmin || role === "admin" || isHeadofficeIssuer;
 
   const allowedLocations = isHeadofficeAdmin
     ? locationList
@@ -106,17 +119,37 @@ export default function Employees() {
     });
   };
 
+  const openTransferModal = (employee: Employee) => {
+    setTransferTarget(employee);
+    setIsTransferModalOpen(true);
+  };
+
+  const handleTransferSubmit = async (payload: { newOfficeId: string; reason?: string }) => {
+    if (!transferTarget) return;
+    await transferEmployee.mutateAsync({
+      id: transferTarget.id,
+      data: payload,
+    });
+    setTransferTarget(null);
+    setIsTransferModalOpen(false);
+  };
+
   const actions = (row: Employee) => (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={() => navigate(`/employees/${row.id}`)}><Eye className="h-4 w-4 mr-2" /> View Profile</DropdownMenuItem>
-        {canManageEmployees && (
-          <DropdownMenuItem onClick={() => handleEdit(row)}><Pencil className="h-4 w-4 mr-2" /> Edit</DropdownMenuItem>
-        )}
-        <DropdownMenuSeparator />
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={() => navigate(`/employees/${row.id}`)}><Eye className="h-4 w-4 mr-2" /> View Profile</DropdownMenuItem>
+          {canManageEmployees && (
+            <DropdownMenuItem onClick={() => handleEdit(row)}><Pencil className="h-4 w-4 mr-2" /> Edit</DropdownMenuItem>
+          )}
+          {canTransferEmployees && (
+            <DropdownMenuItem onClick={() => openTransferModal(row)}>
+              <ArrowRightLeft className="h-4 w-4 mr-2" /> Transfer
+            </DropdownMenuItem>
+          )}
+          <DropdownMenuSeparator />
         <DropdownMenuItem onClick={() => window.location.href = `mailto:${row.email}`}><Mail className="h-4 w-4 mr-2" /> Send Email</DropdownMenuItem>
         <DropdownMenuItem onClick={() => navigate(`/employees/${row.id}`)}><Package className="h-4 w-4 mr-2" /> View Assigned Assets</DropdownMenuItem>
         {canManageEmployees && (
@@ -164,6 +197,16 @@ export default function Employees() {
         locationLocked={!isHeadofficeAdmin}
         fixedLocationId={!isHeadofficeAdmin ? locationId : null}
         onSubmit={handleSubmit}
+      />
+      <EmployeeTransferModal
+        open={isTransferModalOpen}
+        onOpenChange={(open) => {
+          setIsTransferModalOpen(open);
+          if (!open) setTransferTarget(null);
+        }}
+        employee={transferTarget}
+        offices={locationList}
+        onSubmit={handleTransferSubmit}
       />
     </MainLayout>
   );

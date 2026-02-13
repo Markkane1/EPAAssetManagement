@@ -5,8 +5,10 @@ import { requisitionController } from '../controllers/requisition.controller';
 
 const router = Router();
 
+router.get('/', requireAuth, requisitionController.list);
 router.post('/', requireAuth, upload.single('requisitionFile'), requisitionController.create);
 router.get('/:id/issuance-report.pdf', requireAuth, requisitionController.issuanceReport);
+router.get('/:id', requireAuth, requisitionController.getById);
 router.post(
   '/:id/upload-signed-issuance',
   requireAuth,

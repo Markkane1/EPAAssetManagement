@@ -256,6 +256,21 @@ function summarizeAdjustmentsForNotes(adjustments: unknown[]) {
   return `${safe.slice(0, 997)}...`;
 }
 
+function parseDateInput(value: unknown, fieldName: string) {
+  if (value === undefined || value === null || value === '') return null;
+  const parsed = new Date(String(value));
+  if (Number.isNaN(parsed.getTime())) {
+    throw createHttpError(400, `${fieldName} must be a valid date`);
+  }
+  return parsed;
+}
+
+function parsePositiveInt(value: unknown, fallback: number, max: number) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(1, Math.min(Math.floor(parsed), max));
+}
+
 function escapeRegex(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -274,6 +289,157 @@ function getRemainingQuantity(line: {
 }
 
 export const requisitionController = {
+  list: async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const canViewAll = ctx.role === 'super_admin' || ctx.isHeadoffice;
+      const page = parsePositiveInt(req.query.page, 1, 100_000);
+      const limit = parsePositiveInt(req.query.limit, 50, 200);
+      const skip = (page - 1) * limit;
+      const status = asNullableString(req.query.status);
+      const fileNumber = asNullableString(req.query.fileNumber);
+      const officeId = asNullableString(req.query.officeId);
+      const from = parseDateInput(req.query.from, 'from');
+      const to = parseDateInput(req.query.to, 'to');
+
+      if (officeId && !Types.ObjectId.isValid(officeId)) {
+        throw createHttpError(400, 'officeId is invalid');
+      }
+      if (from && to && from.getTime() > to.getTime()) {
+        throw createHttpError(400, 'from must be earlier than or equal to to');
+      }
+
+      const filter: Record<string, unknown> = {};
+      if (!canViewAll) {
+        if (!ctx.locationId) throw createHttpError(403, 'User is not assigned to an office');
+        if (officeId && officeId !== ctx.locationId) {
+          throw createHttpError(403, 'Access restricted to assigned office');
+        }
+        filter.office_id = ctx.locationId;
+      } else if (officeId) {
+        filter.office_id = officeId;
+      }
+
+      if (status) filter.status = status;
+      if (fileNumber) filter.file_number = { $regex: escapeRegex(fileNumber), $options: 'i' };
+      if (from || to) {
+        const createdAt: Record<string, Date> = {};
+        if (from) createdAt.$gte = from;
+        if (to) createdAt.$lte = to;
+        filter.created_at = createdAt;
+      }
+
+      const [data, total] = await Promise.all([
+        RequisitionModel.find(filter).sort({ created_at: -1 }).skip(skip).limit(limit).lean(),
+        RequisitionModel.countDocuments(filter),
+      ]);
+
+      return res.json({
+        data,
+        page,
+        limit,
+        total,
+      });
+    } catch (error) {
+      return next(error);
+    }
+  },
+  getById: async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const canViewAll = ctx.role === 'super_admin' || ctx.isHeadoffice;
+
+      const requisition = await RequisitionModel.findById(req.params.id).lean();
+      if (!requisition) {
+        throw createHttpError(404, 'Requisition not found');
+      }
+
+      const officeId = requisition.office_id ? String(requisition.office_id) : null;
+      if (!officeId) {
+        throw createHttpError(400, 'Requisition office is missing');
+      }
+      if (!canViewAll) {
+        if (!ctx.locationId) throw createHttpError(403, 'User is not assigned to an office');
+        if (ctx.locationId !== officeId) {
+          throw createHttpError(403, 'Access restricted to assigned office');
+        }
+      }
+
+      const linesPromise = RequisitionLineModel.find({ requisition_id: requisition._id }).sort({ created_at: 1 }).lean();
+      const linkedDocIdsPromise = DocumentLinkModel.find(
+        { entity_type: 'Requisition', entity_id: requisition._id },
+        { document_id: 1 }
+      ).lean();
+
+      const [lines, linkRows] = await Promise.all([linesPromise, linkedDocIdsPromise]);
+      const linkedDocIds = linkRows
+        .map((row) => (row.document_id ? String(row.document_id) : null))
+        .filter((id): id is string => Boolean(id));
+
+      let requisitionFormDoc: any = null;
+      let issueSlipDoc: any = null;
+      if (linkedDocIds.length > 0) {
+        const docs = await DocumentModel.find({
+          _id: { $in: linkedDocIds },
+          doc_type: { $in: ['RequisitionForm', 'IssueSlip'] },
+        })
+          .sort({ created_at: -1 })
+          .lean();
+
+        requisitionFormDoc = docs.find((doc) => String(doc.doc_type) === 'RequisitionForm') || null;
+        issueSlipDoc =
+          docs.find(
+            (doc) =>
+              String(doc.doc_type) === 'IssueSlip' &&
+              (String(doc.status) === 'Draft' || String(doc.status) === 'Final')
+          ) || null;
+      }
+
+      const getLatestVersion = async (doc: any) => {
+        if (!doc?._id) return null;
+        return DocumentVersionModel.findOne(
+          { document_id: doc._id },
+          { version_no: 1, file_name: 1, mime_type: 1, size_bytes: 1, uploaded_at: 1, file_url: 1 }
+        )
+          .sort({ version_no: -1 })
+          .lean();
+      };
+
+      const [requisitionFormVersion, issueSlipVersion] = await Promise.all([
+        getLatestVersion(requisitionFormDoc),
+        getLatestVersion(issueSlipDoc),
+      ]);
+
+      return res.json({
+        requisition,
+        lines,
+        documents: {
+          requisitionForm: requisitionFormDoc
+            ? {
+                id: requisitionFormDoc._id,
+                title: requisitionFormDoc.title,
+                doc_type: requisitionFormDoc.doc_type,
+                status: requisitionFormDoc.status,
+                created_at: requisitionFormDoc.created_at,
+                latestVersion: requisitionFormVersion,
+              }
+            : null,
+          issueSlip: issueSlipDoc
+            ? {
+                id: issueSlipDoc._id,
+                title: issueSlipDoc.title,
+                doc_type: issueSlipDoc.doc_type,
+                status: issueSlipDoc.status,
+                created_at: issueSlipDoc.created_at,
+                latestVersion: issueSlipVersion,
+              }
+            : null,
+        },
+      });
+    } catch (error) {
+      return next(error);
+    }
+  },
   create: async (req: AuthRequest, res: Response, next: NextFunction) => {
     let requisitionId: string | null = null;
     let documentId: string | null = null;
