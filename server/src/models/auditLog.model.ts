@@ -1,7 +1,7 @@
 import mongoose, { Schema } from 'mongoose';
 import { baseSchemaOptions } from './base';
 
-const AuditLogSchema = new Schema(
+const AuditLogSchema = new Schema<any>(
   {
     // Actor who performed the action
     actor_user_id: { type: Schema.Types.ObjectId, ref: 'User', required: true },
@@ -24,3 +24,4 @@ AuditLogSchema.index({ entity_type: 1, entity_id: 1, timestamp: -1 });
 AuditLogSchema.index({ office_id: 1, timestamp: -1 });
 
 export const AuditLogModel = mongoose.model('AuditLog', AuditLogSchema);
+

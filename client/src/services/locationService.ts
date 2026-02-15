@@ -7,7 +7,7 @@ export interface LocationCreateDto {
   district?: string;
   address?: string;
   contactNumber?: string;
-  type?: 'CENTRAL' | 'LAB' | 'SUBSTORE';
+  type?: 'DIRECTORATE' | 'DISTRICT_LAB' | 'DISTRICT_OFFICE';
   capabilities?: {
     moveables?: boolean;
     consumables?: boolean;
@@ -21,7 +21,7 @@ export interface LocationUpdateDto {
   district?: string;
   address?: string;
   contactNumber?: string;
-  type?: 'CENTRAL' | 'LAB' | 'SUBSTORE';
+  type?: 'DIRECTORATE' | 'DISTRICT_LAB' | 'DISTRICT_OFFICE';
   capabilities?: {
     moveables?: boolean;
     consumables?: boolean;

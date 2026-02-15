@@ -24,6 +24,7 @@ import { ConsumableModeToggle } from '@/components/consumables/ConsumableModeTog
 
 export default function ConsumableInventory() {
   const ALL_VALUE = '__all__';
+  const STORE_FILTER = '__store__';
   const { mode, setMode } = useConsumableMode();
   const { data: items } = useConsumableItems();
   const { data: locations } = useConsumableLocations({
@@ -50,18 +51,18 @@ export default function ConsumableInventory() {
   }, [itemId, filteredItems, ALL_VALUE]);
 
   useEffect(() => {
-    if (locationId !== ALL_VALUE && !filteredLocations.some((loc) => loc.id === locationId)) {
+    if (locationId !== ALL_VALUE && locationId !== STORE_FILTER && !filteredLocations.some((loc) => loc.id === locationId)) {
       setLocationId(ALL_VALUE);
     }
-  }, [locationId, filteredLocations, ALL_VALUE]);
+  }, [locationId, filteredLocations, ALL_VALUE, STORE_FILTER]);
 
   const balanceFilters = useMemo(() => {
     const filters: any = {};
-    if (locationId !== ALL_VALUE) filters.locationId = locationId;
+    if (locationId !== ALL_VALUE && locationId !== STORE_FILTER) filters.locationId = locationId;
     if (itemId !== ALL_VALUE) filters.itemId = itemId;
     if (lotId !== ALL_VALUE) filters.lotId = lotId;
     return Object.keys(filters).length ? filters : undefined;
-  }, [locationId, itemId, lotId, ALL_VALUE]);
+  }, [locationId, itemId, lotId, ALL_VALUE, STORE_FILTER]);
 
   const { data: balances = [] } = useConsumableBalances(balanceFilters);
 
@@ -73,6 +74,17 @@ export default function ConsumableInventory() {
 
   const { data: ledger = [] } = useConsumableLedger(itemId !== ALL_VALUE ? { itemId } : undefined);
 
+  const visibleBalances = useMemo(
+    () =>
+      (balances || []).filter((balance) => {
+        if (!filteredItems.some((item) => item.id === balance.consumable_item_id)) return false;
+        if (locationId === ALL_VALUE) return true;
+        if (locationId === STORE_FILTER) return balance.holder_type === 'STORE';
+        return balance.location_id === locationId || (balance.holder_type === 'OFFICE' && balance.holder_id === locationId);
+      }),
+    [balances, filteredItems, locationId, ALL_VALUE, STORE_FILTER]
+  );
+
   const columns = [
     {
       key: 'consumable_item_id',
@@ -80,9 +92,13 @@ export default function ConsumableInventory() {
       render: (value: string) => filteredItems.find((item) => item.id === value)?.name || 'Unknown',
     },
     {
-      key: 'location_id',
-      label: 'Location',
-      render: (value: string) => filteredLocations.find((loc) => loc.id === value)?.name || 'Unknown',
+      key: 'holder_id',
+      label: 'Holder',
+      render: (_: string, row: ConsumableInventoryBalance) => {
+        if (row.holder_type === 'STORE') return 'Head Office Store';
+        const officeId = row.location_id || row.holder_id || '';
+        return filteredLocations.find((loc) => loc.id === officeId)?.name || 'Unknown';
+      },
     },
     {
       key: 'lot_id',
@@ -121,6 +137,7 @@ export default function ConsumableInventory() {
                 <SelectTrigger><SelectValue placeholder="All locations" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value={ALL_VALUE}>All locations</SelectItem>
+                  <SelectItem value={STORE_FILTER}>Head Office Store</SelectItem>
                   {filteredLocations.map((loc) => (
                     <SelectItem key={loc.id} value={loc.id}>{loc.name}</SelectItem>
                   ))}
@@ -162,9 +179,7 @@ export default function ConsumableInventory() {
 
       <DataTable
         columns={columns}
-        data={(balances || []).filter((balance) =>
-          filteredItems.some((item) => item.id === balance.consumable_item_id)
-        ) as any}
+        data={visibleBalances as any}
         searchPlaceholder="Search inventory..."
       />
 
@@ -179,9 +194,12 @@ export default function ConsumableInventory() {
                   {row.totalQtyBase} {filteredItems.find((i) => i.id === row.itemId)?.base_uom}
                 </p>
                 <div className="flex flex-wrap gap-2">
-                  {row.byLocation.map((loc: any) => (
-                    <Badge key={loc.locationId} variant="outline">
-                      {filteredLocations.find((l) => l.id === loc.locationId)?.name || 'Unknown'}: {loc.qtyOnHandBase}
+                  {((row.byHolder && row.byHolder.length > 0) ? row.byHolder : row.byLocation).map((loc: any) => (
+                    <Badge key={`${loc.holderType || 'OFFICE'}-${loc.holderId || loc.locationId}`} variant="outline">
+                      {(loc.holderType === 'STORE'
+                        ? 'Head Office Store'
+                        : filteredLocations.find((l) => l.id === (loc.locationId || loc.holderId))?.name || 'Unknown')
+                      }: {loc.qtyOnHandBase}
                     </Badge>
                   ))}
                 </div>

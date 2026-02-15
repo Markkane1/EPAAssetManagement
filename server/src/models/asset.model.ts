@@ -1,12 +1,24 @@
 import mongoose, { Schema } from 'mongoose';
 import { baseSchemaOptions } from './base';
 
-const AssetSchema = new Schema(
+const AssetDimensionSchema = new Schema<any>(
+  {
+    length: { type: Number, default: null },
+    width: { type: Number, default: null },
+    height: { type: Number, default: null },
+    unit: { type: String, enum: ['mm', 'cm', 'm', 'in'], default: 'cm' },
+  },
+  { _id: false }
+);
+
+const AssetSchema = new Schema<any>(
   {
     // Human-readable asset name (master definition)
     name: { type: String, required: true, trim: true },
     // Optional description of the asset model
     description: { type: String, default: null },
+    // Detailed free-text technical specification
+    specification: { type: String, default: null },
     // Category reference for reporting and grouping
     category_id: { type: Schema.Types.ObjectId, ref: 'Category', default: null },
     // Vendor reference for procurement traceability
@@ -27,6 +39,11 @@ const AssetSchema = new Schema(
     currency: { type: String, default: 'PKR' },
     // Logical quantity for the master definition
     quantity: { type: Number, default: 1 },
+    // Physical dimensions of the asset (optional)
+    dimensions: {
+      type: AssetDimensionSchema,
+      default: () => ({ length: null, width: null, height: null, unit: 'cm' }),
+    },
     // Soft-active flag to preserve history
     is_active: { type: Boolean, default: true },
   },
@@ -39,3 +56,4 @@ AssetSchema.index({ created_at: -1 });
 AssetSchema.index({ is_active: 1, name: 1 });
 
 export const AssetModel = mongoose.model('Asset', AssetSchema);
+

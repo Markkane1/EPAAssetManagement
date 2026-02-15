@@ -11,8 +11,8 @@ type AdminSeedConfig = {
 export async function ensureSuperAdmin(config: AdminSeedConfig) {
   const existing = await UserModel.findOne({ email: config.email.toLowerCase() });
   if (existing) {
-    if (existing.role !== 'super_admin') {
-      existing.role = 'super_admin';
+    if (existing.role !== 'org_admin') {
+      existing.role = 'org_admin';
       await existing.save();
     }
     return;
@@ -24,6 +24,6 @@ export async function ensureSuperAdmin(config: AdminSeedConfig) {
     password_hash: passwordHash,
     first_name: config.firstName || 'Super',
     last_name: config.lastName || 'Admin',
-    role: 'super_admin',
+    role: 'org_admin',
   });
 }

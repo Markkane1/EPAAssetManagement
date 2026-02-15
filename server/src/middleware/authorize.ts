@@ -1,7 +1,7 @@
 import type { NextFunction, Response } from 'express';
 import type { AuthRequest } from './auth';
 
-export const ADMIN_ROLES = new Set(['super_admin', 'admin', 'headoffice_admin']);
+export const ADMIN_ROLES = new Set(['org_admin']);
 
 export function requireRoles(roles: string[]) {
   const roleSet = new Set(roles);
@@ -17,4 +17,4 @@ export function requireRoles(roles: string[]) {
   };
 }
 
-export const requireAdmin = requireRoles(Array.from(ADMIN_ROLES));
+export const requireAdmin = requireRoles(['org_admin']);

@@ -7,6 +7,8 @@ import api from '@/lib/api';
 interface AuthContextType {
   user: User | null;
   role: AppRole | null;
+  isOrgAdmin: boolean;
+  // Deprecated compatibility flag. Use isOrgAdmin.
   isSuperAdmin: boolean;
   locationId: string | null;
   isAuthenticated: boolean;
@@ -33,7 +35,7 @@ interface AuthProviderProps {
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [role, setRole] = useState<AppRole | null>(null);
-  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [isOrgAdmin, setIsOrgAdmin] = useState(false);
   const [locationId, setLocationId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -58,13 +60,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       localStorage.setItem('user', JSON.stringify(normalizedUser));
       setUser(normalizedUser);
       setRole(normalizedRole);
-      setIsSuperAdmin(normalizedRole === 'super_admin');
+      setIsOrgAdmin(normalizedRole === 'org_admin');
       setLocationId(me.locationId || null);
     } catch {
       authService.logout();
       setUser(null);
       setRole(null);
-      setIsSuperAdmin(false);
+      setIsOrgAdmin(false);
       setLocationId(null);
     }
     setIsLoading(false);
@@ -99,7 +101,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     authService.logout();
     setUser(null);
     setRole(null);
-    setIsSuperAdmin(false);
+    setIsOrgAdmin(false);
     setLocationId(null);
   };
 
@@ -108,7 +110,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       value={{ 
         user,
         role,
-        isSuperAdmin,
+        isOrgAdmin,
+        isSuperAdmin: isOrgAdmin,
         locationId,
         isAuthenticated: !!user, 
         isLoading,

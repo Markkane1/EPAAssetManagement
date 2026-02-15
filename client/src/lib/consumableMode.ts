@@ -9,8 +9,7 @@ export function resolveChemicalsCapability(location: Location | null | undefined
   if (location.capabilities && typeof location.capabilities.chemicals === "boolean") {
     return location.capabilities.chemicals;
   }
-  if (location.is_headoffice) return false;
-  return location.type === "LAB";
+  return location.type === "DISTRICT_LAB";
 }
 
 export function resolveConsumablesCapability(location: Location | null | undefined) {

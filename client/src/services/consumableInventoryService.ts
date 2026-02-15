@@ -7,7 +7,9 @@ import {
 } from '@/types';
 
 export interface ReceivePayload {
-  locationId: string;
+  holderType?: 'OFFICE' | 'STORE';
+  holderId?: string;
+  locationId?: string;
   itemId: string;
   lotId?: string;
   lot?: {
@@ -26,8 +28,12 @@ export interface ReceivePayload {
 }
 
 export interface TransferPayload {
-  fromLocationId: string;
-  toLocationId: string;
+  fromHolderType?: 'OFFICE' | 'STORE';
+  fromHolderId?: string;
+  fromLocationId?: string;
+  toHolderType?: 'OFFICE' | 'STORE';
+  toHolderId?: string;
+  toLocationId?: string;
   itemId: string;
   lotId?: string;
   containerId?: string;
@@ -41,7 +47,9 @@ export interface TransferPayload {
 }
 
 export interface ConsumePayload {
-  locationId: string;
+  holderType?: 'OFFICE' | 'STORE';
+  holderId?: string;
+  locationId?: string;
   itemId: string;
   lotId?: string;
   containerId?: string;
@@ -55,7 +63,9 @@ export interface ConsumePayload {
 }
 
 export interface AdjustPayload {
-  locationId: string;
+  holderType?: 'OFFICE' | 'STORE';
+  holderId?: string;
+  locationId?: string;
   itemId: string;
   lotId?: string;
   containerId?: string;
@@ -71,7 +81,9 @@ export interface AdjustPayload {
 }
 
 export interface DisposePayload {
-  locationId: string;
+  holderType?: 'OFFICE' | 'STORE';
+  holderId?: string;
+  locationId?: string;
   itemId: string;
   lotId?: string;
   containerId?: string;
@@ -86,7 +98,11 @@ export interface DisposePayload {
 }
 
 export interface ReturnPayload {
-  fromLocationId: string;
+  fromHolderType?: 'OFFICE' | 'STORE';
+  fromHolderId?: string;
+  fromLocationId?: string;
+  toHolderType?: 'OFFICE' | 'STORE';
+  toHolderId?: string;
   toLocationId?: string;
   itemId: string;
   lotId?: string;
@@ -102,7 +118,9 @@ export interface ReturnPayload {
 
 export interface OpeningBalancePayload {
   entries: Array<{
-    locationId: string;
+    holderType?: 'OFFICE' | 'STORE';
+    holderId?: string;
+    locationId?: string;
     itemId: string;
     lotId?: string;
     qty: number;
@@ -114,12 +132,16 @@ export interface OpeningBalancePayload {
 }
 
 export interface BalanceQuery {
-  locationId: string;
+  holderType?: 'OFFICE' | 'STORE';
+  holderId?: string;
+  locationId?: string;
   itemId: string;
   lotId?: string;
 }
 
 export interface BalancesQuery {
+  holderType?: 'OFFICE' | 'STORE';
+  holderId?: string;
   locationId?: string;
   itemId?: string;
   lotId?: string;
@@ -128,6 +150,8 @@ export interface BalancesQuery {
 export interface LedgerQuery {
   from?: string;
   to?: string;
+  holderType?: 'OFFICE' | 'STORE';
+  holderId?: string;
   locationId?: string;
   itemId?: string;
   lotId?: string;
@@ -158,14 +182,19 @@ export const consumableInventoryService = {
     ),
   openingBalance: (payload: OpeningBalancePayload) =>
     api.post<ConsumableInventoryTransaction[]>('/consumables/inventory/opening-balance', payload),
-  getBalance: (query: BalanceQuery) =>
-    api.get<ConsumableInventoryBalance | null>(
-      `/consumables/inventory/balance?locationId=${query.locationId}&itemId=${query.itemId}${
-        query.lotId ? `&lotId=${query.lotId}` : ''
-      }`
-    ),
+  getBalance: (query: BalanceQuery) => {
+    const params = new URLSearchParams();
+    if (query.holderType) params.set('holderType', query.holderType);
+    if (query.holderId) params.set('holderId', query.holderId);
+    if (query.locationId) params.set('locationId', query.locationId);
+    params.set('itemId', query.itemId);
+    if (query.lotId) params.set('lotId', query.lotId);
+    return api.get<ConsumableInventoryBalance | null>(`/consumables/inventory/balance?${params.toString()}`);
+  },
   getBalances: (query?: BalancesQuery) => {
     const params = new URLSearchParams();
+    if (query?.holderType) params.set('holderType', query.holderType);
+    if (query?.holderId) params.set('holderId', query.holderId);
     if (query?.locationId) params.set('locationId', query.locationId);
     if (query?.itemId) params.set('itemId', query.itemId);
     if (query?.lotId) params.set('lotId', query.lotId);
@@ -178,6 +207,8 @@ export const consumableInventoryService = {
     const params = new URLSearchParams();
     if (query?.from) params.set('from', query.from);
     if (query?.to) params.set('to', query.to);
+    if (query?.holderType) params.set('holderType', query.holderType);
+    if (query?.holderId) params.set('holderId', query.holderId);
     if (query?.locationId) params.set('locationId', query.locationId);
     if (query?.itemId) params.set('itemId', query.itemId);
     if (query?.lotId) params.set('lotId', query.lotId);
@@ -185,9 +216,11 @@ export const consumableInventoryService = {
     const search = params.toString();
     return api.get<ConsumableInventoryTransaction[]>(`/consumables/ledger${search ? `?${search}` : ''}`);
   },
-  getExpiry: (days?: number, locationId?: string) => {
+  getExpiry: (days?: number, locationId?: string, holderType?: 'OFFICE' | 'STORE', holderId?: string) => {
     const params = new URLSearchParams();
     if (days) params.set('days', String(days));
+    if (holderType) params.set('holderType', holderType);
+    if (holderId) params.set('holderId', holderId);
     if (locationId) params.set('locationId', locationId);
     const search = params.toString();
     return api.get<ConsumableExpiryRow[]>(`/consumables/expiry${search ? `?${search}` : ''}`);

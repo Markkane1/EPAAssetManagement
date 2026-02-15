@@ -8,12 +8,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useAssets } from "@/hooks/useAssets";
 import { useAssetItems } from "@/hooks/useAssetItems";
 import { useAssignments } from "@/hooks/useAssignments";
-import { useConsumables } from "@/hooks/useConsumables";
-import { useConsumableAssignments } from "@/hooks/useConsumableAssignments";
 import { useEmployees } from "@/hooks/useEmployees";
 import { useLocations } from "@/hooks/useLocations";
 import { exportToCSV, filterRowsBySearch, formatDateForExport } from "@/lib/exportUtils";
 import { usePageSearch } from "@/contexts/PageSearchContext";
+import { getOfficeHolderId, isStoreHolder } from "@/lib/assetItemHolder";
 
 type UnifiedRow = {
   id: string;
@@ -36,8 +35,6 @@ export default function InventoryHub() {
   const { data: assets } = useAssets();
   const { data: assetItems } = useAssetItems();
   const { data: assignments } = useAssignments();
-  const { data: consumables } = useConsumables();
-  const { data: consumableAssignments } = useConsumableAssignments();
   const { data: employees } = useEmployees();
   const { data: locations } = useLocations();
 
@@ -69,7 +66,7 @@ export default function InventoryHub() {
       const assignedEmployee = activeAssignment
         ? employeeList.find((employee) => employee.id === activeAssignment.employee_id)
         : undefined;
-      const location = locationList.find((loc) => loc.id === item.location_id);
+      const location = locationList.find((loc) => loc.id === getOfficeHolderId(item));
 
       return {
         id: `asset-${item.id}`,
@@ -81,73 +78,22 @@ export default function InventoryHub() {
           ? `${assignedEmployee.first_name} ${assignedEmployee.last_name}`
           : "Unassigned",
         assignmentType: activeAssignment ? "Employee" : "-",
-        location: location?.name || "Unassigned",
+        location: isStoreHolder(item) ? "Head Office Store" : location?.name || "Unassigned",
         assignedOn: activeAssignment?.assigned_date || "",
         quantity: "1",
       };
     });
   }, [assets, assetItems, assignments, employees, locations]);
 
-  const consumableRows = useMemo(() => {
-    const consumableList = consumables || [];
-    const assignmentList = consumableAssignments || [];
-    const employeeList = employees || [];
-    const locationList = locations || [];
-
-    return assignmentList.map<UnifiedRow>((assignment) => {
-      const consumable = consumableList.find((item) => item.id === assignment.consumable_id);
-      const assignee =
-        assignment.assignee_type === "employee"
-          ? employeeList.find((employee) => employee.id === assignment.assignee_id)
-          : undefined;
-      const location = assignment.assignee_type === "location"
-        ? locationList.find((loc) => loc.id === assignment.assignee_id)
-        : undefined;
-      const receivedBy =
-        assignment.received_by_employee_id
-          ? employeeList.find((employee) => employee.id === assignment.received_by_employee_id)
-          : undefined;
-
-      const assignedTo = assignment.assignee_type === "employee"
-        ? assignee
-          ? `${assignee.first_name} ${assignee.last_name}`
-          : "Unknown"
-        : location?.name || "Unknown";
-
-      const assignmentType = assignment.assignee_type === "employee" ? "Employee" : "Location";
-      const receivedByLabel =
-        assignment.assignee_type === "location" && receivedBy
-          ? ` (Received by ${receivedBy.first_name} ${receivedBy.last_name})`
-          : "";
-
-      const quantityValue = assignment.input_quantity ?? assignment.quantity;
-      const unitValue = assignment.input_unit || consumable?.unit || "";
-
-      return {
-        id: `consumable-${assignment.id}`,
-        itemType: "Consumable",
-        itemName: consumable?.name || "Unknown",
-        identifier: consumable?.unit || "Unit",
-        status: "Assigned",
-        assignedTo: `${assignedTo}${receivedByLabel}`,
-        assignmentType,
-        location: assignment.assignee_type === "location" ? (location?.name || "Unknown") : "-",
-        assignedOn: assignment.assigned_date,
-        quantity: `${quantityValue} ${unitValue}`.trim(),
-      };
-    });
-  }, [consumables, consumableAssignments, employees, locations]);
-
   const baseRows = useMemo(() => {
-    const combined = [...assetRows, ...consumableRows];
-    return combined.filter((row) => {
+    return assetRows.filter((row) => {
       if (typeFilter === "capital" && row.itemType !== "Capital") return false;
       if (typeFilter === "consumable" && row.itemType !== "Consumable") return false;
       if (assignmentFilter === "assigned" && row.status !== "Assigned") return false;
       if (assignmentFilter === "unassigned" && row.status !== "Unassigned") return false;
       return true;
     });
-  }, [assetRows, consumableRows, typeFilter, assignmentFilter]);
+  }, [assetRows, typeFilter, assignmentFilter]);
 
   const searchTerm = pageSearch?.term || "";
   const exportRows = useMemo(

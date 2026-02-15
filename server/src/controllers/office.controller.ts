@@ -10,6 +10,8 @@ const fieldMap = {
   address: 'address',
   contactNumber: 'contact_number',
   type: 'type',
+  parentOfficeId: 'parent_office_id',
+  // Deprecated input alias kept for backward compatibility
   parentLocationId: 'parent_location_id',
   labCode: 'lab_code',
   isActive: 'is_active',
@@ -22,6 +24,19 @@ function clampInt(value: unknown, fallback: number, min: number, max: number) {
   return Math.min(max, Math.max(min, parsed));
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function normalizeOfficeForResponse<T extends Record<string, unknown>>(office: T) {
+  const normalized = { ...office };
+  if (normalized.parent_office_id === undefined || normalized.parent_office_id === null) {
+    normalized.parent_office_id = (normalized.parent_location_id as unknown) ?? null;
+  }
+  return normalized;
+}
+
 const buildPayload = (body: Record<string, unknown>) => {
   const payload = mapFields(body, fieldMap);
   Object.values(fieldMap).forEach((dbKey) => {
@@ -29,6 +44,16 @@ const buildPayload = (body: Record<string, unknown>) => {
       payload[dbKey] = body[dbKey];
     }
   });
+
+  // Read deprecated parent field as fallback, but only write canonical parent_office_id.
+  if (payload.parent_office_id === undefined && payload.parent_location_id !== undefined) {
+    payload.parent_office_id = payload.parent_location_id;
+  }
+  if (payload.parent_office_id === '') {
+    payload.parent_office_id = null;
+  }
+  delete payload.parent_location_id;
+
   if (body.capabilities !== undefined) {
     payload.capabilities = body.capabilities;
   }
@@ -46,7 +71,7 @@ export const officeController = {
         .skip(skip)
         .limit(limit)
         .lean();
-      res.json(data);
+      res.json(data.map((office) => normalizeOfficeForResponse(office as Record<string, unknown>)));
     } catch (error) {
       next(error);
     }
@@ -55,7 +80,7 @@ export const officeController = {
     try {
       const data = await OfficeModel.findById(req.params.id).lean();
       if (!data) return res.status(404).json({ message: 'Not found' });
-      return res.json(data);
+      return res.json(normalizeOfficeForResponse(data as Record<string, unknown>));
     } catch (error) {
       next(error);
     }
@@ -63,14 +88,19 @@ export const officeController = {
   create: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const payload = buildPayload(req.body);
-      if (payload.is_headoffice && req.user?.role !== 'super_admin') {
-        return res.status(403).json({ message: 'Only super admin can designate head office' });
+      if (payload.is_headoffice && req.user?.role !== 'org_admin') {
+        return res.status(403).json({ message: 'Only org admin can modify legacy head-office flag' });
       }
-      if (!payload.capabilities && payload.type === 'LAB') {
-        payload.capabilities = { chemicals: true };
+      const type = String(payload.type || '');
+      const payloadCapabilities = asRecord(payload.capabilities);
+      if (type === 'DISTRICT_LAB') {
+        payload.capabilities = { ...(payloadCapabilities || {}), chemicals: true };
+      } else if (payloadCapabilities) {
+        payload.capabilities = { ...payloadCapabilities, chemicals: false };
       }
       const data = await OfficeModel.create(payload);
-      return res.status(201).json(data);
+      const json = data.toJSON() as Record<string, unknown>;
+      return res.status(201).json(normalizeOfficeForResponse(json));
     } catch (error) {
       next(error);
     }
@@ -78,12 +108,33 @@ export const officeController = {
   update: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const payload = buildPayload(req.body);
-      if (payload.is_headoffice !== undefined && req.user?.role !== 'super_admin') {
-        return res.status(403).json({ message: 'Only super admin can modify head office designation' });
+      if (payload.is_headoffice !== undefined && req.user?.role !== 'org_admin') {
+        return res.status(403).json({ message: 'Only org admin can modify legacy head-office flag' });
       }
+      const existing = await OfficeModel.findById(req.params.id);
+      if (!existing) return res.status(404).json({ message: 'Not found' });
+
+      const payloadCapabilities = asRecord(payload.capabilities);
+      const existingCapabilities = asRecord(existing.capabilities);
+      const effectiveType = String(payload.type ?? existing.type ?? '');
+      if (effectiveType === 'DISTRICT_LAB') {
+        payload.capabilities = {
+          ...(existingCapabilities || {}),
+          ...(payloadCapabilities || {}),
+          chemicals: true,
+        };
+      } else if (payload.type !== undefined || payload.capabilities !== undefined) {
+        payload.capabilities = {
+          ...(existingCapabilities || {}),
+          ...(payloadCapabilities || {}),
+          chemicals: false,
+        };
+      }
+
       const data = await OfficeModel.findByIdAndUpdate(req.params.id, payload, { new: true });
       if (!data) return res.status(404).json({ message: 'Not found' });
-      return res.json(data);
+      const json = data.toJSON() as Record<string, unknown>;
+      return res.json(normalizeOfficeForResponse(json));
     } catch (error) {
       next(error);
     }

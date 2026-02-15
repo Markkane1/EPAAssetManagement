@@ -5,6 +5,7 @@ import { mapFields } from '../utils/mapFields';
 import { resolveAccessContext } from '../utils/accessControl';
 import { createHttpError } from '../utils/httpError';
 import type { AuthRequest } from '../middleware/auth';
+import { officeAssetItemFilter } from '../utils/assetHolder';
 
 const fieldMap = {
   categoryId: 'category_id',
@@ -17,7 +18,10 @@ const fieldMap = {
   assetSource: 'asset_source',
   schemeId: 'scheme_id',
   isActive: 'is_active',
+  specification: 'specification',
 };
+
+const DIMENSION_UNITS = new Set(['mm', 'cm', 'm', 'in']);
 
 function clampInt(value: unknown, fallback: number, min: number, max: number) {
   const parsed = Number.parseInt(String(value ?? ''), 10);
@@ -32,6 +36,53 @@ function readPagination(query: Record<string, unknown>) {
   return { limit, skip };
 }
 
+function normalizeNullableString(value: unknown) {
+  if (value === undefined) return undefined;
+  const normalized = String(value ?? '').trim();
+  return normalized ? normalized : null;
+}
+
+function parseNullableNumber(value: unknown) {
+  if (value === undefined || value === null || value === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function parseDimensions(body: Record<string, unknown>) {
+  const dimensionsRaw = body.dimensions;
+  const nested = dimensionsRaw && typeof dimensionsRaw === 'object'
+    ? (dimensionsRaw as Record<string, unknown>)
+    : {};
+
+  const hasDimensionsPayload =
+    body.dimensions !== undefined
+    || body.dimensionLength !== undefined
+    || body.dimensionWidth !== undefined
+    || body.dimensionHeight !== undefined
+    || body.dimensionUnit !== undefined
+    || body.dimensions_length !== undefined
+    || body.dimensions_width !== undefined
+    || body.dimensions_height !== undefined
+    || body.dimensions_unit !== undefined;
+
+  if (!hasDimensionsPayload) return undefined;
+
+  const unitCandidate = String(
+    nested.unit
+      ?? body.dimensionUnit
+      ?? body.dimensions_unit
+      ?? 'cm'
+  ).toLowerCase();
+  const unit = DIMENSION_UNITS.has(unitCandidate) ? unitCandidate : 'cm';
+
+  return {
+    length: parseNullableNumber(nested.length ?? body.dimensionLength ?? body.dimensions_length),
+    width: parseNullableNumber(nested.width ?? body.dimensionWidth ?? body.dimensions_width),
+    height: parseNullableNumber(nested.height ?? body.dimensionHeight ?? body.dimensions_height),
+    unit,
+  };
+}
+
 function buildPayload(body: Record<string, unknown>) {
   const payload = mapFields(body, fieldMap);
   Object.values(fieldMap).forEach((dbKey) => {
@@ -42,10 +93,15 @@ function buildPayload(body: Record<string, unknown>) {
 
   if (body.name !== undefined) payload.name = body.name;
   if (body.description !== undefined) payload.description = body.description;
+  if (body.specification !== undefined) payload.specification = normalizeNullableString(body.specification);
   if (body.currency !== undefined) payload.currency = body.currency;
   if (body.quantity !== undefined) payload.quantity = body.quantity;
   if (payload.acquisition_date) {
     payload.acquisition_date = new Date(String(payload.acquisition_date));
+  }
+  const dimensions = parseDimensions(body);
+  if (dimensions !== undefined) {
+    payload.dimensions = dimensions;
   }
   if (payload.vendor_id === "") payload.vendor_id = null;
   if (payload.project_id === "") payload.project_id = null;
@@ -69,7 +125,7 @@ export const assetController = {
       }
       if (!access.officeId) throw createHttpError(403, 'User is not assigned to an office');
       const assetIds = await AssetItemModel.distinct('asset_id', {
-        location_id: access.officeId,
+        ...officeAssetItemFilter(access.officeId),
         is_active: { $ne: false },
       });
       const assets = await AssetModel.find({ _id: { $in: assetIds }, is_active: { $ne: false } })
@@ -91,7 +147,7 @@ export const assetController = {
         if (!access.officeId) throw createHttpError(403, 'User is not assigned to an office');
         const hasItem = await AssetItemModel.exists({
           asset_id: asset._id,
-          location_id: access.officeId,
+          ...officeAssetItemFilter(access.officeId),
           is_active: { $ne: false },
         });
         if (!hasItem) throw createHttpError(403, 'Access restricted to assigned office inventory');
@@ -115,7 +171,7 @@ export const assetController = {
       }
       if (!access.officeId) throw createHttpError(403, 'User is not assigned to an office');
       const assetIds = await AssetItemModel.distinct('asset_id', {
-        location_id: access.officeId,
+        ...officeAssetItemFilter(access.officeId),
         is_active: { $ne: false },
       });
       const assets = await AssetModel.find({
@@ -146,7 +202,7 @@ export const assetController = {
       }
       if (!access.officeId) throw createHttpError(403, 'User is not assigned to an office');
       const assetIds = await AssetItemModel.distinct('asset_id', {
-        location_id: access.officeId,
+        ...officeAssetItemFilter(access.officeId),
         is_active: { $ne: false },
       });
       const assets = await AssetModel.find({
@@ -167,7 +223,7 @@ export const assetController = {
     try {
       const access = await resolveAccessContext(req.user);
       if (!access.isHeadofficeAdmin) {
-        throw createHttpError(403, 'Only Head Office Admin can create asset definitions');
+        throw createHttpError(403, 'Only org_admin can create asset definitions');
       }
       const payload = buildPayload(req.body);
       if (payload.currency === undefined) payload.currency = 'PKR';
@@ -182,7 +238,7 @@ export const assetController = {
     try {
       const access = await resolveAccessContext(req.user);
       if (!access.isHeadofficeAdmin) {
-        throw createHttpError(403, 'Only Head Office Admin can update asset definitions');
+        throw createHttpError(403, 'Only org_admin can update asset definitions');
       }
       const payload = buildPayload(req.body);
       const asset = await AssetModel.findByIdAndUpdate(req.params.id, payload, { new: true });
@@ -196,7 +252,7 @@ export const assetController = {
     try {
       const access = await resolveAccessContext(req.user);
       if (!access.isHeadofficeAdmin) {
-        throw createHttpError(403, 'Only Head Office Admin can retire assets');
+        throw createHttpError(403, 'Only org_admin can retire assets');
       }
       const asset = await AssetModel.findById(req.params.id);
       if (!asset) return res.status(404).json({ message: 'Not found' });

@@ -1,7 +1,7 @@
 import mongoose, { Schema } from 'mongoose';
 import { baseSchemaOptions } from './base';
 
-const ConsumableAssignmentSchema = new Schema(
+const ConsumableAssignmentSchema = new Schema<any>(
   {
     consumable_id: { type: Schema.Types.ObjectId, ref: 'Consumable', required: true },
     assignee_type: { type: String, enum: ['employee', 'location'], required: true },
@@ -24,3 +24,4 @@ export const ConsumableAssignmentModel = mongoose.model(
   'ConsumableAssignment',
   ConsumableAssignmentSchema
 );
+

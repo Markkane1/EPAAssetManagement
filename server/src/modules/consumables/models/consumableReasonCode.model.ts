@@ -1,7 +1,7 @@
 import mongoose, { Schema } from 'mongoose';
 import { baseSchemaOptions } from '../../../models/base';
 
-const ConsumableReasonCodeSchema = new Schema(
+const ConsumableReasonCodeSchema = new Schema<any>(
   {
     category: { type: String, enum: ['ADJUST', 'DISPOSE'], required: true },
     code: { type: String, required: true },
@@ -16,3 +16,4 @@ export const ConsumableReasonCodeModel = mongoose.model(
   'ConsumableReasonCode',
   ConsumableReasonCodeSchema
 );
+

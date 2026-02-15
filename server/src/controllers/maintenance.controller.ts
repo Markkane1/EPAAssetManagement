@@ -12,6 +12,7 @@ import { logAudit } from '../modules/records/services/audit.service';
 import { DocumentLinkModel } from '../models/documentLink.model';
 import { DocumentModel } from '../models/document.model';
 import { DocumentVersionModel } from '../models/documentVersion.model';
+import { getAssetItemOfficeId, officeAssetItemFilter } from '../utils/assetHolder';
 
 function clampInt(value: unknown, fallback: number, max: number) {
   const parsed = Number(value);
@@ -70,6 +71,14 @@ function buildPayload(body: Record<string, unknown>) {
   return payload;
 }
 
+function requireAssetItemOfficeId(item: { holder_type?: string | null; holder_id?: unknown; location_id?: unknown }, message: string) {
+  const officeId = getAssetItemOfficeId(item);
+  if (!officeId) {
+    throw createHttpError(400, message);
+  }
+  return officeId;
+}
+
 export const maintenanceController = {
   list: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
@@ -85,7 +94,7 @@ export const maintenanceController = {
       }
       if (!access.officeId) throw createHttpError(403, 'User is not assigned to an office');
       const assetItemIds = await AssetItemModel.distinct('_id', {
-        location_id: access.officeId,
+        ...officeAssetItemFilter(access.officeId),
         is_active: { $ne: false },
       });
       const records = await MaintenanceRecordModel.find({
@@ -112,7 +121,7 @@ export const maintenanceController = {
       if (!access.isHeadofficeAdmin) {
         if (!access.officeId) throw createHttpError(403, 'User is not assigned to an office');
         const assetItemIds = await AssetItemModel.distinct('_id', {
-          location_id: access.officeId,
+          ...officeAssetItemFilter(access.officeId),
           is_active: { $ne: false },
         });
         filter.asset_item_id = { $in: assetItemIds };
@@ -133,8 +142,9 @@ export const maintenanceController = {
       const access = await resolveAccessContext(req.user);
       if (!access.isHeadofficeAdmin) {
         const item = await AssetItemModel.findById(record.asset_item_id);
-        if (!item?.location_id) throw createHttpError(403, 'Access restricted to assigned office');
-        ensureOfficeScope(access, item.location_id.toString());
+        const officeId = item ? getAssetItemOfficeId(item) : null;
+        if (!officeId) throw createHttpError(403, 'Access restricted to assigned office');
+        ensureOfficeScope(access, officeId);
       }
       return res.json(record);
     } catch (error) {
@@ -148,8 +158,9 @@ export const maintenanceController = {
       const access = await resolveAccessContext(req.user);
       if (!access.isHeadofficeAdmin) {
         const item = await AssetItemModel.findById(req.params.assetItemId);
-        if (!item?.location_id) throw createHttpError(403, 'Access restricted to assigned office');
-        ensureOfficeScope(access, item.location_id.toString());
+        const officeId = item ? getAssetItemOfficeId(item) : null;
+        if (!officeId) throw createHttpError(403, 'Access restricted to assigned office');
+        ensureOfficeScope(access, officeId);
       }
       const records = await MaintenanceRecordModel.find({
         asset_item_id: req.params.assetItemId,
@@ -180,8 +191,9 @@ export const maintenanceController = {
       if (assetItem.is_active === false) {
         throw createHttpError(400, 'Cannot create maintenance for an inactive asset item');
       }
-      if (!access.isHeadofficeAdmin && assetItem.location_id) {
-        ensureOfficeScope(access, assetItem.location_id.toString());
+      const assetItemOfficeId = requireAssetItemOfficeId(assetItem, 'Maintenance is allowed only for office-held assets');
+      if (!access.isHeadofficeAdmin) {
+        ensureOfficeScope(access, assetItemOfficeId);
       }
 
       await session.withTransaction(async () => {
@@ -201,7 +213,7 @@ export const maintenanceController = {
           },
           {
             recordType: 'MAINTENANCE',
-            officeId: assetItem.location_id?.toString(),
+            officeId: assetItemOfficeId,
             status: 'Approved',
             assetItemId: payload.asset_item_id as string,
             maintenanceRecordId: record[0].id,
@@ -220,7 +232,7 @@ export const maintenanceController = {
           action: 'MAINTENANCE_CREATE',
           entityType: 'MaintenanceRecord',
           entityId: record[0].id,
-          officeId: assetItem.location_id?.toString() || access.officeId || '',
+          officeId: assetItemOfficeId || access.officeId || '',
           diff: { maintenanceStatus: record[0].maintenance_status },
           session,
         });
@@ -259,8 +271,9 @@ export const maintenanceController = {
       if (!record) return res.status(404).json({ message: 'Not found' });
       const assetItem = await AssetItemModel.findById(record.asset_item_id);
       if (!assetItem) throw createHttpError(404, 'Asset item not found');
-      if (!access.isHeadofficeAdmin && assetItem.location_id) {
-        ensureOfficeScope(access, assetItem.location_id.toString());
+      const assetItemOfficeId = requireAssetItemOfficeId(assetItem, 'Maintenance is allowed only for office-held assets');
+      if (!access.isHeadofficeAdmin) {
+        ensureOfficeScope(access, assetItemOfficeId);
       }
       const hasDocs = await hasCompletionDocs(record.id);
       if (!hasDocs) {
@@ -310,7 +323,7 @@ export const maintenanceController = {
             },
             {
               recordType: 'MAINTENANCE',
-              officeId: assetItem.location_id?.toString(),
+              officeId: assetItemOfficeId,
               status: 'Completed',
               assetItemId: record.asset_item_id.toString(),
               maintenanceRecordId: record.id,
@@ -330,7 +343,7 @@ export const maintenanceController = {
           action: 'MAINTENANCE_COMPLETE',
           entityType: 'MaintenanceRecord',
           entityId: record.id,
-          officeId: assetItem.location_id?.toString() || access.officeId || '',
+          officeId: assetItemOfficeId || access.officeId || '',
           diff: { completedDate: record.completed_date },
           session,
         });

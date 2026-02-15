@@ -24,9 +24,19 @@ import {
 import { Loader2 } from "lucide-react";
 import { Asset, Category, Project, Scheme, Vendor } from "@/types";
 
+const optionalDimension = z.preprocess(
+  (value) => {
+    if (value === "" || value === null || value === undefined) return undefined;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : value;
+  },
+  z.number().min(0, "Dimension must be 0 or greater").optional()
+);
+
 const assetSchema = z.object({
   name: z.string().min(1, "Name is required").max(100),
   description: z.string().max(500).optional(),
+  specification: z.string().max(5000).optional(),
   categoryId: z.string().min(1, "Category is required"),
   assetSource: z.enum(["procurement", "project"]),
   vendorId: z.string().optional(),
@@ -35,6 +45,10 @@ const assetSchema = z.object({
   price: z.coerce.number().min(0, "Price must be positive").optional(),
   acquisitionDate: z.string().optional(),
   quantity: z.coerce.number().min(1, "Quantity must be at least 1"),
+  dimensionLength: optionalDimension,
+  dimensionWidth: optionalDimension,
+  dimensionHeight: optionalDimension,
+  dimensionUnit: z.enum(["mm", "cm", "m", "in"]).default("cm"),
 }).superRefine((data, ctx) => {
   if (data.assetSource === "procurement") {
     if (!data.vendorId) {
@@ -72,6 +86,17 @@ const assetSchema = z.object({
 });
 
 type AssetFormData = z.infer<typeof assetSchema>;
+type AssetSubmitData = Omit<
+  AssetFormData,
+  "dimensionLength" | "dimensionWidth" | "dimensionHeight" | "dimensionUnit"
+> & {
+  dimensions: {
+    length: number | null;
+    width: number | null;
+    height: number | null;
+    unit: "mm" | "cm" | "m" | "in";
+  };
+};
 
 interface AssetFormModalProps {
   open: boolean;
@@ -81,7 +106,7 @@ interface AssetFormModalProps {
   vendors: Vendor[];
   projects: Project[];
   schemes: Scheme[];
-  onSubmit: (data: AssetFormData) => Promise<void>;
+  onSubmit: (data: AssetSubmitData) => Promise<void>;
 }
 
 export function AssetFormModal({ open, onOpenChange, asset, categories, vendors, projects, schemes, onSubmit }: AssetFormModalProps) {
@@ -93,6 +118,7 @@ export function AssetFormModal({ open, onOpenChange, asset, categories, vendors,
     defaultValues: {
       name: asset?.name || "",
       description: asset?.description || "",
+      specification: asset?.specification || "",
       categoryId: asset?.category_id || "",
       assetSource: asset?.asset_source || (asset?.project_id ? "project" : "procurement"),
       vendorId: asset?.vendor_id || "",
@@ -103,6 +129,10 @@ export function AssetFormModal({ open, onOpenChange, asset, categories, vendors,
         ? new Date(asset.acquisition_date).toISOString().split("T")[0]
         : "",
       quantity: asset?.quantity || 1,
+      dimensionLength: asset?.dimensions?.length ?? undefined,
+      dimensionWidth: asset?.dimensions?.width ?? undefined,
+      dimensionHeight: asset?.dimensions?.height ?? undefined,
+      dimensionUnit: asset?.dimensions?.unit || "cm",
     },
   });
 
@@ -111,6 +141,7 @@ export function AssetFormModal({ open, onOpenChange, asset, categories, vendors,
       form.reset({
         name: asset.name,
         description: asset.description || "",
+        specification: asset.specification || "",
         categoryId: asset.category_id || "",
         assetSource: asset.asset_source || (asset.project_id ? "project" : "procurement"),
         vendorId: asset.vendor_id || "",
@@ -121,11 +152,16 @@ export function AssetFormModal({ open, onOpenChange, asset, categories, vendors,
           ? new Date(asset.acquisition_date).toISOString().split("T")[0]
           : "",
         quantity: asset.quantity || 1,
+        dimensionLength: asset.dimensions?.length ?? undefined,
+        dimensionWidth: asset.dimensions?.width ?? undefined,
+        dimensionHeight: asset.dimensions?.height ?? undefined,
+        dimensionUnit: asset.dimensions?.unit || "cm",
       });
     } else {
       form.reset({
         name: "",
         description: "",
+        specification: "",
         categoryId: "",
         assetSource: "procurement",
         vendorId: "",
@@ -134,6 +170,10 @@ export function AssetFormModal({ open, onOpenChange, asset, categories, vendors,
         price: undefined,
         acquisitionDate: "",
         quantity: 1,
+        dimensionLength: undefined,
+        dimensionWidth: undefined,
+        dimensionHeight: undefined,
+        dimensionUnit: "cm",
       });
     }
   }, [asset, form]);
@@ -147,7 +187,16 @@ export function AssetFormModal({ open, onOpenChange, asset, categories, vendors,
   const handleSubmit = async (data: AssetFormData) => {
     setIsSubmitting(true);
     try {
-      await onSubmit(data);
+      const payload: AssetSubmitData = {
+        ...data,
+        dimensions: {
+          length: data.dimensionLength ?? null,
+          width: data.dimensionWidth ?? null,
+          height: data.dimensionHeight ?? null,
+          unit: data.dimensionUnit || "cm",
+        },
+      };
+      await onSubmit(payload);
       form.reset();
       onOpenChange(false);
     } finally {
@@ -175,6 +224,15 @@ export function AssetFormModal({ open, onOpenChange, asset, categories, vendors,
           <div className="space-y-2">
             <Label htmlFor="description">Description</Label>
             <Textarea id="description" {...form.register("description")} placeholder="Optional description..." rows={2} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="specification">Specification</Label>
+            <Textarea
+              id="specification"
+              {...form.register("specification")}
+              placeholder="Detailed technical specification..."
+              rows={3}
+            />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
@@ -299,6 +357,38 @@ export function AssetFormModal({ open, onOpenChange, asset, categories, vendors,
             <div className="space-y-2">
               <Label htmlFor="acquisitionDate">Acquisition Date</Label>
               <Input id="acquisitionDate" type="date" {...form.register("acquisitionDate")} />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label>Dimensions</Label>
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+              <div className="space-y-2">
+                <Label htmlFor="dimensionLength" className="text-xs text-muted-foreground">Length</Label>
+                <Input id="dimensionLength" type="number" step="0.01" {...form.register("dimensionLength")} placeholder="0" />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="dimensionWidth" className="text-xs text-muted-foreground">Width</Label>
+                <Input id="dimensionWidth" type="number" step="0.01" {...form.register("dimensionWidth")} placeholder="0" />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="dimensionHeight" className="text-xs text-muted-foreground">Height</Label>
+                <Input id="dimensionHeight" type="number" step="0.01" {...form.register("dimensionHeight")} placeholder="0" />
+              </div>
+              <div className="space-y-2">
+                <Label>Unit</Label>
+                <Select
+                  value={form.watch("dimensionUnit")}
+                  onValueChange={(v) => form.setValue("dimensionUnit", v as "mm" | "cm" | "m" | "in")}
+                >
+                  <SelectTrigger><SelectValue placeholder="Unit" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="mm">mm</SelectItem>
+                    <SelectItem value="cm">cm</SelectItem>
+                    <SelectItem value="m">m</SelectItem>
+                    <SelectItem value="in">in</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </div>
           <DialogFooter>

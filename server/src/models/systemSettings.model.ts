@@ -1,7 +1,7 @@
 import mongoose, { Schema } from 'mongoose';
 import { baseSchemaOptions } from './base';
 
-const OrganizationSchema = new Schema(
+const OrganizationSchema = new Schema<any>(
   {
     name: { type: String, default: '' },
     code: { type: String, default: '' },
@@ -12,7 +12,7 @@ const OrganizationSchema = new Schema(
   { _id: false }
 );
 
-const NotificationSchema = new Schema(
+const NotificationSchema = new Schema<any>(
   {
     low_stock_alerts: { type: Boolean, default: true },
     maintenance_reminders: { type: Boolean, default: true },
@@ -22,7 +22,7 @@ const NotificationSchema = new Schema(
   { _id: false }
 );
 
-const SecuritySchema = new Schema(
+const SecuritySchema = new Schema<any>(
   {
     two_factor_required: { type: Boolean, default: false },
     session_timeout_minutes: { type: Number, default: 30 },
@@ -31,7 +31,7 @@ const SecuritySchema = new Schema(
   { _id: false }
 );
 
-const SystemSettingsSchema = new Schema(
+const SystemSettingsSchema = new Schema<any>(
   {
     organization: { type: OrganizationSchema, default: () => ({}) },
     notifications: { type: NotificationSchema, default: () => ({}) },
@@ -42,3 +42,4 @@ const SystemSettingsSchema = new Schema(
 );
 
 export const SystemSettingsModel = mongoose.model('SystemSettings', SystemSettingsSchema);
+

@@ -26,7 +26,6 @@ const ConsumableDisposal = lazy(() => import("./pages/consumables/ConsumableDisp
 const ConsumableReturns = lazy(() => import("./pages/consumables/ConsumableReturns"));
 const ConsumableLedger = lazy(() => import("./pages/consumables/ConsumableLedger"));
 const ConsumableExpiry = lazy(() => import("./pages/consumables/ConsumableExpiry"));
-const ConsumableAssignments = lazy(() => import("./pages/ConsumableAssignments"));
 const Employees = lazy(() => import("./pages/Employees"));
 const EmployeeDetail = lazy(() => import("./pages/EmployeeDetail"));
 const Assignments = lazy(() => import("./pages/Assignments"));
@@ -65,42 +64,15 @@ const UserManagement = lazy(() => import("./pages/UserManagement"));
 const UserActivity = lazy(() => import("./pages/UserActivity"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
-const fullAccessRoles: AppRole[] = ["super_admin", "admin", "user", "viewer"];
-const assignmentAccessRoles: AppRole[] = [...fullAccessRoles, "employee", "directorate_head"];
-const consumableAccessRoles: AppRole[] = [
-  ...fullAccessRoles,
-  "directorate_head",
-  "central_store_admin",
-  "lab_manager",
-  "lab_user",
-  "auditor",
-];
-const adminAccessRoles: AppRole[] = ["super_admin", "admin"];
-const complianceAccessRoles: AppRole[] = [
-  ...fullAccessRoles,
-  "location_admin",
-  "caretaker",
-  "assistant_caretaker",
-  "employee",
-  "directorate_head",
-];
-const requisitionSubmitRoles: AppRole[] = ["employee", "location_admin", "caretaker"];
-const requisitionReadRoles: AppRole[] = [
-  ...fullAccessRoles,
-  "location_admin",
-  "caretaker",
-  "assistant_caretaker",
-  "employee",
-  "directorate_head",
-];
+const fullAccessRoles: AppRole[] = ["org_admin", "office_head", "caretaker", "employee"];
+const assignmentAccessRoles: AppRole[] = [...fullAccessRoles];
+const consumableAccessRoles: AppRole[] = [...fullAccessRoles];
+const adminAccessRoles: AppRole[] = ["org_admin"];
+const complianceAccessRoles: AppRole[] = [...fullAccessRoles];
+const requisitionSubmitRoles: AppRole[] = ["employee", "caretaker", "office_head"];
+const requisitionReadRoles: AppRole[] = [...fullAccessRoles];
 const returnCreateRoles: AppRole[] = ["employee"];
-const returnIssuerRoles: AppRole[] = [
-  "super_admin",
-  "admin",
-  "location_admin",
-  "caretaker",
-  "assistant_caretaker",
-];
+const returnIssuerRoles: AppRole[] = ["org_admin", "office_head", "caretaker"];
 const returnReadRoles: AppRole[] = [...returnIssuerRoles, "employee"];
 
 const RouteFallback = () => (
@@ -153,8 +125,6 @@ const App = () => {
                 <Route path="/consumables/returns" element={<ProtectedRoute allowedRoles={consumableAccessRoles}><ConsumableReturns /></ProtectedRoute>} />
                 <Route path="/consumables/ledger" element={<ProtectedRoute allowedRoles={consumableAccessRoles}><ConsumableLedger /></ProtectedRoute>} />
                 <Route path="/consumables/expiry" element={<ProtectedRoute allowedRoles={consumableAccessRoles}><ConsumableExpiry /></ProtectedRoute>} />
-                <Route path="/consumable-assignments" element={<ProtectedRoute allowedRoles={consumableAccessRoles}><ConsumableAssignments /></ProtectedRoute>} />
-                <Route path="/consumable-transfers" element={<ProtectedRoute allowedRoles={consumableAccessRoles}><ConsumableAssignments /></ProtectedRoute>} />
                 <Route path="/employees" element={<ProtectedRoute allowedRoles={fullAccessRoles}><Employees /></ProtectedRoute>} />
                 <Route path="/employees/:id" element={<ProtectedRoute allowedRoles={fullAccessRoles}><EmployeeDetail /></ProtectedRoute>} />
                 <Route path="/assignments" element={<ProtectedRoute allowedRoles={assignmentAccessRoles}><Assignments /></ProtectedRoute>} />

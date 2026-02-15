@@ -8,7 +8,10 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "migrate:offices": "node scripts/migrate-offices.js",
+    "seed:store": "tsx scripts/seed-head-office-store.ts",
     "seed:consumables": "tsx scripts/seed-consumables.ts",
+    "migrate:assetitem-holders": "tsx scripts/migrate-assetitems-holder-fields.ts",
+    "migrate:transfer-lines": "tsx scripts/migrate-transfers-to-lines.ts",
     "test:consumables": "tsx tests/consumables/unitConversion.test.ts",
     "test:security": "tsx tests/security/security-runtime-tests.ts"
   },

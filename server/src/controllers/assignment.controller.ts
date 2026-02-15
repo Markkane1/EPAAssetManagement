@@ -9,6 +9,7 @@ import { resolveAccessContext, ensureOfficeScope, isOfficeManager } from '../uti
 import { createHttpError } from '../utils/httpError';
 import { createRecord } from '../modules/records/services/record.service';
 import { logAudit } from '../modules/records/services/audit.service';
+import { getAssetItemOfficeId, officeAssetItemFilter } from '../utils/assetHolder';
 
 const fieldMap = {
   assetItemId: 'asset_item_id',
@@ -39,6 +40,14 @@ function buildPayload(body: Record<string, unknown>) {
   return payload;
 }
 
+function requireAssetItemOfficeId(item: { holder_type?: string | null; holder_id?: unknown; location_id?: unknown }, message: string) {
+  const officeId = getAssetItemOfficeId(item);
+  if (!officeId) {
+    throw createHttpError(400, message);
+  }
+  return officeId;
+}
+
 export const assignmentController = {
   list: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
@@ -55,7 +64,7 @@ export const assignmentController = {
       }
       if (!access.officeId) throw createHttpError(403, 'User is not assigned to an office');
       const assetItemIds = await AssetItemModel.distinct('_id', {
-        location_id: access.officeId,
+        ...officeAssetItemFilter(access.officeId),
         is_active: true,
       });
       const assignments = await AssignmentModel.find({
@@ -79,8 +88,9 @@ export const assignmentController = {
       const access = await resolveAccessContext(req.user);
       if (!access.isHeadofficeAdmin) {
         const item = await AssetItemModel.findById(assignment.asset_item_id);
-        if (!item?.location_id) throw createHttpError(403, 'Access restricted to assigned office');
-        ensureOfficeScope(access, item.location_id.toString());
+        const officeId = item ? getAssetItemOfficeId(item) : null;
+        if (!officeId) throw createHttpError(403, 'Access restricted to assigned office');
+        ensureOfficeScope(access, officeId);
       }
       return res.json(assignment);
     } catch (error) {
@@ -116,8 +126,9 @@ export const assignmentController = {
       const access = await resolveAccessContext(req.user);
       if (!access.isHeadofficeAdmin) {
         const item = await AssetItemModel.findById(req.params.assetItemId);
-        if (!item?.location_id) throw createHttpError(403, 'Access restricted to assigned office');
-        ensureOfficeScope(access, item.location_id.toString());
+        const officeId = item ? getAssetItemOfficeId(item) : null;
+        if (!officeId) throw createHttpError(403, 'Access restricted to assigned office');
+        ensureOfficeScope(access, officeId);
       }
       const assignments = await AssignmentModel.find({
         asset_item_id: req.params.assetItemId,
@@ -149,8 +160,9 @@ export const assignmentController = {
       if (assetItem.is_active === false) {
         throw createHttpError(400, 'Cannot assign an inactive asset item');
       }
-      if (!access.isHeadofficeAdmin && assetItem.location_id) {
-        ensureOfficeScope(access, assetItem.location_id.toString());
+      const assetItemOfficeId = requireAssetItemOfficeId(assetItem, 'Assigned items must be held by an office');
+      if (!access.isHeadofficeAdmin) {
+        ensureOfficeScope(access, assetItemOfficeId);
       }
       if (assetItem.assignment_status === 'Assigned') {
         throw createHttpError(400, 'Asset item already has an active assignment');
@@ -185,7 +197,7 @@ export const assignmentController = {
           },
           {
             recordType: 'ISSUE',
-            officeId: assetItem.location_id?.toString(),
+            officeId: assetItemOfficeId,
             status: 'Completed',
             assetItemId: payload.asset_item_id as string,
             employeeId: payload.employee_id as string,
@@ -205,7 +217,7 @@ export const assignmentController = {
           action: 'ASSIGN_CREATE',
           entityType: 'Assignment',
           entityId: assignment[0].id,
-          officeId: assetItem.location_id?.toString() || access.officeId || '',
+          officeId: assetItemOfficeId || access.officeId || '',
           diff: { assetItemId: payload.asset_item_id, employeeId: payload.employee_id },
           session,
         });
@@ -244,8 +256,9 @@ export const assignmentController = {
       if (!assignment) return res.status(404).json({ message: 'Not found' });
       const assetItem = await AssetItemModel.findById(assignment.asset_item_id);
       if (!assetItem) throw createHttpError(404, 'Asset item not found');
-      if (!access.isHeadofficeAdmin && assetItem.location_id) {
-        ensureOfficeScope(access, assetItem.location_id.toString());
+      const assetItemOfficeId = requireAssetItemOfficeId(assetItem, 'Assigned items must be held by an office');
+      if (!access.isHeadofficeAdmin) {
+        ensureOfficeScope(access, assetItemOfficeId);
       }
 
       await session.withTransaction(async () => {
@@ -269,7 +282,7 @@ export const assignmentController = {
           },
           {
             recordType: 'RETURN',
-            officeId: assetItem.location_id?.toString(),
+            officeId: assetItemOfficeId,
             status: 'Completed',
             assetItemId: assignment.asset_item_id.toString(),
             employeeId: assignment.employee_id.toString(),
@@ -289,7 +302,7 @@ export const assignmentController = {
           action: 'ASSIGN_RETURN',
           entityType: 'Assignment',
           entityId: assignment.id,
-          officeId: assetItem.location_id?.toString() || access.officeId || '',
+          officeId: assetItemOfficeId || access.officeId || '',
           diff: { returnedDate: assignment.returned_date },
           session,
         });
@@ -318,8 +331,9 @@ export const assignmentController = {
 
       const assetItem = await AssetItemModel.findById(assignment.asset_item_id);
       if (!assetItem) throw createHttpError(404, 'Asset item not found');
-      if (!access.isHeadofficeAdmin && assetItem.location_id) {
-        ensureOfficeScope(access, assetItem.location_id.toString());
+      const assetItemOfficeId = requireAssetItemOfficeId(assetItem, 'Assigned items must be held by an office');
+      if (!access.isHeadofficeAdmin) {
+        ensureOfficeScope(access, assetItemOfficeId);
       }
 
       const employee = await EmployeeModel.findById(newEmployeeId);

@@ -4,7 +4,7 @@ import { MainLayout } from "@/components/layout/MainLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Package, Coins, Calendar, Truck, Loader2, History } from "lucide-react";
+import { ArrowLeft, Package, Coins, Calendar, Truck, Loader2, History, Ruler } from "lucide-react";
 import { useAssets } from "@/hooks/useAssets";
 import { useAssetItems } from "@/hooks/useAssetItems";
 import { useCategories } from "@/hooks/useCategories";
@@ -15,6 +15,12 @@ import { useEmployees } from "@/hooks/useEmployees";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { AssignmentHistoryModal } from "@/components/shared/AssignmentHistoryModal";
 import type { AssetItem } from "@/types";
+import { getOfficeHolderId, isStoreHolder } from "@/lib/assetItemHolder";
+
+function formatDimensions(length?: number | null, width?: number | null, height?: number | null, unit?: string | null) {
+  if (length == null && width == null && height == null) return "N/A";
+  return `${length ?? "-"} × ${width ?? "-"} × ${height ?? "-"} ${unit || "cm"}`;
+}
 
 
 export default function AssetDetail() {
@@ -132,6 +138,17 @@ export default function AssetDetail() {
                   PKR {((asset.unit_price || 0) * (asset.quantity || 0)).toLocaleString("en-PK")}
                 </span>
               </div>
+              <div className="space-y-1">
+                <p className="text-sm text-muted-foreground">Dimensions</p>
+                <div className="flex items-center gap-2">
+                  <Ruler className="h-4 w-4 text-muted-foreground" />
+                  <span>{formatDimensions(asset.dimensions?.length, asset.dimensions?.width, asset.dimensions?.height, asset.dimensions?.unit)}</span>
+                </div>
+              </div>
+              <div className="space-y-1 col-span-2">
+                <p className="text-sm text-muted-foreground">Specification</p>
+                <p className="whitespace-pre-wrap break-words">{asset.specification || "N/A"}</p>
+              </div>
             </CardContent>
           </Card>
 
@@ -195,12 +212,12 @@ export default function AssetDetail() {
                   </thead>
                   <tbody>
                     {relatedItems.map((item) => {
-                      const location = locationList.find((l) => l.id === item.location_id);
+                      const location = locationList.find((l) => l.id === getOfficeHolderId(item));
                       return (
                         <tr key={item.id} className="border-b hover:bg-muted/50">
                           <td className="py-3 px-4 font-mono font-medium text-primary">{item.tag}</td>
                           <td className="py-3 px-4 text-sm">{item.serial_number}</td>
-                          <td className="py-3 px-4">{location?.name || "N/A"}</td>
+                          <td className="py-3 px-4">{isStoreHolder(item) ? "Head Office Store" : location?.name || "N/A"}</td>
                           <td className="py-3 px-4"><StatusBadge status={item.item_status || ""} /></td>
                           <td className="py-3 px-4"><StatusBadge status={item.assignment_status || ""} /></td>
                           <td className="py-3 px-4 text-sm">

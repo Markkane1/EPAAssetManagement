@@ -48,6 +48,7 @@ type TransferFormData = z.infer<typeof transferSchema>;
 
 export default function ConsumableTransfers() {
   const FEFO_VALUE = '__fefo__';
+  const STORE_CODE = 'HEAD_OFFICE_STORE';
   const { role, locationId } = useAuth();
   const { mode, setMode } = useConsumableMode();
   const { data: items } = useConsumableItems();
@@ -80,6 +81,12 @@ export default function ConsumableTransfers() {
 
   const filteredItems = useMemo(() => filterItemsByMode(items || [], mode), [items, mode]);
   const filteredLocations = useMemo(() => filterLocationsByMode(locations || [], mode), [locations, mode]);
+  const holderOptions = useMemo(
+    () => [{ id: STORE_CODE, name: 'Head Office Store (System)', holderType: 'STORE' as const }].concat(
+      filteredLocations.map((loc) => ({ id: loc.id, name: loc.name, holderType: 'OFFICE' as const }))
+    ),
+    [filteredLocations, STORE_CODE]
+  );
   const unitList = useMemo(() => units || [], [units]);
   const allowedItemIds = useMemo(
     () => new Set(filteredItems.map((item) => item.id)),
@@ -101,9 +108,9 @@ export default function ConsumableTransfers() {
 
   const fromLocationId = form.watch('fromLocationId');
   const containerFilters = useMemo(() => {
-    if (!fromLocationId) return undefined;
+    if (!fromLocationId || fromLocationId === STORE_CODE) return undefined;
     return { locationId: fromLocationId, status: 'IN_STOCK' };
-  }, [fromLocationId]);
+  }, [fromLocationId, STORE_CODE]);
 
   const { data: containers = [] } = useConsumableContainers(containerFilters);
 
@@ -133,12 +140,12 @@ export default function ConsumableTransfers() {
   }, [selectedItem, form]);
 
   useEffect(() => {
-    if (filteredLocations.length === 0) return;
+    if (holderOptions.length === 0) return;
     const currentFrom = form.getValues('fromLocationId');
-    if (!currentFrom || !filteredLocations.some((loc) => loc.id === currentFrom)) {
-      form.setValue('fromLocationId', filteredLocations[0].id);
+    if (!currentFrom || !holderOptions.some((holder) => holder.id === currentFrom)) {
+      form.setValue('fromLocationId', locationId || STORE_CODE);
     }
-  }, [filteredLocations, form]);
+  }, [holderOptions, form, locationId, STORE_CODE]);
 
   useEffect(() => {
     if (!selectedContainer) return;
@@ -150,22 +157,38 @@ export default function ConsumableTransfers() {
   }, [selectedContainer, selectedItem, form]);
 
   const balanceFilters = useMemo(() => {
-    if (!form.watch('fromLocationId') || !form.watch('itemId')) return undefined;
+    if (!form.watch('itemId')) return undefined;
+    if (form.watch('fromLocationId') === STORE_CODE) {
+      return { itemId: form.watch('itemId') };
+    }
+    if (!form.watch('fromLocationId')) return undefined;
     return { locationId: form.watch('fromLocationId'), itemId: form.watch('itemId') };
   }, [form]);
 
   const { data: balances = [] } = useConsumableBalances(balanceFilters);
 
-  const availableQty = balances.reduce((total, balance) => total + (balance.qty_on_hand_base || 0), 0);
+  const availableQty = balances
+    .filter((balance) => {
+      const fromId = form.watch('fromLocationId');
+      if (fromId === STORE_CODE) {
+        return balance.holder_type === 'STORE';
+      }
+      return balance.location_id === fromId || (balance.holder_type === 'OFFICE' && balance.holder_id === fromId);
+    })
+    .reduce((total, balance) => total + (balance.qty_on_hand_base || 0), 0);
 
   const handleSubmit = async (data: TransferFormData) => {
     if (requiresContainer && !data.containerId) {
       form.setError('containerId', { message: 'Container is required for this item' });
       return;
     }
+    const fromHolderType = data.fromLocationId === STORE_CODE ? 'STORE' : 'OFFICE';
+    const toHolderType = data.toLocationId === STORE_CODE ? 'STORE' : 'OFFICE';
     await transferMutation.mutateAsync({
-      fromLocationId: data.fromLocationId,
-      toLocationId: data.toLocationId,
+      fromHolderType,
+      fromHolderId: data.fromLocationId,
+      toHolderType,
+      toHolderId: data.toLocationId,
       itemId: data.itemId,
       lotId: data.lotId && data.lotId !== FEFO_VALUE ? data.lotId : undefined,
       containerId: data.containerId || undefined,
@@ -196,8 +219,8 @@ export default function ConsumableTransfers() {
                 <Select value={form.watch('fromLocationId')} onValueChange={(v) => form.setValue('fromLocationId', v)}>
                   <SelectTrigger><SelectValue placeholder="Select source" /></SelectTrigger>
                   <SelectContent>
-                    {filteredLocations.map((loc) => (
-                      <SelectItem key={loc.id} value={loc.id}>{loc.name}</SelectItem>
+                    {holderOptions.map((holder) => (
+                      <SelectItem key={holder.id} value={holder.id}>{holder.name}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -210,8 +233,8 @@ export default function ConsumableTransfers() {
                 <Select value={form.watch('toLocationId')} onValueChange={(v) => form.setValue('toLocationId', v)}>
                   <SelectTrigger><SelectValue placeholder="Select destination" /></SelectTrigger>
                   <SelectContent>
-                    {filteredLocations.map((loc) => (
-                      <SelectItem key={loc.id} value={loc.id}>{loc.name}</SelectItem>
+                    {holderOptions.map((holder) => (
+                      <SelectItem key={holder.id} value={holder.id}>{holder.name}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -336,7 +359,7 @@ export default function ConsumableTransfers() {
               <Input id="notes" {...form.register('notes')} />
             </div>
 
-            {(role === 'admin' || role === 'super_admin') && (
+            {(role === 'org_admin' || role === 'org_admin' || role === 'org_admin') && (
               <div className="space-y-3">
                 <div className="flex items-center gap-2">
                   <Checkbox

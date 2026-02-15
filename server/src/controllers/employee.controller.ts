@@ -71,7 +71,7 @@ export const employeeController = {
         return res.status(401).json({ message: 'Unauthorized' });
       }
       const { limit, skip } = readPagination(req.query as Record<string, unknown>);
-      const isGlobal = user.role === 'super_admin' || user.isHeadoffice;
+      const isGlobal = user.role === 'org_admin' || user.isHeadoffice;
       const locationId = user.locationId ? String(user.locationId) : null;
 
       if (!isGlobal && !locationId) {
@@ -98,7 +98,7 @@ export const employeeController = {
       const employee = await EmployeeModel.findById(req.params.id).lean();
       if (!employee) return res.status(404).json({ message: 'Not found' });
 
-      const isGlobal = user.role === 'super_admin' || user.isHeadoffice;
+      const isGlobal = user.role === 'org_admin' || user.isHeadoffice;
       if (!isGlobal) {
         if (!user.locationId) {
           return res.status(403).json({ message: 'User is not assigned to an office' });
@@ -119,8 +119,7 @@ export const employeeController = {
       if (!authUser) {
         return res.status(401).json({ message: 'Unauthorized' });
       }
-      const canManage =
-        authUser.role === 'super_admin' || authUser.role === 'admin' || authUser.role === 'location_admin';
+      const canManage = authUser.role === 'org_admin' || authUser.role === 'office_head';
       if (!canManage) {
         return res.status(403).json({ message: 'Access denied' });
       }
@@ -132,7 +131,7 @@ export const employeeController = {
 
       const firstName = payload.first_name ? String(payload.first_name) : null;
       const lastName = payload.last_name ? String(payload.last_name) : null;
-      const isGlobal = authUser.role === 'super_admin' || authUser.isHeadoffice;
+      const isGlobal = authUser.role === 'org_admin' || authUser.isHeadoffice;
       const locationId = payload.location_id ? String(payload.location_id) : null;
       if (!isGlobal) {
         if (!authUser.locationId) {
@@ -153,10 +152,10 @@ export const employeeController = {
 
       if (user) {
         const normalizedRole = normalizeRole(user.role);
-        if (normalizedRole === 'super_admin') {
-          return res.status(400).json({ message: 'Cannot link employee to super admin account' });
+        if (normalizedRole === 'org_admin') {
+          return res.status(400).json({ message: 'Cannot link employee to org admin account' });
         }
-        if (normalizedRole === 'user' || normalizedRole === 'viewer' || normalizedRole === 'employee') {
+        if (normalizedRole === 'employee') {
           user.role = 'employee';
         }
         if (!user.location_id || user.role === 'employee') {
@@ -199,14 +198,14 @@ export const employeeController = {
       if (!user) {
         return res.status(401).json({ message: 'Unauthorized' });
       }
-      const canManage = user.role === 'super_admin' || user.role === 'admin' || user.role === 'location_admin';
+      const canManage = user.role === 'org_admin' || user.role === 'office_head';
       if (!canManage) {
         return res.status(403).json({ message: 'Access denied' });
       }
       const existing = await EmployeeModel.findById(req.params.id);
       if (!existing) return res.status(404).json({ message: 'Not found' });
 
-      const isGlobal = user.role === 'super_admin' || user.isHeadoffice;
+      const isGlobal = user.role === 'org_admin' || user.isHeadoffice;
       if (!isGlobal) {
         if (!user.locationId) {
           return res.status(403).json({ message: 'User is not assigned to an office' });
@@ -241,14 +240,14 @@ export const employeeController = {
       if (!user) {
         return res.status(401).json({ message: 'Unauthorized' });
       }
-      const canManage = user.role === 'super_admin' || user.role === 'admin' || user.role === 'location_admin';
+      const canManage = user.role === 'org_admin' || user.role === 'office_head';
       if (!canManage) {
         return res.status(403).json({ message: 'Access denied' });
       }
       const existing = await EmployeeModel.findById(req.params.id);
       if (!existing) return res.status(404).json({ message: 'Not found' });
 
-      const isGlobal = user.role === 'super_admin' || user.isHeadoffice;
+      const isGlobal = user.role === 'org_admin' || user.isHeadoffice;
       if (!isGlobal) {
         if (!user.locationId) {
           return res.status(403).json({ message: 'User is not assigned to an office' });
@@ -272,7 +271,7 @@ export const employeeController = {
         return res.status(401).json({ message: 'Unauthorized' });
       }
 
-      const canTransferAcrossOffices = user.role === 'super_admin' || user.role === 'admin' || Boolean(user.isHeadoffice);
+      const canTransferAcrossOffices = user.role === 'org_admin' || Boolean(user.isHeadoffice);
       if (!canTransferAcrossOffices) {
         return res.status(403).json({ message: 'Access denied' });
       }
@@ -345,7 +344,7 @@ export const employeeController = {
         return res.status(401).json({ message: 'Unauthorized' });
       }
       const { limit, skip } = readPagination(req.query as Record<string, unknown>);
-      const isGlobal = user.role === 'super_admin' || user.isHeadoffice;
+      const isGlobal = user.role === 'org_admin' || user.isHeadoffice;
       const locationId = user.locationId ? String(user.locationId) : null;
       if (!isGlobal && !locationId) {
         return res.status(403).json({ message: 'User is not assigned to an office' });

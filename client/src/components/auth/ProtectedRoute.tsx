@@ -5,16 +5,18 @@ import { Loader2 } from 'lucide-react';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
+  requireOrgAdmin?: boolean;
   requireSuperAdmin?: boolean;
   allowedRoles?: AppRole[];
 }
 
 export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   children,
+  requireOrgAdmin = false,
   requireSuperAdmin = false,
   allowedRoles,
 }) => {
-  const { isAuthenticated, isLoading, isSuperAdmin, role } = useAuth();
+  const { isAuthenticated, isLoading, isOrgAdmin, role } = useAuth();
   const location = useLocation();
 
   if (isLoading) {
@@ -29,11 +31,11 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  if (requireSuperAdmin && !isSuperAdmin) {
+  if ((requireOrgAdmin || requireSuperAdmin) && !isOrgAdmin) {
     return <Navigate to="/" replace />;
   }
 
-  if (allowedRoles && !isSuperAdmin && (!role || !allowedRoles.includes(role))) {
+  if (allowedRoles && !isOrgAdmin && (!role || !allowedRoles.includes(role))) {
     return <Navigate to="/" replace />;
   }
 

@@ -4,11 +4,13 @@ import { Category } from '@/types';
 export interface CategoryCreateDto {
   name: string;
   description?: string;
+  scope?: 'GENERAL' | 'LAB_ONLY';
 }
 
 export interface CategoryUpdateDto {
   name?: string;
   description?: string;
+  scope?: 'GENERAL' | 'LAB_ONLY';
 }
 
 export const categoryService = {

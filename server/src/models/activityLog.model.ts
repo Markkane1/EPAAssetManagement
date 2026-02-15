@@ -1,7 +1,7 @@
 import mongoose, { Schema } from 'mongoose';
 import { baseSchemaOptions } from './base';
 
-const ActivityLogSchema = new Schema(
+const ActivityLogSchema = new Schema<any>(
   {
     user_id: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     activity_type: { type: String, required: true },
@@ -18,3 +18,4 @@ ActivityLogSchema.index({ user_id: 1, created_at: -1 });
 ActivityLogSchema.index({ activity_type: 1, created_at: -1 });
 
 export const ActivityLogModel = mongoose.model('ActivityLog', ActivityLogSchema);
+

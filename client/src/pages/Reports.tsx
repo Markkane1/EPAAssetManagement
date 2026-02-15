@@ -29,6 +29,7 @@ import { exportToCSV, formatDateForExport, formatCurrencyForExport } from "@/lib
 import { isHeadOfficeLocation } from "@/lib/locationUtils";
 import { DateRangeFilter } from "@/components/reports/DateRangeFilter";
 import { filterByDateRange, generateReportPDF, getDateRangeText } from "@/lib/reporting";
+import { getOfficeHolderId, isStoreHolder } from "@/lib/assetItemHolder";
 
 interface ReportCard {
   id: string;
@@ -141,8 +142,10 @@ export default function Reports() {
   const assetItemsByLocationId = useMemo(() => {
     const map = new Map<string, any[]>();
     (assetItems || []).forEach((item) => {
-      const existing = map.get(item.location_id) || [];
-      map.set(item.location_id, [...existing, item]);
+      const officeId = getOfficeHolderId(item);
+      if (!officeId) return;
+      const existing = map.get(officeId) || [];
+      map.set(officeId, [...existing, item]);
     });
     return map;
   }, [assetItems]);
@@ -280,13 +283,14 @@ export default function Reports() {
 
     const reportData = filteredItems.map(item => {
       const asset = assetById.get(item.asset_id);
-      const location = locationById.get(item.location_id);
+      const officeId = getOfficeHolderId(item);
+      const location = officeId ? locationById.get(officeId) : null;
       
       return {
         tag: item.tag || "N/A",
         assetName: asset?.name || "Unknown",
         serialNumber: item.serial_number || "N/A",
-        location: location?.name || "Unassigned",
+        location: isStoreHolder(item) ? "Head Office Store" : location?.name || "Unassigned",
         status: item.item_status || "Unknown",
         condition: item.item_condition || "Unknown",
         assignmentStatus: item.assignment_status || "Unknown",
@@ -542,8 +546,13 @@ export default function Reports() {
 
     const filteredItems = filterByDateRange(assetItems, "created_at", startDate, endDate);
     const filteredItemIds = filteredItems ? new Set(filteredItems.map((item) => item.id)) : null;
+    const storeItems = (assetItems || []).filter((item) => {
+      if (!isStoreHolder(item)) return false;
+      if (!filteredItemIds) return true;
+      return filteredItemIds.has(item.id);
+    });
 
-    const reportData = locations.map(location => {
+    const officeRows = locations.map(location => {
       const itemsAtLocation = (assetItemsByLocationId.get(location.id) || []).filter((item) => {
         if (!filteredItemIds) return true;
         return filteredItemIds.has(item.id);
@@ -571,6 +580,31 @@ export default function Reports() {
         retired: statusBreakdown["Retired"] || 0,
       };
     });
+
+    const storeValue = storeItems.reduce((sum, item) => {
+      const asset = assetById.get(item.asset_id);
+      return sum + (asset?.unit_price || 0);
+    }, 0);
+    const storeStatusBreakdown = storeItems.reduce((acc, item) => {
+      const status = item.item_status || "Unknown";
+      acc[status] = (acc[status] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+
+    const reportData = [
+      ...officeRows,
+      {
+        locationName: "Head Office Store",
+        address: "System Store",
+        totalItems: storeItems.length,
+        totalValue: storeValue,
+        available: storeStatusBreakdown["Available"] || 0,
+        assigned: storeStatusBreakdown["Assigned"] || 0,
+        maintenance: storeStatusBreakdown["Maintenance"] || 0,
+        damaged: storeStatusBreakdown["Damaged"] || 0,
+        retired: storeStatusBreakdown["Retired"] || 0,
+      },
+    ];
 
     const filename = `location-inventory-${new Date().toISOString().split('T')[0]}`;
 

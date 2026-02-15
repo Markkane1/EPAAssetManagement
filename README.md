@@ -66,6 +66,132 @@ cd server
 npm run migrate:offices
 ```
 
+### Office type migration to new enum
+
+Migrate legacy office types (`CENTRAL`/`LAB`/`SUBSTORE`) to:
+- `DIRECTORATE`
+- `DISTRICT_OFFICE`
+- `DISTRICT_LAB`
+
+It also copies `parent_location_id` to `parent_office_id` when needed.
+
+Dry run (no writes):
+
+```sh
+cd server
+npx tsx scripts/migrate-offices-to-new-types.ts --dry-run
+```
+
+Live run:
+
+```sh
+cd server
+npx tsx scripts/migrate-offices-to-new-types.ts
+```
+
+### Seeding head office store
+
+Create the system store record used for head office inventory:
+
+```sh
+cd server
+npm run seed:store
+```
+
+This seed is idempotent; running it multiple times will not create duplicates.
+
+### Asset holder migration (`location_id` -> `holder_type`/`holder_id`)
+
+Deploy code first, then migrate existing asset items so holder fields are populated from legacy `location_id`.
+
+Dry run:
+
+```sh
+cd server
+npm run migrate:assetitem-holders -- --dry-run
+```
+
+Live run:
+
+```sh
+cd server
+npm run migrate:assetitem-holders
+```
+
+### Transfer migration (single item -> multi-line + mediated statuses)
+
+Migrate legacy transfers to `lines[]`, set `store_id` to `HEAD_OFFICE_STORE`, and map old statuses:
+- `DISPATCHED` -> `DISPATCHED_TO_DEST`
+- `RECEIVED` -> `RECEIVED_AT_DEST`
+
+Dry run:
+
+```sh
+cd server
+npm run migrate:transfer-lines -- --dry-run
+```
+
+Live run:
+
+```sh
+cd server
+npm run migrate:transfer-lines
+```
+
+### Migration runbook (recommended order)
+
+Back up the database before running migrations. Example:
+
+```sh
+mongodump --uri "$MONGODB_URI" --out ./backup-before-ams-migration
+```
+
+Run in this order:
+
+1. Seed system store
+
+```sh
+cd server
+npm run seed:store
+```
+
+2. Migrate offices (`type`, `parent_office_id`)
+
+```sh
+cd server
+npx tsx scripts/migrate-offices-to-new-types.ts --dry-run
+npx tsx scripts/migrate-offices-to-new-types.ts
+```
+
+3. Migrate asset item holders (`location_id` -> holder fields)
+
+```sh
+cd server
+npm run migrate:assetitem-holders -- --dry-run
+npm run migrate:assetitem-holders
+```
+
+4. Migrate transfers to line-based workflow
+
+```sh
+cd server
+npm run migrate:transfer-lines -- --dry-run
+npm run migrate:transfer-lines
+```
+
+5. Migrate user roles
+
+```sh
+cd server
+npx tsx scripts/migrate-user-roles.ts --dry-run
+npx tsx scripts/migrate-user-roles.ts
+```
+
+Rollback notes:
+- If a migration fails or results are incorrect, restore from backup.
+- Re-run dry-run first before re-applying any failed migration.
+- `seed:store` is idempotent and safe to run multiple times.
+
 ### Optional startup super admin
 
 Super admin seeding is disabled by default. To enable one-time bootstrap seeding:

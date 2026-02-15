@@ -14,7 +14,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { Office, Division, District } from "@/types";
+import type { Office, Division, District, OfficeType } from "@/types";
+
+const OFFICE_TYPE_OPTIONS: Array<{ value: OfficeType; label: string }> = [
+  { value: "DIRECTORATE", label: "Directorate" },
+  { value: "DISTRICT_OFFICE", label: "District Office" },
+  { value: "DISTRICT_LAB", label: "District Lab" },
+];
+
+function coerceOfficeType(value?: string | null): OfficeType {
+  if (value === "DIRECTORATE" || value === "DISTRICT_OFFICE" || value === "DISTRICT_LAB") {
+    return value;
+  }
+  return "DISTRICT_OFFICE";
+}
 
 const officeSchema = z.object({
   name: z.string().min(2, "Office name is required"),
@@ -22,7 +35,7 @@ const officeSchema = z.object({
   district: z.string().optional(),
   address: z.string().optional(),
   contactNumber: z.string().optional(),
-  type: z.enum(["CENTRAL", "LAB", "SUBSTORE"]).optional(),
+  type: z.enum(["DIRECTORATE", "DISTRICT_OFFICE", "DISTRICT_LAB"]).optional(),
   isHeadoffice: z.boolean().optional(),
   capabilities: z.object({
     moveables: z.boolean().optional(),
@@ -60,12 +73,12 @@ export function OfficeFormModal({
       district: office?.district || "",
       address: office?.address || "",
       contactNumber: office?.contact_number || "",
-      type: office?.type || "SUBSTORE",
+      type: coerceOfficeType(office?.type),
       isHeadoffice: office?.is_headoffice || false,
       capabilities: {
         moveables: office?.capabilities?.moveables ?? true,
         consumables: office?.capabilities?.consumables ?? true,
-        chemicals: office?.capabilities?.chemicals ?? (office?.type === "LAB"),
+        chemicals: office?.capabilities?.chemicals ?? (coerceOfficeType(office?.type) === "DISTRICT_LAB"),
       },
     },
   });
@@ -78,12 +91,12 @@ export function OfficeFormModal({
         district: office.district || "",
         address: office.address || "",
         contactNumber: office.contact_number || "",
-        type: office.type || "SUBSTORE",
+        type: coerceOfficeType(office.type),
         isHeadoffice: office.is_headoffice || false,
         capabilities: {
           moveables: office.capabilities?.moveables ?? true,
           consumables: office.capabilities?.consumables ?? true,
-          chemicals: office.capabilities?.chemicals ?? (office.type === "LAB"),
+          chemicals: office.capabilities?.chemicals ?? (coerceOfficeType(office.type) === "DISTRICT_LAB"),
         },
       });
     } else {
@@ -93,7 +106,7 @@ export function OfficeFormModal({
         district: "",
         address: "",
         contactNumber: "",
-        type: "SUBSTORE",
+        type: "DISTRICT_OFFICE",
         isHeadoffice: false,
         capabilities: {
           moveables: true,
@@ -147,6 +160,22 @@ export function OfficeFormModal({
       form.setValue("district", "");
     }
   }, [selectedDivisionName, filteredDistricts, form, selectedDivision]);
+
+  const selectedType = form.watch("type");
+  useEffect(() => {
+    const nextChemicals = selectedType === "DISTRICT_LAB";
+    const currentCapabilities = form.getValues("capabilities") || {};
+    if (currentCapabilities.chemicals !== nextChemicals) {
+      form.setValue(
+        "capabilities",
+        {
+          ...currentCapabilities,
+          chemicals: nextChemicals,
+        },
+        { shouldDirty: false, shouldValidate: false }
+      );
+    }
+  }, [selectedType, form]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -259,16 +288,18 @@ export function OfficeFormModal({
               <div className="space-y-2">
                 <FormLabel>Office Type</FormLabel>
                 <Select
-                  value={form.watch("type") || "SUBSTORE"}
+                  value={form.watch("type") || "DISTRICT_OFFICE"}
                   onValueChange={(value) => form.setValue("type", value as any)}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select type" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="CENTRAL">Central</SelectItem>
-                    <SelectItem value="LAB">Lab</SelectItem>
-                    <SelectItem value="SUBSTORE">Field Office</SelectItem>
+                    {OFFICE_TYPE_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -307,7 +338,8 @@ export function OfficeFormModal({
               </div>
               <div className="flex items-center gap-2">
                 <Checkbox
-                  checked={form.watch("capabilities")?.chemicals ?? (form.watch("type") === "LAB")}
+                  checked={form.watch("capabilities")?.chemicals ?? (form.watch("type") === "DISTRICT_LAB")}
+                  disabled={form.watch("type") !== "DISTRICT_LAB"}
                   onCheckedChange={(checked) =>
                     form.setValue("capabilities", {
                       ...form.getValues("capabilities"),

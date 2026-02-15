@@ -21,6 +21,7 @@ import { isOfficeManager } from '../utils/accessControl';
 import { logAudit } from '../modules/records/services/audit.service';
 import { createRecord } from '../modules/records/services/record.service';
 import { generateAndStoreReturnReceipt } from '../services/returnRequestReceipt.service';
+import { officeAssetItemFilter } from '../utils/assetHolder';
 
 const RECEIVE_ALLOWED_STATUSES = new Set(['SUBMITTED', 'RECEIVED_CONFIRMED']);
 const SIGNED_UPLOAD_ALLOWED_STATUSES = new Set(['CLOSED_PENDING_SIGNATURE']);
@@ -119,7 +120,7 @@ export const returnRequestController = {
   list: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const ctx = await getRequestContext(req);
-      const canViewAll = ctx.role === 'super_admin' || ctx.isHeadoffice;
+      const canViewAll = ctx.role === 'org_admin' || ctx.isHeadoffice;
       const page = parsePositiveInt(req.query.page, 1, 100_000);
       const limit = parsePositiveInt(req.query.limit, 50, 200);
       const skip = (page - 1) * limit;
@@ -177,7 +178,7 @@ export const returnRequestController = {
   getById: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const ctx = await getRequestContext(req);
-      const canViewAll = ctx.role === 'super_admin' || ctx.isHeadoffice;
+      const canViewAll = ctx.role === 'org_admin' || ctx.isHeadoffice;
       const returnRequest = await ReturnRequestModel.findById(req.params.id).lean();
       if (!returnRequest) {
         throw createHttpError(404, 'Return request not found');
@@ -491,7 +492,7 @@ export const returnRequestController = {
         }
       }
 
-      const assetFilter = { location_id: officeId, is_active: true };
+      const assetFilter = { ...officeAssetItemFilter(officeId), is_active: true };
       let selectedAssetItemIds: string[] = [];
 
       if (returnAll) {
@@ -654,7 +655,7 @@ export const returnRequestController = {
         }
 
         const assetItems = await AssetItemModel.find(
-          { _id: { $in: lineAssetItemIds }, location_id: officeId, is_active: true },
+          { _id: { $in: lineAssetItemIds }, ...officeAssetItemFilter(officeId), is_active: true },
           { asset_id: 1, tag: 1, serial_number: 1, assignment_status: 1, item_status: 1 }
         ).session(session);
         if (assetItems.length !== lineAssetItemIds.length) {

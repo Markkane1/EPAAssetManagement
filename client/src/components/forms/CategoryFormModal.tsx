@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -14,12 +14,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Loader2 } from "lucide-react";
 import { Category } from "@/types";
 
 const categorySchema = z.object({
   name: z.string().min(1, "Name is required").max(100),
   description: z.string().max(500).optional(),
+  scope: z.enum(["GENERAL", "LAB_ONLY"]),
 });
 
 type CategoryFormData = z.infer<typeof categorySchema>;
@@ -40,8 +42,17 @@ export function CategoryFormModal({ open, onOpenChange, category, onSubmit }: Ca
     defaultValues: {
       name: category?.name || "",
       description: category?.description || "",
+      scope: category?.scope === "LAB_ONLY" ? "LAB_ONLY" : "GENERAL",
     },
   });
+
+  useEffect(() => {
+    form.reset({
+      name: category?.name || "",
+      description: category?.description || "",
+      scope: category?.scope === "LAB_ONLY" ? "LAB_ONLY" : "GENERAL",
+    });
+  }, [category, form, open]);
 
   const handleSubmit = async (data: CategoryFormData) => {
     setIsSubmitting(true);
@@ -74,6 +85,32 @@ export function CategoryFormModal({ open, onOpenChange, category, onSubmit }: Ca
           <div className="space-y-2">
             <Label htmlFor="description">Description</Label>
             <Textarea id="description" {...form.register("description")} placeholder="Optional description..." rows={3} />
+          </div>
+          <div className="space-y-2">
+            <Label>Scope *</Label>
+            <RadioGroup
+              value={form.watch("scope")}
+              onValueChange={(value) => form.setValue("scope", value as "GENERAL" | "LAB_ONLY")}
+              className="gap-3"
+            >
+              <div className="flex items-start gap-2">
+                <RadioGroupItem id="scope-general" value="GENERAL" />
+                <div>
+                  <Label htmlFor="scope-general" className="font-medium">General</Label>
+                  <p className="text-xs text-muted-foreground">Available to all offices.</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-2">
+                <RadioGroupItem id="scope-lab-only" value="LAB_ONLY" />
+                <div>
+                  <Label htmlFor="scope-lab-only" className="font-medium">Lab Only</Label>
+                  <p className="text-xs text-muted-foreground">Only DISTRICT_LAB offices can hold these items.</p>
+                </div>
+              </div>
+            </RadioGroup>
+            {form.formState.errors.scope && (
+              <p className="text-sm text-destructive">{form.formState.errors.scope.message}</p>
+            )}
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>

@@ -4,7 +4,7 @@ import { baseSchemaOptions } from './base';
 const MAINTENANCE_TYPES = ['Preventive', 'Corrective', 'Emergency', 'Inspection'] as const;
 const MAINTENANCE_STATUSES = ['Scheduled', 'InProgress', 'Completed', 'Cancelled'] as const;
 
-const MaintenanceRecordSchema = new Schema(
+const MaintenanceRecordSchema = new Schema<any>(
   {
     // Asset item under maintenance
     asset_item_id: { type: Schema.Types.ObjectId, ref: 'AssetItem', required: true },
@@ -35,3 +35,4 @@ MaintenanceRecordSchema.index({ maintenance_status: 1, created_at: -1 });
 MaintenanceRecordSchema.index({ is_active: 1, created_at: -1 });
 
 export const MaintenanceRecordModel = mongoose.model('MaintenanceRecord', MaintenanceRecordSchema);
+

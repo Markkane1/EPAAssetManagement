@@ -40,7 +40,7 @@ export default function ConsumableLots() {
   const [editing, setEditing] = useState<ConsumableLot | null>(null);
 
   const canManage =
-    isSuperAdmin || role === "admin" || role === "central_store_admin";
+    isSuperAdmin || role === "org_admin" || role === "caretaker";
 
   const itemList = filterItemsByMode(items || [], mode);
   const itemMap = useMemo(

@@ -3,7 +3,7 @@ import { baseSchemaOptions } from './base';
 
 const APPROVAL_STATUSES = ['Pending', 'Approved', 'Rejected', 'Cancelled'] as const;
 
-const ApprovalRequestSchema = new Schema(
+const ApprovalRequestSchema = new Schema<any>(
   {
     // Record requiring approval
     record_id: { type: Schema.Types.ObjectId, ref: 'Record', required: true },
@@ -28,3 +28,4 @@ const ApprovalRequestSchema = new Schema(
 ApprovalRequestSchema.index({ record_id: 1, status: 1 });
 
 export const ApprovalRequestModel = mongoose.model('ApprovalRequest', ApprovalRequestSchema);
+

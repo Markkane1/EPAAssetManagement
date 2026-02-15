@@ -1,7 +1,7 @@
 import mongoose, { Schema } from 'mongoose';
 import { baseSchemaOptions } from './base';
 
-const ConsumableConsumptionSchema = new Schema(
+const ConsumableConsumptionSchema = new Schema<any>(
   {
     consumable_id: { type: Schema.Types.ObjectId, ref: 'Consumable', required: true },
     location_id: { type: Schema.Types.ObjectId, ref: 'Office', required: true },
@@ -17,3 +17,4 @@ export const ConsumableConsumptionModel = mongoose.model(
   'ConsumableConsumption',
   ConsumableConsumptionSchema
 );
+

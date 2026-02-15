@@ -9,7 +9,13 @@ router.get('/asset-item/:assetItemId', requireAuth, transferController.getByAsse
 router.get('/office/:officeId', requireAuth, transferController.getByOffice);
 router.get('/:id', requireAuth, transferController.getById);
 router.post('/', requireAuth, transferController.create);
-router.put('/:id/status', requireAuth, transferController.updateStatus);
+router.post('/:id/approve', requireAuth, transferController.approve);
+router.post('/:id/dispatch-to-store', requireAuth, transferController.dispatchToStore);
+router.post('/:id/receive-at-store', requireAuth, transferController.receiveAtStore);
+router.post('/:id/dispatch-to-dest', requireAuth, transferController.dispatchToDest);
+router.post('/:id/receive-at-dest', requireAuth, transferController.receiveAtDest);
+router.post('/:id/reject', requireAuth, transferController.reject);
+router.post('/:id/cancel', requireAuth, transferController.cancel);
 router.delete('/:id', requireAuth, transferController.remove);
 
 export default router;

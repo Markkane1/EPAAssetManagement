@@ -1,7 +1,7 @@
 import mongoose, { Schema } from 'mongoose';
 import { baseSchemaOptions } from './base';
 
-const DistrictSchema = new Schema(
+const DistrictSchema = new Schema<any>(
   {
     name: { type: String, required: true, trim: true },
     division_id: { type: Schema.Types.ObjectId, ref: 'Division', default: null },
@@ -15,3 +15,4 @@ DistrictSchema.index({ division_id: 1, created_at: -1 });
 DistrictSchema.index({ created_at: -1 });
 
 export const DistrictModel = mongoose.model('District', DistrictSchema);
+

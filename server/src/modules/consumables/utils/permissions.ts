@@ -1,15 +1,4 @@
-export type ConsumableRole =
-  | 'super_admin'
-  | 'admin'
-  | 'central_store_admin'
-  | 'lab_manager'
-  | 'lab_user'
-  | 'auditor'
-  | 'location_admin'
-  | 'user'
-  | 'employee'
-  | 'directorate_head'
-  | 'viewer';
+export type ConsumableRole = 'org_admin' | 'office_head' | 'caretaker' | 'employee';
 
 export type ConsumablePermissions = {
   canManageItems: boolean;
@@ -50,7 +39,7 @@ const basePermissions: ConsumablePermissions = {
 export function resolveConsumablePermissions(role?: string | null): ConsumablePermissions {
   if (!role) return { ...basePermissions };
 
-  if (role === 'super_admin' || role === 'admin') {
+  if (role === 'org_admin') {
     return {
       canManageItems: true,
       canManageLocations: true,
@@ -70,46 +59,43 @@ export function resolveConsumablePermissions(role?: string | null): ConsumablePe
     };
   }
 
-  switch (role as ConsumableRole) {
-    case 'central_store_admin':
-      return {
-        ...basePermissions,
-        canManageItems: true,
-        canManageSuppliers: true,
-        canManageLots: true,
-        canManageContainers: true,
-        canReceiveCentral: true,
-        canTransferCentral: true,
-        canAdjust: true,
-        canViewReports: true,
-      };
-    case 'lab_manager':
-    case 'location_admin':
-      return {
-        ...basePermissions,
-        canTransferLab: true,
-        canConsume: true,
-        canAdjust: true,
-        canDispose: true,
-        canReturn: true,
-        canViewReports: true,
-      };
-    case 'lab_user':
-    case 'user':
-    case 'employee':
-    case 'directorate_head':
-      return {
-        ...basePermissions,
-        canConsume: true,
-        canViewReports: true,
-      };
-    case 'auditor':
-    case 'viewer':
-      return {
-        ...basePermissions,
-        canViewReports: true,
-      };
-    default:
-      return { ...basePermissions };
+  if (role === 'caretaker') {
+    return {
+      ...basePermissions,
+      canManageItems: true,
+      canManageLots: true,
+      canManageContainers: true,
+      canManageSuppliers: true,
+      canReceiveCentral: true,
+      canTransferCentral: true,
+      canTransferLab: true,
+      canConsume: true,
+      canAdjust: true,
+      canDispose: true,
+      canReturn: true,
+      canViewReports: true,
+    };
   }
+
+  if (role === 'office_head') {
+    return {
+      ...basePermissions,
+      canTransferLab: true,
+      canConsume: true,
+      canAdjust: true,
+      canDispose: true,
+      canReturn: true,
+      canViewReports: true,
+    };
+  }
+
+  if (role === 'employee') {
+    return {
+      ...basePermissions,
+      canConsume: true,
+      canViewReports: true,
+    };
+  }
+
+  return { ...basePermissions };
 }

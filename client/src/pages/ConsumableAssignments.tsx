@@ -34,7 +34,7 @@ export default function ConsumableAssignments() {
     : undefined;
 
   const filteredAssignments = useMemo(() => {
-    if (role === "directorate_head") {
+    if (role === "office_head") {
       if (!currentEmployee?.directorate_id) return [];
       return assignmentList.filter((assignment) => {
         if (assignment.assignee_type !== "employee") return false;
@@ -115,7 +115,7 @@ export default function ConsumableAssignments() {
     },
   ];
 
-  const canModify = role !== "employee" && role !== "directorate_head";
+  const canModify = role !== "employee" && role !== "office_head";
 
   const actions = (row: any) => (
     <DropdownMenu>

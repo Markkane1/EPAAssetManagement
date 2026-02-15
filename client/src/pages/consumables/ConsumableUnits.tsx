@@ -32,7 +32,7 @@ export default function ConsumableUnits() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<ConsumableUnit | null>(null);
 
-  const canManage = isSuperAdmin || role === 'admin' || role === 'central_store_admin';
+  const canManage = isSuperAdmin || role === 'org_admin' || role === 'caretaker';
 
   const handleAdd = () => {
     setEditing(null);

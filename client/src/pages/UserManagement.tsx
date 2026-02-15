@@ -56,7 +56,6 @@ import { toast } from "sonner";
 import { AppRole } from "@/services/authService";
 import { userService, UserWithDetails } from "@/services/userService";
 import { locationService } from "@/services/locationService";
-import { useAuth } from "@/contexts/AuthContext";
 
 interface Location {
   id: string;
@@ -64,40 +63,21 @@ interface Location {
 }
 
 const roleLabels: Record<AppRole, string> = {
-  super_admin: "Super Admin",
-  admin: "Admin",
-  location_admin: "Location Admin",
+  org_admin: "Org Admin",
+  office_head: "Office Head",
   caretaker: "Caretaker",
-  assistant_caretaker: "Assistant Caretaker",
-  central_store_admin: "Central Store Admin",
-  lab_manager: "Lab Manager",
-  lab_user: "Lab User",
-  auditor: "Auditor",
-  user: "User",
   employee: "Employee",
-  directorate_head: "Directorate Head",
-  viewer: "Viewer",
 };
 
 const roleColors: Record<AppRole, string> = {
-  super_admin: "bg-yellow-500 text-yellow-950",
-  admin: "bg-primary text-primary-foreground",
-  location_admin: "bg-sky-500 text-white",
+  org_admin: "bg-yellow-500 text-yellow-950",
+  office_head: "bg-sky-500 text-white",
   caretaker: "bg-teal-600 text-white",
-  assistant_caretaker: "bg-cyan-600 text-white",
-  central_store_admin: "bg-orange-500 text-white",
-  lab_manager: "bg-emerald-600 text-white",
-  lab_user: "bg-emerald-400 text-white",
-  auditor: "bg-slate-500 text-white",
-  user: "bg-secondary text-secondary-foreground",
   employee: "bg-emerald-500 text-white",
-  directorate_head: "bg-indigo-500 text-white",
-  viewer: "bg-muted text-muted-foreground",
 };
 
 export default function UserManagement() {
   const queryClient = useQueryClient();
-  const { isSuperAdmin } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
   const [editingUser, setEditingUser] = useState<UserWithDetails | null>(null);
   const [selectedRole, setSelectedRole] = useState<AppRole | "">("");
@@ -113,7 +93,7 @@ export default function UserManagement() {
   const [newUserPassword, setNewUserPassword] = useState("");
   const [newUserFirstName, setNewUserFirstName] = useState("");
   const [newUserLastName, setNewUserLastName] = useState("");
-  const [newUserRole, setNewUserRole] = useState<AppRole>("user");
+  const [newUserRole, setNewUserRole] = useState<AppRole>("employee");
   const [newUserLocation, setNewUserLocation] = useState<string>("none");
 
   // Fetch all users with their profiles and roles
@@ -216,7 +196,7 @@ export default function UserManagement() {
     setNewUserPassword("");
     setNewUserFirstName("");
     setNewUserLastName("");
-    setNewUserRole("user");
+    setNewUserRole("employee");
     setNewUserLocation("none");
   };
 
@@ -277,10 +257,7 @@ export default function UserManagement() {
     }
   };
 
-  const visibleUsers = useMemo(
-    () => (isSuperAdmin ? users : users.filter((user) => user.role !== "super_admin")),
-    [isSuperAdmin, users]
-  );
+  const visibleUsers = useMemo(() => users, [users]);
 
   const filteredUsers = useMemo(() => {
     const searchLower = searchQuery.toLowerCase();
@@ -299,7 +276,7 @@ export default function UserManagement() {
     if (!role) return <Badge variant="outline">No Role</Badge>;
     return (
       <Badge className={roleColors[role]}>
-        {role === "super_admin" && <Crown className="h-3 w-3 mr-1" />}
+        {role === "org_admin" && <Crown className="h-3 w-3 mr-1" />}
         {roleLabels[role]}
       </Badge>
     );
@@ -378,7 +355,7 @@ export default function UserManagement() {
                           </div>
                         </TableCell>
                         <TableCell className="text-muted-foreground">
-                          {user.email || "—"}
+                          {user.email || "-"}
                         </TableCell>
                         <TableCell>{getRoleBadge(user.role)}</TableCell>
                         <TableCell>
@@ -388,7 +365,7 @@ export default function UserManagement() {
                               {user.location_name}
                             </div>
                           ) : (
-                            <span className="text-muted-foreground">—</span>
+                            <span className="text-muted-foreground">-</span>
                           )}
                         </TableCell>
                         <TableCell className="text-muted-foreground text-sm">
@@ -453,43 +430,18 @@ export default function UserManagement() {
                 <SelectTrigger>
                   <SelectValue placeholder="Select a role" />
                 </SelectTrigger>
-                  <SelectContent>
-                    {isSuperAdmin && (
-                      <SelectItem value="super_admin">
-                        <div className="flex items-center gap-2">
-                          <Crown className="h-4 w-4 text-yellow-500" />
-                          Super Admin
-                        </div>
-                      </SelectItem>
-                    )}
-                    <SelectItem value="admin">Admin</SelectItem>
-                    <SelectItem value="location_admin">Location Admin</SelectItem>
-                    <SelectItem value="caretaker">Caretaker</SelectItem>
-                    <SelectItem value="assistant_caretaker">Assistant Caretaker</SelectItem>
-                    <SelectItem value="central_store_admin">Central Store Admin</SelectItem>
-                    <SelectItem value="lab_manager">Lab Manager</SelectItem>
-                    <SelectItem value="lab_user">Lab User</SelectItem>
-                    <SelectItem value="auditor">Auditor</SelectItem>
-                    <SelectItem value="user">User</SelectItem>
-                    <SelectItem value="employee">Employee</SelectItem>
-                    <SelectItem value="directorate_head">Directorate Head</SelectItem>
-                    <SelectItem value="viewer">Viewer</SelectItem>
-                  </SelectContent>
+                <SelectContent>
+                  <SelectItem value="org_admin">Org Admin</SelectItem>
+                  <SelectItem value="office_head">Office Head</SelectItem>
+                  <SelectItem value="caretaker">Caretaker</SelectItem>
+                  <SelectItem value="employee">Employee</SelectItem>
+                </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                {selectedRole === "super_admin" && "Full access to all locations and system settings"}
-                {selectedRole === "admin" && "Full access to all locations and system features"}
-                {selectedRole === "location_admin" && "Access limited to a single location without delete or quantity edits"}
-                {selectedRole === "caretaker" && "Office-scoped issuance and return operations for assigned location/directorate workflows"}
-                {selectedRole === "assistant_caretaker" && "Office-scoped support for issuance and return operations under caretaker workflows"}
-                {selectedRole === "central_store_admin" && "Manage central store receiving, transfers, and adjustments"}
-                {selectedRole === "lab_manager" && "Manage lab transfers, adjustments, and disposal"}
-                {selectedRole === "lab_user" && "Consume and view lab inventory"}
-                {selectedRole === "auditor" && "Read-only access to reports and ledger"}
-                {selectedRole === "user" && "Basic access with limited modifications"}
-                {selectedRole === "employee" && "View only assets assigned to the employee and assignment history"}
-                {selectedRole === "directorate_head" && "View assets assigned to all employees in the directorate"}
-                {selectedRole === "viewer" && "Read-only access"}
+                {selectedRole === "org_admin" && "Global access across all offices."}
+                {selectedRole === "office_head" && "Office-scoped management access."}
+                {selectedRole === "caretaker" && "Office-scoped custody and workflow operations."}
+                {selectedRole === "employee" && "Basic office-scoped access."}
               </p>
             </div>
 
@@ -512,15 +464,9 @@ export default function UserManagement() {
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                {selectedRole === "super_admin" 
-                  ? "Super admins have access to all locations regardless of assignment"
-                  : selectedRole === "admin"
-                    ? "Admins have access to all locations. Location assignment is optional."
-                    : selectedRole === "location_admin"
-                      ? "Location admins must be assigned to a specific location."
-                      : selectedRole === "caretaker" || selectedRole === "assistant_caretaker"
-                        ? "Caretaker roles must be assigned to a specific location."
-                    : "User may be restricted to their assigned location depending on role"}
+                {selectedRole === "org_admin"
+                  ? "Org admins are global. Location assignment is optional."
+                  : "Non-org-admin roles should be assigned to one office."}
               </p>
             </div>
           </div>
@@ -613,28 +559,12 @@ export default function UserManagement() {
                 <SelectTrigger>
                   <SelectValue placeholder="Select a role" />
                 </SelectTrigger>
-              <SelectContent>
-                {isSuperAdmin && (
-                  <SelectItem value="super_admin">
-                    <div className="flex items-center gap-2">
-                      <Crown className="h-4 w-4 text-yellow-500" />
-                      Super Admin
-                    </div>
-                  </SelectItem>
-                )}
-                <SelectItem value="admin">Admin</SelectItem>
-                <SelectItem value="location_admin">Location Admin</SelectItem>
-                <SelectItem value="caretaker">Caretaker</SelectItem>
-                <SelectItem value="assistant_caretaker">Assistant Caretaker</SelectItem>
-                <SelectItem value="central_store_admin">Central Store Admin</SelectItem>
-                <SelectItem value="lab_manager">Lab Manager</SelectItem>
-                <SelectItem value="lab_user">Lab User</SelectItem>
-                <SelectItem value="auditor">Auditor</SelectItem>
-                <SelectItem value="user">User</SelectItem>
-                <SelectItem value="employee">Employee</SelectItem>
-                <SelectItem value="directorate_head">Directorate Head</SelectItem>
-                <SelectItem value="viewer">Viewer</SelectItem>
-              </SelectContent>
+                <SelectContent>
+                  <SelectItem value="org_admin">Org Admin</SelectItem>
+                  <SelectItem value="office_head">Office Head</SelectItem>
+                  <SelectItem value="caretaker">Caretaker</SelectItem>
+                  <SelectItem value="employee">Employee</SelectItem>
+                </SelectContent>
               </Select>
             </div>
 

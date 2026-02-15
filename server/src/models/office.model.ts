@@ -1,7 +1,7 @@
 import mongoose, { Schema } from 'mongoose';
 import { baseSchemaOptions } from './base';
 
-const CapabilitySchema = new Schema(
+const CapabilitySchema = new Schema<any>(
   {
     moveables: { type: Boolean, default: true },
     consumables: { type: Boolean, default: true },
@@ -10,28 +10,34 @@ const CapabilitySchema = new Schema(
   { _id: false }
 );
 
-const OfficeSchema = new Schema(
+const OfficeSchema = new Schema<any>(
   {
     // Office name for display and lookups
     name: { type: String, required: true, trim: true },
     // Optional short office code used for reference numbers
     code: { type: String, default: null, trim: true },
-    // Organizational grouping fields
+    // Temporary free-text grouping fields (may be normalized later)
     division: { type: String, default: null, trim: true },
     district: { type: String, default: null, trim: true },
     // Physical address for the office
     address: { type: String, default: null },
     // Primary contact number for the office
     contact_number: { type: String, default: null, trim: true },
-    // Office classification used by consumables and reporting
-    type: { type: String, enum: ['CENTRAL', 'LAB', 'SUBSTORE'], default: 'LAB' },
+    // Office classification (new canonical set)
+    type: {
+      type: String,
+      enum: ['DIRECTORATE', 'DISTRICT_OFFICE', 'DISTRICT_LAB'],
+      default: 'DISTRICT_OFFICE',
+    },
     // Capability flags used for module filtering and enforcement
     capabilities: { type: CapabilitySchema, default: undefined },
-    // Parent office reference for hierarchy (e.g., lab within district)
+    // Parent office reference for hierarchy (canonical field)
+    parent_office_id: { type: Schema.Types.ObjectId, ref: 'Office', default: null },
+    // Deprecated: kept for backward compatibility with legacy clients/data
     parent_location_id: { type: Schema.Types.ObjectId, ref: 'Office', default: null },
-    // Optional lab code for lab offices
+    // Optional lab code (kept for compatibility)
     lab_code: { type: String, default: null, trim: true },
-    // Marks the single Head Office record for global access
+    // Deprecated: kept temporarily; head office inventory is moving to Store
     is_headoffice: { type: Boolean, default: false },
     // Soft-active flag for office availability
     is_active: { type: Boolean, default: true },
@@ -49,3 +55,4 @@ OfficeSchema.index({ 'capabilities.chemicals': 1, type: 1, is_headoffice: 1, nam
 OfficeSchema.index({ 'capabilities.consumables': 1, name: 1 });
 
 export const OfficeModel = mongoose.model('Office', OfficeSchema);
+

@@ -1,7 +1,7 @@
 import mongoose, { Schema } from 'mongoose';
 import { baseSchemaOptions } from './base';
 
-const VendorSchema = new Schema(
+const VendorSchema = new Schema<any>(
   {
     name: { type: String, required: true, trim: true },
     contact_info: { type: String, default: null },
@@ -13,3 +13,4 @@ const VendorSchema = new Schema(
 );
 
 export const VendorModel = mongoose.model('Vendor', VendorSchema);
+

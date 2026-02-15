@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { transferService } from '@/services/transferService';
-import type { TransferCreateDto, TransferStatusUpdateDto } from '@/services/transferService';
+import type { TransferCreateDto } from '@/services/transferService';
 import { toast } from 'sonner';
 import { API_CONFIG } from '@/config/api.config';
 
@@ -30,12 +30,51 @@ export const useCreateTransfer = () => {
   });
 };
 
-export const useUpdateTransferStatus = () => {
+export type TransferActionType =
+  | 'approve'
+  | 'dispatch_to_store'
+  | 'receive_at_store'
+  | 'dispatch_to_dest'
+  | 'receive_at_dest'
+  | 'reject'
+  | 'cancel';
+
+export const useTransferAction = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ id, data }: { id: string; data: TransferStatusUpdateDto }) =>
-      transferService.updateStatus(id, data),
+    mutationFn: async ({
+      id,
+      action,
+      handoverDocumentId,
+      takeoverDocumentId,
+    }: {
+      id: string;
+      action: TransferActionType;
+      handoverDocumentId?: string;
+      takeoverDocumentId?: string;
+    }) => {
+      switch (action) {
+        case 'approve':
+          return transferService.approve(id);
+        case 'dispatch_to_store':
+          if (!handoverDocumentId) throw new Error('Handover document is required');
+          return transferService.dispatchToStore(id, handoverDocumentId);
+        case 'receive_at_store':
+          return transferService.receiveAtStore(id);
+        case 'dispatch_to_dest':
+          return transferService.dispatchToDest(id);
+        case 'receive_at_dest':
+          if (!takeoverDocumentId) throw new Error('Takeover document is required');
+          return transferService.receiveAtDest(id, takeoverDocumentId);
+        case 'reject':
+          return transferService.reject(id);
+        case 'cancel':
+          return transferService.cancel(id);
+        default:
+          throw new Error('Unsupported transfer action');
+      }
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.transfers });
       queryClient.invalidateQueries({ queryKey: queryKeys.assetItems });

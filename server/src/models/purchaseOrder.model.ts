@@ -1,7 +1,7 @@
 import mongoose, { Schema } from 'mongoose';
 import { baseSchemaOptions } from './base';
 
-const PurchaseOrderSchema = new Schema(
+const PurchaseOrderSchema = new Schema<any>(
   {
     order_number: { type: String, required: true, trim: true },
     order_date: { type: String, required: true },
@@ -22,3 +22,4 @@ PurchaseOrderSchema.index({ project_id: 1, order_date: -1 });
 PurchaseOrderSchema.index({ order_date: -1 });
 
 export const PurchaseOrderModel = mongoose.model('PurchaseOrder', PurchaseOrderSchema);
+

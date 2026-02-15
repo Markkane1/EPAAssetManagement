@@ -9,6 +9,7 @@ import { RequisitionModel } from '../../../models/requisition.model';
 import { createHttpError } from '../../../utils/httpError';
 import { RequestContext } from '../../../utils/scope';
 import { logAudit } from './audit.service';
+import { getAssetItemOfficeId } from '../../../utils/assetHolder';
 
 export interface DocumentLinkInput {
   documentId: string;
@@ -25,13 +26,13 @@ async function resolveEntityOffice(entityType: DocumentLinkInput['entityType'], 
     }
     case 'AssetItem': {
       const item = await AssetItemModel.findById(entityId);
-      return item?.location_id?.toString() || null;
+      return item ? getAssetItemOfficeId(item) : null;
     }
     case 'Assignment': {
       const assignment = await AssignmentModel.findById(entityId);
       if (!assignment) return null;
       const item = await AssetItemModel.findById(assignment.asset_item_id);
-      return item?.location_id?.toString() || null;
+      return item ? getAssetItemOfficeId(item) : null;
     }
     case 'Transfer': {
       const transfer = await TransferModel.findById(entityId);
@@ -41,7 +42,7 @@ async function resolveEntityOffice(entityType: DocumentLinkInput['entityType'], 
       const record = await MaintenanceRecordModel.findById(entityId);
       if (!record) return null;
       const item = await AssetItemModel.findById(record.asset_item_id);
-      return item?.location_id?.toString() || null;
+      return item ? getAssetItemOfficeId(item) : null;
     }
     case 'Requisition': {
       const requisition = await RequisitionModel.findById(entityId);

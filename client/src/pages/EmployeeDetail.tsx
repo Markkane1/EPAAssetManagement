@@ -42,8 +42,8 @@ export default function EmployeeDetail() {
   const currentLocation = locationId ? locationList.find((l) => l.id === locationId) : null;
   const isHeadofficeIssuer =
     isHeadOfficeLocation(currentLocation) &&
-    (role === "location_admin" || role === "caretaker" || role === "assistant_caretaker");
-  const canTransferEmployee = isSuperAdmin || role === "admin" || isHeadofficeIssuer;
+    (role === "office_head" || role === "caretaker");
+  const canTransferEmployee = isSuperAdmin || role === "org_admin" || isHeadofficeIssuer;
   const directorate = employee && isHeadOfficeLocation(location)
     ? directorateList.find((d) => d.id === employee.directorate_id)
     : null;
@@ -238,7 +238,7 @@ export default function EmployeeDetail() {
                           <p className="font-medium">{asset?.name || "Unknown Asset"}</p>
                           <div className="flex items-center gap-2 text-sm text-muted-foreground">
                             <span className="font-mono">{item?.tag}</span>
-                            <span>•</span>
+                            <span>-</span>
                             <span>{item?.serial_number}</span>
                           </div>
                         </div>
@@ -286,12 +286,12 @@ export default function EmployeeDetail() {
                         return (
                           <tr key={assignment.id} className="border-b hover:bg-muted/50">
                             <td className="py-3 px-4 font-medium">{asset?.name || "Unknown"}</td>
-                            <td className="py-3 px-4 font-mono text-primary">{item?.tag || "—"}</td>
+                            <td className="py-3 px-4 font-mono text-primary">{item?.tag || "-"}</td>
                             <td className="py-3 px-4">{new Date(assignment.assigned_date).toLocaleDateString()}</td>
                             <td className="py-3 px-4">
                               {assignment.returned_date 
                                 ? new Date(assignment.returned_date).toLocaleDateString() 
-                                : "—"}
+                                : "-"}
                             </td>
                             <td className="py-3 px-4">
                               <Badge variant={assignment.is_active ? "default" : "secondary"} className={assignment.is_active ? "bg-success text-success-foreground" : ""}>
@@ -299,7 +299,7 @@ export default function EmployeeDetail() {
                               </Badge>
                             </td>
                             <td className="py-3 px-4 text-sm text-muted-foreground max-w-[200px] truncate">
-                              {assignment.notes || "—"}
+                              {assignment.notes || "-"}
                             </td>
                           </tr>
                         );

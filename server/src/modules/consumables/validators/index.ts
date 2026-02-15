@@ -3,6 +3,12 @@ const objectId = z.string().regex(/^[a-f\d]{24}$/i, 'Invalid id');
 const uomSchema = z.string().min(1).max(32);
 const boolOptional = z.boolean().optional();
 const unitGroupSchema = z.enum(['mass', 'volume', 'count']);
+const holderTypeSchema = z.enum(['OFFICE', 'STORE']);
+const qty2dpSchema = z.coerce
+  .number()
+  .refine((value) => Number.isFinite(value), 'Quantity must be a valid number')
+  .refine((value) => value > 0, 'Quantity must be greater than 0')
+  .refine((value) => Math.abs(value * 100 - Math.round(value * 100)) < 1e-8, 'Quantity must have at most 2 decimal places');
 
 export const consumableItemCreateSchema = z.object({
   name: z.string().min(1).max(120),
@@ -54,16 +60,97 @@ const lotDocsSchema = z.object({
   invoiceUrl: z.string().url().optional(),
 }).partial();
 
-export const consumableLotCreateSchema = z.object({
-  itemId: objectId,
-  supplierId: objectId.optional(),
-  lotNumber: z.string().min(1).max(120),
-  receivedDate: z.string().min(1),
-  expiryDate: z.string().optional(),
-  docs: lotDocsSchema.optional(),
+export const consumableLotReceiveSchema = z.object({
+  consumable_id: objectId,
+  holder_type: z.enum(['STORE', 'OFFICE']),
+  holder_id: objectId,
+  batch_no: z.string().min(1).max(120),
+  expiry_date: z.string().min(1),
+  qty_received: qty2dpSchema,
+  notes: z.string().max(500).optional(),
+  document_id: objectId.optional(),
 });
 
-export const consumableLotUpdateSchema = consumableLotCreateSchema.partial();
+export const consumableLotCreateSchema = consumableLotReceiveSchema;
+export const consumableLotUpdateSchema = consumableLotReceiveSchema.partial();
+
+export const consumableLotQuerySchema = z.object({
+  holder_type: z.enum(['STORE', 'OFFICE']).optional(),
+  holder_id: objectId.optional(),
+  consumable_id: objectId.optional(),
+  include_zero: z.string().optional(),
+  itemId: objectId.optional(),
+  supplierId: objectId.optional(),
+  lotNumber: z.string().max(120).optional(),
+  batch_no: z.string().max(120).optional(),
+  limit: z.string().optional(),
+  page: z.string().optional(),
+});
+
+export const consumableIssueCreateSchema = z.object({
+  lot_id: objectId,
+  to_type: z.enum(['OFFICE', 'USER']),
+  to_id: objectId,
+  quantity: qty2dpSchema,
+  notes: z.string().max(500).optional(),
+  document_id: objectId.optional(),
+});
+
+export const consumableConsumptionCreateSchema = z.object({
+  source_type: z.enum(['OFFICE', 'USER']),
+  source_id: objectId,
+  consumable_id: objectId,
+  quantity: qty2dpSchema,
+  issue_id: objectId.optional(),
+  notes: z.string().max(500).optional(),
+  consumed_at: z.string().optional(),
+});
+
+export const consumableReturnCreateSchema = z
+  .object({
+    mode: z.enum(['USER_TO_OFFICE', 'OFFICE_TO_STORE_LOT']),
+    consumable_id: objectId,
+    quantity: qty2dpSchema,
+    notes: z.string().max(500).optional(),
+    from_user_id: objectId.optional(),
+    to_office_id: objectId.optional(),
+    from_office_id: objectId.optional(),
+    to_lot_id: objectId.optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.mode === 'USER_TO_OFFICE') {
+      if (!data.from_user_id) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['from_user_id'],
+          message: 'from_user_id is required for USER_TO_OFFICE',
+        });
+      }
+      if (!data.to_office_id) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['to_office_id'],
+          message: 'to_office_id is required for USER_TO_OFFICE',
+        });
+      }
+    }
+    if (data.mode === 'OFFICE_TO_STORE_LOT') {
+      if (!data.from_office_id) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['from_office_id'],
+          message: 'from_office_id is required for OFFICE_TO_STORE_LOT',
+        });
+      }
+      if (!data.to_lot_id) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['to_lot_id'],
+          message: 'to_lot_id is required for OFFICE_TO_STORE_LOT',
+        });
+      }
+    }
+  });
 
 export const consumableContainerCreateSchema = z.object({
   lotId: objectId,
@@ -83,7 +170,8 @@ export const consumableLocationCreateSchema = z.object({
   district: z.string().max(120).optional(),
   address: z.string().max(200).optional(),
   contactNumber: z.string().max(64).optional(),
-  type: z.enum(['CENTRAL', 'LAB', 'SUBSTORE']).optional(),
+  type: z.enum(['DIRECTORATE', 'DISTRICT_OFFICE', 'DISTRICT_LAB']).optional(),
+  parentOfficeId: objectId.optional(),
   parentLocationId: objectId.optional(),
   labCode: z.string().max(64).optional(),
   isActive: z.boolean().optional(),
@@ -97,7 +185,9 @@ export const consumableLocationCreateSchema = z.object({
 export const consumableLocationUpdateSchema = consumableLocationCreateSchema.partial();
 
 export const receiveSchema = z.object({
-  locationId: objectId,
+  holderType: holderTypeSchema.optional(),
+  holderId: objectId.optional(),
+  locationId: objectId.optional(),
   itemId: objectId,
   lotId: objectId.optional(),
   lot: z.object({
@@ -120,8 +210,12 @@ export const receiveSchema = z.object({
 });
 
 export const transferSchema = z.object({
-  fromLocationId: objectId,
-  toLocationId: objectId,
+  fromHolderType: holderTypeSchema.optional(),
+  fromHolderId: objectId.optional(),
+  fromLocationId: objectId.optional(),
+  toHolderType: holderTypeSchema.optional(),
+  toHolderId: objectId.optional(),
+  toLocationId: objectId.optional(),
   itemId: objectId,
   lotId: objectId.optional(),
   containerId: objectId.optional(),
@@ -132,10 +226,15 @@ export const transferSchema = z.object({
   metadata: z.record(z.any()).optional(),
   allowNegative: z.boolean().optional(),
   overrideNote: z.string().max(500).optional(),
-});
+}).refine(
+  (data) => Boolean(data.fromHolderId || data.fromLocationId) && Boolean(data.toHolderId || data.toLocationId),
+  'fromHolderId/fromLocationId and toHolderId/toLocationId are required'
+);
 
 export const consumeSchema = z.object({
-  locationId: objectId,
+  holderType: holderTypeSchema.optional(),
+  holderId: objectId.optional(),
+  locationId: objectId.optional(),
   itemId: objectId,
   lotId: objectId.optional(),
   containerId: objectId.optional(),
@@ -146,10 +245,12 @@ export const consumeSchema = z.object({
   metadata: z.record(z.any()).optional(),
   allowNegative: z.boolean().optional(),
   overrideNote: z.string().max(500).optional(),
-});
+}).refine((data) => Boolean(data.holderId || data.locationId), 'holderId/locationId is required');
 
 export const adjustSchema = z.object({
-  locationId: objectId,
+  holderType: holderTypeSchema.optional(),
+  holderId: objectId.optional(),
+  locationId: objectId.optional(),
   itemId: objectId,
   lotId: objectId.optional(),
   containerId: objectId.optional(),
@@ -162,10 +263,12 @@ export const adjustSchema = z.object({
   metadata: z.record(z.any()).optional(),
   allowNegative: z.boolean().optional(),
   overrideNote: z.string().max(500).optional(),
-});
+}).refine((data) => Boolean(data.holderId || data.locationId), 'holderId/locationId is required');
 
 export const disposeSchema = z.object({
-  locationId: objectId,
+  holderType: holderTypeSchema.optional(),
+  holderId: objectId.optional(),
+  locationId: objectId.optional(),
   itemId: objectId,
   lotId: objectId.optional(),
   containerId: objectId.optional(),
@@ -177,10 +280,14 @@ export const disposeSchema = z.object({
   metadata: z.record(z.any()).optional(),
   allowNegative: z.boolean().optional(),
   overrideNote: z.string().max(500).optional(),
-});
+}).refine((data) => Boolean(data.holderId || data.locationId), 'holderId/locationId is required');
 
 export const returnSchema = z.object({
-  fromLocationId: objectId,
+  fromHolderType: holderTypeSchema.optional(),
+  fromHolderId: objectId.optional(),
+  fromLocationId: objectId.optional(),
+  toHolderType: holderTypeSchema.optional(),
+  toHolderId: objectId.optional(),
   toLocationId: objectId.optional(),
   itemId: objectId,
   lotId: objectId.optional(),
@@ -192,12 +299,14 @@ export const returnSchema = z.object({
   metadata: z.record(z.any()).optional(),
   allowNegative: z.boolean().optional(),
   overrideNote: z.string().max(500).optional(),
-});
+}).refine((data) => Boolean(data.fromHolderId || data.fromLocationId), 'fromHolderId/fromLocationId is required');
 
 export const openingBalanceSchema = z.object({
   entries: z.array(
     z.object({
-      locationId: objectId,
+      holderType: holderTypeSchema.optional(),
+      holderId: objectId.optional(),
+      locationId: objectId.optional(),
       itemId: objectId,
       lotId: objectId.optional(),
       qty: z.coerce.number().positive(),
@@ -205,29 +314,38 @@ export const openingBalanceSchema = z.object({
       reference: z.string().max(120).optional(),
       notes: z.string().max(500).optional(),
       metadata: z.record(z.any()).optional(),
-    })
+    }).refine((entry) => Boolean(entry.holderId || entry.locationId), 'holderId/locationId is required')
   ).min(1),
 });
 
 export const balanceQuerySchema = z.object({
-  locationId: objectId,
+  holderType: holderTypeSchema.optional(),
+  holderId: objectId.optional(),
+  locationId: objectId.optional(),
   itemId: objectId,
   lotId: objectId.optional(),
-});
+}).refine((data) => Boolean(data.holderId || data.locationId), 'holderId/locationId is required');
 
 export const balancesQuerySchema = z.object({
+  holderType: holderTypeSchema.optional(),
+  holderId: objectId.optional(),
   locationId: objectId.optional(),
   itemId: objectId.optional(),
   lotId: objectId.optional(),
 });
 
 export const rollupQuerySchema = z.object({
+  holderType: holderTypeSchema.optional(),
+  holderId: objectId.optional(),
+  locationId: objectId.optional(),
   itemId: objectId.optional(),
 });
 
 export const ledgerQuerySchema = z.object({
   from: z.string().optional(),
   to: z.string().optional(),
+  holderType: holderTypeSchema.optional(),
+  holderId: objectId.optional(),
   locationId: objectId.optional(),
   itemId: objectId.optional(),
   lotId: objectId.optional(),
@@ -236,6 +354,8 @@ export const ledgerQuerySchema = z.object({
 
 export const expiryQuerySchema = z.object({
   days: z.coerce.number().min(1).max(365).optional(),
+  holderType: holderTypeSchema.optional(),
+  holderId: objectId.optional(),
   locationId: objectId.optional(),
 });
 

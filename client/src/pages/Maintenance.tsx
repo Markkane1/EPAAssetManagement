@@ -37,6 +37,7 @@ import { toast } from "sonner";
 import { documentService, documentLinkService } from "@/services";
 import type { DocumentStatus, DocumentType } from "@/services/documentService";
 import { RecordDetailModal } from "@/components/records/RecordDetailModal";
+import { getOfficeHolderId } from "@/lib/assetItemHolder";
 
 export default function Maintenance() {
   const { data: maintenanceRecords, isLoading, error } = useMaintenance();
@@ -200,7 +201,7 @@ export default function Maintenance() {
     setDocError(null);
     try {
       const item = assetItemList.find((i) => i.id === docModal.record?.asset_item_id);
-      const officeId = item?.location_id || undefined;
+      const officeId = item ? getOfficeHolderId(item) || undefined : undefined;
       const title = docTitle.trim() || `${docType} - ${getAssetLabel(docModal.record)}`;
 
       const document = await documentService.create({

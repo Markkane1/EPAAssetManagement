@@ -65,13 +65,13 @@ export default function Assignments() {
       )
     : new Set<string>();
 
-  const isLimitedRole = role === "employee" || role === "directorate_head";
+  const isLimitedRole = role === "employee" || role === "office_head";
 
   const visibleAssignments = assignmentList.filter((assignment) => {
     if (role === "employee") {
       return currentEmployee ? assignment.employee_id === currentEmployee.id : false;
     }
-    if (role === "directorate_head") {
+    if (role === "office_head") {
       return currentEmployee?.directorate_id
         ? directorateEmployeeIds.has(assignment.employee_id)
         : false;

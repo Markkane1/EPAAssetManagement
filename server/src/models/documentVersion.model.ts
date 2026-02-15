@@ -1,7 +1,7 @@
 import mongoose, { Schema } from 'mongoose';
 import { baseSchemaOptions } from './base';
 
-const DocumentVersionSchema = new Schema(
+const DocumentVersionSchema = new Schema<any>(
   {
     // Parent document
     document_id: { type: Schema.Types.ObjectId, ref: 'Document', required: true },
@@ -28,3 +28,4 @@ const DocumentVersionSchema = new Schema(
 DocumentVersionSchema.index({ document_id: 1, version_no: 1 }, { unique: true });
 
 export const DocumentVersionModel = mongoose.model('DocumentVersion', DocumentVersionSchema);
+

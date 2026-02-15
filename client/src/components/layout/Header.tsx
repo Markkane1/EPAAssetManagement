@@ -37,27 +37,17 @@ export function Header({
   const { user, role, logout } = useAuth();
   const navigate = useNavigate();
   const [lastSeenAt, setLastSeenAt] = useState(() => localStorage.getItem(LAST_SEEN_KEY));
-  const canAccessSettings = role !== "employee" && role !== "directorate_head" && role !== "location_admin";
+  const canAccessSettings = role !== "employee";
   const roleLabel = (() => {
     switch (role) {
-      case "super_admin":
-        return "Super Admin";
-      case "admin":
+      case "org_admin":
         return "Administrator";
-      case "location_admin":
-        return "Location Admin";
+      case "office_head":
+        return "Office Head";
       case "caretaker":
         return "Caretaker";
-      case "assistant_caretaker":
-        return "Assistant Caretaker";
-      case "user":
-        return "User";
       case "employee":
         return "Employee";
-      case "directorate_head":
-        return "Directorate Head";
-      case "viewer":
-        return "Viewer";
       default:
         return "User";
     }

@@ -1,7 +1,7 @@
 import mongoose, { Schema } from 'mongoose';
 import { baseSchemaOptions } from './base';
 
-const SchemeSchema = new Schema(
+const SchemeSchema = new Schema<any>(
   {
     project_id: { type: Schema.Types.ObjectId, ref: 'Project', required: true },
     name: { type: String, required: true, trim: true },
@@ -12,3 +12,4 @@ const SchemeSchema = new Schema(
 );
 
 export const SchemeModel = mongoose.model('Scheme', SchemeSchema);
+

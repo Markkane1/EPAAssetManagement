@@ -6,6 +6,7 @@ const LIST_LIMIT = 2000;
 export interface AssetCreateDto {
   name: string;
   description?: string;
+  specification?: string;
   categoryId: string;
   vendorId?: string;
   unitPrice?: number;
@@ -15,12 +16,19 @@ export interface AssetCreateDto {
   assetSource?: 'procurement' | 'project';
   schemeId?: string;
   acquisitionDate?: string;
+  dimensions?: {
+    length?: number | null;
+    width?: number | null;
+    height?: number | null;
+    unit?: 'mm' | 'cm' | 'm' | 'in';
+  };
   isActive?: boolean;
 }
 
 export interface AssetUpdateDto {
   name?: string;
   description?: string;
+  specification?: string;
   categoryId?: string;
   vendorId?: string;
   unitPrice?: number;
@@ -30,7 +38,31 @@ export interface AssetUpdateDto {
   assetSource?: 'procurement' | 'project';
   schemeId?: string;
   acquisitionDate?: string;
+  dimensions?: {
+    length?: number | null;
+    width?: number | null;
+    height?: number | null;
+    unit?: 'mm' | 'cm' | 'm' | 'in';
+  };
   isActive?: boolean;
+}
+
+function normalizeDimensions(
+  dimensions?: {
+    length?: number | null;
+    width?: number | null;
+    height?: number | null;
+    unit?: 'mm' | 'cm' | 'm' | 'in';
+  }
+) {
+  if (!dimensions) return undefined;
+  const unit = dimensions.unit || 'cm';
+  return {
+    length: dimensions.length ?? null,
+    width: dimensions.width ?? null,
+    height: dimensions.height ?? null,
+    unit,
+  };
 }
 
 export const assetService = {
@@ -50,6 +82,8 @@ export const assetService = {
       projectId: data.projectId || undefined,
       schemeId: data.schemeId || undefined,
       acquisitionDate: data.acquisitionDate || undefined,
+      specification: data.specification?.trim() || undefined,
+      dimensions: normalizeDimensions(data.dimensions),
     }),
   
   update: (id: string, data: AssetUpdateDto) =>
@@ -60,6 +94,8 @@ export const assetService = {
       projectId: data.projectId === "" ? undefined : data.projectId,
       schemeId: data.schemeId === "" ? undefined : data.schemeId,
       acquisitionDate: data.acquisitionDate === "" ? undefined : data.acquisitionDate,
+      specification: data.specification?.trim() || undefined,
+      dimensions: normalizeDimensions(data.dimensions),
     }),
   
   delete: (id: string) => api.delete(`/assets/${id}`),

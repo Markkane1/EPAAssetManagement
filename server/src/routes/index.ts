@@ -13,9 +13,6 @@ import transferRoutes from './transfer.routes';
 import purchaseOrderRoutes from './purchaseOrder.routes';
 import divisionRoutes from './division.routes';
 import districtRoutes from './district.routes';
-import consumableRoutes from './consumable.routes';
-import consumableAssignmentRoutes from './consumableAssignment.routes';
-import consumableConsumptionRoutes from './consumableConsumption.routes';
 import consumableInventoryRoutes from '../modules/consumables/routes';
 import recordRoutes from '../modules/records/routes';
 import authRoutes from './auth.routes';
@@ -50,9 +47,16 @@ router.use('/maintenance', maintenanceRoutes);
 router.use('/transfers', transferRoutes);
 router.use('/purchase-orders', purchaseOrderRoutes);
 router.use('/consumables', consumableInventoryRoutes);
-router.use('/consumables', consumableRoutes);
-router.use('/consumable-assignments', consumableAssignmentRoutes);
-router.use('/consumable-consumptions', consumableConsumptionRoutes);
+router.use('/consumable-assignments', (_req, res) => {
+  res.status(410).json({
+    message: 'Legacy consumable assignments endpoint is deprecated. Use /consumables/* module endpoints.',
+  });
+});
+router.use('/consumable-consumptions', (_req, res) => {
+  res.status(410).json({
+    message: 'Legacy consumable consumptions endpoint is deprecated. Use /consumables/* module endpoints.',
+  });
+});
 router.use('/requisitions', requisitionRoutes);
 router.use('/return-requests', returnRequestRoutes);
 router.use('/reports', reportRoutes);

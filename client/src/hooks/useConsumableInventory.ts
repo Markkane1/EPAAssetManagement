@@ -30,10 +30,15 @@ export const useConsumableLedger = (filters?: LedgerQuery) =>
     staleTime: query.staleTime,
   });
 
-export const useConsumableExpiry = (days?: number, locationId?: string) =>
+export const useConsumableExpiry = (
+  days?: number,
+  locationId?: string,
+  holderType?: 'OFFICE' | 'STORE',
+  holderId?: string
+) =>
   useQuery({
-    queryKey: [...queryKeys.consumableExpiry, days || 30, locationId || 'all'],
-    queryFn: () => consumableInventoryService.getExpiry(days, locationId),
+    queryKey: [...queryKeys.consumableExpiry, days || 30, locationId || 'all', holderType || 'any', holderId || 'any'],
+    queryFn: () => consumableInventoryService.getExpiry(days, locationId, holderType, holderId),
     staleTime: query.staleTime,
   });
 

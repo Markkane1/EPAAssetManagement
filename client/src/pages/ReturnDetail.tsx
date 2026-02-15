@@ -23,11 +23,11 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000
 const API_ORIGIN = API_BASE_URL.replace(/\/api\/?$/, "");
 
 const ISSUER_ROLES = new Set([
-  "super_admin",
-  "admin",
-  "location_admin",
+  "org_admin",
+  "org_admin",
+  "office_head",
   "caretaker",
-  "assistant_caretaker",
+  "caretaker",
 ]);
 
 const RECEIVE_ALLOWED_STATUSES = new Set([

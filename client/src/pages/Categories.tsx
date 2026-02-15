@@ -3,6 +3,7 @@ import { MainLayout } from "@/components/layout/MainLayout";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Package, MoreHorizontal, Pencil, Trash2, Loader2 } from "lucide-react";
 import {
   DropdownMenu,
@@ -37,7 +38,7 @@ export default function Categories() {
     setIsModalOpen(true);
   };
 
-  const handleSubmit = async (data: { name: string; description?: string }) => {
+  const handleSubmit = async (data: { name: string; description?: string; scope: "GENERAL" | "LAB_ONLY" }) => {
     if (editingCategory) {
       await updateCategory.mutateAsync({ id: editingCategory.id, data });
     } else {
@@ -97,6 +98,11 @@ export default function Categories() {
               </div>
               
               <h3 className="font-semibold text-lg mb-1">{category.name}</h3>
+              <div className="mb-2">
+                <Badge variant={category.scope === "LAB_ONLY" ? "destructive" : "secondary"}>
+                  {category.scope === "LAB_ONLY" ? "Lab Only" : "General"}
+                </Badge>
+              </div>
               <p className="text-sm text-muted-foreground mb-4">{category.description}</p>
 
               <div className="flex items-center gap-2 pt-4 border-t">

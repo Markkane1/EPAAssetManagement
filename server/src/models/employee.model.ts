@@ -1,7 +1,7 @@
 import mongoose, { Schema } from 'mongoose';
 import { baseSchemaOptions } from './base';
 
-const EmployeeSchema = new Schema(
+const EmployeeSchema = new Schema<any>(
   {
     first_name: { type: String, required: true, trim: true },
     last_name: { type: String, required: true, trim: true },
@@ -27,3 +27,4 @@ EmployeeSchema.index({ transferred_to_office_id: 1, transferred_at: -1 });
 EmployeeSchema.index({ transferred_from_office_id: 1, transferred_at: -1 });
 
 export const EmployeeModel = mongoose.model('Employee', EmployeeSchema);
+

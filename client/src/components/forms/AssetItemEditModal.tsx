@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/select";
 import { Loader2 } from "lucide-react";
 import { Asset, AssetItem, Location } from "@/types";
+import { getOfficeHolderId } from "@/lib/assetItemHolder";
 
 const assetItemEditSchema = z.object({
   assetId: z.string().min(1, "Asset is required"),
@@ -87,7 +88,7 @@ export function AssetItemEditModal({
     if (open && assetItem) {
       form.reset({
         assetId: assetItem.asset_id || "",
-        locationId: assetItem.location_id || "",
+        locationId: getOfficeHolderId(assetItem) || "",
         serialNumber: assetItem.serial_number || "",
         warrantyExpiry: assetItem.warranty_expiry || "",
         itemStatus: assetItem.item_status || "Available",

@@ -1,6 +1,5 @@
 type OfficeLike = {
   type?: string;
-  is_headoffice?: boolean;
   capabilities?: {
     moveables?: boolean;
     consumables?: boolean;
@@ -13,8 +12,7 @@ export function supportsChemicals(office: OfficeLike | null | undefined) {
   if (office.capabilities && typeof office.capabilities.chemicals === 'boolean') {
     return office.capabilities.chemicals;
   }
-  if (office.is_headoffice) return false;
-  return office.type === 'LAB';
+  return office.type === 'DISTRICT_LAB';
 }
 
 export function supportsConsumables(office: OfficeLike | null | undefined) {

@@ -23,6 +23,7 @@ import { useDashboardStats } from "@/hooks/useDashboard";
 import { useAssetItems } from "@/hooks/useAssetItems";
 import { useLocations } from "@/hooks/useLocations";
 import { useMemo } from "react";
+import { getOfficeHolderId, isStoreHolder } from "@/lib/assetItemHolder";
 
 export default function Dashboard() {
   const { data: dashboardStats, isLoading: statsLoading } = useDashboardStats();
@@ -45,11 +46,16 @@ export default function Dashboard() {
   const locationCounts = useMemo(() => {
     const counts = new Map<string, number>();
     assetItemList.forEach((item) => {
-      if (!item.location_id) return;
-      counts.set(item.location_id, (counts.get(item.location_id) || 0) + 1);
+      const officeId = getOfficeHolderId(item);
+      if (!officeId) return;
+      counts.set(officeId, (counts.get(officeId) || 0) + 1);
     });
     return counts;
   }, [assetItemList]);
+  const storeItemCount = useMemo(
+    () => assetItemList.filter((item) => isStoreHolder(item)).length,
+    [assetItemList]
+  );
 
   if (statsLoading) {
     return (
@@ -204,6 +210,16 @@ export default function Dashboard() {
                   </div>
                 </div>
               ))}
+              <div className="flex items-center justify-between p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors">
+                <div>
+                  <p className="font-medium text-sm">Head Office Store</p>
+                  <p className="text-xs text-muted-foreground truncate max-w-[200px]">System Store</p>
+                </div>
+                <div className="text-right">
+                  <p className="font-semibold text-sm">{storeItemCount}</p>
+                  <p className="text-xs text-muted-foreground">assets</p>
+                </div>
+              </div>
             </div>
           </CardContent>
         </Card>

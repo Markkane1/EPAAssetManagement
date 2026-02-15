@@ -1,7 +1,7 @@
 import mongoose, { Schema } from 'mongoose';
 import { baseSchemaOptions } from './base';
 
-const CounterSchema = new Schema(
+const CounterSchema = new Schema<any>(
   {
     // Unique counter key (e.g. OFFICE:TYPE:YEAR)
     key: { type: String, required: true, unique: true },
@@ -12,3 +12,4 @@ const CounterSchema = new Schema(
 );
 
 export const CounterModel = mongoose.model('Counter', CounterSchema);
+

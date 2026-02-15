@@ -10,7 +10,7 @@ const REQUISITION_LINE_STATUSES = [
   'CANCELLED',
 ] as const;
 
-const RequisitionLineSchema = new Schema(
+const RequisitionLineSchema = new Schema<any>(
   {
     requisition_id: { type: Schema.Types.ObjectId, ref: 'Requisition', required: true },
     line_type: { type: String, enum: REQUISITION_LINE_TYPES, required: true },
@@ -37,3 +37,4 @@ RequisitionLineSchema.index({ status: 1, created_at: -1 });
 RequisitionLineSchema.index({ created_at: -1 });
 
 export const RequisitionLineModel = mongoose.model('RequisitionLine', RequisitionLineSchema);
+

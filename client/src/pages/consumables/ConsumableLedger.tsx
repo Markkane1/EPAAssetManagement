@@ -33,6 +33,7 @@ function toCsv(rows: any[], columns: string[]) {
 
 export default function ConsumableLedger() {
   const ALL_VALUE = '__all__';
+  const STORE_FILTER = '__store__';
   const { mode, setMode } = useConsumableMode();
   const { data: items } = useConsumableItems();
   const { data: locations } = useConsumableLocations({
@@ -51,12 +52,12 @@ export default function ConsumableLedger() {
     const filters: any = {};
     if (from) filters.from = from;
     if (to) filters.to = to;
-    if (locationId !== ALL_VALUE) filters.locationId = locationId;
+    if (locationId !== ALL_VALUE && locationId !== STORE_FILTER) filters.locationId = locationId;
     if (itemId !== ALL_VALUE) filters.itemId = itemId;
     if (lotId !== ALL_VALUE) filters.lotId = lotId;
     if (txType !== ALL_VALUE) filters.txType = txType;
     return filters;
-  }, [from, to, locationId, itemId, lotId, txType, ALL_VALUE]);
+  }, [from, to, locationId, itemId, lotId, txType, ALL_VALUE, STORE_FILTER]);
 
   const filteredItems = useMemo(() => filterItemsByMode(items || [], mode), [items, mode]);
   const filteredLocations = useMemo(() => filterLocationsByMode(locations || [], mode), [locations, mode]);
@@ -66,19 +67,24 @@ export default function ConsumableLedger() {
   );
 
   const { data: ledger = [] } = useConsumableLedger(ledgerFilters);
-  const visibleLedger = ledger.filter((entry) =>
-    filteredItems.some((item) => item.id === entry.consumable_item_id)
-  );
+  const visibleLedger = ledger.filter((entry) => {
+    if (!filteredItems.some((item) => item.id === entry.consumable_item_id)) return false;
+    if (locationId === ALL_VALUE) return true;
+    if (locationId === STORE_FILTER) {
+      return entry.from_holder_type === 'STORE' || entry.to_holder_type === 'STORE';
+    }
+    return entry.from_location_id === locationId || entry.to_location_id === locationId;
+  });
 
   useEffect(() => {
     if (itemId !== ALL_VALUE && !filteredItems.some((item) => item.id === itemId)) {
       setItemId(ALL_VALUE);
       setLotId(ALL_VALUE);
     }
-    if (locationId !== ALL_VALUE && !filteredLocations.some((loc) => loc.id === locationId)) {
+    if (locationId !== ALL_VALUE && locationId !== STORE_FILTER && !filteredLocations.some((loc) => loc.id === locationId)) {
       setLocationId(ALL_VALUE);
     }
-  }, [itemId, locationId, filteredItems, filteredLocations, ALL_VALUE]);
+  }, [itemId, locationId, filteredItems, filteredLocations, ALL_VALUE, STORE_FILTER]);
 
   const columns = [
     { key: 'tx_time', label: 'Date' },
@@ -96,14 +102,20 @@ export default function ConsumableLedger() {
     {
       key: 'from_location_id',
       label: 'From',
-      render: (value: string | null) =>
-        value ? filteredLocations.find((loc) => loc.id === value)?.name || 'Unknown' : 'N/A',
+      render: (_value: string | null, row: ConsumableInventoryTransaction) => {
+        if (row.from_holder_type === 'STORE') return 'Head Office Store';
+        const officeId = row.from_location_id || row.from_holder_id;
+        return officeId ? filteredLocations.find((loc) => loc.id === officeId)?.name || 'Unknown' : 'N/A';
+      },
     },
     {
       key: 'to_location_id',
       label: 'To',
-      render: (value: string | null) =>
-        value ? filteredLocations.find((loc) => loc.id === value)?.name || 'Unknown' : 'N/A',
+      render: (_value: string | null, row: ConsumableInventoryTransaction) => {
+        if (row.to_holder_type === 'STORE') return 'Head Office Store';
+        const officeId = row.to_location_id || row.to_holder_id;
+        return officeId ? filteredLocations.find((loc) => loc.id === officeId)?.name || 'Unknown' : 'N/A';
+      },
     },
     { key: 'qty_base', label: 'Qty (base)' },
   ];
@@ -114,8 +126,18 @@ export default function ConsumableLedger() {
       type: row.tx_type,
       item: filteredItems.find((item) => item.id === row.consumable_item_id)?.name || row.consumable_item_id,
       lot: row.lot_id ? lots?.find((lot) => lot.id === row.lot_id)?.lot_number || row.lot_id : '',
-      from: row.from_location_id ? filteredLocations.find((loc) => loc.id === row.from_location_id)?.name || row.from_location_id : '',
-      to: row.to_location_id ? filteredLocations.find((loc) => loc.id === row.to_location_id)?.name || row.to_location_id : '',
+      from:
+        row.from_holder_type === 'STORE'
+          ? 'Head Office Store'
+          : row.from_location_id
+            ? filteredLocations.find((loc) => loc.id === row.from_location_id)?.name || row.from_location_id
+            : '',
+      to:
+        row.to_holder_type === 'STORE'
+          ? 'Head Office Store'
+          : row.to_location_id
+            ? filteredLocations.find((loc) => loc.id === row.to_location_id)?.name || row.to_location_id
+            : '',
       qty_base: row.qty_base,
       entered_qty: row.entered_qty,
       entered_uom: row.entered_uom,
@@ -177,6 +199,7 @@ export default function ConsumableLedger() {
                 <SelectTrigger><SelectValue placeholder="All locations" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value={ALL_VALUE}>All locations</SelectItem>
+                  <SelectItem value={STORE_FILTER}>Head Office Store</SelectItem>
                   {filteredLocations.map((loc) => (
                     <SelectItem key={loc.id} value={loc.id}>{loc.name}</SelectItem>
                   ))}

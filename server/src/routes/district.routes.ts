@@ -5,7 +5,7 @@ import { requireAuth, AuthRequest } from '../middleware/auth';
 const router = Router();
 
 const requireSuperAdmin = (req: AuthRequest, res: Response, next: NextFunction) => {
-  if (req.user?.role !== 'super_admin') {
+  if (req.user?.role !== 'org_admin') {
     return res.status(403).json({ message: 'Super admin access required' });
   }
   return next();

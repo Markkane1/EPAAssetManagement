@@ -64,24 +64,14 @@ export default function Profile() {
     : "U";
   const roleLabel = (() => {
     switch (user.role) {
-      case "super_admin":
-        return "Super Admin";
-      case "admin":
+      case "org_admin":
         return "Administrator";
-      case "location_admin":
-        return "Location Admin";
+      case "office_head":
+        return "Office Head";
       case "caretaker":
         return "Caretaker";
-      case "assistant_caretaker":
-        return "Assistant Caretaker";
-      case "user":
-        return "User";
       case "employee":
         return "Employee";
-      case "directorate_head":
-        return "Directorate Head";
-      case "viewer":
-        return "Viewer";
       default:
         return "User";
     }

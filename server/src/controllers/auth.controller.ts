@@ -9,9 +9,15 @@ import type { AuthRequest } from '../middleware/auth';
 import { ADMIN_ROLES } from '../middleware/authorize';
 import { normalizeRole } from '../utils/roles';
 
-function signToken(user: { id: string; email: string; role: string }) {
+function signToken(user: { id: string; email: string; role: string; locationId?: string | null }) {
   return jwt.sign(
-    { userId: user.id, email: user.email, role: user.role },
+    {
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+      locationId: user.locationId || null,
+      isOrgAdmin: user.role === 'org_admin',
+    },
     env.jwtSecret,
     { expiresIn: env.jwtExpiresIn }
   );
@@ -77,8 +83,15 @@ export const authController = {
       if (existing) return res.status(409).json({ message: 'Email already in use' });
 
       const passwordHash = await bcrypt.hash(password, 10);
+      const requestedRoleRaw = String(role || '')
+        .trim()
+        .toLowerCase();
+      const allowedRoles = ['org_admin', 'office_head', 'caretaker', 'employee'];
+      if (requestedRoleRaw && !allowedRoles.includes(requestedRoleRaw)) {
+        return res.status(400).json({ message: 'Invalid role' });
+      }
       const normalizedRole = normalizeRole(role);
-      if (normalizedRole === 'super_admin' && req.user.role !== 'super_admin') {
+      if (normalizedRole === 'org_admin' && req.user.role !== 'org_admin') {
         return res.status(403).json({ message: 'Forbidden' });
       }
       const user = await UserModel.create({
@@ -122,7 +135,12 @@ export const authController = {
       await user.save();
 
       const normalizedRole = normalizeRole(user.role);
-      const token = signToken({ id: user.id, email: user.email, role: normalizedRole });
+      const token = signToken({
+        id: user.id,
+        email: user.email,
+        role: normalizedRole,
+        locationId: user.location_id ? user.location_id.toString() : null,
+      });
       setAuthCookie(res, token);
       res.json({
         token: undefined,
@@ -175,8 +193,8 @@ export const authController = {
       const requesterLocationId = requester?.location_id || employee?.location_id || null;
       const requesterDirectorateId = employee?.directorate_id || null;
 
-      const adminUsers = await UserModel.find({ role: 'admin' });
-      const locationAdminUsers = await UserModel.find({ role: 'location_admin' });
+      const adminUsers = await UserModel.find({ role: 'org_admin' });
+      const locationAdminUsers = await UserModel.find({ role: 'office_head' });
       const globalAdmins = adminUsers.filter((admin) => !admin.location_id);
       const locationAdmins = requesterLocationId
         ? [
@@ -186,7 +204,7 @@ export const authController = {
         : [];
 
       const directorateHeads = requesterDirectorateId
-        ? await UserModel.find({ role: 'directorate_head' })
+        ? await UserModel.find({ role: 'office_head' })
         : [];
 
       let matchedDirectorateHeads: typeof directorateHeads = [];

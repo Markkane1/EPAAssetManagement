@@ -18,7 +18,6 @@ import {
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { useConsumableItems } from '@/hooks/useConsumableItems';
 import { useConsumableSuppliers } from '@/hooks/useConsumableSuppliers';
-import { useConsumableLocations } from '@/hooks/useConsumableLocations';
 import { useReceiveConsumables } from '@/hooks/useConsumableInventory';
 import { useConsumableUnits } from '@/hooks/useConsumableUnits';
 import { getCompatibleUnits } from '@/lib/unitUtils';
@@ -28,7 +27,6 @@ import { filterItemsByMode } from '@/lib/consumableMode';
 import { ConsumableModeToggle } from '@/components/consumables/ConsumableModeToggle';
 
 const receiveSchema = z.object({
-  locationId: z.string().min(1, 'Location is required'),
   itemId: z.string().min(1, 'Item is required'),
   lotNumber: z.string().min(1, 'Lot number is required'),
   receivedDate: z.string().min(1, 'Received date is required'),
@@ -49,10 +47,6 @@ export default function ConsumableReceive() {
   const { data: suppliers } = useConsumableSuppliers();
   const { data: units } = useConsumableUnits();
   const { mode, setMode } = useConsumableMode();
-  const { data: locations } = useConsumableLocations({
-    type: 'CENTRAL',
-    capability: mode === 'chemicals' ? 'chemicals' : 'consumables',
-  });
   const receiveMutation = useReceiveConsumables();
 
   const [containers, setContainers] = useState<ContainerInput[]>([]);
@@ -60,7 +54,6 @@ export default function ConsumableReceive() {
   const form = useForm<ReceiveFormData>({
     resolver: zodResolver(receiveSchema),
     defaultValues: {
-      locationId: '',
       itemId: '',
       lotNumber: '',
       receivedDate: new Date().toISOString().split('T')[0],
@@ -94,17 +87,6 @@ export default function ConsumableReceive() {
   }, [selectedItem, unitList]);
 
   useEffect(() => {
-    if (!locations || locations.length === 0) {
-      form.setValue('locationId', '');
-      return;
-    }
-    const current = form.getValues('locationId');
-    if (!current || !locations.some((loc) => loc.id === current)) {
-      form.setValue('locationId', locations[0].id);
-    }
-  }, [locations, form]);
-
-  useEffect(() => {
     if (selectedItem && !form.watch('uom')) {
       form.setValue('uom', selectedItem.base_uom);
     }
@@ -130,7 +112,8 @@ export default function ConsumableReceive() {
     }
 
     const payload: any = {
-      locationId: data.locationId,
+      holderType: 'STORE',
+      holderId: 'HEAD_OFFICE_STORE',
       itemId: data.itemId,
       lot: {
         lotNumber: data.lotNumber,
@@ -169,18 +152,8 @@ export default function ConsumableReceive() {
           <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Central Store *</Label>
-                <Select value={form.watch('locationId')} onValueChange={(v) => form.setValue('locationId', v)}>
-                  <SelectTrigger><SelectValue placeholder="Select Central Store" /></SelectTrigger>
-                  <SelectContent>
-                    {(locations || []).map((loc) => (
-                      <SelectItem key={loc.id} value={loc.id}>{loc.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {form.formState.errors.locationId && (
-                  <p className="text-sm text-destructive">{form.formState.errors.locationId.message}</p>
-                )}
+                <Label>Receiving Holder</Label>
+                <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm">Head Office Store (System)</div>
               </div>
               <div className="space-y-2">
                 <Label>Item *</Label>

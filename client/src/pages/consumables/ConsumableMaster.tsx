@@ -1,4 +1,4 @@
-﻿import { useState } from 'react';
+import { useState } from 'react';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { DataTable } from '@/components/shared/DataTable';
@@ -37,7 +37,7 @@ export default function ConsumableMaster() {
   const deleteItem = useDeleteConsumableItem();
   const { mode, setMode } = useConsumableMode();
   const modeLabel = mode === 'chemicals' ? 'chemical' : 'general consumable';
-  const canManage = isSuperAdmin || role === 'admin' || role === 'central_store_admin';
+  const canManage = isSuperAdmin || role === 'org_admin' || role === 'caretaker';
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editing, setEditing] = useState<ConsumableItem | null>(null);

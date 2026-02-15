@@ -1,6 +1,5 @@
 import { AuthPayload } from '../middleware/auth';
 import { UserModel } from '../models/user.model';
-import { OfficeModel } from '../models/office.model';
 import { createHttpError } from './httpError';
 
 export type AccessContext = {
@@ -11,10 +10,8 @@ export type AccessContext = {
 };
 
 const OFFICE_MANAGER_ROLES = new Set([
-  'location_admin',
   'office_head',
   'caretaker',
-  'assistant_caretaker',
 ]);
 
 export function isOfficeManager(role: string) {
@@ -26,15 +23,10 @@ export async function resolveAccessContext(user?: AuthPayload): Promise<AccessCo
   const userDoc = await UserModel.findById(user.userId);
   if (!userDoc) throw createHttpError(401, 'Unauthorized');
 
-  let isHeadofficeAdmin = user.role === 'super_admin';
-  const officeId: string | null = userDoc.location_id ? userDoc.location_id.toString() : null;
-
-  if (!isHeadofficeAdmin && officeId) {
-    const office = await OfficeModel.findById(officeId);
-    if (office?.is_headoffice && (user.role === 'admin' || user.role === 'headoffice_admin')) {
-      isHeadofficeAdmin = true;
-    }
-  }
+  const officeId: string | null = userDoc.location_id
+    ? userDoc.location_id.toString()
+    : user.locationId || null;
+  const isHeadofficeAdmin = Boolean(user.isOrgAdmin || user.role === 'org_admin');
 
   return {
     userId: userDoc.id,

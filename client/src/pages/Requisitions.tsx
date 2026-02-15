@@ -35,7 +35,7 @@ export default function Requisitions() {
   const { role } = useAuth();
   const { data: locations } = useLocations();
   const canCreateRequisition =
-    role === "employee" || role === "location_admin" || role === "caretaker";
+    role === "employee" || role === "office_head" || role === "caretaker";
 
   const [status, setStatus] = useState<string>("ALL");
   const [fileNumber, setFileNumber] = useState("");

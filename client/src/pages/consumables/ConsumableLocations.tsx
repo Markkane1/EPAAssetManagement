@@ -43,7 +43,7 @@ import {
 
 const locationSchema = z.object({
   name: z.string().min(1, 'Name is required').max(120),
-  type: z.enum(['CENTRAL', 'LAB', 'SUBSTORE']).optional(),
+  type: z.enum(['DIRECTORATE', 'DISTRICT_LAB', 'DISTRICT_OFFICE']).optional(),
   labCode: z.string().max(64).optional(),
   parentLocationId: z.string().optional(),
   division: z.string().max(120).optional(),
@@ -73,7 +73,7 @@ export default function ConsumableLocations() {
     resolver: zodResolver(locationSchema),
     defaultValues: {
       name: '',
-      type: 'LAB',
+      type: 'DISTRICT_LAB',
       labCode: '',
       parentLocationId: '',
       division: '',
@@ -93,7 +93,7 @@ export default function ConsumableLocations() {
     if (editing) {
       form.reset({
         name: editing.name,
-        type: (editing.type as 'CENTRAL' | 'LAB' | 'SUBSTORE') || 'LAB',
+        type: (editing.type as 'DIRECTORATE' | 'DISTRICT_LAB' | 'DISTRICT_OFFICE') || 'DISTRICT_LAB',
         labCode: editing.lab_code || '',
         parentLocationId: editing.parent_location_id || '',
         division: editing.division || '',
@@ -104,13 +104,13 @@ export default function ConsumableLocations() {
         capabilities: {
           moveables: editing.capabilities?.moveables ?? true,
           consumables: editing.capabilities?.consumables ?? true,
-          chemicals: editing.capabilities?.chemicals ?? (editing.type === 'LAB'),
+          chemicals: editing.capabilities?.chemicals ?? (editing.type === 'DISTRICT_LAB'),
         },
       });
     } else {
       form.reset({
         name: '',
-        type: 'LAB',
+        type: 'DISTRICT_LAB',
         labCode: '',
         parentLocationId: '',
         division: '',
@@ -156,13 +156,13 @@ export default function ConsumableLocations() {
     {
       key: 'type',
       label: 'Type',
-      render: (value: string) => <Badge variant="outline">{value || 'LAB'}</Badge>,
+      render: (value: string) => <Badge variant="outline">{value || 'DISTRICT_LAB'}</Badge>,
     },
     {
       key: 'capabilities.chemicals',
       label: 'Chemicals',
       render: (value: boolean | undefined, row: Location) => {
-        const enabled = value ?? (row.type === 'LAB');
+        const enabled = value ?? (row.type === 'DISTRICT_LAB');
         return enabled ? 'Yes' : 'No';
       },
     },
@@ -207,7 +207,7 @@ export default function ConsumableLocations() {
     <MainLayout title="Consumable Locations" description="Manage consumable locations">
       <PageHeader
         title="Locations"
-        description="Central store, labs, and substores"
+        description="Directorates, district offices, and district labs"
         action={{ label: 'Add Location', onClick: () => { setEditing(null); setIsModalOpen(true); } }}
       />
 
@@ -235,12 +235,12 @@ export default function ConsumableLocations() {
               </div>
               <div className="space-y-2">
                 <Label>Type</Label>
-                <Select value={form.watch('type') || 'LAB'} onValueChange={(v) => form.setValue('type', v as any)}>
+                <Select value={form.watch('type') || 'DISTRICT_LAB'} onValueChange={(v) => form.setValue('type', v as any)}>
                   <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="CENTRAL">Central</SelectItem>
-                    <SelectItem value="LAB">Lab</SelectItem>
-                    <SelectItem value="SUBSTORE">Substore</SelectItem>
+                    <SelectItem value="DIRECTORATE">Directorate</SelectItem>
+                    <SelectItem value="DISTRICT_OFFICE">District Office</SelectItem>
+                    <SelectItem value="DISTRICT_LAB">District Lab</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -292,7 +292,7 @@ export default function ConsumableLocations() {
               </div>
               <div className="flex items-center gap-2">
                 <Checkbox
-                  checked={form.watch('capabilities')?.chemicals ?? (form.watch('type') === 'LAB')}
+                  checked={form.watch('capabilities')?.chemicals ?? (form.watch('type') === 'DISTRICT_LAB')}
                   onCheckedChange={(checked) =>
                     form.setValue('capabilities', {
                       ...form.getValues('capabilities'),

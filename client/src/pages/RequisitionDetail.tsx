@@ -36,10 +36,11 @@ function asId<T extends { id?: string; _id?: string }>(row: T): string {
 function isHqDirectorateOffice(officeId: string, offices: Office[]) {
   const office = offices.find((entry) => entry.id === officeId);
   if (!office) return false;
-  if (office.is_headoffice) return true;
-  if (!office.parent_location_id) return false;
-  const parent = offices.find((entry) => entry.id === office.parent_location_id);
-  return Boolean(parent?.is_headoffice);
+  if (office.type === "DIRECTORATE") return true;
+  const parentId = office.parent_office_id || office.parent_location_id;
+  if (!parentId) return false;
+  const parent = offices.find((entry) => entry.id === parentId);
+  return parent?.type === "DIRECTORATE";
 }
 
 function buildApiUrl(path: string | null | undefined) {
@@ -105,9 +106,9 @@ export default function RequisitionDetail() {
   const canIssuerAct = useMemo(() => {
     const hqDirectorate = isHqDirectorateOffice(officeId, locationList);
     if (hqDirectorate) {
-      return role === "caretaker" || role === "assistant_caretaker";
+      return role === "caretaker" || role === "office_head";
     }
-    return role === "location_admin";
+    return role === "office_head" || role === "caretaker";
   }, [officeId, locationList, role]);
 
   const canVerifyReject =

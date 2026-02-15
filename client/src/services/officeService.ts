@@ -1,5 +1,5 @@
 import api from '@/lib/api';
-import { Office } from '@/types';
+import { Office, OfficeType } from '@/types';
 
 const LIST_LIMIT = 2000;
 
@@ -9,7 +9,7 @@ export interface OfficeCreateDto {
   district?: string;
   address?: string;
   contactNumber?: string;
-  type?: 'CENTRAL' | 'LAB' | 'SUBSTORE';
+  type?: OfficeType;
   capabilities?: {
     moveables?: boolean;
     consumables?: boolean;
@@ -24,7 +24,7 @@ export interface OfficeUpdateDto {
   district?: string;
   address?: string;
   contactNumber?: string;
-  type?: 'CENTRAL' | 'LAB' | 'SUBSTORE';
+  type?: OfficeType;
   capabilities?: {
     moveables?: boolean;
     consumables?: boolean;

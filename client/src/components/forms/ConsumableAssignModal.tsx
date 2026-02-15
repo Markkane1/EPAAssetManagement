@@ -90,7 +90,7 @@ export function ConsumableAssignModal({
   const assignees = useMemo(() => {
     if (assigneeType === "employee") {
       let list = employees.filter((emp) => emp.is_active);
-      if (role === "directorate_head" && currentEmployee?.directorate_id) {
+      if (role === "office_head" && currentEmployee?.directorate_id) {
         list = list.filter((emp) => emp.directorate_id === currentEmployee.directorate_id);
       }
       return list;
@@ -112,7 +112,7 @@ export function ConsumableAssignModal({
   }, [open, form, consumable]);
 
   useEffect(() => {
-    if (role === "directorate_head" && assigneeType !== "employee") {
+    if (role === "office_head" && assigneeType !== "employee") {
       form.setValue("assigneeType", "employee");
     }
   }, [role, assigneeType, form]);
@@ -176,7 +176,7 @@ export function ConsumableAssignModal({
               <Select
                 value={assigneeType}
                 onValueChange={(v) => form.setValue("assigneeType", v as ConsumableAssigneeType)}
-                disabled={role === "directorate_head"}
+                disabled={role === "office_head"}
               >
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>

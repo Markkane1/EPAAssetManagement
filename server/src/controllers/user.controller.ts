@@ -5,7 +5,7 @@ import { OfficeModel } from '../models/office.model';
 import type { AuthRequest } from '../middleware/auth';
 import { normalizeRole } from '../utils/roles';
 
-const isAdminRole = (role?: string | null) => role === 'super_admin' || role === 'admin';
+const isAdminRole = (role?: string | null) => role === 'org_admin';
 
 function clampInt(value: unknown, fallback: number, max: number) {
   const parsed = Number(value);
@@ -30,9 +30,6 @@ export const userController = {
       const search = String(req.query.search || '').trim();
 
       const query: Record<string, unknown> = {};
-      if (req.user?.role !== 'super_admin') {
-        query.role = { $ne: 'super_admin' };
-      }
       if (search.length > 0) {
         const regex = new RegExp(escapeRegex(search), 'i');
         query.$or = [
@@ -95,10 +92,6 @@ export const userController = {
       };
 
       const normalizedRole = normalizeRole(role);
-      if (normalizedRole === 'super_admin' && req.user?.role !== 'super_admin') {
-        return res.status(403).json({ message: 'Forbidden' });
-      }
-
       const existing = await UserModel.findOne({ email: email.toLowerCase() });
       if (existing) return res.status(409).json({ message: 'Email already in use' });
 
@@ -134,13 +127,7 @@ export const userController = {
       }
       const existing = await UserModel.findById(req.params.id);
       if (!existing) return res.status(404).json({ message: 'Not found' });
-      if (normalizeRole(existing.role) === 'super_admin' && req.user?.role !== 'super_admin') {
-        return res.status(403).json({ message: 'Forbidden' });
-      }
       const normalizedRole = normalizeRole(role);
-      if (normalizedRole === 'super_admin' && req.user?.role !== 'super_admin') {
-        return res.status(403).json({ message: 'Forbidden' });
-      }
 
       const user = await UserModel.findByIdAndUpdate(req.params.id, { role: normalizedRole }, { new: true });
       if (!user) return res.status(404).json({ message: 'Not found' });
@@ -156,9 +143,6 @@ export const userController = {
       }
       const existing = await UserModel.findById(req.params.id);
       if (!existing) return res.status(404).json({ message: 'Not found' });
-      if (normalizeRole(existing.role) === 'super_admin' && req.user?.role !== 'super_admin') {
-        return res.status(403).json({ message: 'Forbidden' });
-      }
       const { locationId } = req.body as { locationId: string | null };
       const user = await UserModel.findByIdAndUpdate(req.params.id, { location_id: locationId }, { new: true });
       if (!user) return res.status(404).json({ message: 'Not found' });
@@ -174,9 +158,6 @@ export const userController = {
       }
       const existing = await UserModel.findById(req.params.id);
       if (!existing) return res.status(404).json({ message: 'Not found' });
-      if (normalizeRole(existing.role) === 'super_admin' && req.user?.role !== 'super_admin') {
-        return res.status(403).json({ message: 'Forbidden' });
-      }
       const { newPassword } = req.body as { newPassword: string };
       const passwordHash = await bcrypt.hash(newPassword, 10);
       const user = await UserModel.findByIdAndUpdate(req.params.id, { password_hash: passwordHash }, { new: true });
@@ -193,9 +174,6 @@ export const userController = {
       }
       const existing = await UserModel.findById(req.params.id);
       if (!existing) return res.status(404).json({ message: 'Not found' });
-      if (normalizeRole(existing.role) === 'super_admin' && req.user?.role !== 'super_admin') {
-        return res.status(403).json({ message: 'Forbidden' });
-      }
       const user = await UserModel.findByIdAndDelete(req.params.id);
       if (!user) return res.status(404).json({ message: 'Not found' });
       res.status(204).send();

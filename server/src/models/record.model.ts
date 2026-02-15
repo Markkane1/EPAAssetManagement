@@ -12,7 +12,7 @@ const RECORD_STATUSES = [
   'Archived',
 ] as const;
 
-const RecordSchema = new Schema(
+const RecordSchema = new Schema<any>(
   {
     // Record classification for register and workflow logic
     record_type: { type: String, enum: RECORD_TYPES, required: true },
@@ -42,3 +42,4 @@ RecordSchema.index({ office_id: 1, created_at: -1 });
 RecordSchema.index({ status: 1, created_at: -1 });
 
 export const RecordModel = mongoose.model('Record', RecordSchema);
+

@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/select";
 import { Loader2, ArrowRight } from "lucide-react";
 import { AssetItem, Employee, Asset, Assignment } from "@/types";
+import { getOfficeHolderId } from "@/lib/assetItemHolder";
 
 const reassignSchema = z.object({
   assignmentId: z.string().min(1, "Assignment is required"),
@@ -75,8 +76,9 @@ export function ReassignmentFormModal({
 
   // Filter employees at same location (excluding current assignee)
   const availableEmployees = employees.filter(e => {
-    if (!currentAssetItem?.location_id) return true;
-    return e.location_id === currentAssetItem.location_id && e.id !== currentEmployee?.id;
+    const officeId = currentAssetItem ? getOfficeHolderId(currentAssetItem) : null;
+    if (!officeId) return true;
+    return e.location_id === officeId && e.id !== currentEmployee?.id;
   });
 
   // Filter only active assignments

@@ -1,7 +1,7 @@
 import mongoose, { Schema } from 'mongoose';
 import { baseSchemaOptions } from '../../../models/base';
 
-const ConsumableContainerSchema = new Schema(
+const ConsumableContainerSchema = new Schema<any>(
   {
     lot_id: { type: Schema.Types.ObjectId, ref: 'ConsumableLot', required: true },
     container_code: { type: String, required: true, unique: true, trim: true },
@@ -23,3 +23,4 @@ ConsumableContainerSchema.index({ current_location_id: 1, status: 1, container_c
 ConsumableContainerSchema.index({ status: 1, container_code: 1 });
 
 export const ConsumableContainerModel = mongoose.model('ConsumableContainer', ConsumableContainerSchema);
+

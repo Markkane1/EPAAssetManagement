@@ -45,6 +45,7 @@ type ReturnFormData = z.infer<typeof returnSchema>;
 
 export default function ConsumableReturns() {
   const FEFO_VALUE = '__fefo__';
+  const STORE_CODE = 'HEAD_OFFICE_STORE';
   const { locationId } = useAuth();
   const { mode, setMode } = useConsumableMode();
   const { data: items } = useConsumableItems();
@@ -59,7 +60,7 @@ export default function ConsumableReturns() {
     resolver: zodResolver(returnSchema),
     defaultValues: {
       fromLocationId: locationId || '',
-      toLocationId: '',
+      toLocationId: STORE_CODE,
       itemId: '',
       lotId: FEFO_VALUE,
       containerId: '',
@@ -77,17 +78,6 @@ export default function ConsumableReturns() {
     () => new Set(filteredItems.map((item) => item.id)),
     [filteredItems]
   );
-
-  const centralStore = useMemo(
-    () => filteredLocations.find((loc) => loc.type === 'CENTRAL'),
-    [filteredLocations]
-  );
-
-  useEffect(() => {
-    if (centralStore && !form.watch('toLocationId')) {
-      form.setValue('toLocationId', centralStore.id);
-    }
-  }, [centralStore, form]);
 
   const selectedItem: ConsumableItem | undefined = useMemo(() => {
     return filteredItems.find((item) => item.id === form.watch('itemId'));
@@ -166,8 +156,10 @@ export default function ConsumableReturns() {
       return;
     }
     await returnMutation.mutateAsync({
-      fromLocationId: data.fromLocationId,
-      toLocationId: data.toLocationId || undefined,
+      fromHolderType: 'OFFICE',
+      fromHolderId: data.fromLocationId,
+      toHolderType: 'STORE',
+      toHolderId: STORE_CODE,
       itemId: data.itemId,
       lotId: data.lotId && data.lotId !== FEFO_VALUE ? data.lotId : undefined,
       containerId: data.containerId || undefined,
@@ -176,14 +168,14 @@ export default function ConsumableReturns() {
       reference: data.reference || undefined,
       notes: data.notes || undefined,
     });
-    form.reset({ fromLocationId: data.fromLocationId, toLocationId: data.toLocationId, itemId: '', lotId: FEFO_VALUE, containerId: '', qty: 0, uom: '' });
+    form.reset({ fromLocationId: data.fromLocationId, toLocationId: STORE_CODE, itemId: '', lotId: FEFO_VALUE, containerId: '', qty: 0, uom: '' });
   };
 
   return (
-    <MainLayout title="Consumable Returns" description="Return stock to Central Store">
+      <MainLayout title="Consumable Returns" description="Return stock to Head Office Store">
       <PageHeader
         title="Returns"
-        description="Return lab stock to Central Store"
+        description="Return lab stock to Head Office Store"
         extra={<ConsumableModeToggle mode={mode} onChange={setMode} />}
       />
 
@@ -203,15 +195,8 @@ export default function ConsumableReturns() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Central Store</Label>
-                <Select value={form.watch('toLocationId') || ''} onValueChange={(v) => form.setValue('toLocationId', v)}>
-                  <SelectTrigger><SelectValue placeholder="Select central" /></SelectTrigger>
-                  <SelectContent>
-                    {filteredLocations.filter((loc) => loc.type === 'CENTRAL').map((loc) => (
-                      <SelectItem key={loc.id} value={loc.id}>{loc.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label>Destination</Label>
+                <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm">Head Office Store (System)</div>
               </div>
             </div>
 
@@ -327,7 +312,7 @@ export default function ConsumableReturns() {
             <div className="flex justify-end">
               <Button type="submit" disabled={returnMutation.isPending}>
                 {returnMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                Return to Central
+                Return to Store
               </Button>
             </div>
           </form>

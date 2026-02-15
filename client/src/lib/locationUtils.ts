@@ -1,9 +1,7 @@
 import type { Location } from "@/types";
 
-const HEAD_OFFICE_PATTERN = /head\s*office/i;
-
 export const isHeadOfficeLocationName = (name?: string | null) =>
-  !!name && HEAD_OFFICE_PATTERN.test(name);
+  !!name && /directorate/i.test(name);
 
 export const isHeadOfficeLocation = (location?: Location | null) =>
-  isHeadOfficeLocationName(location?.name);
+  location?.type === "DIRECTORATE" || isHeadOfficeLocationName(location?.name);

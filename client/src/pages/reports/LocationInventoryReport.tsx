@@ -16,6 +16,7 @@ import {
 } from "@/lib/exportUtils";
 import { filterByDateRange, generateReportPDF, getDateRangeText } from "@/lib/reporting";
 import { usePageSearch } from "@/contexts/PageSearchContext";
+import { getOfficeHolderId, isStoreHolder } from "@/lib/assetItemHolder";
 
 export default function LocationInventoryReport() {
   const [startDate, setStartDate] = useState<Date | undefined>(undefined);
@@ -35,12 +36,19 @@ export default function LocationInventoryReport() {
     const locationList = locations || [];
     const assetValueById = new Map((assets || []).map((asset) => [asset.id, asset.unit_price || 0]));
     const itemsByLocation = new Map<string, typeof filteredItems>();
+    const storeItems: typeof filteredItems = [];
     filteredItems.forEach((item) => {
-      const existing = itemsByLocation.get(item.location_id) || [];
-      itemsByLocation.set(item.location_id, [...existing, item]);
+      if (isStoreHolder(item)) {
+        storeItems.push(item);
+        return;
+      }
+      const officeId = getOfficeHolderId(item);
+      if (!officeId) return;
+      const existing = itemsByLocation.get(officeId) || [];
+      itemsByLocation.set(officeId, [...existing, item]);
     });
 
-    return locationList.map((location) => {
+    const officeRows = locationList.map((location) => {
       const itemsAtLocation = itemsByLocation.get(location.id) || [];
       const totalValue = itemsAtLocation.reduce((sum, item) => {
         return sum + (assetValueById.get(item.asset_id) || 0);
@@ -65,6 +73,29 @@ export default function LocationInventoryReport() {
         retired: statusBreakdown["Retired"] || 0,
       };
     });
+
+    const storeTotalValue = storeItems.reduce((sum, item) => sum + (assetValueById.get(item.asset_id) || 0), 0);
+    const storeStatusBreakdown = storeItems.reduce((acc, item) => {
+      const status = item.item_status || "Unknown";
+      acc[status] = (acc[status] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+
+    return [
+      ...officeRows,
+      {
+        id: "HEAD_OFFICE_STORE",
+        locationName: "Head Office Store",
+        address: "System Store",
+        totalItems: storeItems.length,
+        totalValue: storeTotalValue,
+        available: storeStatusBreakdown["Available"] || 0,
+        assigned: storeStatusBreakdown["Assigned"] || 0,
+        maintenance: storeStatusBreakdown["Maintenance"] || 0,
+        damaged: storeStatusBreakdown["Damaged"] || 0,
+        retired: storeStatusBreakdown["Retired"] || 0,
+      },
+    ];
   }, [locations, filteredItems, assets]);
 
   const searchTerm = pageSearch?.term || "";

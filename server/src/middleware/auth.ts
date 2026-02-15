@@ -2,14 +2,15 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { env } from '../config/env';
 import { UserModel } from '../models/user.model';
-import { OfficeModel } from '../models/office.model';
 import { isKnownRole, normalizeRole } from '../utils/roles';
 
 export interface AuthPayload {
   userId: string;
   email: string;
   role: string;
-  locationId?: string | null;
+  locationId: string | null;
+  isOrgAdmin: boolean;
+  // Deprecated compatibility field. Use isOrgAdmin instead.
   isHeadoffice?: boolean;
 }
 
@@ -48,20 +49,16 @@ async function attachUserContext(req: AuthRequest) {
     return;
   }
 
+  const normalizedRole = normalizeRole(userDoc.role);
   const locationId = userDoc.location_id ? userDoc.location_id.toString() : null;
-  let isHeadoffice = req.user.role === 'super_admin';
-
-  if (!isHeadoffice && locationId) {
-    const office = await OfficeModel.findById(locationId);
-    if (office?.is_headoffice && (req.user.role === 'admin' || req.user.role === 'headoffice_admin')) {
-      isHeadoffice = true;
-    }
-  }
+  const isOrgAdmin = normalizedRole === 'org_admin';
 
   req.user = {
     ...req.user,
+    role: normalizedRole,
     locationId,
-    isHeadoffice,
+    isOrgAdmin,
+    isHeadoffice: isOrgAdmin,
   };
 
   (req as RequestWithCache).__userLoaded = true;
@@ -81,6 +78,8 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
     req.user = {
       ...payload,
       role: normalizeRole(payload.role),
+      locationId: payload.locationId ?? null,
+      isOrgAdmin: payload.isOrgAdmin ?? normalizeRole(payload.role) === 'org_admin',
     };
     await attachUserContext(req);
     if (!req.user) {
@@ -107,6 +106,8 @@ export async function optionalAuth(req: AuthRequest, _res: Response, next: NextF
     req.user = {
       ...payload,
       role: normalizeRole(payload.role),
+      locationId: payload.locationId ?? null,
+      isOrgAdmin: payload.isOrgAdmin ?? normalizeRole(payload.role) === 'org_admin',
     };
     await attachUserContext(req);
     if (!req.user) {

@@ -1,52 +1,24 @@
 import api from '@/lib/api';
 
 export type AppRole =
-  | 'super_admin'
-  | 'admin'
-  | 'location_admin'
+  | 'org_admin'
+  | 'office_head'
   | 'caretaker'
-  | 'assistant_caretaker'
-  | 'central_store_admin'
-  | 'lab_manager'
-  | 'lab_user'
-  | 'auditor'
-  | 'user'
-  | 'viewer'
   | 'employee'
-  | 'directorate_head';
+  | (string & {});
 
 export const normalizeRole = (role?: string | null): AppRole => {
   switch (role) {
-    case 'super_admin':
-      return 'super_admin';
-    case 'admin':
-      return 'admin';
-    case 'location_admin':
-      return 'location_admin';
+    case 'org_admin':
+      return 'org_admin';
+    case 'office_head':
+      return 'office_head';
     case 'caretaker':
       return 'caretaker';
-    case 'assistant_caretaker':
-      return 'assistant_caretaker';
-    case 'central_store_admin':
-      return 'central_store_admin';
-    case 'lab_manager':
-      return 'lab_manager';
-    case 'lab_user':
-      return 'lab_user';
-    case 'auditor':
-      return 'auditor';
-    case 'manager':
-      return 'admin';
-    case 'user':
-      return 'user';
-    case 'viewer':
-      return 'viewer';
     case 'employee':
       return 'employee';
-    case 'directorate_head':
-      return 'directorate_head';
     default:
-      return 'user';
+      return 'employee';
   }
 };
 

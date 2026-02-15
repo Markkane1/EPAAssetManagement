@@ -84,7 +84,7 @@ interface UserRole {
 // Mock roles data
 const initialRoles: UserRole[] = [
   {
-    id: "super_admin",
+    id: "org_admin",
     name: "Super Administrator",
     description: "Full access to all locations and features",
     usersCount: 0,
@@ -94,7 +94,7 @@ const initialRoles: UserRole[] = [
     }, {} as Record<string, PermissionType[]>),
   },
   {
-    id: "admin",
+    id: "org_admin",
     name: "Administrator",
     description: "Full access to all locations and features",
     usersCount: 0,
@@ -104,7 +104,7 @@ const initialRoles: UserRole[] = [
     }, {} as Record<string, PermissionType[]>),
   },
   {
-    id: "location_admin",
+    id: "office_head",
     name: "Location Admin",
     description: "Access to assets and consumables for a single location",
     usersCount: 0,
@@ -132,7 +132,7 @@ const initialRoles: UserRole[] = [
     },
   },
   {
-    id: "user",
+    id: "employee",
     name: "Standard User",
     description: "Basic view access with limited modifications",
     usersCount: 0,
@@ -187,7 +187,7 @@ const initialRoles: UserRole[] = [
     },
   },
   {
-    id: "directorate_head",
+    id: "office_head",
     name: "Directorate Head",
     description: "View assignments for the entire directorate",
     usersCount: 0,
@@ -218,7 +218,7 @@ const initialRoles: UserRole[] = [
 
 export default function UserPermissions() {
   const [roles, setRoles] = useState<UserRole[]>(initialRoles);
-  const [selectedRole, setSelectedRole] = useState<string>("admin");
+  const [selectedRole, setSelectedRole] = useState<string>("org_admin");
   const [searchQuery, setSearchQuery] = useState("");
   const [isAddRoleOpen, setIsAddRoleOpen] = useState(false);
   const [newRoleName, setNewRoleName] = useState("");
@@ -232,7 +232,7 @@ export default function UserPermissions() {
   const roleCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     users.forEach((user) => {
-      const role = normalizeRole(user.role || "user");
+      const role = normalizeRole(user.role || "employee");
       counts[role] = (counts[role] || 0) + 1;
     });
     return counts;

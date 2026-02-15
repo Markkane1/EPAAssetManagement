@@ -16,6 +16,7 @@ import {
 } from "@/lib/exportUtils";
 import { filterByDateRange, generateReportPDF, getDateRangeText } from "@/lib/reporting";
 import { usePageSearch } from "@/contexts/PageSearchContext";
+import { getOfficeHolderId, isStoreHolder } from "@/lib/assetItemHolder";
 
 export default function AssetItemsInventoryReport() {
   const [startDate, setStartDate] = useState<Date | undefined>(undefined);
@@ -37,14 +38,15 @@ export default function AssetItemsInventoryReport() {
 
     return filteredItems.map((item) => {
       const asset = assetList.find((a) => a.id === item.asset_id);
-      const location = locationList.find((l) => l.id === item.location_id);
+      const officeId = getOfficeHolderId(item);
+      const location = locationList.find((l) => l.id === officeId);
 
       return {
         id: item.id,
         tag: item.tag || "N/A",
         assetName: asset?.name || "Unknown",
         serialNumber: item.serial_number || "N/A",
-        location: location?.name || "Unassigned",
+        location: isStoreHolder(item) ? "Head Office Store" : location?.name || "Unassigned",
         status: item.item_status || "Unknown",
         condition: item.item_condition || "Unknown",
         assignmentStatus: item.assignment_status || "Unknown",

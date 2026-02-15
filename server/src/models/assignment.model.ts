@@ -1,7 +1,7 @@
 import mongoose, { Schema } from 'mongoose';
 import { baseSchemaOptions } from './base';
 
-const AssignmentSchema = new Schema(
+const AssignmentSchema = new Schema<any>(
   {
     // Asset item being assigned
     asset_item_id: { type: Schema.Types.ObjectId, ref: 'AssetItem', required: true },
@@ -31,3 +31,4 @@ AssignmentSchema.index({ asset_item_id: 1, assigned_date: -1 });
 AssignmentSchema.index({ created_at: -1 });
 
 export const AssignmentModel = mongoose.model('Assignment', AssignmentSchema);
+

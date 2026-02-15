@@ -2,14 +2,22 @@ import { Response, NextFunction } from 'express';
 import { AssetItemModel } from '../models/assetItem.model';
 import { AssetModel } from '../models/asset.model';
 import { OfficeModel } from '../models/office.model';
+import { StoreModel } from '../models/store.model';
 import { mapFields } from '../utils/mapFields';
 import type { AuthRequest } from '../middleware/auth';
 import { resolveAccessContext, ensureOfficeScope, isOfficeManager } from '../utils/accessControl';
 import { createHttpError } from '../utils/httpError';
+import { enforceAssetCategoryScopeForOffice } from '../utils/categoryScope';
+import {
+  getAssetItemOfficeId,
+  officeAssetItemFilter,
+} from '../utils/assetHolder';
 
 const fieldMap = {
   assetId: 'asset_id',
   locationId: 'location_id',
+  holderType: 'holder_type',
+  holderId: 'holder_id',
   serialNumber: 'serial_number',
   assignmentStatus: 'assignment_status',
   itemStatus: 'item_status',
@@ -52,9 +60,65 @@ function generateAssetTag(assetId: string, index: number) {
   return `AST-${suffix}-${sequence}`;
 }
 
-async function getDefaultLocationId() {
-  const location = await OfficeModel.findOne({ is_headoffice: true });
-  return location ? location.id : null;
+async function resolveDefaultHolder() {
+  const systemStore = await StoreModel.findOne({
+    code: 'HEAD_OFFICE_STORE',
+    is_active: { $ne: false },
+  });
+  if (systemStore) {
+    return { holder_type: 'STORE' as const, holder_id: systemStore.id };
+  }
+  return null;
+}
+
+async function resolveRequestedHolder(
+  payload: Record<string, unknown>
+): Promise<{ holder_type: 'OFFICE' | 'STORE'; holder_id: string }> {
+  const requestedHolderType = payload.holder_type ? String(payload.holder_type).toUpperCase() : null;
+  const requestedHolderId = payload.holder_id ? String(payload.holder_id) : null;
+  const requestedLocationId = payload.location_id ? String(payload.location_id) : null;
+
+  if (requestedLocationId && (requestedHolderType || requestedHolderId)) {
+    throw createHttpError(400, 'Use either location_id or holder_type/holder_id');
+  }
+
+  if (requestedLocationId) {
+    return {
+      holder_type: 'OFFICE' as const,
+      holder_id: requestedLocationId,
+    };
+  }
+
+  if (requestedHolderType || requestedHolderId) {
+    if (!requestedHolderType || !requestedHolderId) {
+      throw createHttpError(400, 'holder_type and holder_id are required together');
+    }
+    if (requestedHolderType !== 'OFFICE' && requestedHolderType !== 'STORE') {
+      throw createHttpError(400, 'holder_type must be OFFICE or STORE');
+    }
+    return {
+      holder_type: requestedHolderType as 'OFFICE' | 'STORE',
+      holder_id: requestedHolderId,
+    };
+  }
+
+  const fallback = await resolveDefaultHolder();
+  if (!fallback) {
+    throw createHttpError(400, 'Head Office Store must be configured before creating items');
+  }
+  return fallback;
+}
+
+async function validateHolderAndCategory(assetId: string, holder: { holder_type: 'OFFICE' | 'STORE'; holder_id: string }) {
+  if (holder.holder_type === 'OFFICE') {
+    const locationExists = await OfficeModel.exists({ _id: holder.holder_id });
+    if (!locationExists) throw createHttpError(404, 'Office not found');
+    await enforceAssetCategoryScopeForOffice(String(assetId), holder.holder_id);
+    return;
+  }
+
+  const storeExists = await StoreModel.exists({ _id: holder.holder_id, is_active: { $ne: false } });
+  if (!storeExists) throw createHttpError(404, 'Store not found');
 }
 
 export const assetItemController = {
@@ -66,7 +130,7 @@ export const assetItemController = {
       const filter: Record<string, unknown> = { is_active: { $ne: false } };
       if (!access.isHeadofficeAdmin) {
         if (!access.officeId) throw createHttpError(403, 'User is not assigned to an office');
-        filter.location_id = access.officeId;
+        Object.assign(filter, officeAssetItemFilter(access.officeId));
       }
       const items = await AssetItemModel.find(filter)
         .sort({ created_at: -1 })
@@ -83,8 +147,9 @@ export const assetItemController = {
       if (!item) return res.status(404).json({ message: 'Not found' });
       const access = await resolveAccessContext(req.user);
       if (!access.isHeadofficeAdmin) {
-        if (!item.location_id) throw createHttpError(403, 'Asset item is not assigned to an office');
-        ensureOfficeScope(access, item.location_id.toString());
+        const officeId = getAssetItemOfficeId(item);
+        if (!officeId) throw createHttpError(403, 'Asset item is not assigned to an office');
+        ensureOfficeScope(access, officeId);
       }
       return res.json(item);
     } catch (error) {
@@ -99,7 +164,7 @@ export const assetItemController = {
       const filter: Record<string, unknown> = { asset_id: req.params.assetId, is_active: { $ne: false } };
       if (!access.isHeadofficeAdmin) {
         if (!access.officeId) throw createHttpError(403, 'User is not assigned to an office');
-        filter.location_id = access.officeId;
+        Object.assign(filter, officeAssetItemFilter(access.officeId));
       }
       const items = await AssetItemModel.find(filter)
         .sort({ created_at: -1 })
@@ -115,11 +180,12 @@ export const assetItemController = {
       const limit = clampInt(req.query.limit, 250, 1000);
       const page = clampInt(req.query.page, 1, 10_000);
       const access = await resolveAccessContext(req.user);
+      const locationId = String(req.params.locationId || "");
       if (!access.isHeadofficeAdmin) {
-        ensureOfficeScope(access, req.params.locationId);
+        ensureOfficeScope(access, locationId);
       }
       const items = await AssetItemModel.find({
-        location_id: req.params.locationId,
+        ...officeAssetItemFilter(locationId),
         is_active: { $ne: false },
       })
         .sort({ created_at: -1 })
@@ -142,7 +208,7 @@ export const assetItemController = {
       };
       if (!access.isHeadofficeAdmin) {
         if (!access.officeId) throw createHttpError(403, 'User is not assigned to an office');
-        filter.location_id = access.officeId;
+        Object.assign(filter, officeAssetItemFilter(access.officeId));
       }
       const items = await AssetItemModel.find(filter)
         .sort({ created_at: -1 })
@@ -157,7 +223,7 @@ export const assetItemController = {
     try {
       const access = await resolveAccessContext(req.user);
       if (!access.isHeadofficeAdmin) {
-        throw createHttpError(403, 'Only Head Office Admin can create asset items');
+        throw createHttpError(403, 'Only org_admin can create asset items');
       }
       const payload = buildPayload(req.body);
       if (payload.assignment_status === undefined) payload.assignment_status = 'Unassigned';
@@ -176,16 +242,13 @@ export const assetItemController = {
       if (asset.is_active === false) {
         return res.status(400).json({ message: 'Cannot create items for an inactive asset' });
       }
-      if (!payload.location_id) {
-        payload.location_id = await getDefaultLocationId();
-      }
-      if (!payload.location_id) {
-        return res.status(400).json({ message: 'Head Office must be configured before creating items' });
-      }
-      const locationExists = await OfficeModel.exists({ _id: payload.location_id });
-      if (!locationExists) {
-        return res.status(404).json({ message: 'Office not found' });
-      }
+
+      const holder = await resolveRequestedHolder(payload);
+      await validateHolderAndCategory(String(payload.asset_id), holder);
+      payload.holder_type = holder.holder_type;
+      payload.holder_id = holder.holder_id;
+      delete payload.location_id;
+
       if (!payload.tag && payload.asset_id) {
         const existingCount = await AssetItemModel.countDocuments({ asset_id: payload.asset_id });
         payload.tag = generateAssetTag(String(payload.asset_id), existingCount + 1);
@@ -200,11 +263,23 @@ export const assetItemController = {
     try {
       const access = await resolveAccessContext(req.user);
       if (!access.isHeadofficeAdmin) {
-        throw createHttpError(403, 'Only Head Office Admin can create asset items');
+        throw createHttpError(403, 'Only org_admin can create asset items');
       }
-      const { assetId, locationId, itemStatus, itemCondition, functionalStatus, notes, items } = req.body as {
+      const {
+        assetId,
+        locationId,
+        holderType,
+        holderId,
+        itemStatus,
+        itemCondition,
+        functionalStatus,
+        notes,
+        items,
+      } = req.body as {
         assetId: string;
-        locationId: string;
+        locationId?: string;
+        holderType?: 'OFFICE' | 'STORE';
+        holderId?: string;
         itemStatus: string;
         itemCondition: string;
         functionalStatus?: string;
@@ -228,18 +303,17 @@ export const assetItemController = {
         return res.status(400).json({ message: `Only ${maxAllowed} items allowed for this asset` });
       }
 
-      const fallbackLocationId = locationId || (await getDefaultLocationId());
-      if (!fallbackLocationId) {
-        return res.status(400).json({ message: 'Head Office must be configured before creating items' });
-      }
-      const locationExists = await OfficeModel.exists({ _id: fallbackLocationId });
-      if (!locationExists) {
-        return res.status(404).json({ message: 'Office not found' });
-      }
+      const holderPayload: Record<string, unknown> = {};
+      if (locationId) holderPayload.location_id = locationId;
+      if (holderType) holderPayload.holder_type = holderType;
+      if (holderId) holderPayload.holder_id = holderId;
+      const holder = await resolveRequestedHolder(holderPayload);
+      await validateHolderAndCategory(assetId, holder);
 
       const docs = items.map((item, index) => ({
         asset_id: assetId,
-        location_id: fallbackLocationId,
+        holder_type: holder.holder_type,
+        holder_id: holder.holder_id,
         serial_number: item.serialNumber,
         warranty_expiry: item.warrantyExpiry || null,
         tag: generateAssetTag(assetId, existingCount + index + 1),
@@ -276,13 +350,19 @@ export const assetItemController = {
           );
         }
       }
-      if (payload.location_id !== undefined) {
-        throw createHttpError(400, 'Location changes must be handled via transfers');
+      if (payload.location_id !== undefined || payload.holder_type !== undefined || payload.holder_id !== undefined) {
+        throw createHttpError(400, 'Holder changes must be handled via transfers');
       }
       const item = await AssetItemModel.findById(req.params.id);
       if (!item) return res.status(404).json({ message: 'Not found' });
-      if (!access.isHeadofficeAdmin && item.location_id) {
-        ensureOfficeScope(access, item.location_id.toString());
+      const officeId = getAssetItemOfficeId(item);
+      if (!access.isHeadofficeAdmin && officeId) {
+        ensureOfficeScope(access, officeId);
+      }
+      const targetAssetId = String(payload.asset_id || item.asset_id || '');
+      const targetOfficeId = getAssetItemOfficeId(item);
+      if (targetAssetId && targetOfficeId) {
+        await enforceAssetCategoryScopeForOffice(targetAssetId, targetOfficeId);
       }
       const updated = await AssetItemModel.findByIdAndUpdate(req.params.id, payload, { new: true });
       return res.json(updated);
@@ -294,7 +374,7 @@ export const assetItemController = {
     try {
       const access = await resolveAccessContext(req.user);
       if (!access.isHeadofficeAdmin) {
-        throw createHttpError(403, 'Only Head Office Admin can retire asset items');
+        throw createHttpError(403, 'Only org_admin can retire asset items');
       }
       const item = await AssetItemModel.findById(req.params.id);
       if (!item) return res.status(404).json({ message: 'Not found' });

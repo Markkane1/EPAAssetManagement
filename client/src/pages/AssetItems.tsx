@@ -25,6 +25,7 @@ import { AssetItemEditModal } from "@/components/forms/AssetItemEditModal";
 import { AssignmentHistoryModal } from "@/components/shared/AssignmentHistoryModal";
 import { QRCodeModal } from "@/components/shared/QRCodeModal";
 import { AssignmentFormModal } from "@/components/forms/AssignmentFormModal";
+import { getOfficeHolderId, isStoreHolder } from "@/lib/assetItemHolder";
 import {
   Dialog,
   DialogContent,
@@ -101,7 +102,9 @@ export default function AssetItems() {
   const enrichedItems = assetItemList.map((item) => ({
     ...item,
     assetName: assetById.get(item.asset_id)?.name || "N/A",
-    locationName: locationList.find((l) => l.id === item.location_id)?.name || "N/A",
+    locationName: isStoreHolder(item)
+      ? "Head Office Store"
+      : locationList.find((l) => l.id === getOfficeHolderId(item))?.name || "N/A",
   }));
 
   const columns = [

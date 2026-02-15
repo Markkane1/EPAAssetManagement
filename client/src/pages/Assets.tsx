@@ -23,6 +23,15 @@ import { AssetFormModal } from "@/components/forms/AssetFormModal";
 import { exportToCSV, exportToJSON, filterRowsBySearch, formatDateForExport, formatCurrencyForExport, pickExportFields } from "@/lib/exportUtils";
 import { usePageSearch } from "@/contexts/PageSearchContext";
 
+function formatDimensions(asset: Asset) {
+  const dims = asset.dimensions;
+  if (!dims) return "N/A";
+  const values = [dims.length, dims.width, dims.height];
+  if (values.every((value) => value === null || value === undefined)) return "N/A";
+  const [l, w, h] = values.map((value) => (value ?? "-"));
+  return `${l} × ${w} × ${h} ${dims.unit || "cm"}`;
+}
+
 export default function Assets() {
   const navigate = useNavigate();
   
@@ -60,6 +69,7 @@ export default function Assets() {
       vendorName: vendor?.name || "N/A",
       sourceLabel,
       sourceDetail,
+      dimensionsLabel: formatDimensions(asset),
     };
   });
 
@@ -70,6 +80,7 @@ export default function Assets() {
     { key: "categoryName", label: "Category", render: (value: string) => <Badge variant="secondary" className="font-normal">{value}</Badge> },
     { key: "sourceLabel", label: "Source", render: (value: string) => <Badge variant="outline" className="font-normal">{value}</Badge> },
     { key: "sourceDetail", label: "Vendor/Project" },
+    { key: "dimensionsLabel", label: "Dimensions" },
     { key: "quantity", label: "Quantity", render: (value: number) => <span className="font-medium">{value}</span> },
     { key: "unit_price", label: "Unit Price", render: (value: number) => <span className="font-medium">PKR {value?.toLocaleString("en-PK") || 0}</span> },
     { key: "acquisition_date", label: "Acquired", render: (value: string) => value ? new Date(value).toLocaleDateString() : "N/A" },
@@ -137,6 +148,7 @@ export default function Assets() {
         { key: "categoryName", header: "Category" },
         { key: "sourceLabel", header: "Source" },
         { key: "sourceDetail", header: "Vendor/Project" },
+        { key: "dimensionsLabel", header: "Dimensions" },
         { key: "quantity", header: "Quantity" },
         { key: "unit_price", header: "Unit Price", formatter: (v) => formatCurrencyForExport(v as number) },
         { key: "acquisition_date", header: "Acquired", formatter: (v) => formatDateForExport(v as Date) },
@@ -152,6 +164,7 @@ export default function Assets() {
         "categoryName",
         "sourceLabel",
         "sourceDetail",
+        "dimensionsLabel",
         "quantity",
         "unit_price",
         "acquisition_date",

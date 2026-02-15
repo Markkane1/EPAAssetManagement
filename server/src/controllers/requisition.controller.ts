@@ -23,12 +23,13 @@ import { ConsumableItemModel } from '../modules/consumables/models/consumableIte
 import { ConsumableInventoryBalanceModel } from '../modules/consumables/models/consumableInventoryBalance.model';
 import { ConsumableInventoryTransactionModel } from '../modules/consumables/models/consumableInventoryTransaction.model';
 import { generateAndStoreIssuanceReport } from '../services/requisitionIssuanceReport.service';
+import { isAssetItemHeldByOffice } from '../utils/assetHolder';
 
-const ALLOWED_SUBMITTER_ROLES = new Set(['employee', 'location_admin', 'caretaker']);
-const DISTRICT_LAB_VERIFIER_ROLES = new Set(['location_admin', 'office_head']);
-const HQ_DIRECTORATE_VERIFIER_ROLES = new Set(['caretaker', 'assistant_caretaker']);
-const DISTRICT_LAB_FULFILLER_ROLES = new Set(['location_admin', 'office_head']);
-const HQ_DIRECTORATE_FULFILLER_ROLES = new Set(['caretaker', 'assistant_caretaker']);
+const ALLOWED_SUBMITTER_ROLES = new Set(['employee', 'office_head', 'caretaker']);
+const DISTRICT_LAB_VERIFIER_ROLES = new Set(['office_head']);
+const HQ_DIRECTORATE_VERIFIER_ROLES = new Set(['office_head', 'caretaker']);
+const DISTRICT_LAB_FULFILLER_ROLES = new Set(['office_head']);
+const HQ_DIRECTORATE_FULFILLER_ROLES = new Set(['office_head', 'caretaker']);
 const LINE_TYPES = new Set(['MOVEABLE', 'CONSUMABLE']);
 const VERIFY_DECISIONS = new Set(['VERIFY', 'REJECT']);
 const FULFILL_ALLOWED_STATUSES = new Set(['VERIFIED_APPROVED', 'IN_FULFILLMENT']);
@@ -136,14 +137,16 @@ function parseLinesInput(linesInput: unknown): ParsedLine[] {
 
 async function isHqDirectorateOffice(officeId: string) {
   const office = await OfficeModel.findById(officeId, {
-    is_headoffice: 1,
+    type: 1,
+    parent_office_id: 1,
     parent_location_id: 1,
   }).lean();
   if (!office) throw createHttpError(404, 'Office not found');
-  if (office.is_headoffice) return true;
-  if (!office.parent_location_id) return false;
-  const parent = await OfficeModel.findById(office.parent_location_id, { is_headoffice: 1 }).lean();
-  return Boolean(parent?.is_headoffice);
+  if (office.type === 'DIRECTORATE') return true;
+  const parentOfficeId = office.parent_office_id || office.parent_location_id;
+  if (!parentOfficeId) return false;
+  const parent = await OfficeModel.findById(parentOfficeId, { type: 1 }).lean();
+  return parent?.type === 'DIRECTORATE';
 }
 
 function parseVerifyDecision(raw: unknown) {
@@ -292,7 +295,7 @@ export const requisitionController = {
   list: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const ctx = await getRequestContext(req);
-      const canViewAll = ctx.role === 'super_admin' || ctx.isHeadoffice;
+      const canViewAll = ctx.role === 'org_admin' || ctx.isHeadoffice;
       const page = parsePositiveInt(req.query.page, 1, 100_000);
       const limit = parsePositiveInt(req.query.limit, 50, 200);
       const skip = (page - 1) * limit;
@@ -347,7 +350,7 @@ export const requisitionController = {
   getById: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const ctx = await getRequestContext(req);
-      const canViewAll = ctx.role === 'super_admin' || ctx.isHeadoffice;
+      const canViewAll = ctx.role === 'org_admin' || ctx.isHeadoffice;
 
       const requisition = await RequisitionModel.findById(req.params.id).lean();
       if (!requisition) {
@@ -1117,7 +1120,7 @@ export const requisitionController = {
                 throw createHttpError(404, `One or more asset items were not found for line ${line.id}`);
               }
               for (const item of assetItems) {
-                if (!item.location_id || item.location_id.toString() !== issuingOfficeId) {
+                if (!isAssetItemHeldByOffice(item, issuingOfficeId)) {
                   throw createHttpError(400, `Asset item ${item.id} is not in the issuing office`);
                 }
                 if (item.assignment_status === 'Assigned') {
@@ -1163,7 +1166,11 @@ export const requisitionController = {
 
               if (item) {
                 const balances = await ConsumableInventoryBalanceModel.find({
-                  location_id: issuingOfficeId,
+                  $or: [
+                    { holder_type: 'OFFICE', holder_id: issuingOfficeId },
+                    { holder_type: { $exists: false }, location_id: issuingOfficeId },
+                    { holder_type: null, location_id: issuingOfficeId },
+                  ],
                   consumable_item_id: item._id,
                   qty_on_hand_base: { $gt: 0 },
                 })
@@ -1187,8 +1194,10 @@ export const requisitionController = {
                         tx_type: 'CONSUME',
                         tx_time: new Date().toISOString(),
                         created_by: ctx.userId,
-                        from_location_id: issuingOfficeId,
-                        to_location_id: null,
+                        from_holder_type: 'OFFICE',
+                        from_holder_id: issuingOfficeId,
+                        to_holder_type: null,
+                        to_holder_id: null,
                         consumable_item_id: item._id,
                         lot_id: balance.lot_id || null,
                         container_id: null,

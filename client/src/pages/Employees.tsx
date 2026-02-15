@@ -48,13 +48,13 @@ export default function Employees() {
   const locationList = locations || [];
 
   const currentLocation = locationId ? locationList.find((loc) => loc.id === locationId) : undefined;
-  const isHeadofficeAdmin = isSuperAdmin || (role === "admin" && isHeadOfficeLocation(currentLocation));
-  const isOfficeAdmin = role === "location_admin" || (role === "admin" && !isHeadofficeAdmin);
+  const isHeadofficeAdmin = isSuperAdmin || (role === "org_admin" && isHeadOfficeLocation(currentLocation));
+  const isOfficeAdmin = role === "office_head" || (role === "org_admin" && !isHeadofficeAdmin);
   const isHeadofficeIssuer =
     isHeadOfficeLocation(currentLocation) &&
-    (role === "location_admin" || role === "caretaker" || role === "assistant_caretaker");
+    (role === "office_head" || role === "caretaker");
   const canManageEmployees = isHeadofficeAdmin || isOfficeAdmin;
-  const canTransferEmployees = isSuperAdmin || role === "admin" || isHeadofficeIssuer;
+  const canTransferEmployees = isSuperAdmin || role === "org_admin" || isHeadofficeIssuer;
 
   const allowedLocations = isHeadofficeAdmin
     ? locationList

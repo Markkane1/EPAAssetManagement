@@ -1,6 +1,7 @@
 import mongoose, { ClientSession } from 'mongoose';
 import { ActivityLogModel } from '../../../models/activityLog.model';
 import { OfficeModel } from '../../../models/office.model';
+import { StoreModel } from '../../../models/store.model';
 import { UserModel } from '../../../models/user.model';
 import { ConsumableItemModel } from '../models/consumableItem.model';
 import { ConsumableLotModel } from '../models/consumableLot.model';
@@ -13,8 +14,11 @@ import { convertToBaseQty, formatUom } from '../utils/unitConversion';
 import { resolveConsumablePermissions } from '../utils/permissions';
 import { supportsChemicals } from '../utils/officeCapabilities';
 import { getUnitLookup } from './consumableUnit.service';
+import { roundQty } from './balance.service';
 
-const CENTRAL_TYPE = 'CENTRAL';
+const HEAD_OFFICE_STORE_CODE = 'HEAD_OFFICE_STORE';
+const HOLDER_TYPES = ['OFFICE', 'STORE'] as const;
+type HolderType = (typeof HOLDER_TYPES)[number];
 
 type AuthUser = {
   userId: string;
@@ -25,9 +29,20 @@ type AuthUser = {
 type AuditMeta = Record<string, unknown> | undefined;
 
 type BalanceKey = {
-  locationId: string;
+  holderType?: HolderType | null;
+  holderId?: string | null;
+  // Deprecated compatibility input key.
+  locationId?: string | null;
   itemId: string;
   lotId?: string | null;
+};
+
+type HolderContext = {
+  holderType: HolderType;
+  holderId: string;
+  name: string;
+  office?: any;
+  store?: any;
 };
 
 const nowIso = () => new Date().toISOString();
@@ -36,9 +51,10 @@ function ensureAllowed(condition: boolean, message: string) {
   if (!condition) throw createHttpError(403, message);
 }
 
-function ensureChemicalsLocation(item: any, location: any, label: string) {
+function ensureChemicalsHolder(item: any, holder: HolderContext, label: string) {
   if (!item?.is_chemical) return;
-  if (!supportsChemicals(location)) {
+  if (holder.holderType === 'STORE') return;
+  if (!supportsChemicals(holder.office)) {
     throw createHttpError(400, `${label} must be a lab-enabled chemical location`);
   }
 }
@@ -53,6 +69,149 @@ async function getLocation(locationId: string, session?: ClientSession) {
   const location = await OfficeModel.findById(locationId).session(session || null);
   if (!location) throw createHttpError(404, 'Location not found');
   return location;
+}
+
+async function getStore(storeId: string, session?: ClientSession) {
+  const store = await StoreModel.findById(storeId).session(session || null);
+  if (!store) throw createHttpError(404, 'Store not found');
+  return store;
+}
+
+async function resolveHeadOfficeStore(session?: ClientSession) {
+  const store = await StoreModel.findOne({ code: HEAD_OFFICE_STORE_CODE, is_active: { $ne: false } }).session(
+    session || null
+  );
+  if (!store) throw createHttpError(500, 'HEAD_OFFICE_STORE is not configured');
+  return store;
+}
+
+function normalizeHolderType(value: unknown, fallback: HolderType = 'OFFICE'): HolderType {
+  const candidate = String(value || fallback).trim().toUpperCase();
+  return candidate === 'STORE' ? 'STORE' : 'OFFICE';
+}
+
+function officeHolderFilter(holderId: string) {
+  return {
+    $or: [
+      { holder_type: 'OFFICE', holder_id: holderId },
+      { holder_type: { $exists: false }, location_id: holderId },
+      { holder_type: null, location_id: holderId },
+    ],
+  };
+}
+
+function balanceHolderFilter(holderType: HolderType, holderId: string) {
+  if (holderType === 'OFFICE') {
+    return officeHolderFilter(holderId);
+  }
+  return { holder_type: 'STORE', holder_id: holderId };
+}
+
+function txHolderUpdate(holderType: HolderType, holderId: string, direction: 'from' | 'to') {
+  if (direction === 'from') {
+    return {
+      from_holder_type: holderType,
+      from_holder_id: holderId,
+    };
+  }
+  return {
+    to_holder_type: holderType,
+    to_holder_id: holderId,
+  };
+}
+
+function resolveBalanceHolder(key: BalanceKey): { holderType: HolderType; holderId: string } {
+  if (key.holderType && key.holderId) {
+    return {
+      holderType: normalizeHolderType(key.holderType),
+      holderId: String(key.holderId),
+    };
+  }
+  if (key.locationId) {
+    return {
+      holderType: 'OFFICE',
+      holderId: String(key.locationId),
+    };
+  }
+  throw createHttpError(400, 'Balance holder is required');
+}
+
+async function resolveHolder(
+  holderId: string,
+  holderTypeInput: unknown,
+  session?: ClientSession
+): Promise<HolderContext> {
+  const holderType = normalizeHolderType(holderTypeInput);
+  if (holderType === 'STORE') {
+    const store = /^[a-f\d]{24}$/i.test(holderId)
+      ? await getStore(holderId, session)
+      : await StoreModel.findOne({ code: holderId, is_active: { $ne: false } }).session(session || null);
+    if (!store) throw createHttpError(404, 'Store not found');
+    return {
+      holderType,
+      holderId: store.id,
+      name: String(store.name || store.code || 'Store'),
+      store,
+    };
+  }
+  const office = await getLocation(holderId, session);
+  return {
+    holderType: 'OFFICE',
+    holderId: office.id,
+    name: String(office.name || 'Location'),
+    office,
+  };
+}
+
+function isGlobalConsumableRole(role?: string | null) {
+  return role === 'org_admin';
+}
+
+function extractHolderArgs(
+  payload: any,
+  options: {
+    holderIdKey: string;
+    holderTypeKey: string;
+    legacyLocationIdKey?: string;
+    defaultType?: HolderType;
+  }
+) {
+  const holderId = String(
+    payload?.[options.holderIdKey] || (options.legacyLocationIdKey ? payload?.[options.legacyLocationIdKey] : '') || ''
+  ).trim();
+  const inferredType: HolderType = options.legacyLocationIdKey && payload?.[options.legacyLocationIdKey] ? 'OFFICE' : (options.defaultType || 'OFFICE');
+  const holderType = normalizeHolderType(payload?.[options.holderTypeKey], inferredType);
+  if (!holderId) {
+    throw createHttpError(400, `${options.holderIdKey}${options.legacyLocationIdKey ? ` (or ${options.legacyLocationIdKey})` : ''} is required`);
+  }
+  return { holderId, holderType };
+}
+
+function withAnd(base: any, clause: any) {
+  if (!clause || Object.keys(clause).length === 0) return base;
+  if (!base || Object.keys(base).length === 0) return clause;
+  return { $and: [base, clause] };
+}
+
+function txAnySideHolderFilter(holderType: HolderType, holderId: string) {
+  if (holderType === 'STORE') {
+    return {
+      $or: [
+        { from_holder_type: 'STORE', from_holder_id: holderId },
+        { to_holder_type: 'STORE', to_holder_id: holderId },
+      ],
+    };
+  }
+  return {
+    $or: [
+      { from_holder_type: 'OFFICE', from_holder_id: holderId },
+      { from_holder_type: { $exists: false }, from_location_id: holderId },
+      { from_holder_type: null, from_location_id: holderId },
+      { to_holder_type: 'OFFICE', to_holder_id: holderId },
+      { to_holder_type: { $exists: false }, to_location_id: holderId },
+      { to_holder_type: null, to_location_id: holderId },
+    ],
+  };
 }
 
 async function getItem(itemId: string, session?: ClientSession) {
@@ -93,11 +252,13 @@ async function createAuditLog(
   );
 }
 
-async function getBalance({ locationId, itemId, lotId }: BalanceKey, session: ClientSession) {
+async function getBalance(key: BalanceKey, session: ClientSession) {
+  const holder = resolveBalanceHolder(key);
+  const keyFilter = balanceHolderFilter(holder.holderType, holder.holderId);
   return ConsumableInventoryBalanceModel.findOne({
-    location_id: locationId,
-    consumable_item_id: itemId,
-    lot_id: lotId ?? null,
+    ...keyFilter,
+    consumable_item_id: key.itemId,
+    lot_id: key.lotId ?? null,
   }).session(session);
 }
 
@@ -114,10 +275,12 @@ async function updateBalance(
     throw createHttpError(400, 'Insufficient stock for requested operation');
   }
   if (!balance) {
+    const holder = resolveBalanceHolder(key);
     const created = await ConsumableInventoryBalanceModel.create(
       [
         {
-          location_id: key.locationId,
+          holder_type: holder.holderType,
+          holder_id: holder.holderId,
           consumable_item_id: key.itemId,
           lot_id: key.lotId ?? null,
           qty_on_hand_base: next,
@@ -163,19 +326,23 @@ function buildMetadata(payload: any, allowNegative: boolean) {
 }
 
 async function resolveAccessibleLocationId(userId: string, role: string, session?: ClientSession) {
-  if (role === 'super_admin' || role === 'admin' || role === 'auditor' || role === 'viewer') return null;
+  if (isGlobalConsumableRole(role)) {
+    return null;
+  }
   const user = await getUserContext(userId, session);
   return user.location_id?.toString() || null;
 }
 
 async function pickLotsByFefo(
-  locationId: string,
+  holderType: HolderType,
+  holderId: string,
   itemId: string,
   qtyBase: number,
   session: ClientSession
 ) {
+  const holderFilter = balanceHolderFilter(holderType, holderId);
   const balances = await ConsumableInventoryBalanceModel.find({
-    location_id: locationId,
+    ...holderFilter,
     consumable_item_id: itemId,
     qty_on_hand_base: { $gt: 0 },
   }).session(session);
@@ -237,8 +404,9 @@ async function ensureContainerMatchesItem(containerId: string, itemId: string, s
 }
 
 async function ensureLocationAccess(user: AuthUser, locationId: string, session?: ClientSession) {
-  const role = user.role;
-  if (role === 'super_admin' || role === 'admin' || role === 'auditor' || role === 'viewer') return;
+  if (isGlobalConsumableRole(user.role)) {
+    return;
+  }
   const userContext = await getUserContext(user.userId, session);
   if (!userContext.location_id) {
     throw createHttpError(403, 'User is not assigned to a location');
@@ -254,10 +422,19 @@ function clampInt(value: unknown, fallback: number, max: number) {
   return Math.max(1, Math.min(Math.floor(parsed), max));
 }
 
-async function getCentralStoreLocation(session: ClientSession) {
-  const central = await OfficeModel.findOne({ type: CENTRAL_TYPE }).session(session);
-  if (!central) throw createHttpError(400, 'Central Store location is not configured');
-  return central;
+async function ensureOfficeHolderAccess(user: AuthUser, holder: HolderContext, session?: ClientSession) {
+  if (holder.holderType !== 'OFFICE') return;
+  await ensureLocationAccess(user, holder.holderId, session);
+}
+
+async function getCentralStoreHolder(session: ClientSession) {
+  const store = await resolveHeadOfficeStore(session);
+  return {
+    holderType: 'STORE' as const,
+    holderId: store.id,
+    name: String(store.name || store.code || 'Head Office Store'),
+    store,
+  };
 }
 
 export const inventoryService = {
@@ -270,12 +447,9 @@ export const inventoryService = {
         ensureAllowed(permissions.canReceiveCentral, 'Not permitted to receive into Central Store');
 
         const item = await getItem(payload.itemId, session);
-        const location = await getLocation(payload.locationId, session);
+        const storeHolder = await getCentralStoreHolder(session);
         const unitLookup = await getUnitLookup({ session });
-        ensureChemicalsLocation(item, location, 'Receiving location');
-        if (location.type !== CENTRAL_TYPE) {
-          throw createHttpError(400, 'Receipts must be into Central Store');
-        }
+        ensureChemicalsHolder(item, storeHolder, 'Receiving holder');
 
         const qtyBase = convertToBaseQty(payload.qty, payload.uom, item.base_uom, unitLookup);
         if (qtyBase <= 0) throw createHttpError(400, 'Quantity must be greater than zero');
@@ -285,14 +459,29 @@ export const inventoryService = {
           await ensureLotMatchesItem(lotId, item.id, session);
         } else if (item.requires_lot_tracking !== false) {
           if (!payload.lot) throw createHttpError(400, 'Lot details are required for this item');
+          if (!payload.lot.expiryDate) throw createHttpError(400, 'Lot expiry date is required');
+          const expiryDate = new Date(payload.lot.expiryDate);
+          if (Number.isNaN(expiryDate.getTime())) {
+            throw createHttpError(400, 'Lot expiry date is invalid');
+          }
+          const receivedQty = roundQty(qtyBase);
           const newLot = await ConsumableLotModel.create(
             [
               {
+                consumable_id: item.id,
                 consumable_item_id: item.id,
+                holder_type: storeHolder.holderType,
+                holder_id: storeHolder.holderId,
+                batch_no: payload.lot.lotNumber,
                 supplier_id: payload.lot.supplierId || null,
                 lot_number: payload.lot.lotNumber,
-                received_date: payload.lot.receivedDate,
-                expiry_date: payload.lot.expiryDate || null,
+                received_at: new Date(payload.lot.receivedDate || nowIso()),
+                received_date: payload.lot.receivedDate || nowIso(),
+                expiry_date: expiryDate,
+                qty_received: receivedQty,
+                qty_available: receivedQty,
+                received_by_user_id: user.userId,
+                notes: payload.notes || null,
                 docs: {
                   sds_url: payload.lot.docs?.sdsUrl || null,
                   coa_url: payload.lot.docs?.coaUrl || null,
@@ -311,8 +500,7 @@ export const inventoryService = {
               tx_type: 'RECEIPT',
               tx_time: nowIso(),
               created_by: user.userId,
-              from_location_id: null,
-              to_location_id: location.id,
+              ...txHolderUpdate(storeHolder.holderType, storeHolder.holderId, 'to'),
               consumable_item_id: item.id,
               lot_id: lotId,
               container_id: null,
@@ -330,7 +518,8 @@ export const inventoryService = {
 
         await updateBalance(
           {
-            locationId: location.id,
+            holderType: storeHolder.holderType,
+            holderId: storeHolder.holderId,
             itemId: item.id,
             lotId,
           },
@@ -353,7 +542,7 @@ export const inventoryService = {
               container_code: container.containerCode,
               initial_qty_base: convertToBaseQty(container.initialQty, payload.uom, item.base_uom, unitLookup),
               current_qty_base: convertToBaseQty(container.initialQty, payload.uom, item.base_uom, unitLookup),
-              current_location_id: location.id,
+              current_location_id: storeHolder.holderId,
               status: 'IN_STOCK',
               opened_date: container.openedDate || null,
             })),
@@ -364,8 +553,15 @@ export const inventoryService = {
         await createAuditLog(
           user.userId,
           'consumables.receive',
-          `Received ${payload.qty} ${payload.uom} of ${item.name} into ${location.name}`,
-          { itemId: item.id, locationId: location.id, lotId, qtyBase },
+          `Received ${payload.qty} ${payload.uom} of ${item.name} into ${storeHolder.name}`,
+          {
+            itemId: item.id,
+            holderType: storeHolder.holderType,
+            holderId: storeHolder.holderId,
+            locationId: null,
+            lotId,
+            qtyBase,
+          },
           session
         );
 
@@ -385,17 +581,22 @@ export const inventoryService = {
         const permissions = resolveConsumablePermissions(user.role);
 
         const item = await getItem(payload.itemId, session);
-        const fromLocation = await getLocation(payload.fromLocationId, session);
-        const toLocation = await getLocation(payload.toLocationId, session);
+        const fromHolderId = String(payload.fromHolderId || payload.fromLocationId || '').trim();
+        const toHolderId = String(payload.toHolderId || payload.toLocationId || '').trim();
+        if (!fromHolderId || !toHolderId) {
+          throw createHttpError(400, 'fromHolderId/toHolderId (or fromLocationId/toLocationId) are required');
+        }
+        const fromHolder = await resolveHolder(fromHolderId, payload.fromHolderType || 'OFFICE', session);
+        const toHolder = await resolveHolder(toHolderId, payload.toHolderType || 'OFFICE', session);
         const unitLookup = await getUnitLookup({ session });
-        ensureChemicalsLocation(item, fromLocation, 'From location');
-        ensureChemicalsLocation(item, toLocation, 'To location');
+        ensureChemicalsHolder(item, fromHolder, 'From holder');
+        ensureChemicalsHolder(item, toHolder, 'To holder');
 
-        if (fromLocation.type === CENTRAL_TYPE) {
+        if (fromHolder.holderType === 'STORE') {
           ensureAllowed(permissions.canTransferCentral, 'Not permitted to transfer from Central Store');
         } else {
           ensureAllowed(permissions.canTransferLab, 'Not permitted to transfer between labs');
-          await ensureLocationAccess(user, fromLocation.id, session);
+          await ensureOfficeHolderAccess(user, fromHolder, session);
         }
 
         const qtyBase = convertToBaseQty(payload.qty, payload.uom, item.base_uom, unitLookup);
@@ -413,7 +614,7 @@ export const inventoryService = {
 
         if (payload.containerId) {
           const container = await ensureContainerMatchesItem(payload.containerId, item.id, session);
-          if (container.current_location_id.toString() !== fromLocation.id) {
+          if (container.current_location_id.toString() !== fromHolder.holderId) {
             throw createHttpError(400, 'Container is not at the source location');
           }
           const containerQty = container.current_qty_base || 0;
@@ -422,19 +623,29 @@ export const inventoryService = {
           }
 
           await updateBalance(
-            { locationId: fromLocation.id, itemId: item.id, lotId: container.lot_id.toString() },
+            {
+              holderType: fromHolder.holderType,
+              holderId: fromHolder.holderId,
+              itemId: item.id,
+              lotId: container.lot_id.toString(),
+            },
             -containerQty,
             allowNegative,
             session
           );
           await updateBalance(
-            { locationId: toLocation.id, itemId: item.id, lotId: container.lot_id.toString() },
+            {
+              holderType: toHolder.holderType,
+              holderId: toHolder.holderId,
+              itemId: item.id,
+              lotId: container.lot_id.toString(),
+            },
             containerQty,
             true,
             session
           );
 
-          container.current_location_id = toLocation.id;
+          container.current_location_id = toHolder.holderId;
           await container.save({ session });
 
           const tx = await ConsumableInventoryTransactionModel.create(
@@ -443,8 +654,8 @@ export const inventoryService = {
                 tx_type: 'TRANSFER',
                 tx_time: nowIso(),
                 created_by: user.userId,
-                from_location_id: fromLocation.id,
-                to_location_id: toLocation.id,
+                ...txHolderUpdate(fromHolder.holderType, fromHolder.holderId, 'from'),
+                ...txHolderUpdate(toHolder.holderType, toHolder.holderId, 'to'),
                 consumable_item_id: item.id,
                 lot_id: container.lot_id,
                 container_id: container.id,
@@ -463,8 +674,17 @@ export const inventoryService = {
           await createAuditLog(
             user.userId,
             'consumables.transfer',
-            `Transferred ${payload.qty} ${payload.uom} of ${item.name} from ${fromLocation.name} to ${toLocation.name}`,
-            { itemId: item.id, fromLocationId: fromLocation.id, toLocationId: toLocation.id, lotId: container.lot_id },
+            `Transferred ${payload.qty} ${payload.uom} of ${item.name} from ${fromHolder.name} to ${toHolder.name}`,
+            {
+              itemId: item.id,
+              fromHolderType: fromHolder.holderType,
+              fromHolderId: fromHolder.holderId,
+              toHolderType: toHolder.holderType,
+              toHolderId: toHolder.holderId,
+              fromLocationId: fromHolder.holderType === 'OFFICE' ? fromHolder.holderId : null,
+              toLocationId: toHolder.holderType === 'OFFICE' ? toHolder.holderId : null,
+              lotId: container.lot_id,
+            },
             session
           );
 
@@ -479,20 +699,30 @@ export const inventoryService = {
           await ensureLotMatchesItem(payload.lotId, item.id, session);
           allocations = [{ lotId: payload.lotId, qtyBase }];
         } else {
-          const picks = await pickLotsByFefo(fromLocation.id, item.id, qtyBase, session);
+          const picks = await pickLotsByFefo(fromHolder.holderType, fromHolder.holderId, item.id, qtyBase, session);
           allocations = picks.map((pick) => ({ lotId: pick.lotId, qtyBase: pick.qtyBase }));
         }
 
         const transactions: any[] = [];
         for (const allocation of allocations) {
           await updateBalance(
-            { locationId: fromLocation.id, itemId: item.id, lotId: allocation.lotId },
+            {
+              holderType: fromHolder.holderType,
+              holderId: fromHolder.holderId,
+              itemId: item.id,
+              lotId: allocation.lotId,
+            },
             -allocation.qtyBase,
             allowNegative,
             session
           );
           await updateBalance(
-            { locationId: toLocation.id, itemId: item.id, lotId: allocation.lotId },
+            {
+              holderType: toHolder.holderType,
+              holderId: toHolder.holderId,
+              itemId: item.id,
+              lotId: allocation.lotId,
+            },
             allocation.qtyBase,
             true,
             session
@@ -504,8 +734,8 @@ export const inventoryService = {
                 tx_type: 'TRANSFER',
                 tx_time: nowIso(),
                 created_by: user.userId,
-                from_location_id: fromLocation.id,
-                to_location_id: toLocation.id,
+                ...txHolderUpdate(fromHolder.holderType, fromHolder.holderId, 'from'),
+                ...txHolderUpdate(toHolder.holderType, toHolder.holderId, 'to'),
                 consumable_item_id: item.id,
                 lot_id: allocation.lotId,
                 container_id: null,
@@ -526,8 +756,16 @@ export const inventoryService = {
         await createAuditLog(
           user.userId,
           'consumables.transfer',
-          `Transferred ${payload.qty} ${payload.uom} of ${item.name} from ${fromLocation.name} to ${toLocation.name}`,
-          { itemId: item.id, fromLocationId: fromLocation.id, toLocationId: toLocation.id },
+          `Transferred ${payload.qty} ${payload.uom} of ${item.name} from ${fromHolder.name} to ${toHolder.name}`,
+          {
+            itemId: item.id,
+            fromHolderType: fromHolder.holderType,
+            fromHolderId: fromHolder.holderId,
+            toHolderType: toHolder.holderType,
+            toHolderId: toHolder.holderId,
+            fromLocationId: fromHolder.holderType === 'OFFICE' ? fromHolder.holderId : null,
+            toLocationId: toHolder.holderType === 'OFFICE' ? toHolder.holderId : null,
+          },
           session
         );
 
@@ -547,10 +785,15 @@ export const inventoryService = {
         ensureAllowed(permissions.canConsume, 'Not permitted to consume consumables');
 
         const item = await getItem(payload.itemId, session);
-        const location = await getLocation(payload.locationId, session);
+        const { holderId, holderType } = extractHolderArgs(payload, {
+          holderIdKey: 'holderId',
+          holderTypeKey: 'holderType',
+          legacyLocationIdKey: 'locationId',
+        });
+        const holder = await resolveHolder(holderId, holderType, session);
         const unitLookup = await getUnitLookup({ session });
-        ensureChemicalsLocation(item, location, 'Consumption location');
-        await ensureLocationAccess(user, location.id, session);
+        ensureChemicalsHolder(item, holder, 'Consumption holder');
+        await ensureOfficeHolderAccess(user, holder, session);
 
         const qtyBase = convertToBaseQty(payload.qty, payload.uom, item.base_uom, unitLookup);
         if (qtyBase <= 0) throw createHttpError(400, 'Quantity must be greater than zero');
@@ -567,8 +810,8 @@ export const inventoryService = {
 
         if (payload.containerId) {
           const container = await ensureContainerMatchesItem(payload.containerId, item.id, session);
-          if (container.current_location_id.toString() !== location.id) {
-            throw createHttpError(400, 'Container is not at the selected location');
+          if (container.current_location_id.toString() !== holder.holderId) {
+            throw createHttpError(400, 'Container is not at the selected holder');
           }
           if (container.current_qty_base < qtyBase && !allowNegative) {
             throw createHttpError(400, 'Insufficient quantity in container');
@@ -584,7 +827,12 @@ export const inventoryService = {
           await container.save({ session });
 
           await updateBalance(
-            { locationId: location.id, itemId: item.id, lotId: container.lot_id.toString() },
+            {
+              holderType: holder.holderType,
+              holderId: holder.holderId,
+              itemId: item.id,
+              lotId: container.lot_id.toString(),
+            },
             -qtyBase,
             allowNegative,
             session
@@ -596,8 +844,7 @@ export const inventoryService = {
                 tx_type: 'CONSUME',
                 tx_time: nowIso(),
                 created_by: user.userId,
-                from_location_id: location.id,
-                to_location_id: null,
+                ...txHolderUpdate(holder.holderType, holder.holderId, 'from'),
                 consumable_item_id: item.id,
                 lot_id: container.lot_id,
                 container_id: container.id,
@@ -616,8 +863,14 @@ export const inventoryService = {
           await createAuditLog(
             user.userId,
             'consumables.consume',
-            `Consumed ${payload.qty} ${payload.uom} of ${item.name} at ${location.name}`,
-            { itemId: item.id, locationId: location.id, lotId: container.lot_id },
+            `Consumed ${payload.qty} ${payload.uom} of ${item.name} at ${holder.name}`,
+            {
+              itemId: item.id,
+              holderType: holder.holderType,
+              holderId: holder.holderId,
+              locationId: holder.holderType === 'OFFICE' ? holder.holderId : null,
+              lotId: container.lot_id,
+            },
             session
           );
 
@@ -632,14 +885,19 @@ export const inventoryService = {
           await ensureLotMatchesItem(payload.lotId, item.id, session);
           allocations = [{ lotId: payload.lotId, qtyBase }];
         } else {
-          const picks = await pickLotsByFefo(location.id, item.id, qtyBase, session);
+          const picks = await pickLotsByFefo(holder.holderType, holder.holderId, item.id, qtyBase, session);
           allocations = picks.map((pick) => ({ lotId: pick.lotId, qtyBase: pick.qtyBase }));
         }
 
         const transactions: any[] = [];
         for (const allocation of allocations) {
           await updateBalance(
-            { locationId: location.id, itemId: item.id, lotId: allocation.lotId },
+            {
+              holderType: holder.holderType,
+              holderId: holder.holderId,
+              itemId: item.id,
+              lotId: allocation.lotId,
+            },
             -allocation.qtyBase,
             allowNegative,
             session
@@ -650,8 +908,7 @@ export const inventoryService = {
                 tx_type: 'CONSUME',
                 tx_time: nowIso(),
                 created_by: user.userId,
-                from_location_id: location.id,
-                to_location_id: null,
+                ...txHolderUpdate(holder.holderType, holder.holderId, 'from'),
                 consumable_item_id: item.id,
                 lot_id: allocation.lotId,
                 container_id: null,
@@ -672,8 +929,13 @@ export const inventoryService = {
         await createAuditLog(
           user.userId,
           'consumables.consume',
-          `Consumed ${payload.qty} ${payload.uom} of ${item.name} at ${location.name}`,
-          { itemId: item.id, locationId: location.id },
+          `Consumed ${payload.qty} ${payload.uom} of ${item.name} at ${holder.name}`,
+          {
+            itemId: item.id,
+            holderType: holder.holderType,
+            holderId: holder.holderId,
+            locationId: holder.holderType === 'OFFICE' ? holder.holderId : null,
+          },
           session
         );
 
@@ -694,10 +956,15 @@ export const inventoryService = {
         ensureAllowed(permissions.canAdjust, 'Not permitted to adjust inventory');
 
         const item = await getItem(payload.itemId, session);
-        const location = await getLocation(payload.locationId, session);
+        const { holderId, holderType } = extractHolderArgs(payload, {
+          holderIdKey: 'holderId',
+          holderTypeKey: 'holderType',
+          legacyLocationIdKey: 'locationId',
+        });
+        const holder = await resolveHolder(holderId, holderType, session);
         const unitLookup = await getUnitLookup({ session });
-        ensureChemicalsLocation(item, location, 'Adjustment location');
-        await ensureLocationAccess(user, location.id, session);
+        ensureChemicalsHolder(item, holder, 'Adjustment holder');
+        await ensureOfficeHolderAccess(user, holder, session);
 
         await verifyReasonCode(payload.reasonCodeId, 'ADJUST', session);
 
@@ -718,8 +985,8 @@ export const inventoryService = {
         let lotId: string | null = payload.lotId || null;
         if (payload.containerId) {
           const container = await ensureContainerMatchesItem(payload.containerId, item.id, session);
-          if (container.current_location_id.toString() !== location.id) {
-            throw createHttpError(400, 'Container is not at the selected location');
+          if (container.current_location_id.toString() !== holder.holderId) {
+            throw createHttpError(400, 'Container is not at the selected holder');
           }
           lotId = container.lot_id.toString();
           container.current_qty_base = container.current_qty_base + direction * qtyBase;
@@ -734,7 +1001,7 @@ export const inventoryService = {
         }
 
         await updateBalance(
-          { locationId: location.id, itemId: item.id, lotId },
+          { holderType: holder.holderType, holderId: holder.holderId, itemId: item.id, lotId },
           direction * qtyBase,
           allowNegative,
           session
@@ -746,8 +1013,8 @@ export const inventoryService = {
               tx_type: 'ADJUST',
               tx_time: nowIso(),
               created_by: user.userId,
-              from_location_id: direction < 0 ? location.id : null,
-              to_location_id: direction > 0 ? location.id : null,
+              ...(direction < 0 ? txHolderUpdate(holder.holderType, holder.holderId, 'from') : {}),
+              ...(direction > 0 ? txHolderUpdate(holder.holderType, holder.holderId, 'to') : {}),
               consumable_item_id: item.id,
               lot_id: lotId,
               container_id: payload.containerId || null,
@@ -766,8 +1033,15 @@ export const inventoryService = {
         await createAuditLog(
           user.userId,
           'consumables.adjust',
-          `Adjusted ${payload.qty} ${payload.uom} of ${item.name} at ${location.name}`,
-          { itemId: item.id, locationId: location.id, lotId, direction },
+          `Adjusted ${payload.qty} ${payload.uom} of ${item.name} at ${holder.name}`,
+          {
+            itemId: item.id,
+            holderType: holder.holderType,
+            holderId: holder.holderId,
+            locationId: holder.holderType === 'OFFICE' ? holder.holderId : null,
+            lotId,
+            direction,
+          },
           session
         );
 
@@ -787,10 +1061,15 @@ export const inventoryService = {
         ensureAllowed(permissions.canDispose, 'Not permitted to dispose inventory');
 
         const item = await getItem(payload.itemId, session);
-        const location = await getLocation(payload.locationId, session);
+        const { holderId, holderType } = extractHolderArgs(payload, {
+          holderIdKey: 'holderId',
+          holderTypeKey: 'holderType',
+          legacyLocationIdKey: 'locationId',
+        });
+        const holder = await resolveHolder(holderId, holderType, session);
         const unitLookup = await getUnitLookup({ session });
-        ensureChemicalsLocation(item, location, 'Disposal location');
-        await ensureLocationAccess(user, location.id, session);
+        ensureChemicalsHolder(item, holder, 'Disposal holder');
+        await ensureOfficeHolderAccess(user, holder, session);
 
         await verifyReasonCode(payload.reasonCodeId, 'DISPOSE', session);
 
@@ -810,8 +1089,8 @@ export const inventoryService = {
         let lotId: string | null = payload.lotId || null;
         if (payload.containerId) {
           const container = await ensureContainerMatchesItem(payload.containerId, item.id, session);
-          if (container.current_location_id.toString() !== location.id) {
-            throw createHttpError(400, 'Container is not at the selected location');
+          if (container.current_location_id.toString() !== holder.holderId) {
+            throw createHttpError(400, 'Container is not at the selected holder');
           }
           lotId = container.lot_id.toString();
           if (container.current_qty_base < qtyBase && !allowNegative) {
@@ -831,7 +1110,7 @@ export const inventoryService = {
         }
 
         await updateBalance(
-          { locationId: location.id, itemId: item.id, lotId },
+          { holderType: holder.holderType, holderId: holder.holderId, itemId: item.id, lotId },
           -qtyBase,
           allowNegative,
           session
@@ -843,8 +1122,7 @@ export const inventoryService = {
               tx_type: 'DISPOSE',
               tx_time: nowIso(),
               created_by: user.userId,
-              from_location_id: location.id,
-              to_location_id: null,
+              ...txHolderUpdate(holder.holderType, holder.holderId, 'from'),
               consumable_item_id: item.id,
               lot_id: lotId,
               container_id: payload.containerId || null,
@@ -863,8 +1141,14 @@ export const inventoryService = {
         await createAuditLog(
           user.userId,
           'consumables.dispose',
-          `Disposed ${payload.qty} ${payload.uom} of ${item.name} at ${location.name}`,
-          { itemId: item.id, locationId: location.id, lotId },
+          `Disposed ${payload.qty} ${payload.uom} of ${item.name} at ${holder.name}`,
+          {
+            itemId: item.id,
+            holderType: holder.holderType,
+            holderId: holder.holderId,
+            locationId: holder.holderType === 'OFFICE' ? holder.holderId : null,
+            lotId,
+          },
           session
         );
 
@@ -885,19 +1169,34 @@ export const inventoryService = {
         ensureAllowed(permissions.canReturn, 'Not permitted to return inventory');
 
         const item = await getItem(payload.itemId, session);
-        const fromLocation = await getLocation(payload.fromLocationId, session);
-        const unitLookup = await getUnitLookup({ session });
-        ensureChemicalsLocation(item, fromLocation, 'Return source location');
-        await ensureLocationAccess(user, fromLocation.id, session);
-
-        const toLocation = payload.toLocationId
-          ? await getLocation(payload.toLocationId, session)
-          : await getCentralStoreLocation(session);
-        ensureChemicalsLocation(item, toLocation, 'Return destination location');
-
-        if (toLocation.type !== CENTRAL_TYPE) {
-          throw createHttpError(400, 'Returns must be sent to Central Store');
+        const fromArgs = extractHolderArgs(payload, {
+          holderIdKey: 'fromHolderId',
+          holderTypeKey: 'fromHolderType',
+          legacyLocationIdKey: 'fromLocationId',
+        });
+        const fromHolder = await resolveHolder(fromArgs.holderId, fromArgs.holderType, session);
+        if (fromHolder.holderType !== 'OFFICE') {
+          throw createHttpError(400, 'Returns must originate from an office holder');
         }
+        await ensureOfficeHolderAccess(user, fromHolder, session);
+
+        const toSystemStore = await getCentralStoreHolder(session);
+        let toHolder = toSystemStore;
+        if (payload.toHolderId || payload.toLocationId) {
+          const toArgs = extractHolderArgs(payload, {
+            holderIdKey: 'toHolderId',
+            holderTypeKey: 'toHolderType',
+            legacyLocationIdKey: 'toLocationId',
+          });
+          toHolder = await resolveHolder(toArgs.holderId, toArgs.holderType, session);
+        }
+        if (toHolder.holderType !== 'STORE' || toHolder.holderId !== toSystemStore.holderId) {
+          throw createHttpError(400, 'Returns must be sent to HEAD_OFFICE_STORE');
+        }
+
+        const unitLookup = await getUnitLookup({ session });
+        ensureChemicalsHolder(item, fromHolder, 'Return source holder');
+        ensureChemicalsHolder(item, toHolder, 'Return destination holder');
 
         const qtyBase = convertToBaseQty(payload.qty, payload.uom, item.base_uom, unitLookup);
         if (qtyBase <= 0) throw createHttpError(400, 'Quantity must be greater than zero');
@@ -914,8 +1213,8 @@ export const inventoryService = {
 
         if (payload.containerId) {
           const container = await ensureContainerMatchesItem(payload.containerId, item.id, session);
-          if (container.current_location_id.toString() !== fromLocation.id) {
-            throw createHttpError(400, 'Container is not at the source location');
+          if (container.current_location_id.toString() !== fromHolder.holderId) {
+            throw createHttpError(400, 'Container is not at the source holder');
           }
           const containerQty = container.current_qty_base || 0;
           if (Math.abs(containerQty - qtyBase) > 0.0001) {
@@ -923,19 +1222,29 @@ export const inventoryService = {
           }
 
           await updateBalance(
-            { locationId: fromLocation.id, itemId: item.id, lotId: container.lot_id.toString() },
+            {
+              holderType: fromHolder.holderType,
+              holderId: fromHolder.holderId,
+              itemId: item.id,
+              lotId: container.lot_id.toString(),
+            },
             -containerQty,
             allowNegative,
             session
           );
           await updateBalance(
-            { locationId: toLocation.id, itemId: item.id, lotId: container.lot_id.toString() },
+            {
+              holderType: toHolder.holderType,
+              holderId: toHolder.holderId,
+              itemId: item.id,
+              lotId: container.lot_id.toString(),
+            },
             containerQty,
             true,
             session
           );
 
-          container.current_location_id = toLocation.id;
+          container.current_location_id = toHolder.holderId;
           await container.save({ session });
 
           const tx = await ConsumableInventoryTransactionModel.create(
@@ -944,8 +1253,8 @@ export const inventoryService = {
                 tx_type: 'RETURN',
                 tx_time: nowIso(),
                 created_by: user.userId,
-                from_location_id: fromLocation.id,
-                to_location_id: toLocation.id,
+                ...txHolderUpdate(fromHolder.holderType, fromHolder.holderId, 'from'),
+                ...txHolderUpdate(toHolder.holderType, toHolder.holderId, 'to'),
                 consumable_item_id: item.id,
                 lot_id: container.lot_id,
                 container_id: container.id,
@@ -964,8 +1273,16 @@ export const inventoryService = {
           await createAuditLog(
             user.userId,
             'consumables.return',
-            `Returned ${payload.qty} ${payload.uom} of ${item.name} to ${toLocation.name}`,
-            { itemId: item.id, fromLocationId: fromLocation.id, toLocationId: toLocation.id },
+            `Returned ${payload.qty} ${payload.uom} of ${item.name} to ${toHolder.name}`,
+            {
+              itemId: item.id,
+              fromHolderType: fromHolder.holderType,
+              fromHolderId: fromHolder.holderId,
+              toHolderType: toHolder.holderType,
+              toHolderId: toHolder.holderId,
+              fromLocationId: fromHolder.holderId,
+              toLocationId: null,
+            },
             session
           );
 
@@ -980,20 +1297,30 @@ export const inventoryService = {
           await ensureLotMatchesItem(payload.lotId, item.id, session);
           allocations = [{ lotId: payload.lotId, qtyBase }];
         } else {
-          const picks = await pickLotsByFefo(fromLocation.id, item.id, qtyBase, session);
+          const picks = await pickLotsByFefo(fromHolder.holderType, fromHolder.holderId, item.id, qtyBase, session);
           allocations = picks.map((pick) => ({ lotId: pick.lotId, qtyBase: pick.qtyBase }));
         }
 
         const transactions: any[] = [];
         for (const allocation of allocations) {
           await updateBalance(
-            { locationId: fromLocation.id, itemId: item.id, lotId: allocation.lotId },
+            {
+              holderType: fromHolder.holderType,
+              holderId: fromHolder.holderId,
+              itemId: item.id,
+              lotId: allocation.lotId,
+            },
             -allocation.qtyBase,
             allowNegative,
             session
           );
           await updateBalance(
-            { locationId: toLocation.id, itemId: item.id, lotId: allocation.lotId },
+            {
+              holderType: toHolder.holderType,
+              holderId: toHolder.holderId,
+              itemId: item.id,
+              lotId: allocation.lotId,
+            },
             allocation.qtyBase,
             true,
             session
@@ -1005,8 +1332,8 @@ export const inventoryService = {
                 tx_type: 'RETURN',
                 tx_time: nowIso(),
                 created_by: user.userId,
-                from_location_id: fromLocation.id,
-                to_location_id: toLocation.id,
+                ...txHolderUpdate(fromHolder.holderType, fromHolder.holderId, 'from'),
+                ...txHolderUpdate(toHolder.holderType, toHolder.holderId, 'to'),
                 consumable_item_id: item.id,
                 lot_id: allocation.lotId,
                 container_id: null,
@@ -1027,8 +1354,16 @@ export const inventoryService = {
         await createAuditLog(
           user.userId,
           'consumables.return',
-          `Returned ${payload.qty} ${payload.uom} of ${item.name} to ${toLocation.name}`,
-          { itemId: item.id, fromLocationId: fromLocation.id, toLocationId: toLocation.id },
+          `Returned ${payload.qty} ${payload.uom} of ${item.name} to ${toHolder.name}`,
+          {
+            itemId: item.id,
+            fromHolderType: fromHolder.holderType,
+            fromHolderId: fromHolder.holderId,
+            toHolderType: toHolder.holderType,
+            toHolderId: toHolder.holderId,
+            fromLocationId: fromHolder.holderId,
+            toLocationId: null,
+          },
           session
         );
 
@@ -1051,8 +1386,14 @@ export const inventoryService = {
         const transactions: any[] = [];
         for (const entry of payload.entries) {
           const item = await getItem(entry.itemId, session);
-          const location = await getLocation(entry.locationId, session);
-          ensureChemicalsLocation(item, location, 'Opening balance location');
+          const holderArgs = extractHolderArgs(entry, {
+            holderIdKey: 'holderId',
+            holderTypeKey: 'holderType',
+            legacyLocationIdKey: 'locationId',
+          });
+          const holder = await resolveHolder(holderArgs.holderId, holderArgs.holderType, session);
+          ensureChemicalsHolder(item, holder, 'Opening balance holder');
+          await ensureOfficeHolderAccess(user, holder, session);
           const qtyBase = convertToBaseQty(entry.qty, entry.uom, item.base_uom, unitLookup);
           if (qtyBase <= 0) throw createHttpError(400, 'Quantity must be greater than zero');
 
@@ -1063,7 +1404,12 @@ export const inventoryService = {
           }
 
           await updateBalance(
-            { locationId: location.id, itemId: item.id, lotId },
+            {
+              holderType: holder.holderType,
+              holderId: holder.holderId,
+              itemId: item.id,
+              lotId,
+            },
             qtyBase,
             true,
             session
@@ -1075,17 +1421,16 @@ export const inventoryService = {
                 tx_type: 'OPENING_BALANCE',
                 tx_time: nowIso(),
                 created_by: user.userId,
-                from_location_id: null,
-                to_location_id: location.id,
+                ...txHolderUpdate(holder.holderType, holder.holderId, 'to'),
                 consumable_item_id: item.id,
-              lot_id: lotId,
-              container_id: null,
-              qty_base: qtyBase,
-              entered_qty: entry.qty,
-              entered_uom: formatUom(entry.uom, unitLookup),
-              reason_code_id: null,
-              reference: entry.reference || null,
-              notes: entry.notes || null,
+                lot_id: lotId,
+                container_id: null,
+                qty_base: qtyBase,
+                entered_qty: entry.qty,
+                entered_uom: formatUom(entry.uom, unitLookup),
+                reason_code_id: null,
+                reference: entry.reference || null,
+                notes: entry.notes || null,
                 metadata: entry.metadata || {},
               },
             ],
@@ -1113,9 +1458,20 @@ export const inventoryService = {
   async getBalance(user: AuthUser, query: any) {
     const permissions = resolveConsumablePermissions(user.role);
     ensureAllowed(permissions.canViewReports, 'Not permitted to view balances');
-    await ensureLocationAccess(user, query.locationId);
+
+    const holderArgs = extractHolderArgs(query, {
+      holderIdKey: 'holderId',
+      holderTypeKey: 'holderType',
+      legacyLocationIdKey: 'locationId',
+    });
+    if (holderArgs.holderType === 'OFFICE') {
+      await ensureLocationAccess(user, holderArgs.holderId);
+    } else if (!isGlobalConsumableRole(user.role)) {
+      throw createHttpError(403, 'User does not have access to store balances');
+    }
+
     return ConsumableInventoryBalanceModel.findOne({
-      location_id: query.locationId,
+      ...balanceHolderFilter(holderArgs.holderType, holderArgs.holderId),
       consumable_item_id: query.itemId,
       lot_id: query.lotId || null,
     });
@@ -1125,22 +1481,30 @@ export const inventoryService = {
     const permissions = resolveConsumablePermissions(user.role);
     ensureAllowed(permissions.canViewReports, 'Not permitted to view balances');
 
-    let allowedLocationId: string | null = null;
     const role = user.role;
-    if (role !== 'super_admin' && role !== 'admin' && role !== 'auditor' && role !== 'viewer') {
-      allowedLocationId = await resolveAccessibleLocationId(user.userId, role);
-    }
+    const allowedLocationId = await resolveAccessibleLocationId(user.userId, role);
 
-    const filter: any = {};
-    if (query.locationId) filter.location_id = query.locationId;
+    let filter: any = {};
+    if (query.holderId || query.locationId) {
+      const holderArgs = extractHolderArgs(query, {
+        holderIdKey: 'holderId',
+        holderTypeKey: 'holderType',
+        legacyLocationIdKey: 'locationId',
+      });
+      filter = withAnd(filter, balanceHolderFilter(holderArgs.holderType, holderArgs.holderId));
+    }
     if (query.itemId) filter.consumable_item_id = query.itemId;
     if (query.lotId) filter.lot_id = query.lotId;
 
     if (allowedLocationId) {
-      if (filter.location_id && filter.location_id !== allowedLocationId) {
+      const allowedOfficeFilter = officeHolderFilter(allowedLocationId);
+      if (query.holderId && normalizeHolderType(query.holderType || 'OFFICE') === 'STORE') {
+        throw createHttpError(403, 'User does not have access to this store');
+      }
+      if (query.locationId && query.locationId !== allowedLocationId) {
         throw createHttpError(403, 'User does not have access to this location');
       }
-      filter.location_id = allowedLocationId;
+      filter = withAnd(filter, allowedOfficeFilter);
     }
 
     const limit = clampInt(query.limit, 500, 2000);
@@ -1155,11 +1519,26 @@ export const inventoryService = {
     const permissions = resolveConsumablePermissions(user.role);
     ensureAllowed(permissions.canViewReports, 'Not permitted to view rollup');
 
-    const match: any = {};
+    let match: any = {};
     if (query.itemId) match.consumable_item_id = new mongoose.Types.ObjectId(query.itemId);
+    if (query.holderId || query.locationId) {
+      const holderArgs = extractHolderArgs(query, {
+        holderIdKey: 'holderId',
+        holderTypeKey: 'holderType',
+        legacyLocationIdKey: 'locationId',
+      });
+      match = withAnd(match, balanceHolderFilter(holderArgs.holderType, holderArgs.holderId));
+    }
+
     const allowedLocationId = await resolveAccessibleLocationId(user.userId, user.role);
     if (allowedLocationId) {
-      match.location_id = new mongoose.Types.ObjectId(allowedLocationId);
+      if (query.holderId && normalizeHolderType(query.holderType || 'OFFICE') === 'STORE') {
+        throw createHttpError(403, 'User does not have access to this store');
+      }
+      if (query.locationId && query.locationId !== allowedLocationId) {
+        throw createHttpError(403, 'User does not have access to this location');
+      }
+      match = withAnd(match, officeHolderFilter(allowedLocationId));
     }
 
     const pipeline = [
@@ -1168,7 +1547,8 @@ export const inventoryService = {
         $group: {
           _id: {
             itemId: '$consumable_item_id',
-            locationId: '$location_id',
+            holderType: { $ifNull: ['$holder_type', 'OFFICE'] },
+            holderId: { $ifNull: ['$holder_id', '$location_id'] },
           },
           qty_on_hand_base: { $sum: '$qty_on_hand_base' },
         },
@@ -1176,14 +1556,19 @@ export const inventoryService = {
     ];
 
     const grouped = await ConsumableInventoryBalanceModel.aggregate(pipeline);
-    const rollupMap = new Map<string, { itemId: string; totalQtyBase: number; byLocation: any[] }>();
+    const rollupMap = new Map<string, { itemId: string; totalQtyBase: number; byLocation: any[]; byHolder: any[] }>();
 
     for (const row of grouped) {
       const itemId = row._id.itemId.toString();
-      const locationId = row._id.locationId.toString();
-      const entry = rollupMap.get(itemId) || { itemId, totalQtyBase: 0, byLocation: [] };
+      const holderType = row._id.holderType === 'STORE' ? 'STORE' : 'OFFICE';
+      const holderId = row._id.holderId?.toString();
+      if (!holderId) continue;
+      const entry = rollupMap.get(itemId) || { itemId, totalQtyBase: 0, byLocation: [], byHolder: [] };
       entry.totalQtyBase += row.qty_on_hand_base || 0;
-      entry.byLocation.push({ locationId, qtyOnHandBase: row.qty_on_hand_base || 0 });
+      entry.byHolder.push({ holderType, holderId, qtyOnHandBase: row.qty_on_hand_base || 0 });
+      if (holderType === 'OFFICE') {
+        entry.byLocation.push({ locationId: holderId, qtyOnHandBase: row.qty_on_hand_base || 0 });
+      }
       rollupMap.set(itemId, entry);
     }
 
@@ -1194,7 +1579,7 @@ export const inventoryService = {
     const permissions = resolveConsumablePermissions(user.role);
     ensureAllowed(permissions.canViewReports, 'Not permitted to view ledger');
 
-    const filter: any = {};
+    let filter: any = {};
     if (query.from || query.to) {
       filter.tx_time = {};
       if (query.from) filter.tx_time.$gte = query.from;
@@ -1203,20 +1588,25 @@ export const inventoryService = {
     if (query.itemId) filter.consumable_item_id = query.itemId;
     if (query.lotId) filter.lot_id = query.lotId;
     if (query.txType) filter.tx_type = query.txType;
+
+    if (query.holderId || query.locationId) {
+      const holderArgs = extractHolderArgs(query, {
+        holderIdKey: 'holderId',
+        holderTypeKey: 'holderType',
+        legacyLocationIdKey: 'locationId',
+      });
+      filter = withAnd(filter, txAnySideHolderFilter(holderArgs.holderType, holderArgs.holderId));
+    }
+
     const allowedLocationId = await resolveAccessibleLocationId(user.userId, user.role);
     if (allowedLocationId) {
       if (query.locationId && query.locationId !== allowedLocationId) {
         throw createHttpError(403, 'User does not have access to this location');
       }
-      filter.$or = [
-        { from_location_id: allowedLocationId },
-        { to_location_id: allowedLocationId },
-      ];
-    } else if (query.locationId) {
-      filter.$or = [
-        { from_location_id: query.locationId },
-        { to_location_id: query.locationId },
-      ];
+      if (query.holderId && normalizeHolderType(query.holderType || 'OFFICE') === 'STORE') {
+        throw createHttpError(403, 'User does not have access to this store');
+      }
+      filter = withAnd(filter, txAnySideHolderFilter('OFFICE', allowedLocationId));
     }
 
     const limit = clampInt(query.limit, 200, 1000);
@@ -1236,15 +1626,24 @@ export const inventoryService = {
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() + days);
 
-    const balanceFilter: any = { qty_on_hand_base: { $gt: 0 } };
+    let balanceFilter: any = { qty_on_hand_base: { $gt: 0 } };
+    if (query.holderId || query.locationId) {
+      const holderArgs = extractHolderArgs(query, {
+        holderIdKey: 'holderId',
+        holderTypeKey: 'holderType',
+        legacyLocationIdKey: 'locationId',
+      });
+      balanceFilter = withAnd(balanceFilter, balanceHolderFilter(holderArgs.holderType, holderArgs.holderId));
+    }
     const allowedLocationId = await resolveAccessibleLocationId(user.userId, user.role);
     if (allowedLocationId) {
       if (query.locationId && query.locationId !== allowedLocationId) {
         throw createHttpError(403, 'User does not have access to this location');
       }
-      balanceFilter.location_id = allowedLocationId;
-    } else if (query.locationId) {
-      balanceFilter.location_id = query.locationId;
+      if (query.holderId && normalizeHolderType(query.holderType || 'OFFICE') === 'STORE') {
+        throw createHttpError(403, 'User does not have access to this store');
+      }
+      balanceFilter = withAnd(balanceFilter, officeHolderFilter(allowedLocationId));
     }
 
     const balanceLimit = clampInt(query.limit, 1000, 5000);
@@ -1266,7 +1665,12 @@ export const inventoryService = {
         expiring.push({
           lotId: lot.id,
           itemId: lot.consumable_item_id,
-          locationId: balance.location_id,
+          holderType: balance.holder_type || (balance.location_id ? 'OFFICE' : null),
+          holderId: balance.holder_id || balance.location_id || null,
+          locationId:
+            (balance.holder_type === 'OFFICE' && balance.holder_id) || (!balance.holder_type && balance.location_id)
+              ? balance.holder_id || balance.location_id
+              : null,
           expiryDate: lot.expiry_date,
           qtyOnHandBase: balance.qty_on_hand_base,
         });

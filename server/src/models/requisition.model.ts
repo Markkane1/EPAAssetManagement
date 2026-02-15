@@ -12,7 +12,7 @@ const REQUISITION_STATUSES = [
   'CANCELLED',
 ] as const;
 
-const RequisitionSchema = new Schema(
+const RequisitionSchema = new Schema<any>(
   {
     // File number from official paperwork/workflow.
     file_number: { type: String, required: true, trim: true },
@@ -120,3 +120,4 @@ RequisitionSchema.pre('updateOne', guardStatusUpdate);
 RequisitionSchema.pre('updateMany', guardStatusUpdate);
 
 export const RequisitionModel = mongoose.model('Requisition', RequisitionSchema);
+

@@ -47,20 +47,13 @@ interface NavItem {
   allowedRoles?: AppRole[];
 }
 
-const fullAccessRoles: AppRole[] = ["super_admin", "admin", "user", "viewer"];
-const adminAccessRoles: AppRole[] = ["super_admin", "admin"];
-const assignmentAccessRoles: AppRole[] = [...fullAccessRoles, "employee", "directorate_head"];
-const requisitionReadRoles: AppRole[] = [...fullAccessRoles, "location_admin", "caretaker", "assistant_caretaker", "employee", "directorate_head"];
-const returnIssuerRoles: AppRole[] = ["super_admin", "admin", "location_admin", "caretaker", "assistant_caretaker"];
-const complianceAccessRoles: AppRole[] = [...fullAccessRoles, "location_admin", "caretaker", "assistant_caretaker", "employee", "directorate_head"];
-const consumableAccessRoles: AppRole[] = [
-  ...fullAccessRoles,
-  "directorate_head",
-  "central_store_admin",
-  "lab_manager",
-  "lab_user",
-  "auditor",
-];
+const fullAccessRoles: AppRole[] = ["org_admin", "office_head", "caretaker", "employee"];
+const adminAccessRoles: AppRole[] = ["org_admin"];
+const assignmentAccessRoles: AppRole[] = [...fullAccessRoles];
+const requisitionReadRoles: AppRole[] = [...fullAccessRoles];
+const returnIssuerRoles: AppRole[] = ["org_admin", "office_head", "caretaker"];
+const complianceAccessRoles: AppRole[] = [...fullAccessRoles];
+const consumableAccessRoles: AppRole[] = [...fullAccessRoles];
 
 const mainNavItems: NavItem[] = [
   { label: "Dashboard", href: "/", icon: LayoutDashboard, allowedRoles: fullAccessRoles },
@@ -103,7 +96,7 @@ const movableAssetsNavItems: NavItem[] = [
   { label: "Asset Items", href: "/asset-items", icon: PackageOpen, allowedRoles: fullAccessRoles },
   { label: "Assignments", href: "/assignments", icon: ClipboardList, allowedRoles: assignmentAccessRoles },
   { label: "Requisitions", href: "/requisitions", icon: ClipboardList, allowedRoles: requisitionReadRoles },
-  { label: "New Requisition", href: "/requisitions/new", icon: ClipboardList, allowedRoles: ["employee", "location_admin", "caretaker"] },
+  { label: "New Requisition", href: "/requisitions/new", icon: ClipboardList, allowedRoles: ["employee", "office_head", "caretaker"] },
   { label: "Return Requests", href: "/returns", icon: ArrowRightLeft, allowedRoles: returnIssuerRoles },
   { label: "New Return Request", href: "/returns/new", icon: ArrowRightLeft, allowedRoles: ["employee"] },
   { label: "Transfers", href: "/transfers", icon: ArrowRightLeft, allowedRoles: fullAccessRoles },
@@ -167,7 +160,7 @@ export function Sidebar({ className }: SidebarProps) {
       location.pathname.startsWith("/schemes") ||
       location.pathname.startsWith("/purchase-orders")
   );
-  const { user, role, isSuperAdmin } = useAuth();
+  const { user, role, isOrgAdmin } = useAuth();
 
   const navRef = useRef<HTMLElement>(null);
 
@@ -233,10 +226,10 @@ export function Sidebar({ className }: SidebarProps) {
   }, [location.pathname]);
 
   const filterItems = (items: NavItem[]) => {
-    const currentRole = role || "user";
+    const currentRole = role || "employee";
     return items.filter((item) => {
-      if (item.superAdminOnly && !isSuperAdmin) return false;
-      if (item.allowedRoles && !isSuperAdmin && !item.allowedRoles.includes(currentRole)) return false;
+      if (item.superAdminOnly && !isOrgAdmin) return false;
+      if (item.allowedRoles && !isOrgAdmin && !item.allowedRoles.includes(currentRole)) return false;
       return true;
     });
   };
@@ -247,20 +240,11 @@ export function Sidebar({ className }: SidebarProps) {
   };
 
   const getRoleLabel = () => {
-    if (isSuperAdmin) return "Super Admin";
+    if (isOrgAdmin) return "Org Admin";
     switch (role) {
-      case 'admin': return "Administrator";
-      case 'location_admin': return "Location Admin";
+      case 'office_head': return "Office Head";
       case 'caretaker': return "Caretaker";
-      case 'assistant_caretaker': return "Assistant Caretaker";
-      case 'central_store_admin': return "Central Store Admin";
-      case 'lab_manager': return "Lab Manager";
-      case 'lab_user': return "Lab User";
-      case 'auditor': return "Auditor";
-      case 'user': return "User";
       case 'employee': return "Employee";
-      case 'directorate_head': return "Directorate Head";
-      case 'viewer': return "Viewer";
       default: return "User";
     }
   };
@@ -568,11 +552,11 @@ export function Sidebar({ className }: SidebarProps) {
             <div className="flex items-center gap-3 px-3 py-2">
               <div className={cn(
                 "h-8 w-8 rounded-full flex items-center justify-center font-medium text-sm",
-                isSuperAdmin 
+                isOrgAdmin 
                   ? "bg-yellow-500 text-yellow-950" 
                   : "bg-sidebar-primary text-sidebar-primary-foreground"
               )}>
-                {isSuperAdmin ? <Crown className="h-4 w-4" /> : getUserInitials()}
+                {isOrgAdmin ? <Crown className="h-4 w-4" /> : getUserInitials()}
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-sidebar-foreground truncate">
@@ -587,11 +571,11 @@ export function Sidebar({ className }: SidebarProps) {
                 <div className="flex justify-center">
                   <div className={cn(
                     "h-8 w-8 rounded-full flex items-center justify-center font-medium text-sm cursor-pointer",
-                    isSuperAdmin 
+                    isOrgAdmin 
                       ? "bg-yellow-500 text-yellow-950" 
                       : "bg-sidebar-primary text-sidebar-primary-foreground"
                   )}>
-                    {isSuperAdmin ? <Crown className="h-4 w-4" /> : getUserInitials()}
+                    {isOrgAdmin ? <Crown className="h-4 w-4" /> : getUserInitials()}
                   </div>
                 </div>
               </TooltipTrigger>

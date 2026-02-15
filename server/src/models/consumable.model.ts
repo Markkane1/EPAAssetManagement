@@ -1,7 +1,7 @@
 import mongoose, { Schema } from 'mongoose';
 import { baseSchemaOptions } from './base';
 
-const ConsumableSchema = new Schema(
+const ConsumableSchema = new Schema<any>(
   {
     name: { type: String, required: true, trim: true },
     description: { type: String, default: null },
@@ -19,3 +19,4 @@ ConsumableSchema.index({ is_active: 1, category_id: 1 });
 ConsumableSchema.index({ created_at: -1 });
 
 export const ConsumableModel = mongoose.model('Consumable', ConsumableSchema);
+

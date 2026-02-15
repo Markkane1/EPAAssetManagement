@@ -14,6 +14,7 @@ export enum AssetStatus {
   Maintenance = "Maintenance",
   Damaged = "Damaged",
   Retired = "Retired",
+  InTransit = "InTransit",
 }
 
 export type ItemStatus = AssetStatus;
@@ -63,25 +64,25 @@ export enum PurchaseOrderStatus {
 }
 
 export enum UserRole {
-  Admin = "Admin",
-  Manager = "Manager",
-  LocationAdmin = "LocationAdmin",
-  Caretaker = "Caretaker",
-  AssistantCaretaker = "AssistantCaretaker",
-  User = "User",
-  Employee = "Employee",
-  DirectorateHead = "DirectorateHead",
-  Viewer = "Viewer",
+  OrgAdmin = "org_admin",
+  OfficeHead = "office_head",
+  Caretaker = "caretaker",
+  Employee = "employee",
 }
+
+export type CategoryScope = "GENERAL" | "LAB_ONLY";
 
 // Core Entities - Using snake_case to match Supabase
 export interface Category {
   id: string;
   name: string;
   description: string | null;
+  scope?: CategoryScope | null;
   created_at: string;
   updated_at: string;
 }
+
+export type OfficeType = "DIRECTORATE" | "DISTRICT_OFFICE" | "DISTRICT_LAB";
 
 export interface Office {
   id: string;
@@ -90,7 +91,10 @@ export interface Office {
   district: string | null;
   address: string | null;
   contact_number: string | null;
-  type?: "CENTRAL" | "LAB" | "SUBSTORE";
+  // Keep a string fallback so legacy values from existing data do not break UI.
+  type?: OfficeType | string | null;
+  parent_office_id?: string | null;
+  // Deprecated: kept for backward compatibility during migration.
   parent_location_id?: string | null;
   lab_code?: string | null;
   capabilities?: {
@@ -204,6 +208,7 @@ export interface CategoryPartial {
   id: string;
   name: string;
   description: string | null;
+  scope?: CategoryScope | null;
 }
 
 export interface VendorPartial {
@@ -220,6 +225,7 @@ export interface Asset {
   id: string;
   name: string;
   description: string | null;
+  specification?: string | null;
   category_id: string | null;
   vendor_id: string | null;
   purchase_order_id: string | null;
@@ -230,6 +236,12 @@ export interface Asset {
   unit_price: number | null;
   currency: string | null;
   quantity: number | null;
+  dimensions?: {
+    length: number | null;
+    width: number | null;
+    height: number | null;
+    unit: "mm" | "cm" | "m" | "in";
+  } | null;
   is_active: boolean | null;
   created_at: string;
   updated_at: string;
@@ -241,6 +253,8 @@ export interface Asset {
 export interface AssetItem {
   id: string;
   asset_id: string;
+  holder_type?: "OFFICE" | "STORE" | null;
+  holder_id?: string | null;
   location_id: string | null;
   serial_number: string | null;
   tag: string | null;
@@ -289,13 +303,30 @@ export interface MaintenanceRecord {
   asset_items?: AssetItem | null;
 }
 
-export type TransferStatus = "REQUESTED" | "APPROVED" | "DISPATCHED" | "RECEIVED";
+export type TransferStatus =
+  | "REQUESTED"
+  | "APPROVED"
+  | "DISPATCHED_TO_STORE"
+  | "RECEIVED_AT_STORE"
+  | "DISPATCHED_TO_DEST"
+  | "RECEIVED_AT_DEST"
+  | "REJECTED"
+  | "CANCELLED";
+
+export interface TransferLine {
+  asset_item_id: string;
+  notes?: string | null;
+}
 
 export interface Transfer {
   id: string;
-  asset_item_id: string;
+  asset_item_id?: string | null;
+  lines: TransferLine[];
   from_office_id: string;
   to_office_id: string;
+  store_id?: string | null;
+  handover_document_id?: string | null;
+  takeover_document_id?: string | null;
   transfer_date: string;
   handled_by: string | null;
   status: TransferStatus;
@@ -614,7 +645,9 @@ export interface ConsumableContainer {
 
 export interface ConsumableInventoryBalance {
   id: string;
-  location_id: string;
+  holder_type?: 'OFFICE' | 'STORE' | null;
+  holder_id?: string | null;
+  location_id?: string | null;
   consumable_item_id: string;
   lot_id: string | null;
   qty_on_hand_base: number;
@@ -628,8 +661,12 @@ export interface ConsumableInventoryTransaction {
   tx_type: "RECEIPT" | "TRANSFER" | "CONSUME" | "ADJUST" | "DISPOSE" | "RETURN" | "OPENING_BALANCE";
   tx_time: string;
   created_by: string;
-  from_location_id: string | null;
-  to_location_id: string | null;
+  from_holder_type?: 'OFFICE' | 'STORE' | null;
+  from_holder_id?: string | null;
+  to_holder_type?: 'OFFICE' | 'STORE' | null;
+  to_holder_id?: string | null;
+  from_location_id?: string | null;
+  to_location_id?: string | null;
   consumable_item_id: string;
   lot_id: string | null;
   container_id: string | null;
@@ -657,12 +694,15 @@ export interface ConsumableRollupRow {
   itemId: string;
   totalQtyBase: number;
   byLocation: Array<{ locationId: string; qtyOnHandBase: number }>;
+  byHolder?: Array<{ holderType: 'OFFICE' | 'STORE'; holderId: string; qtyOnHandBase: number }>;
 }
 
 export interface ConsumableExpiryRow {
   lotId: string;
   itemId: string;
-  locationId: string;
+  holderType?: 'OFFICE' | 'STORE' | null;
+  holderId?: string | null;
+  locationId?: string | null;
   expiryDate: string;
   qtyOnHandBase: number;
 }
