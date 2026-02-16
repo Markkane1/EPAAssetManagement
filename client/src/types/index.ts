@@ -235,8 +235,12 @@ export interface Asset {
     length: number | null;
     width: number | null;
     height: number | null;
-    unit: "mm" | "cm" | "m" | "in";
+    unit: "mm" | "cm" | "m" | "in" | "ft";
   } | null;
+  attachment_file_name?: string | null;
+  attachment_mime_type?: string | null;
+  attachment_size_bytes?: number | null;
+  attachment_path?: string | null;
   is_active: boolean | null;
   created_at: string;
   updated_at: string;

@@ -57,7 +57,7 @@ async function fetchAPI<T>(
 }
 
 // Upload helper for multipart/form-data
-async function uploadAPI<T>(endpoint: string, data: FormData): Promise<T> {
+async function uploadAPI<T>(endpoint: string, data: FormData, method: 'POST' | 'PUT' | 'PATCH' = 'POST'): Promise<T> {
   const headers: HeadersInit = {};
   const csrfToken = getCookieValue('csrf_token');
   if (csrfToken) {
@@ -65,7 +65,7 @@ async function uploadAPI<T>(endpoint: string, data: FormData): Promise<T> {
   }
 
   const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-    method: 'POST',
+    method,
     body: data,
     headers,
     credentials: 'include',
@@ -110,7 +110,8 @@ export const api = {
   delete: <T>(endpoint: string) => fetchAPI<T>(endpoint, { method: 'DELETE' }),
 
   // Upload multipart/form-data
-  upload: <T>(endpoint: string, data: FormData) => uploadAPI<T>(endpoint, data),
+  upload: <T>(endpoint: string, data: FormData, method?: 'POST' | 'PUT' | 'PATCH') =>
+    uploadAPI<T>(endpoint, data, method),
 
   // Download binary payload
   download: (endpoint: string) => downloadAPI(endpoint),

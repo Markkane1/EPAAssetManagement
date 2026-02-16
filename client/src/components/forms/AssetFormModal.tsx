@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, type ChangeEvent } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -11,6 +11,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -36,19 +37,19 @@ const optionalDimension = z.preprocess(
 const assetSchema = z.object({
   name: z.string().min(1, "Name is required").max(100),
   description: z.string().max(500).optional(),
-  specification: z.string().max(5000).optional(),
+  specification: z.string().min(1, "Specification is required").max(5000),
   categoryId: z.string().min(1, "Category is required"),
   assetSource: z.enum(["procurement", "project"]),
   vendorId: z.string().optional(),
   projectId: z.string().optional(),
   schemeId: z.string().optional(),
   price: z.coerce.number().min(0, "Price must be positive").optional(),
-  acquisitionDate: z.string().optional(),
+  acquisitionDate: z.string().min(1, "Acquisition Date is required"),
   quantity: z.coerce.number().min(1, "Quantity must be at least 1"),
   dimensionLength: optionalDimension,
   dimensionWidth: optionalDimension,
   dimensionHeight: optionalDimension,
-  dimensionUnit: z.enum(["mm", "cm", "m", "in"]).default("cm"),
+  dimensionUnit: z.enum(["mm", "cm", "m", "in", "ft"]).default("cm"),
 }).superRefine((data, ctx) => {
   if (data.assetSource === "procurement") {
     if (!data.vendorId) {
@@ -94,8 +95,9 @@ type AssetSubmitData = Omit<
     length: number | null;
     width: number | null;
     height: number | null;
-    unit: "mm" | "cm" | "m" | "in";
+    unit: "mm" | "cm" | "m" | "in" | "ft";
   };
+  attachmentFile?: File | null;
 };
 
 interface AssetFormModalProps {
@@ -109,8 +111,21 @@ interface AssetFormModalProps {
   onSubmit: (data: AssetSubmitData) => Promise<void>;
 }
 
+function hasDimensionValues(dimensions?: Asset["dimensions"] | null) {
+  if (!dimensions) return false;
+  return dimensions.length != null || dimensions.width != null || dimensions.height != null;
+}
+
+function isPdfAttachment(file: File) {
+  if (file.type === "application/pdf") return true;
+  return /\.pdf$/i.test(file.name);
+}
+
 export function AssetFormModal({ open, onOpenChange, asset, categories, vendors, projects, schemes, onSubmit }: AssetFormModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showDimensions, setShowDimensions] = useState(false);
+  const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const isEditing = !!asset;
 
   const form = useForm<AssetFormData>({
@@ -137,6 +152,8 @@ export function AssetFormModal({ open, onOpenChange, asset, categories, vendors,
   });
 
   useEffect(() => {
+    if (!open) return;
+
     if (asset) {
       form.reset({
         name: asset.name,
@@ -157,6 +174,9 @@ export function AssetFormModal({ open, onOpenChange, asset, categories, vendors,
         dimensionHeight: asset.dimensions?.height ?? undefined,
         dimensionUnit: asset.dimensions?.unit || "cm",
       });
+      setShowDimensions(hasDimensionValues(asset.dimensions));
+      setAttachmentFile(null);
+      setAttachmentError(null);
     } else {
       form.reset({
         name: "",
@@ -175,29 +195,61 @@ export function AssetFormModal({ open, onOpenChange, asset, categories, vendors,
         dimensionHeight: undefined,
         dimensionUnit: "cm",
       });
+      setShowDimensions(false);
+      setAttachmentFile(null);
+      setAttachmentError(null);
     }
-  }, [asset, form]);
+  }, [asset, open]);
 
   const selectedSource = form.watch("assetSource");
   const selectedProjectId = form.watch("projectId");
+  const attachmentLabel = selectedSource === "project" ? "Project Handover Documentation" : "Invoice";
   const filteredSchemes = selectedProjectId
     ? schemes.filter((scheme) => scheme.project_id === selectedProjectId)
     : [];
 
+  const handleAttachmentChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const selected = event.target.files?.[0] || null;
+    if (!selected) {
+      setAttachmentFile(null);
+      setAttachmentError(null);
+      return;
+    }
+
+    if (!isPdfAttachment(selected)) {
+      setAttachmentFile(null);
+      setAttachmentError("Attachment must be a PDF file.");
+      event.target.value = "";
+      return;
+    }
+
+    setAttachmentFile(selected);
+    setAttachmentError(null);
+  };
+
   const handleSubmit = async (data: AssetFormData) => {
+    if (attachmentFile && !isPdfAttachment(attachmentFile)) {
+      setAttachmentError("Attachment must be a PDF file.");
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       const payload: AssetSubmitData = {
         ...data,
         dimensions: {
-          length: data.dimensionLength ?? null,
-          width: data.dimensionWidth ?? null,
-          height: data.dimensionHeight ?? null,
+          length: showDimensions ? (data.dimensionLength ?? null) : null,
+          width: showDimensions ? (data.dimensionWidth ?? null) : null,
+          height: showDimensions ? (data.dimensionHeight ?? null) : null,
           unit: data.dimensionUnit || "cm",
         },
+        attachmentFile,
       };
       await onSubmit(payload);
       form.reset();
+      setShowDimensions(false);
+      setAttachmentFile(null);
+      setAttachmentError(null);
       onOpenChange(false);
     } finally {
       setIsSubmitting(false);
@@ -206,7 +258,7 @@ export function AssetFormModal({ open, onOpenChange, asset, categories, vendors,
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[500px]">
         <DialogHeader>
           <DialogTitle>{isEditing ? "Edit Asset" : "Add Asset"}</DialogTitle>
           <DialogDescription>
@@ -222,18 +274,62 @@ export function AssetFormModal({ open, onOpenChange, asset, categories, vendors,
             )}
           </div>
           <div className="space-y-2">
-            <Label htmlFor="description">Description</Label>
-            <Textarea id="description" {...form.register("description")} placeholder="Optional description..." rows={2} />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="specification">Specification</Label>
+            <Label htmlFor="specification">Specification *</Label>
             <Textarea
               id="specification"
               {...form.register("specification")}
               placeholder="Detailed technical specification..."
               rows={3}
             />
+            {form.formState.errors.specification && (
+              <p className="text-sm text-destructive">{form.formState.errors.specification.message}</p>
+            )}
           </div>
+          <div className="flex items-center space-x-2">
+            <Checkbox
+              id="showDimensions"
+              checked={showDimensions}
+              onCheckedChange={(checked) => setShowDimensions(Boolean(checked))}
+            />
+            <Label htmlFor="showDimensions" className="text-sm font-medium">
+              Add dimensions
+            </Label>
+          </div>
+          {showDimensions ? (
+            <div className="space-y-2">
+              <Label>Dimensions</Label>
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                <div className="space-y-2">
+                  <Label htmlFor="dimensionLength" className="text-xs text-muted-foreground">Length</Label>
+                  <Input id="dimensionLength" type="number" step="0.01" {...form.register("dimensionLength")} placeholder="0" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="dimensionWidth" className="text-xs text-muted-foreground">Width</Label>
+                  <Input id="dimensionWidth" type="number" step="0.01" {...form.register("dimensionWidth")} placeholder="0" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="dimensionHeight" className="text-xs text-muted-foreground">Height</Label>
+                  <Input id="dimensionHeight" type="number" step="0.01" {...form.register("dimensionHeight")} placeholder="0" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Unit</Label>
+                  <Select
+                    value={form.watch("dimensionUnit")}
+                    onValueChange={(v) => form.setValue("dimensionUnit", v as "mm" | "cm" | "m" | "in" | "ft")}
+                  >
+                    <SelectTrigger><SelectValue placeholder="Unit" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="mm">mm</SelectItem>
+                      <SelectItem value="cm">cm</SelectItem>
+                      <SelectItem value="m">m</SelectItem>
+                      <SelectItem value="in">Inches (in)</SelectItem>
+                      <SelectItem value="ft">Feet (ft)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+          ) : null}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Category *</Label>
@@ -346,6 +442,23 @@ export function AssetFormModal({ open, onOpenChange, asset, categories, vendors,
               </div>
             </div>
           )}
+          <div className="space-y-2">
+            <Label htmlFor="assetAttachment">{attachmentLabel}</Label>
+            <Input
+              id="assetAttachment"
+              type="file"
+              accept="application/pdf,.pdf"
+              onChange={handleAttachmentChange}
+            />
+            {attachmentFile ? (
+              <p className="text-xs text-muted-foreground">Selected file: {attachmentFile.name}</p>
+            ) : asset?.attachment_file_name ? (
+              <p className="text-xs text-muted-foreground">Current file: {asset.attachment_file_name}</p>
+            ) : (
+              <p className="text-xs text-muted-foreground">Upload a PDF file.</p>
+            )}
+            {attachmentError && <p className="text-sm text-destructive">{attachmentError}</p>}
+          </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="quantity">Quantity *</Label>
@@ -355,41 +468,16 @@ export function AssetFormModal({ open, onOpenChange, asset, categories, vendors,
               )}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="acquisitionDate">Acquisition Date</Label>
+              <Label htmlFor="acquisitionDate">Acquisition Date *</Label>
               <Input id="acquisitionDate" type="date" {...form.register("acquisitionDate")} />
+              {form.formState.errors.acquisitionDate && (
+                <p className="text-sm text-destructive">{form.formState.errors.acquisitionDate.message}</p>
+              )}
             </div>
           </div>
           <div className="space-y-2">
-            <Label>Dimensions</Label>
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-              <div className="space-y-2">
-                <Label htmlFor="dimensionLength" className="text-xs text-muted-foreground">Length</Label>
-                <Input id="dimensionLength" type="number" step="0.01" {...form.register("dimensionLength")} placeholder="0" />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="dimensionWidth" className="text-xs text-muted-foreground">Width</Label>
-                <Input id="dimensionWidth" type="number" step="0.01" {...form.register("dimensionWidth")} placeholder="0" />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="dimensionHeight" className="text-xs text-muted-foreground">Height</Label>
-                <Input id="dimensionHeight" type="number" step="0.01" {...form.register("dimensionHeight")} placeholder="0" />
-              </div>
-              <div className="space-y-2">
-                <Label>Unit</Label>
-                <Select
-                  value={form.watch("dimensionUnit")}
-                  onValueChange={(v) => form.setValue("dimensionUnit", v as "mm" | "cm" | "m" | "in")}
-                >
-                  <SelectTrigger><SelectValue placeholder="Unit" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="mm">mm</SelectItem>
-                    <SelectItem value="cm">cm</SelectItem>
-                    <SelectItem value="m">m</SelectItem>
-                    <SelectItem value="in">in</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
+            <Label htmlFor="description">Description</Label>
+            <Textarea id="description" {...form.register("description")} placeholder="Optional description..." rows={2} />
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>

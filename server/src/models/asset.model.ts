@@ -6,7 +6,7 @@ const AssetDimensionSchema = new Schema<any>(
     length: { type: Number, default: null },
     width: { type: Number, default: null },
     height: { type: Number, default: null },
-    unit: { type: String, enum: ['mm', 'cm', 'm', 'in'], default: 'cm' },
+    unit: { type: String, enum: ['mm', 'cm', 'm', 'in', 'ft'], default: 'cm' },
   },
   { _id: false }
 );
@@ -44,6 +44,11 @@ const AssetSchema = new Schema<any>(
       type: AssetDimensionSchema,
       default: () => ({ length: null, width: null, height: null, unit: 'cm' }),
     },
+    // Source document attachment metadata (invoice or project handover PDF)
+    attachment_file_name: { type: String, default: null },
+    attachment_mime_type: { type: String, default: null },
+    attachment_size_bytes: { type: Number, default: null },
+    attachment_path: { type: String, default: null },
     // Soft-active flag to preserve history
     is_active: { type: Boolean, default: true },
   },

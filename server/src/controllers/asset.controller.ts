@@ -1,4 +1,7 @@
+import fs from 'fs/promises';
+import path from 'path';
 import { Response, NextFunction } from 'express';
+import type { Express } from 'express';
 import { AssetModel } from '../models/asset.model';
 import { AssetItemModel } from '../models/assetItem.model';
 import { mapFields } from '../utils/mapFields';
@@ -6,6 +9,7 @@ import { resolveAccessContext } from '../utils/accessControl';
 import { createHttpError } from '../utils/httpError';
 import type { AuthRequest } from '../middleware/auth';
 import { officeAssetItemFilter } from '../utils/assetHolder';
+import { assertUploadedFileIntegrity } from '../utils/uploadValidation';
 
 const fieldMap = {
   categoryId: 'category_id',
@@ -21,7 +25,31 @@ const fieldMap = {
   specification: 'specification',
 };
 
-const DIMENSION_UNITS = new Set(['mm', 'cm', 'm', 'in']);
+const DIMENSION_UNITS = new Set(['mm', 'cm', 'm', 'in', 'ft']);
+
+type AuthRequestWithFile = AuthRequest & {
+  file?: Express.Multer.File;
+};
+
+function resolveStoredFileAbsolutePath(storedPath: string) {
+  const normalized = storedPath.replace(/\\/g, '/');
+  const absolutePath = path.resolve(process.cwd(), normalized);
+  const uploadsRoot = path.resolve(process.cwd(), 'uploads');
+  if (!absolutePath.startsWith(uploadsRoot)) {
+    throw createHttpError(400, 'Invalid file path');
+  }
+  return absolutePath;
+}
+
+function buildAttachmentPayload(file: Express.Multer.File) {
+  const relativePath = path.join('uploads', 'documents', path.basename(file.path)).replace(/\\/g, '/');
+  return {
+    attachment_file_name: file.originalname,
+    attachment_mime_type: file.mimetype,
+    attachment_size_bytes: file.size,
+    attachment_path: relativePath,
+  };
+}
 
 function clampInt(value: unknown, fallback: number, min: number, max: number) {
   const parsed = Number.parseInt(String(value ?? ''), 10);
@@ -219,32 +247,81 @@ export const assetController = {
       next(error);
     }
   },
-  create: async (req: AuthRequest, res: Response, next: NextFunction) => {
+  create: async (req: AuthRequestWithFile, res: Response, next: NextFunction) => {
+    const uploadedFile = req.file || null;
     try {
       const access = await resolveAccessContext(req.user);
       if (!access.isOrgAdmin) {
         throw createHttpError(403, 'Only org_admin can create asset definitions');
       }
+      if (uploadedFile) {
+        await assertUploadedFileIntegrity(uploadedFile, 'assetAttachment');
+        if (uploadedFile.mimetype !== 'application/pdf') {
+          throw createHttpError(400, 'assetAttachment must be a PDF file');
+        }
+      }
       const payload = buildPayload(req.body);
+      if (uploadedFile) {
+        Object.assign(payload, buildAttachmentPayload(uploadedFile));
+      }
       if (payload.currency === undefined) payload.currency = 'PKR';
       if (payload.quantity === undefined) payload.quantity = 1;
       const asset = await AssetModel.create(payload);
       res.status(201).json(asset);
     } catch (error) {
+      if (uploadedFile?.path) {
+        try {
+          await fs.unlink(uploadedFile.path);
+        } catch {
+          // ignore cleanup failures
+        }
+      }
       next(error);
     }
   },
-  update: async (req: AuthRequest, res: Response, next: NextFunction) => {
+  update: async (req: AuthRequestWithFile, res: Response, next: NextFunction) => {
+    const uploadedFile = req.file || null;
+    let oldAttachmentPath: string | null = null;
     try {
       const access = await resolveAccessContext(req.user);
       if (!access.isOrgAdmin) {
         throw createHttpError(403, 'Only org_admin can update asset definitions');
       }
+      if (uploadedFile) {
+        await assertUploadedFileIntegrity(uploadedFile, 'assetAttachment');
+        if (uploadedFile.mimetype !== 'application/pdf') {
+          throw createHttpError(400, 'assetAttachment must be a PDF file');
+        }
+      }
       const payload = buildPayload(req.body);
-      const asset = await AssetModel.findByIdAndUpdate(req.params.id, payload, { new: true });
+      if (uploadedFile) {
+        Object.assign(payload, buildAttachmentPayload(uploadedFile));
+      }
+
+      const asset: any = await AssetModel.findById(req.params.id);
       if (!asset) return res.status(404).json({ message: 'Not found' });
+
+      oldAttachmentPath = asset.attachment_path ? String(asset.attachment_path) : null;
+      Object.assign(asset, payload);
+      await asset.save();
+
+      if (uploadedFile && oldAttachmentPath && oldAttachmentPath !== asset.attachment_path) {
+        try {
+          await fs.unlink(resolveStoredFileAbsolutePath(oldAttachmentPath));
+        } catch {
+          // ignore cleanup failures
+        }
+      }
+
       return res.json(asset);
     } catch (error) {
+      if (uploadedFile?.path) {
+        try {
+          await fs.unlink(uploadedFile.path);
+        } catch {
+          // ignore cleanup failures
+        }
+      }
       next(error);
     }
   },
