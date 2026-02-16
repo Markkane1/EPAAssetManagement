@@ -8,8 +8,6 @@ interface AuthContextType {
   user: User | null;
   role: AppRole | null;
   isOrgAdmin: boolean;
-  // Deprecated compatibility flag. Use isOrgAdmin.
-  isSuperAdmin: boolean;
   locationId: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
@@ -111,7 +109,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         user,
         role,
         isOrgAdmin,
-        isSuperAdmin: isOrgAdmin,
         locationId,
         isAuthenticated: !!user, 
         isLoading,

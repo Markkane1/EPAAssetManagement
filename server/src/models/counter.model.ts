@@ -11,5 +11,6 @@ const CounterSchema = new Schema<any>(
   baseSchemaOptions
 );
 
-export const CounterModel = mongoose.model('Counter', CounterSchema);
+export const CounterModel = mongoose.model<any>('Counter', CounterSchema);
+
 

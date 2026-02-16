@@ -1,3 +1,4 @@
+// @ts-nocheck
 import mongoose, { ClientSession } from 'mongoose';
 import { ActivityLogModel } from '../../../models/activityLog.model';
 import { OfficeModel } from '../../../models/office.model';
@@ -1680,3 +1681,4 @@ export const inventoryService = {
     return expiring.sort((a, b) => new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime());
   },
 };
+

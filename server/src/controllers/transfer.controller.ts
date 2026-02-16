@@ -32,6 +32,12 @@ const STATUS_FLOW: Record<string, string[]> = {
   CANCELLED: [],
 };
 
+function readParam(req: AuthRequest, key: string) {
+  const raw = (req.params as Record<string, string | string[] | undefined>)[key];
+  if (Array.isArray(raw)) return String(raw[0] || '').trim();
+  return String(raw || '').trim();
+}
+
 function clampInt(value: unknown, fallback: number, max: number) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
@@ -132,7 +138,7 @@ async function ensureDocumentExists(documentId: string, fieldName: string) {
 }
 
 function canApproveTransfer(access: Awaited<ReturnType<typeof resolveAccessContext>>, fromOfficeId: string) {
-  if (access.isHeadofficeAdmin) return true;
+  if (access.isOrgAdmin) return true;
   return access.role === 'office_head' && access.officeId === fromOfficeId;
 }
 
@@ -140,7 +146,7 @@ function canOperateSourceOffice(
   access: Awaited<ReturnType<typeof resolveAccessContext>>,
   fromOfficeId: string
 ) {
-  if (access.isHeadofficeAdmin) return true;
+  if (access.isOrgAdmin) return true;
   return access.officeId === fromOfficeId && isOfficeManager(access.role);
 }
 
@@ -148,7 +154,7 @@ function canOperateDestinationOffice(
   access: Awaited<ReturnType<typeof resolveAccessContext>>,
   toOfficeId: string
 ) {
-  if (access.isHeadofficeAdmin) return true;
+  if (access.isOrgAdmin) return true;
   return access.officeId === toOfficeId && isOfficeManager(access.role);
 }
 
@@ -184,7 +190,7 @@ async function updateTransferRecordStatus(
         userId: access.userId,
         role: access.role,
         locationId: access.officeId,
-        isHeadoffice: access.isHeadofficeAdmin,
+        isOrgAdmin: access.isOrgAdmin,
       },
       record.id,
       status,
@@ -210,7 +216,7 @@ export const transferController = {
       const page = clampInt(req.query.page, 1, 10_000);
       const access = await resolveAccessContext(req.user);
       const filter: Record<string, unknown> = { is_active: { $ne: false } };
-      if (!access.isHeadofficeAdmin) {
+      if (!access.isOrgAdmin) {
         if (!access.officeId) throw createHttpError(403, 'User is not assigned to an office');
         filter.$or = [{ from_office_id: access.officeId }, { to_office_id: access.officeId }];
       }
@@ -228,11 +234,11 @@ export const transferController = {
 
   getById: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
-      const transfer = await TransferModel.findById(req.params.id);
+      const transfer = await TransferModel.findById(readParam(req, 'id'));
       if (!transfer) return res.status(404).json({ message: 'Not found' });
 
       const access = await resolveAccessContext(req.user);
-      if (!access.isHeadofficeAdmin) {
+      if (!access.isOrgAdmin) {
         const fromId = transfer.from_office_id?.toString();
         const toId = transfer.to_office_id?.toString();
         if (!fromId || !toId || (access.officeId !== fromId && access.officeId !== toId)) {
@@ -254,9 +260,9 @@ export const transferController = {
       const filter: Record<string, unknown> = {
         is_active: { $ne: false },
         // Back-compat for legacy transfer records before lines[] migration.
-        $or: [{ asset_item_id: req.params.assetItemId }, { 'lines.asset_item_id': req.params.assetItemId }],
+        $or: [{ asset_item_id: readParam(req, 'assetItemId') }, { 'lines.asset_item_id': readParam(req, 'assetItemId') }],
       };
-      if (!access.isHeadofficeAdmin) {
+      if (!access.isOrgAdmin) {
         if (!access.officeId) throw createHttpError(403, 'User is not assigned to an office');
         filter.$and = [
           {
@@ -281,13 +287,13 @@ export const transferController = {
       const limit = clampInt(req.query.limit, 200, 1000);
       const page = clampInt(req.query.page, 1, 10_000);
       const access = await resolveAccessContext(req.user);
-      if (!access.isHeadofficeAdmin) {
-        ensureOfficeScope(access, req.params.officeId);
+      if (!access.isOrgAdmin) {
+        ensureOfficeScope(access, readParam(req, 'officeId'));
       }
 
       const transfers = await TransferModel.find({
         is_active: { $ne: false },
-        $or: [{ from_office_id: req.params.officeId }, { to_office_id: req.params.officeId }],
+        $or: [{ from_office_id: readParam(req, 'officeId') }, { to_office_id: readParam(req, 'officeId') }],
       })
         .sort({ transfer_date: -1 })
         .skip((page - 1) * limit)
@@ -303,7 +309,7 @@ export const transferController = {
     const session = await mongoose.startSession();
     try {
       const access = await resolveAccessContext(req.user);
-      if (!access.isHeadofficeAdmin && !isOfficeManager(access.role)) {
+      if (!access.isOrgAdmin && !isOfficeManager(access.role)) {
         throw createHttpError(403, 'Not permitted to create transfers');
       }
 
@@ -328,7 +334,7 @@ export const transferController = {
       if (fromOfficeId === toOfficeId) {
         throw createHttpError(400, 'From and destination offices must be different');
       }
-      if (!access.isHeadofficeAdmin && access.officeId !== fromOfficeId && access.officeId !== toOfficeId) {
+      if (!access.isOrgAdmin && access.officeId !== fromOfficeId && access.officeId !== toOfficeId) {
         throw createHttpError(403, 'Transfers must originate from or arrive at your office');
       }
 
@@ -379,13 +385,13 @@ export const transferController = {
           { session }
         );
 
-        const recordStatus = access.isHeadofficeAdmin ? 'Approved' : 'PendingApproval';
+        const recordStatus = access.isOrgAdmin ? 'Approved' : 'PendingApproval';
         await createRecord(
           {
             userId: access.userId,
             role: access.role,
             locationId: access.officeId,
-            isHeadoffice: access.isHeadofficeAdmin,
+            isOrgAdmin: access.isOrgAdmin,
           },
           {
             recordType: 'TRANSFER',
@@ -403,7 +409,7 @@ export const transferController = {
             userId: access.userId,
             role: access.role,
             locationId: access.officeId,
-            isHeadoffice: access.isHeadofficeAdmin,
+            isOrgAdmin: access.isOrgAdmin,
           },
           action: 'TRANSFER_CREATE',
           entityType: 'Transfer',
@@ -426,7 +432,7 @@ export const transferController = {
     const session = await mongoose.startSession();
     try {
       const access = await resolveAccessContext(req.user);
-      const transfer = await TransferModel.findById(req.params.id);
+      const transfer = await TransferModel.findById(readParam(req, 'id'));
       if (!transfer) return res.status(404).json({ message: 'Not found' });
 
       const fromOfficeId = String(transfer.from_office_id || '');
@@ -457,7 +463,7 @@ export const transferController = {
     const session = await mongoose.startSession();
     try {
       const access = await resolveAccessContext(req.user);
-      const transfer = await TransferModel.findById(req.params.id);
+      const transfer = await TransferModel.findById(readParam(req, 'id'));
       if (!transfer) return res.status(404).json({ message: 'Not found' });
 
       const fromOfficeId = String(transfer.from_office_id || '');
@@ -506,11 +512,11 @@ export const transferController = {
     const session = await mongoose.startSession();
     try {
       const access = await resolveAccessContext(req.user);
-      if (!access.isHeadofficeAdmin) {
+      if (!access.isOrgAdmin) {
         throw createHttpError(403, 'Only org_admin can receive transfers at system store');
       }
 
-      const transfer = await TransferModel.findById(req.params.id);
+      const transfer = await TransferModel.findById(readParam(req, 'id'));
       if (!transfer) return res.status(404).json({ message: 'Not found' });
       await assertTransition(transfer, 'RECEIVED_AT_STORE');
 
@@ -551,11 +557,11 @@ export const transferController = {
     const session = await mongoose.startSession();
     try {
       const access = await resolveAccessContext(req.user);
-      if (!access.isHeadofficeAdmin) {
+      if (!access.isOrgAdmin) {
         throw createHttpError(403, 'Only org_admin can dispatch from system store');
       }
 
-      const transfer = await TransferModel.findById(req.params.id);
+      const transfer = await TransferModel.findById(readParam(req, 'id'));
       if (!transfer) return res.status(404).json({ message: 'Not found' });
       await assertTransition(transfer, 'DISPATCHED_TO_DEST');
 
@@ -581,7 +587,7 @@ export const transferController = {
     const session = await mongoose.startSession();
     try {
       const access = await resolveAccessContext(req.user);
-      const transfer = await TransferModel.findById(req.params.id);
+      const transfer = await TransferModel.findById(readParam(req, 'id'));
       if (!transfer) return res.status(404).json({ message: 'Not found' });
 
       const toOfficeId = String(transfer.to_office_id || '');
@@ -643,7 +649,7 @@ export const transferController = {
     const session = await mongoose.startSession();
     try {
       const access = await resolveAccessContext(req.user);
-      const transfer = await TransferModel.findById(req.params.id);
+      const transfer = await TransferModel.findById(readParam(req, 'id'));
       if (!transfer) return res.status(404).json({ message: 'Not found' });
 
       const fromOfficeId = String(transfer.from_office_id || '');
@@ -690,7 +696,7 @@ export const transferController = {
     const session = await mongoose.startSession();
     try {
       const access = await resolveAccessContext(req.user);
-      const transfer = await TransferModel.findById(req.params.id);
+      const transfer = await TransferModel.findById(readParam(req, 'id'));
       if (!transfer) return res.status(404).json({ message: 'Not found' });
 
       const fromOfficeId = String(transfer.from_office_id || '');
@@ -736,10 +742,10 @@ export const transferController = {
   remove: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const access = await resolveAccessContext(req.user);
-      if (!access.isHeadofficeAdmin) {
+      if (!access.isOrgAdmin) {
         throw createHttpError(403, 'Only org_admin can retire transfers');
       }
-      const transfer = await TransferModel.findById(req.params.id);
+      const transfer = await TransferModel.findById(readParam(req, 'id'));
       if (!transfer) return res.status(404).json({ message: 'Not found' });
       transfer.is_active = false;
       await transfer.save();
@@ -749,3 +755,7 @@ export const transferController = {
     }
   },
 };
+
+
+
+

@@ -34,5 +34,6 @@ MaintenanceRecordSchema.index({ asset_item_id: 1, created_at: -1 });
 MaintenanceRecordSchema.index({ maintenance_status: 1, created_at: -1 });
 MaintenanceRecordSchema.index({ is_active: 1, created_at: -1 });
 
-export const MaintenanceRecordModel = mongoose.model('MaintenanceRecord', MaintenanceRecordSchema);
+export const MaintenanceRecordModel = mongoose.model<any>('MaintenanceRecord', MaintenanceRecordSchema);
+
 

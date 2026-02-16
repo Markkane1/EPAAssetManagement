@@ -44,5 +44,6 @@ ReturnRequestSchema.index({ record_id: 1 });
 ReturnRequestSchema.index({ receipt_document_id: 1 });
 ReturnRequestSchema.index({ created_at: -1 });
 
-export const ReturnRequestModel = mongoose.model('ReturnRequest', ReturnRequestSchema);
+export const ReturnRequestModel = mongoose.model<any>('ReturnRequest', ReturnRequestSchema);
+
 

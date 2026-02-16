@@ -82,5 +82,6 @@ TransferSchema.index({ store_id: 1, transfer_date: -1 });
 TransferSchema.index({ is_active: 1, transfer_date: -1 });
 TransferSchema.index({ status: 1 });
 
-export const TransferModel = mongoose.model('Transfer', TransferSchema);
+export const TransferModel = mongoose.model<any>('Transfer', TransferSchema);
+
 

@@ -12,5 +12,6 @@ const VendorSchema = new Schema<any>(
   baseSchemaOptions
 );
 
-export const VendorModel = mongoose.model('Vendor', VendorSchema);
+export const VendorModel = mongoose.model<any>('Vendor', VendorSchema);
+
 

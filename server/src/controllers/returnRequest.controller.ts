@@ -67,6 +67,12 @@ function parsePositiveInt(value: unknown, fallback: number, max: number) {
   return Math.max(1, Math.min(Math.floor(parsed), max));
 }
 
+function readParam(req: AuthRequest, key: string) {
+  const raw = (req.params as Record<string, string | string[] | undefined>)[key];
+  if (Array.isArray(raw)) return String(raw[0] || '').trim();
+  return String(raw || '').trim();
+}
+
 function parseAssetItemIds(value: unknown) {
   if (value === undefined || value === null || value === '') return [] as string[];
   if (!Array.isArray(value)) {
@@ -120,7 +126,7 @@ export const returnRequestController = {
   list: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const ctx = await getRequestContext(req);
-      const canViewAll = ctx.role === 'org_admin' || ctx.isHeadoffice;
+      const canViewAll = ctx.role === 'org_admin' || ctx.isOrgAdmin;
       const page = parsePositiveInt(req.query.page, 1, 100_000);
       const limit = parsePositiveInt(req.query.limit, 50, 200);
       const skip = (page - 1) * limit;
@@ -178,8 +184,8 @@ export const returnRequestController = {
   getById: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const ctx = await getRequestContext(req);
-      const canViewAll = ctx.role === 'org_admin' || ctx.isHeadoffice;
-      const returnRequest = await ReturnRequestModel.findById(req.params.id).lean();
+      const canViewAll = ctx.role === 'org_admin' || ctx.isOrgAdmin;
+      const returnRequest: any = await ReturnRequestModel.findById(readParam(req, 'id')).lean();
       if (!returnRequest) {
         throw createHttpError(404, 'Return request not found');
       }
@@ -268,7 +274,7 @@ export const returnRequestController = {
     let session: mongoose.ClientSession | null = null;
     try {
       const ctx = await getRequestContext(req);
-      const returnRequest = await ReturnRequestModel.findById(req.params.id).lean();
+      const returnRequest: any = await ReturnRequestModel.findById(readParam(req, 'id')).lean();
       if (!returnRequest) {
         throw createHttpError(404, 'Return request not found');
       }
@@ -276,10 +282,10 @@ export const returnRequestController = {
       const officeId = returnRequest.office_id ? String(returnRequest.office_id) : null;
       if (!officeId) throw createHttpError(400, 'Return request office is missing');
 
-      const isIssuer = ctx.isHeadoffice || isOfficeManager(ctx.role);
+      const isIssuer = ctx.isOrgAdmin || isOfficeManager(ctx.role);
       let isOwnerEmployee = false;
       if (!isIssuer) {
-        const requesterEmployee = await EmployeeModel.findOne({ user_id: ctx.userId }, { _id: 1 }).lean();
+        const requesterEmployee: any = await EmployeeModel.findOne({ user_id: ctx.userId }, { _id: 1 }).lean();
         isOwnerEmployee =
           Boolean(requesterEmployee?._id) &&
           String(requesterEmployee?._id) === String(returnRequest.employee_id || '');
@@ -287,7 +293,7 @@ export const returnRequestController = {
       if (!isIssuer && !isOwnerEmployee) {
         throw createHttpError(403, 'Not permitted to view return receipt');
       }
-      if (!ctx.isHeadoffice && isIssuer) {
+      if (!ctx.isOrgAdmin && isIssuer) {
         if (!ctx.locationId) throw createHttpError(403, 'User is not assigned to an office');
         if (ctx.locationId !== officeId) {
           throw createHttpError(403, 'Access restricted to assigned office');
@@ -298,7 +304,7 @@ export const returnRequestController = {
       if (!receiptDocumentId) {
         session = await mongoose.startSession();
         await session.withTransaction(async () => {
-          const requestDoc = await ReturnRequestModel.findById(req.params.id).session(session!);
+          const requestDoc = await ReturnRequestModel.findById(readParam(req, 'id')).session(session!);
           if (!requestDoc) {
             throw createHttpError(404, 'Return request not found');
           }
@@ -311,7 +317,7 @@ export const returnRequestController = {
           }
           const employeeId = requestDoc.employee_id ? String(requestDoc.employee_id) : null;
           if (!employeeId) throw createHttpError(400, 'Return request employee is missing');
-          const employee = await EmployeeModel.findById(employeeId, {
+          const employee: any = await EmployeeModel.findById(employeeId, {
             first_name: 1,
             last_name: 1,
             email: 1,
@@ -320,7 +326,7 @@ export const returnRequestController = {
             .lean();
           if (!employee) throw createHttpError(404, 'Employee not found');
 
-          const office = await OfficeModel.findById(officeId, { name: 1 }).session(session!).lean();
+          const office: any = await OfficeModel.findById(officeId, { name: 1 }).session(session!).lean();
           if (!office) throw createHttpError(404, 'Office not found');
 
           const lineAssetItemIds = uniqueIds(
@@ -387,7 +393,7 @@ export const returnRequestController = {
         throw createHttpError(500, 'Failed to resolve return receipt document');
       }
 
-      const [document, version] = await Promise.all([
+      const [document, version]: any = await Promise.all([
         DocumentModel.findById(receiptDocumentId, { office_id: 1, doc_type: 1, status: 1 }).lean(),
         DocumentVersionModel.findOne({ document_id: receiptDocumentId })
           .sort({ version_no: -1 })
@@ -395,7 +401,7 @@ export const returnRequestController = {
       ]);
       if (!document) throw createHttpError(404, 'Return receipt document not found');
       if (!version) throw createHttpError(404, 'Return receipt file not found');
-      if (!ctx.isHeadoffice && !isOwnerEmployee && String(document.office_id || '') !== ctx.locationId) {
+      if (!ctx.isOrgAdmin && !isOwnerEmployee && String(document.office_id || '') !== ctx.locationId) {
         throw createHttpError(403, 'Access restricted to assigned office');
       }
 
@@ -440,7 +446,7 @@ export const returnRequestController = {
         throw createHttpError(400, 'officeId is invalid');
       }
 
-      const requesterEmployee = await EmployeeModel.findOne(
+      const requesterEmployee: any = await EmployeeModel.findOne(
         { user_id: ctx.userId },
         { _id: 1, location_id: 1, directorate_id: 1 }
       ).lean();
@@ -450,7 +456,7 @@ export const returnRequestController = {
         throw createHttpError(400, 'employeeId is required');
       }
 
-      const employee = await EmployeeModel.findById(employeeId, { _id: 1, location_id: 1, directorate_id: 1 }).lean();
+      const employee: any = await EmployeeModel.findById(employeeId, { _id: 1, location_id: 1, directorate_id: 1 }).lean();
       if (!employee) {
         throw createHttpError(404, 'Employee not found');
       }
@@ -481,11 +487,11 @@ export const returnRequestController = {
       }
 
       const requesterEmployeeId = requesterEmployee?._id ? String(requesterEmployee._id) : null;
-      if (!ctx.isHeadoffice && !isOfficeManager(ctx.role) && requesterEmployeeId !== employeeId) {
+      if (!ctx.isOrgAdmin && !isOfficeManager(ctx.role) && requesterEmployeeId !== employeeId) {
         throw createHttpError(403, 'Users can only create return requests for themselves');
       }
 
-      if (!ctx.isHeadoffice) {
+      if (!ctx.isOrgAdmin) {
         if (!ctx.locationId) throw createHttpError(403, 'User is not assigned to an office');
         if (ctx.locationId !== officeId) {
           throw createHttpError(403, 'Access restricted to assigned office');
@@ -584,7 +590,7 @@ export const returnRequestController = {
     const session = await mongoose.startSession();
     try {
       const ctx = await getRequestContext(req);
-      if (!ctx.isHeadoffice && !isOfficeManager(ctx.role)) {
+      if (!ctx.isOrgAdmin && !isOfficeManager(ctx.role)) {
         throw createHttpError(403, 'Not permitted to receive return requests');
       }
 
@@ -597,7 +603,7 @@ export const returnRequestController = {
       } | null = null;
 
       await session.withTransaction(async () => {
-        const returnRequest = await ReturnRequestModel.findById(req.params.id).session(session);
+        const returnRequest = await ReturnRequestModel.findById(readParam(req, 'id')).session(session);
         if (!returnRequest) {
           throw createHttpError(404, 'Return request not found');
         }
@@ -609,7 +615,7 @@ export const returnRequestController = {
         if (!officeId) {
           throw createHttpError(400, 'Return request office is missing');
         }
-        if (!ctx.isHeadoffice && ctx.locationId !== officeId) {
+        if (!ctx.isOrgAdmin && ctx.locationId !== officeId) {
           throw createHttpError(403, 'Access restricted to assigned office');
         }
 
@@ -617,7 +623,7 @@ export const returnRequestController = {
         if (!employeeId) {
           throw createHttpError(400, 'Return request employee is missing');
         }
-        const employee = await EmployeeModel.findById(employeeId, {
+        const employee: any = await EmployeeModel.findById(employeeId, {
           first_name: 1,
           last_name: 1,
           email: 1,
@@ -630,7 +636,7 @@ export const returnRequestController = {
           throw createHttpError(404, 'Employee not found');
         }
 
-        const office = await OfficeModel.findById(officeId, { name: 1 }).session(session).lean();
+        const office: any = await OfficeModel.findById(officeId, { name: 1 }).session(session).lean();
         if (!office) {
           throw createHttpError(404, 'Office not found');
         }
@@ -762,7 +768,7 @@ export const returnRequestController = {
       }
 
       const ctx = await getRequestContext(req);
-      if (!ctx.isHeadoffice && !isOfficeManager(ctx.role)) {
+      if (!ctx.isOrgAdmin && !isOfficeManager(ctx.role)) {
         throw createHttpError(403, 'Not permitted to upload signed return');
       }
 
@@ -774,7 +780,7 @@ export const returnRequestController = {
       } | null = null;
 
       await session.withTransaction(async () => {
-        const returnRequest = await ReturnRequestModel.findById(req.params.id).session(session);
+        const returnRequest = await ReturnRequestModel.findById(readParam(req, 'id')).session(session);
         if (!returnRequest) {
           throw createHttpError(404, 'Return request not found');
         }
@@ -786,7 +792,7 @@ export const returnRequestController = {
         if (!officeId) {
           throw createHttpError(400, 'Return request office is missing');
         }
-        if (!ctx.isHeadoffice && ctx.locationId !== officeId) {
+        if (!ctx.isOrgAdmin && ctx.locationId !== officeId) {
           throw createHttpError(403, 'Access restricted to assigned office');
         }
 
@@ -849,7 +855,7 @@ export const returnRequestController = {
         const relativePath = path.join('uploads', 'documents', path.basename(uploadedFile.path)).replace(/\\/g, '/');
         const fileBuffer = await fs.readFile(uploadedFile.path);
         const sha256 = crypto.createHash('sha256').update(fileBuffer).digest('hex');
-        const lastVersion = await DocumentVersionModel.findOne({ document_id: returnSlipDoc._id }, { version_no: 1 })
+        const lastVersion: any = await DocumentVersionModel.findOne({ document_id: returnSlipDoc._id }, { version_no: 1 })
           .sort({ version_no: -1 })
           .session(session)
           .lean();
@@ -926,3 +932,7 @@ export const returnRequestController = {
     }
   },
 };
+
+
+
+

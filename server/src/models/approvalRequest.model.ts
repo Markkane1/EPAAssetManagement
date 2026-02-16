@@ -27,5 +27,6 @@ const ApprovalRequestSchema = new Schema<any>(
 
 ApprovalRequestSchema.index({ record_id: 1, status: 1 });
 
-export const ApprovalRequestModel = mongoose.model('ApprovalRequest', ApprovalRequestSchema);
+export const ApprovalRequestModel = mongoose.model<any>('ApprovalRequest', ApprovalRequestSchema);
+
 

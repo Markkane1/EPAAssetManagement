@@ -18,5 +18,6 @@ const ConsumableSchema = new Schema<any>(
 ConsumableSchema.index({ is_active: 1, category_id: 1 });
 ConsumableSchema.index({ created_at: -1 });
 
-export const ConsumableModel = mongoose.model('Consumable', ConsumableSchema);
+export const ConsumableModel = mongoose.model<any>('Consumable', ConsumableSchema);
+
 

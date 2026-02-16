@@ -274,8 +274,20 @@ export interface AssetItem {
 
 export interface Assignment {
   id: string;
+  _id?: string;
   asset_item_id: string;
-  employee_id: string;
+  employee_id: string | null;
+  status?: "DRAFT" | "ISSUED" | "RETURN_REQUESTED" | "RETURNED" | "CANCELLED";
+  assigned_to_type?: "EMPLOYEE" | "SUB_LOCATION";
+  assigned_to_id?: string;
+  requisition_id?: string;
+  requisition_line_id?: string;
+  handover_slip_document_id?: string | null;
+  handover_slip_generated_version_id?: string | null;
+  handover_slip_signed_version_id?: string | null;
+  return_slip_document_id?: string | null;
+  return_slip_generated_version_id?: string | null;
+  return_slip_signed_version_id?: string | null;
   assigned_date: string;
   expected_return_date: string | null;
   returned_date: string | null;
@@ -366,6 +378,8 @@ export interface Requisition {
   file_number: string;
   office_id: string;
   issuing_office_id: string;
+  target_type?: "EMPLOYEE" | "SUB_LOCATION";
+  target_id?: string;
   requested_by_employee_id: string | null;
   submitted_by_user_id: string;
   fulfilled_by_user_id: string | null;
@@ -387,6 +401,8 @@ export interface RequisitionLine {
   _id?: string;
   requisition_id: string;
   line_type: RequisitionLineType;
+  asset_id?: string | null;
+  consumable_id?: string | null;
   requested_name: string;
   requested_quantity: number;
   approved_quantity: number;

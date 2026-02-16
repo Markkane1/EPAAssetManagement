@@ -12,6 +12,8 @@ const REQUISITION_STATUSES = [
   'CANCELLED',
 ] as const;
 
+const REQUISITION_TARGET_TYPES = ['EMPLOYEE', 'SUB_LOCATION'] as const;
+
 const RequisitionSchema = new Schema<any>(
   {
     // File number from official paperwork/workflow.
@@ -22,6 +24,14 @@ const RequisitionSchema = new Schema<any>(
     issuing_office_id: { type: Schema.Types.ObjectId, ref: 'Office', required: true },
     // Nullable when requisition is not tied to a specific employee.
     requested_by_employee_id: { type: Schema.Types.ObjectId, ref: 'Employee', default: null },
+    target_type: { type: String, enum: REQUISITION_TARGET_TYPES, required: true },
+    target_id: {
+      type: Schema.Types.ObjectId,
+      required: true,
+      ref: function (this: { target_type?: string }) {
+        return this.target_type === 'SUB_LOCATION' ? 'OfficeSubLocation' : 'Employee';
+      },
+    },
     // User who submitted/created the requisition.
     submitted_by_user_id: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     // User who completed fulfillment.
@@ -41,6 +51,23 @@ const RequisitionSchema = new Schema<any>(
   },
   baseSchemaOptions
 );
+
+RequisitionSchema.pre('validate', function (next) {
+  const targetType = this.target_type;
+  const targetId = this.target_id;
+
+  if (targetType === 'EMPLOYEE') {
+    if (!mongoose.isValidObjectId(targetId)) {
+      this.invalidate('target_id', 'target_id must be a valid ObjectId');
+    }
+  }
+  if (targetType === 'SUB_LOCATION') {
+    if (!mongoose.isValidObjectId(targetId)) {
+      this.invalidate('target_id', 'target_id must be a valid ObjectId');
+    }
+  }
+  next();
+});
 
 RequisitionSchema.index({ file_number: 1 }, { unique: true });
 RequisitionSchema.index({ status: 1, created_at: -1 });
@@ -119,5 +146,6 @@ function guardStatusUpdate(this: any, next: (error?: Error) => void) {
 RequisitionSchema.pre('updateOne', guardStatusUpdate);
 RequisitionSchema.pre('updateMany', guardStatusUpdate);
 
-export const RequisitionModel = mongoose.model('Requisition', RequisitionSchema);
+export const RequisitionModel = mongoose.model<any>('Requisition', RequisitionSchema);
+
 

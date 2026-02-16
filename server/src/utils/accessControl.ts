@@ -6,7 +6,7 @@ export type AccessContext = {
   userId: string;
   role: string;
   officeId: string | null;
-  isHeadofficeAdmin: boolean;
+  isOrgAdmin: boolean;
 };
 
 const OFFICE_MANAGER_ROLES = new Set([
@@ -26,20 +26,21 @@ export async function resolveAccessContext(user?: AuthPayload): Promise<AccessCo
   const officeId: string | null = userDoc.location_id
     ? userDoc.location_id.toString()
     : user.locationId || null;
-  const isHeadofficeAdmin = Boolean(user.isOrgAdmin || user.role === 'org_admin');
+  const isOrgAdmin = Boolean(user.isOrgAdmin || user.role === 'org_admin');
 
   return {
     userId: userDoc.id,
     role: user.role,
     officeId,
-    isHeadofficeAdmin,
+    isOrgAdmin,
   };
 }
 
 export function ensureOfficeScope(ctx: AccessContext, officeId: string) {
-  if (ctx.isHeadofficeAdmin) return;
+  if (ctx.isOrgAdmin) return;
   if (!ctx.officeId) throw createHttpError(403, 'User is not assigned to an office');
   if (ctx.officeId !== officeId) {
     throw createHttpError(403, 'Access restricted to assigned office');
   }
 }
+

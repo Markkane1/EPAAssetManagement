@@ -15,5 +15,6 @@ StoreSchema.index({ code: 1 }, { unique: true });
 StoreSchema.index({ is_active: 1 });
 StoreSchema.index({ is_system: 1 });
 
-export const StoreModel = mongoose.model('Store', StoreSchema);
+export const StoreModel = mongoose.model<any>('Store', StoreSchema);
+
 

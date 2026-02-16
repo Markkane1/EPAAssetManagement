@@ -33,7 +33,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import epaLogo from "@/assets/epa-logo.jpg";
 import { useAuth } from "@/contexts/AuthContext";
-import type { AppRole } from "@/services/authService";
+import type { AppPageKey } from "@/config/pagePermissions";
+import { canAccessPage } from "@/config/pagePermissions";
 
 const SIDEBAR_SCROLL_KEY = "epaams.sidebar.scrollTop";
 const SIDEBAR_LAST_CLICKED_KEY = "epaams.sidebar.lastClickedHref";
@@ -43,91 +44,82 @@ interface NavItem {
   href: string;
   icon: React.ElementType;
   badge?: number;
-  superAdminOnly?: boolean;
-  allowedRoles?: AppRole[];
+  page: AppPageKey;
 }
 
-const fullAccessRoles: AppRole[] = ["org_admin", "office_head", "caretaker", "employee"];
-const adminAccessRoles: AppRole[] = ["org_admin"];
-const assignmentAccessRoles: AppRole[] = [...fullAccessRoles];
-const requisitionReadRoles: AppRole[] = [...fullAccessRoles];
-const returnIssuerRoles: AppRole[] = ["org_admin", "office_head", "caretaker"];
-const complianceAccessRoles: AppRole[] = [...fullAccessRoles];
-const consumableAccessRoles: AppRole[] = [...fullAccessRoles];
-
 const mainNavItems: NavItem[] = [
-  { label: "Dashboard", href: "/", icon: LayoutDashboard, allowedRoles: fullAccessRoles },
-  { label: "Inventory & Assignments", href: "/inventory", icon: Layers, allowedRoles: fullAccessRoles },
+  { label: "Dashboard", href: "/", icon: LayoutDashboard, page: "dashboard" },
+  { label: "Inventory & Assignments", href: "/inventory", icon: Layers, page: "inventory" },
 ];
 
 const managementNavItems: NavItem[] = [
-  { label: "Employees", href: "/employees", icon: Users, allowedRoles: fullAccessRoles },
-  { label: "Offices", href: "/offices", icon: MapPin, allowedRoles: adminAccessRoles },
-  { label: "Categories", href: "/categories", icon: FolderTree, allowedRoles: fullAccessRoles },
-  { label: "Vendors", href: "/vendors", icon: Truck, allowedRoles: fullAccessRoles },
-  { label: "Projects", href: "/projects", icon: FolderKanban, allowedRoles: fullAccessRoles },
-  { label: "Schemes", href: "/schemes", icon: Layers, allowedRoles: fullAccessRoles },
-  { label: "Purchase Orders", href: "/purchase-orders", icon: ShoppingCart, allowedRoles: fullAccessRoles },
+  { label: "Employees", href: "/employees", icon: Users, page: "employees" },
+  { label: "Offices", href: "/offices", icon: MapPin, page: "offices" },
+  { label: "Categories", href: "/categories", icon: FolderTree, page: "categories" },
+  { label: "Vendors", href: "/vendors", icon: Truck, page: "vendors" },
+  { label: "Projects", href: "/projects", icon: FolderKanban, page: "projects" },
+  { label: "Schemes", href: "/schemes", icon: Layers, page: "schemes" },
+  { label: "Purchase Orders", href: "/purchase-orders", icon: ShoppingCart, page: "purchase-orders" },
 ];
 
 const systemNavItems: NavItem[] = [
-  { label: "Audit Logs", href: "/audit-logs", icon: Shield, allowedRoles: fullAccessRoles },
-  { label: "Settings", href: "/settings", icon: Settings, allowedRoles: fullAccessRoles },
+  { label: "Audit Logs", href: "/audit-logs", icon: Shield, page: "audit-logs" },
+  { label: "Settings", href: "/settings", icon: Settings, page: "settings" },
 ];
 
-const reportsRootItem: NavItem = { label: "Reports", href: "/reports", icon: FileText, allowedRoles: fullAccessRoles };
+const reportsRootItem: NavItem = { label: "Reports", href: "/reports", icon: FileText, page: "reports" };
 
 const reportNavItems: NavItem[] = [
-  { label: "Overview", href: "/reports", icon: FileText, allowedRoles: fullAccessRoles },
-  { label: "Compliance", href: "/compliance", icon: Shield, allowedRoles: complianceAccessRoles },
-  { label: "Asset Summary", href: "/reports/asset-summary", icon: FileText, allowedRoles: fullAccessRoles },
-  { label: "Asset Items Inventory", href: "/reports/asset-items-inventory", icon: FileText, allowedRoles: fullAccessRoles },
-  { label: "Assignment Summary", href: "/reports/assignment-summary", icon: FileText, allowedRoles: fullAccessRoles },
-  { label: "Status Distribution", href: "/reports/status-distribution", icon: FileText, allowedRoles: fullAccessRoles },
-  { label: "Maintenance Report", href: "/reports/maintenance-report", icon: FileText, allowedRoles: fullAccessRoles },
-  { label: "Location Inventory", href: "/reports/location-inventory", icon: FileText, allowedRoles: fullAccessRoles },
-  { label: "Financial Summary", href: "/reports/financial-summary", icon: FileText, allowedRoles: fullAccessRoles },
-  { label: "Employee Assets", href: "/reports/employee-assets", icon: FileText, allowedRoles: fullAccessRoles },
+  { label: "Overview", href: "/reports", icon: FileText, page: "reports" },
+  { label: "Compliance", href: "/compliance", icon: Shield, page: "compliance" },
+  { label: "Asset Summary", href: "/reports/asset-summary", icon: FileText, page: "reports" },
+  { label: "Asset Items Inventory", href: "/reports/asset-items-inventory", icon: FileText, page: "reports" },
+  { label: "Assignment Summary", href: "/reports/assignment-summary", icon: FileText, page: "reports" },
+  { label: "Status Distribution", href: "/reports/status-distribution", icon: FileText, page: "reports" },
+  { label: "Maintenance Report", href: "/reports/maintenance-report", icon: FileText, page: "reports" },
+  { label: "Location Inventory", href: "/reports/location-inventory", icon: FileText, page: "reports" },
+  { label: "Financial Summary", href: "/reports/financial-summary", icon: FileText, page: "reports" },
+  { label: "Employee Assets", href: "/reports/employee-assets", icon: FileText, page: "reports" },
 ];
 
-const movableAssetsRootItem: NavItem = { label: "Movable Assets", href: "/assets", icon: Package, allowedRoles: fullAccessRoles };
+const movableAssetsRootItem: NavItem = { label: "Movable Assets", href: "/assets", icon: Package, page: "assets" };
 const movableAssetsNavItems: NavItem[] = [
-  { label: "Assets", href: "/assets", icon: Package, allowedRoles: fullAccessRoles },
-  { label: "Asset Items", href: "/asset-items", icon: PackageOpen, allowedRoles: fullAccessRoles },
-  { label: "Assignments", href: "/assignments", icon: ClipboardList, allowedRoles: assignmentAccessRoles },
-  { label: "Requisitions", href: "/requisitions", icon: ClipboardList, allowedRoles: requisitionReadRoles },
-  { label: "New Requisition", href: "/requisitions/new", icon: ClipboardList, allowedRoles: ["employee", "office_head", "caretaker"] },
-  { label: "Return Requests", href: "/returns", icon: ArrowRightLeft, allowedRoles: returnIssuerRoles },
-  { label: "New Return Request", href: "/returns/new", icon: ArrowRightLeft, allowedRoles: ["employee"] },
-  { label: "Transfers", href: "/transfers", icon: ArrowRightLeft, allowedRoles: fullAccessRoles },
-  { label: "Maintenance", href: "/maintenance", icon: Wrench, allowedRoles: fullAccessRoles },
+  { label: "Assets", href: "/assets", icon: Package, page: "assets" },
+  { label: "Asset Items", href: "/asset-items", icon: PackageOpen, page: "asset-items" },
+  { label: "Assignments", href: "/assignments", icon: ClipboardList, page: "assignments" },
+  { label: "Requisitions", href: "/requisitions", icon: ClipboardList, page: "requisitions" },
+  { label: "New Requisition", href: "/requisitions/new", icon: ClipboardList, page: "requisitions-new" },
+  { label: "Return Requests", href: "/returns", icon: ArrowRightLeft, page: "returns" },
+  { label: "New Return Request", href: "/returns/new", icon: ArrowRightLeft, page: "returns-new" },
+  { label: "Transfers", href: "/transfers", icon: ArrowRightLeft, page: "transfers" },
+  { label: "Maintenance", href: "/maintenance", icon: Wrench, page: "maintenance" },
 ];
 
 
-const consumablesRootItem: NavItem = { label: "Consumables", href: "/consumables", icon: Layers, allowedRoles: consumableAccessRoles };
+const consumablesRootItem: NavItem = { label: "Consumables", href: "/consumables", icon: Layers, page: "consumables" };
 const consumableNavItems: NavItem[] = [
-  { label: "Master Register", href: "/consumables", icon: Layers, allowedRoles: consumableAccessRoles },
-  { label: "Locations", href: "/consumables/locations", icon: MapPin, allowedRoles: consumableAccessRoles },
-  { label: "Lot Receiving", href: "/consumables/receive", icon: PackageOpen, allowedRoles: consumableAccessRoles },
-  { label: "Lots", href: "/consumables/lots", icon: PackageOpen, allowedRoles: consumableAccessRoles },
-  { label: "Units", href: "/consumables/units", icon: Ruler, allowedRoles: consumableAccessRoles },
-  { label: "Inventory", href: "/consumables/inventory", icon: Package, allowedRoles: consumableAccessRoles },
-  { label: "Transfers", href: "/consumables/transfers", icon: ArrowRightLeft, allowedRoles: consumableAccessRoles },
-  { label: "Consumption", href: "/consumables/consume", icon: ClipboardList, allowedRoles: consumableAccessRoles },
-  { label: "Adjustments", href: "/consumables/adjustments", icon: Wrench, allowedRoles: consumableAccessRoles },
-  { label: "Disposal", href: "/consumables/disposal", icon: Trash2, allowedRoles: consumableAccessRoles },
-  { label: "Returns", href: "/consumables/returns", icon: ArrowRightLeft, allowedRoles: consumableAccessRoles },
-  { label: "Ledger", href: "/consumables/ledger", icon: FileText, allowedRoles: consumableAccessRoles },
-  { label: "Expiry", href: "/consumables/expiry", icon: Activity, allowedRoles: consumableAccessRoles },
+  { label: "Master Register", href: "/consumables", icon: Layers, page: "consumables" },
+  { label: "Locations", href: "/consumables/locations", icon: MapPin, page: "consumables" },
+  { label: "Lot Receiving", href: "/consumables/receive", icon: PackageOpen, page: "consumables" },
+  { label: "Lots", href: "/consumables/lots", icon: PackageOpen, page: "consumables" },
+  { label: "Units", href: "/consumables/units", icon: Ruler, page: "consumables" },
+  { label: "Inventory", href: "/consumables/inventory", icon: Package, page: "consumables" },
+  { label: "Transfers", href: "/consumables/transfers", icon: ArrowRightLeft, page: "consumables" },
+  { label: "Consumption", href: "/consumables/consume", icon: ClipboardList, page: "consumables" },
+  { label: "Adjustments", href: "/consumables/adjustments", icon: Wrench, page: "consumables" },
+  { label: "Disposal", href: "/consumables/disposal", icon: Trash2, page: "consumables" },
+  { label: "Returns", href: "/consumables/returns", icon: ArrowRightLeft, page: "consumables" },
+  { label: "Ledger", href: "/consumables/ledger", icon: FileText, page: "consumables" },
+  { label: "Expiry", href: "/consumables/expiry", icon: Activity, page: "consumables" },
 ];
 
-const managementRootItem: NavItem = { label: "Management", href: "/employees", icon: Building2, allowedRoles: fullAccessRoles };
+const managementRootItem: NavItem = { label: "Management", href: "/employees", icon: Building2, page: "employees" };
 
-const authManagementRootItem: NavItem = { label: "Auth Management", href: "/user-management", icon: Shield, allowedRoles: adminAccessRoles };
+const authManagementRootItem: NavItem = { label: "Auth Management", href: "/user-management", icon: Shield, page: "user-management" };
 const authManagementNavItems: NavItem[] = [
-  { label: "User Management", href: "/user-management", icon: Users, allowedRoles: adminAccessRoles },
-  { label: "User Activity", href: "/user-activity", icon: Activity, allowedRoles: adminAccessRoles },
-  { label: "User Permissions", href: "/user-permissions", icon: UserCog, allowedRoles: adminAccessRoles },
+  { label: "User Management", href: "/user-management", icon: Users, page: "user-management" },
+  { label: "User Activity", href: "/user-activity", icon: Activity, page: "user-activity" },
+  { label: "User Permissions", href: "/user-permissions", icon: UserCog, page: "user-permissions" },
 ];
 
 interface SidebarProps {
@@ -226,11 +218,8 @@ export function Sidebar({ className }: SidebarProps) {
   }, [location.pathname]);
 
   const filterItems = (items: NavItem[]) => {
-    const currentRole = role || "employee";
     return items.filter((item) => {
-      if (item.superAdminOnly && !isOrgAdmin) return false;
-      if (item.allowedRoles && !isOrgAdmin && !item.allowedRoles.includes(currentRole)) return false;
-      return true;
+      return canAccessPage({ page: item.page, role, isOrgAdmin });
     });
   };
 

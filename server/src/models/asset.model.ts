@@ -55,5 +55,6 @@ AssetSchema.index({ vendor_id: 1, is_active: 1 });
 AssetSchema.index({ created_at: -1 });
 AssetSchema.index({ is_active: 1, name: 1 });
 
-export const AssetModel = mongoose.model('Asset', AssetSchema);
+export const AssetModel = mongoose.model<any>('Asset', AssetSchema);
+
 

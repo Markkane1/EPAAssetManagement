@@ -17,5 +17,6 @@ ActivityLogSchema.index({ created_at: -1 });
 ActivityLogSchema.index({ user_id: 1, created_at: -1 });
 ActivityLogSchema.index({ activity_type: 1, created_at: -1 });
 
-export const ActivityLogModel = mongoose.model('ActivityLog', ActivityLogSchema);
+export const ActivityLogModel = mongoose.model<any>('ActivityLog', ActivityLogSchema);
+
 

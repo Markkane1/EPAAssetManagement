@@ -58,7 +58,7 @@ export async function createDocumentLink(ctx: RequestContext, input: DocumentLin
   if (!document) throw createHttpError(404, 'Document not found');
 
   const entityOfficeId = await resolveEntityOffice(input.entityType, input.entityId);
-  if (!ctx.isHeadoffice) {
+  if (!ctx.isOrgAdmin) {
     if (!ctx.locationId) throw createHttpError(403, 'User is not assigned to an office');
     if (document.office_id.toString() !== ctx.locationId) {
       throw createHttpError(403, 'Document must belong to your office');
@@ -86,3 +86,4 @@ export async function createDocumentLink(ctx: RequestContext, input: DocumentLin
 
   return link;
 }
+

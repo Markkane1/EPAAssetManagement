@@ -12,5 +12,6 @@ const CategorySchema = new Schema<any>(
 
 CategorySchema.index({ scope: 1 });
 
-export const CategoryModel = mongoose.model('Category', CategorySchema);
+export const CategoryModel = mongoose.model<any>('Category', CategorySchema);
+
 

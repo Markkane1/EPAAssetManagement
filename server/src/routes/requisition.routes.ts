@@ -20,6 +20,7 @@ router.post(
 );
 router.post('/:id/adjust', requireAuth, requisitionController.adjust);
 router.post('/:id/fulfill', requireAuth, requisitionController.fulfill);
+router.post('/:id/lines/:lineId/map', requireAuth, requisitionController.mapLine);
 router.post('/:id/verify', requireAuth, requisitionController.verify);
 
 export default router;

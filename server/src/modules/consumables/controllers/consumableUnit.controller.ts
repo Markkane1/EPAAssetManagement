@@ -27,7 +27,22 @@ function normalizeAliases(value: unknown) {
   return Array.from(new Set(cleaned));
 }
 
-function buildPayload(body: Record<string, unknown>) {
+function readParamId(req: Request, key: string) {
+  const raw = req.params?.[key];
+  if (Array.isArray(raw)) return String(raw[0] || '').trim();
+  return String(raw || '').trim();
+}
+
+type UnitPayload = {
+  code?: string;
+  name?: string;
+  group?: unknown;
+  to_base?: unknown;
+  is_active?: unknown;
+  aliases?: string[];
+};
+
+function buildPayload(body: Record<string, unknown>): UnitPayload {
   const payload = mapFields(body, fieldMap);
   Object.values(fieldMap).forEach((dbKey) => {
     if (body[dbKey] !== undefined) {
@@ -92,7 +107,7 @@ export const consumableUnitController = {
       if (!payload.code || !payload.name || !payload.group || payload.to_base === undefined) {
         throw createHttpError(400, 'Unit code, name, group, and conversion factor are required');
       }
-      await ensureUniqueCode(payload.code);
+      await ensureUniqueCode(String(payload.code));
       const unit = await ConsumableUnitModel.create(payload);
       clearUnitCache();
       res.status(201).json(unit);
@@ -103,10 +118,11 @@ export const consumableUnitController = {
   update: async (req: Request, res: Response, next: NextFunction) => {
     try {
       const payload = buildPayload(req.body);
+      const unitId = readParamId(req, 'id');
       if (payload.code) {
-        await ensureUniqueCode(payload.code, req.params.id);
+        await ensureUniqueCode(String(payload.code), unitId);
       }
-      const unit = await ConsumableUnitModel.findByIdAndUpdate(req.params.id, payload, { new: true });
+      const unit = await ConsumableUnitModel.findByIdAndUpdate(unitId, payload, { new: true });
       if (!unit) return res.status(404).json({ message: 'Not found' });
       clearUnitCache();
       return res.json(unit);
@@ -116,7 +132,7 @@ export const consumableUnitController = {
   },
   remove: async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const unit = await ConsumableUnitModel.findByIdAndDelete(req.params.id);
+      const unit = await ConsumableUnitModel.findByIdAndDelete(readParamId(req, 'id'));
       if (!unit) return res.status(404).json({ message: 'Not found' });
       clearUnitCache();
       return res.status(204).send();
@@ -125,3 +141,4 @@ export const consumableUnitController = {
     }
   },
 };
+

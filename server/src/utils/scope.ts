@@ -6,7 +6,7 @@ export type RequestContext = {
   userId: string;
   role: string;
   locationId: string | null;
-  isHeadoffice: boolean;
+  isOrgAdmin: boolean;
 };
 
 type ContextCarrier = AuthRequest & { __requestContext?: RequestContext };
@@ -20,7 +20,7 @@ export async function getRequestContext(req: AuthRequest): Promise<RequestContex
   }
 
   let locationId: string | null = req.user.locationId ?? null;
-  let isHeadoffice: boolean = req.user.isOrgAdmin ?? req.user.role === 'org_admin';
+  let isOrgAdmin: boolean = req.user.isOrgAdmin ?? req.user.role === 'org_admin';
 
   if (locationId === null || req.user.locationId === undefined) {
     const userDoc = await UserModel.findById(req.user.userId);
@@ -34,7 +34,7 @@ export async function getRequestContext(req: AuthRequest): Promise<RequestContex
     userId: req.user.userId,
     role: req.user.role,
     locationId,
-    isHeadoffice,
+    isOrgAdmin,
   };
 
   (req as ContextCarrier).__requestContext = context;
@@ -45,9 +45,10 @@ export function buildOfficeFilter(
   ctx: RequestContext,
   field: 'office_id' | 'location_id' = 'office_id'
 ) {
-  if (ctx.isHeadoffice) return null;
+  if (ctx.isOrgAdmin) return null;
   if (!ctx.locationId) {
     throw createHttpError(403, 'User is not assigned to an office');
   }
   return { [field]: ctx.locationId };
 }
+

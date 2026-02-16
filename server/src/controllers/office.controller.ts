@@ -29,7 +29,13 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>;
 }
 
-function normalizeOfficeForResponse<T extends Record<string, unknown>>(office: T) {
+function readParamId(req: Request, key: string) {
+  const raw = req.params?.[key];
+  if (Array.isArray(raw)) return String(raw[0] || '').trim();
+  return String(raw || '').trim();
+}
+
+function normalizeOfficeForResponse(office: Record<string, unknown>) {
   const normalized = { ...office };
   if (normalized.parent_office_id === undefined || normalized.parent_office_id === null) {
     normalized.parent_office_id = (normalized.parent_location_id as unknown) ?? null;
@@ -78,7 +84,7 @@ export const officeController = {
   },
   getById: async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await OfficeModel.findById(req.params.id).lean();
+      const data = await OfficeModel.findById(readParamId(req, 'id')).lean();
       if (!data) return res.status(404).json({ message: 'Not found' });
       return res.json(normalizeOfficeForResponse(data as Record<string, unknown>));
     } catch (error) {
@@ -107,11 +113,12 @@ export const officeController = {
   },
   update: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
+      const officeId = readParamId(req, 'id');
       const payload = buildPayload(req.body);
       if (payload.is_headoffice !== undefined && req.user?.role !== 'org_admin') {
         return res.status(403).json({ message: 'Only org admin can modify legacy head-office flag' });
       }
-      const existing = await OfficeModel.findById(req.params.id);
+      const existing = await OfficeModel.findById(officeId);
       if (!existing) return res.status(404).json({ message: 'Not found' });
 
       const payloadCapabilities = asRecord(payload.capabilities);
@@ -131,7 +138,7 @@ export const officeController = {
         };
       }
 
-      const data = await OfficeModel.findByIdAndUpdate(req.params.id, payload, { new: true });
+      const data = await OfficeModel.findByIdAndUpdate(officeId, payload, { new: true });
       if (!data) return res.status(404).json({ message: 'Not found' });
       const json = data.toJSON() as Record<string, unknown>;
       return res.json(normalizeOfficeForResponse(json));
@@ -141,7 +148,7 @@ export const officeController = {
   },
   remove: async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await OfficeModel.findByIdAndDelete(req.params.id);
+      const data = await OfficeModel.findByIdAndDelete(readParamId(req, 'id'));
       if (!data) return res.status(404).json({ message: 'Not found' });
       return res.status(204).send();
     } catch (error) {
@@ -149,3 +156,4 @@ export const officeController = {
     }
   },
 };
+

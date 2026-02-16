@@ -18,8 +18,8 @@ function signToken(user: { id: string; email: string; role: string; locationId?:
       locationId: user.locationId || null,
       isOrgAdmin: user.role === 'org_admin',
     },
-    env.jwtSecret,
-    { expiresIn: env.jwtExpiresIn }
+    env.jwtSecret as jwt.Secret,
+    { expiresIn: env.jwtExpiresIn as jwt.SignOptions['expiresIn'] }
   );
 }
 
@@ -131,10 +131,12 @@ export const authController = {
       const valid = await bcrypt.compare(password, user.password_hash);
       if (!valid) return res.status(401).json({ message: 'Invalid credentials' });
 
+      const normalizedRole = normalizeRole(user.role);
+      if (user.role !== normalizedRole) {
+        user.role = normalizedRole;
+      }
       user.last_login_at = new Date().toISOString();
       await user.save();
-
-      const normalizedRole = normalizeRole(user.role);
       const token = signToken({
         id: user.id,
         email: user.email,
@@ -291,3 +293,4 @@ export const authController = {
     }
   },
 };
+

@@ -25,6 +25,11 @@ import { useLocations } from "@/hooks/useLocations";
 import { useMemo } from "react";
 import { getOfficeHolderId, isStoreHolder } from "@/lib/assetItemHolder";
 
+function safeId(value: unknown): string | null {
+  const normalized = String(value ?? "").trim();
+  return normalized ? normalized : null;
+}
+
 export default function Dashboard() {
   const { data: dashboardStats, isLoading: statsLoading } = useDashboardStats();
   const { data: assetItems } = useAssetItems();
@@ -158,23 +163,27 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {recentItems.map((item) => (
-                <div
-                  key={item.id}
-                  className="flex items-center justify-between p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                      <PackageOpen className="h-5 w-5 text-primary" />
+              {recentItems.map((item, index) => {
+                const itemId = safeId(item.id) || safeId((item as Record<string, unknown>)._id);
+                const itemKey = itemId || `recent-item-${index}-${item.tag || "untagged"}-${item.serial_number || "noserial"}`;
+                return (
+                  <div
+                    key={itemKey}
+                    className="flex items-center justify-between p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                        <PackageOpen className="h-5 w-5 text-primary" />
+                      </div>
+                      <div>
+                        <p className="font-medium text-sm">Tag: {item.tag}</p>
+                        <p className="text-xs text-muted-foreground">{item.serial_number}</p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="font-medium text-sm">Tag: {item.tag}</p>
-                      <p className="text-xs text-muted-foreground">{item.serial_number}</p>
-                    </div>
+                    <StatusBadge status={item.item_status || ""} />
                   </div>
-                  <StatusBadge status={item.item_status || ""} />
-                </div>
-              ))}
+                );
+              })}
             </div>
           </CardContent>
         </Card>
@@ -191,25 +200,29 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {locationList.slice(0, 5).map((location) => (
-                <div
-                  key={location.id}
-                  className="flex items-center justify-between p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
-                >
-                  <div>
-                    <p className="font-medium text-sm">{location.name}</p>
-                    <p className="text-xs text-muted-foreground truncate max-w-[200px]">
-                      {location.address}
-                    </p>
+              {locationList.slice(0, 5).map((location, index) => {
+                const locationId = safeId(location.id) || safeId((location as Record<string, unknown>)._id);
+                const locationKey = locationId || `location-${index}-${location.name || "unknown"}`;
+                return (
+                  <div
+                    key={locationKey}
+                    className="flex items-center justify-between p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
+                  >
+                    <div>
+                      <p className="font-medium text-sm">{location.name}</p>
+                      <p className="text-xs text-muted-foreground truncate max-w-[200px]">
+                        {location.address}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-semibold text-sm">
+                        {locationCounts.get(locationId || "") || 0}
+                      </p>
+                      <p className="text-xs text-muted-foreground">assets</p>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <p className="font-semibold text-sm">
-                      {locationCounts.get(location.id) || 0}
-                    </p>
-                    <p className="text-xs text-muted-foreground">assets</p>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
               <div className="flex items-center justify-between p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors">
                 <div>
                   <p className="font-medium text-sm">Head Office Store</p>

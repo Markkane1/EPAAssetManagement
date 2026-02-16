@@ -10,8 +10,6 @@ export interface AuthPayload {
   role: string;
   locationId: string | null;
   isOrgAdmin: boolean;
-  // Deprecated compatibility field. Use isOrgAdmin instead.
-  isHeadoffice?: boolean;
 }
 
 export interface AuthRequest extends Request {
@@ -58,7 +56,6 @@ async function attachUserContext(req: AuthRequest) {
     role: normalizedRole,
     locationId,
     isOrgAdmin,
-    isHeadoffice: isOrgAdmin,
   };
 
   (req as RequestWithCache).__userLoaded = true;
@@ -118,3 +115,4 @@ export async function optionalAuth(req: AuthRequest, _res: Response, next: NextF
   }
   return next();
 }
+

@@ -9,6 +9,9 @@ import { createHttpError } from '../utils/httpError';
 import { getRequestContext } from '../utils/scope';
 import { OfficeModel } from '../models/office.model';
 import { EmployeeModel } from '../models/employee.model';
+import { OfficeSubLocationModel } from '../models/officeSubLocation.model';
+import { UserModel } from '../models/user.model';
+import { AssetModel } from '../models/asset.model';
 import { AssetItemModel } from '../models/assetItem.model';
 import { AssignmentModel } from '../models/assignment.model';
 import { RecordModel } from '../models/record.model';
@@ -23,6 +26,7 @@ import { ConsumableItemModel } from '../modules/consumables/models/consumableIte
 import { ConsumableInventoryBalanceModel } from '../modules/consumables/models/consumableInventoryBalance.model';
 import { ConsumableInventoryTransactionModel } from '../modules/consumables/models/consumableInventoryTransaction.model';
 import { generateAndStoreIssuanceReport } from '../services/requisitionIssuanceReport.service';
+import { createBulkNotifications } from '../services/notification.service';
 import { isAssetItemHeldByOffice } from '../utils/assetHolder';
 
 const ALLOWED_SUBMITTER_ROLES = new Set(['employee', 'office_head', 'caretaker']);
@@ -31,9 +35,11 @@ const HQ_DIRECTORATE_VERIFIER_ROLES = new Set(['office_head', 'caretaker']);
 const DISTRICT_LAB_FULFILLER_ROLES = new Set(['office_head']);
 const HQ_DIRECTORATE_FULFILLER_ROLES = new Set(['office_head', 'caretaker']);
 const LINE_TYPES = new Set(['MOVEABLE', 'CONSUMABLE']);
+const TARGET_TYPES = new Set(['EMPLOYEE', 'SUB_LOCATION']);
 const VERIFY_DECISIONS = new Set(['VERIFY', 'REJECT']);
 const FULFILL_ALLOWED_STATUSES = new Set(['VERIFIED_APPROVED', 'IN_FULFILLMENT']);
 const ADJUST_ALLOWED_STATUSES = new Set(['FULFILLED', 'FULFILLED_PENDING_SIGNATURE']);
+const OPEN_ASSIGNMENT_STATUSES = new Set(['DRAFT', 'ISSUED', 'RETURN_REQUESTED']);
 
 type AuthRequestWithFiles = AuthRequest & {
   files?:
@@ -45,13 +51,24 @@ type AuthRequestWithFiles = AuthRequest & {
 
 type ParsedLine = {
   line_type: 'MOVEABLE' | 'CONSUMABLE';
+  asset_id: string | null;
+  consumable_id: string | null;
   requested_name: string;
+  mapped_name: string | null;
+  mapped_by_user_id: string | null;
+  mapped_at: Date | null;
   requested_quantity: number;
   approved_quantity: number;
   fulfilled_quantity: number;
   status: 'PENDING_ASSIGNMENT';
   notes: string | null;
 };
+
+function readParam(req: AuthRequest, key: string) {
+  const raw = (req.params as Record<string, string | string[] | undefined>)[key];
+  if (Array.isArray(raw)) return String(raw[0] || '').trim();
+  return String(raw || '').trim();
+}
 
 function asNonEmptyString(value: unknown, fieldName: string) {
   const parsed = String(value ?? '').trim();
@@ -102,30 +119,58 @@ function parseLinesInput(linesInput: unknown): ParsedLine[] {
       throw createHttpError(400, `lines[${index}] must be an object`);
     }
     const lineObj = line as Record<string, unknown>;
-    const rawType = String(lineObj.lineType ?? lineObj.line_type ?? '').trim().toUpperCase();
+    const rawType = String(lineObj.line_type ?? '').trim().toUpperCase();
     if (!LINE_TYPES.has(rawType)) {
-      throw createHttpError(400, `lines[${index}].lineType must be MOVEABLE or CONSUMABLE`);
+      throw createHttpError(400, `lines[${index}].line_type must be MOVEABLE or CONSUMABLE`);
     }
 
-    const requestedName = asNonEmptyString(
-      lineObj.requestedName ?? lineObj.requested_name,
-      `lines[${index}].requestedName`
-    );
-    const requestedQty = asPositiveNumber(
-      lineObj.requestedQuantity ?? lineObj.requested_quantity,
-      1,
-      `lines[${index}].requestedQuantity`
-    );
+    const requestedName = asNonEmptyString(lineObj.requested_name, `lines[${index}].requested_name`);
+
+    let assetId: string | null = null;
+    let consumableId: string | null = null;
+    if (rawType === 'MOVEABLE') {
+      if (asNullableString(lineObj.consumable_id)) {
+        throw createHttpError(400, `lines[${index}].consumable_id is not allowed for MOVEABLE lines`);
+      }
+      const rawAssetId = asNullableString(lineObj.asset_id);
+      if (rawAssetId) {
+        if (!Types.ObjectId.isValid(rawAssetId)) {
+          throw createHttpError(400, `lines[${index}].asset_id is invalid`);
+        }
+        assetId = rawAssetId;
+      }
+    } else {
+      if (asNullableString(lineObj.asset_id)) {
+        throw createHttpError(400, `lines[${index}].asset_id is not allowed for CONSUMABLE lines`);
+      }
+      const rawConsumableId = asNullableString(lineObj.consumable_id);
+      if (rawConsumableId) {
+        if (!Types.ObjectId.isValid(rawConsumableId)) {
+          throw createHttpError(400, `lines[${index}].consumable_id is invalid`);
+        }
+        consumableId = rawConsumableId;
+      }
+    }
+
+    if (lineObj.requested_quantity === undefined || lineObj.requested_quantity === null || lineObj.requested_quantity === '') {
+      throw createHttpError(400, `lines[${index}].requested_quantity is required`);
+    }
+    const requestedQty = asPositiveNumber(lineObj.requested_quantity, 1, `lines[${index}].requested_quantity`);
     const approvedQty = asNonNegativeNumber(
-      lineObj.approvedQuantity ?? lineObj.approved_quantity,
+      lineObj.approved_quantity,
       requestedQty,
-      `lines[${index}].approvedQuantity`
+      `lines[${index}].approved_quantity`
     );
     const notes = asNullableString(lineObj.notes);
 
     return {
       line_type: rawType as 'MOVEABLE' | 'CONSUMABLE',
+      asset_id: assetId,
+      consumable_id: consumableId,
       requested_name: requestedName,
+      mapped_name: null,
+      mapped_by_user_id: null,
+      mapped_at: null,
       requested_quantity: requestedQty,
       approved_quantity: approvedQty,
       fulfilled_quantity: 0,
@@ -136,7 +181,7 @@ function parseLinesInput(linesInput: unknown): ParsedLine[] {
 }
 
 async function isHqDirectorateOffice(officeId: string) {
-  const office = await OfficeModel.findById(officeId, {
+  const office: any = await OfficeModel.findById(officeId, {
     type: 1,
     parent_office_id: 1,
     parent_location_id: 1,
@@ -145,7 +190,7 @@ async function isHqDirectorateOffice(officeId: string) {
   if (office.type === 'DIRECTORATE') return true;
   const parentOfficeId = office.parent_office_id || office.parent_location_id;
   if (!parentOfficeId) return false;
-  const parent = await OfficeModel.findById(parentOfficeId, { type: 1 }).lean();
+  const parent: any = await OfficeModel.findById(parentOfficeId, { type: 1 }).lean();
   return parent?.type === 'DIRECTORATE';
 }
 
@@ -291,11 +336,157 @@ function getRemainingQuantity(line: {
   return Math.max(approved - fulfilled, 0);
 }
 
+function toObjectIdString(value: unknown): string | null {
+  if (!value) return null;
+  if (typeof value === 'string') return value;
+  if (value instanceof Types.ObjectId) return value.toString();
+  return String(value);
+}
+
+function normalizeLineType(value: unknown): 'MOVEABLE' | 'CONSUMABLE' | 'UNKNOWN' {
+  const normalized = String(value ?? '').trim().toUpperCase();
+  if (normalized === 'MOVEABLE') return 'MOVEABLE';
+  if (normalized === 'CONSUMABLE') return 'CONSUMABLE';
+  return 'UNKNOWN';
+}
+
+async function enrichLinesWithMappingMetadata<T extends Record<string, unknown>>(lines: T[]) {
+  if (!Array.isArray(lines) || lines.length === 0) return [] as Array<T & Record<string, unknown>>;
+
+  const moveableAssetIds = Array.from(
+    new Set(
+      lines
+        .map((line) => (normalizeLineType(line.line_type) === 'MOVEABLE' ? toObjectIdString(line.asset_id) : null))
+        .filter((id): id is string => Boolean(id))
+    )
+  );
+  const consumableIds = Array.from(
+    new Set(
+      lines
+        .map((line) =>
+          normalizeLineType(line.line_type) === 'CONSUMABLE' ? toObjectIdString(line.consumable_id) : null
+        )
+        .filter((id): id is string => Boolean(id))
+    )
+  );
+
+  const [assets, consumables] = await Promise.all([
+    moveableAssetIds.length
+      ? AssetModel.find({ _id: { $in: moveableAssetIds } }, { _id: 1, name: 1 }).lean()
+      : Promise.resolve([]),
+    consumableIds.length
+      ? ConsumableItemModel.find({ _id: { $in: consumableIds } }, { _id: 1, name: 1 }).lean()
+      : Promise.resolve([]),
+  ]);
+
+  const assetNameById = new Map(assets.map((asset) => [String(asset._id), String(asset.name || '')]));
+  const consumableNameById = new Map(consumables.map((item) => [String(item._id), String(item.name || '')]));
+
+  return lines.map((line) => {
+    const normalizedType = normalizeLineType(line.line_type);
+    const mappedNameField = asNullableString(line.mapped_name);
+
+    if (normalizedType === 'MOVEABLE') {
+      const assetId = toObjectIdString(line.asset_id);
+      const isMapped = Boolean(assetId);
+      const mappedName = mappedNameField || (assetId ? assetNameById.get(assetId) || null : null);
+      return {
+        ...line,
+        mapped_name: mappedName,
+        is_mapped: isMapped,
+        mapping_type: 'MOVEABLE' as const,
+        mapping_missing_reason: isMapped ? null : 'NOT_MAPPED_TO_ASSET',
+      };
+    }
+
+    if (normalizedType === 'CONSUMABLE') {
+      const consumableId = toObjectIdString(line.consumable_id);
+      const isMapped = Boolean(consumableId);
+      const mappedName = mappedNameField || (consumableId ? consumableNameById.get(consumableId) || null : null);
+      return {
+        ...line,
+        mapped_name: mappedName,
+        is_mapped: isMapped,
+        mapping_type: 'CONSUMABLE' as const,
+        mapping_missing_reason: isMapped ? null : 'NOT_MAPPED_TO_CONSUMABLE',
+      };
+    }
+
+    return {
+      ...line,
+      mapped_name: mappedNameField,
+      is_mapped: false,
+      mapping_type: null,
+      mapping_missing_reason: 'UNKNOWN_LINE_TYPE',
+    };
+  });
+}
+
+function buildRequisitionMappingSummary(lines: Array<Record<string, unknown>>) {
+  const unmappedLinesCount = lines.reduce((count, line) => {
+    return count + (line.is_mapped === false ? 1 : 0);
+  }, 0);
+  return {
+    has_unmapped_lines: unmappedLinesCount > 0,
+    unmapped_lines_count: unmappedLinesCount,
+  };
+}
+
+async function dispatchDraftAssignmentNotifications(input: {
+  officeId: string;
+  requisition: any;
+  assignmentIds: string[];
+}) {
+  if (!input.officeId || input.assignmentIds.length === 0) return;
+
+  const managers = await UserModel.find(
+    {
+      location_id: input.officeId,
+      role: { $in: ['office_head', 'caretaker'] },
+      is_active: true,
+    },
+    { _id: 1 }
+  )
+    .lean()
+    .exec();
+
+  const recipientIds = new Set(managers.map((user) => String(user._id)));
+  if (String(input.requisition?.target_type || '') === 'EMPLOYEE' && input.requisition?.target_id) {
+    const targetEmployee: any = await EmployeeModel.findById(input.requisition.target_id, { user_id: 1 }).lean();
+    const targetUserId = targetEmployee?.user_id ? String(targetEmployee.user_id) : null;
+    if (targetUserId && Types.ObjectId.isValid(targetUserId)) {
+      recipientIds.add(targetUserId);
+    }
+  }
+
+  const recipients = Array.from(recipientIds);
+  if (recipients.length === 0) return;
+
+  const fileNumber = String(input.requisition?.file_number || '').trim();
+  const message = fileNumber
+    ? `Draft assignments created for requisition ${fileNumber}. Print slips.`
+    : 'Draft assignments created. Print slips.';
+
+  const payload = recipients.flatMap((recipientUserId) =>
+    input.assignmentIds.map((assignmentId) => ({
+      recipientUserId,
+      officeId: input.officeId,
+      type: 'ASSIGNMENT_DRAFT_CREATED',
+      title: 'Draft Assignments Created',
+      message,
+      entityType: 'Assignment',
+      entityId: assignmentId,
+    }))
+  );
+
+  await createBulkNotifications(payload);
+}
+
 export const requisitionController = {
   list: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const ctx = await getRequestContext(req);
-      const canViewAll = ctx.role === 'org_admin' || ctx.isHeadoffice;
+      const canViewAll = ctx.role === 'org_admin' || ctx.isOrgAdmin;
       const page = parsePositiveInt(req.query.page, 1, 100_000);
       const limit = parsePositiveInt(req.query.limit, 50, 200);
       const skip = (page - 1) * limit;
@@ -337,8 +528,40 @@ export const requisitionController = {
         RequisitionModel.countDocuments(filter),
       ]);
 
+      const requisitionIds = data.map((row) => String(row._id)).filter(Boolean);
+      const lines = requisitionIds.length
+        ? await RequisitionLineModel.find(
+            { requisition_id: { $in: requisitionIds } },
+            { requisition_id: 1, line_type: 1, asset_id: 1, consumable_id: 1, mapped_name: 1 }
+          ).lean()
+        : [];
+      const enrichedLines = await enrichLinesWithMappingMetadata(lines as Array<Record<string, unknown>>);
+      const summaryByReqId = new Map<string, { has_unmapped_lines: boolean; unmapped_lines_count: number }>();
+      for (const line of enrichedLines) {
+        const reqId = toObjectIdString(line.requisition_id);
+        if (!reqId) continue;
+        const current =
+          summaryByReqId.get(reqId) || { has_unmapped_lines: false, unmapped_lines_count: 0 };
+        if (line.is_mapped === false) {
+          current.has_unmapped_lines = true;
+          current.unmapped_lines_count += 1;
+        }
+        summaryByReqId.set(reqId, current);
+      }
+      const enrichedData = data.map((row) => {
+        const rowId = String(row._id);
+        const summary = summaryByReqId.get(rowId) || {
+          has_unmapped_lines: false,
+          unmapped_lines_count: 0,
+        };
+        return {
+          ...row,
+          ...summary,
+        };
+      });
+
       return res.json({
-        data,
+        data: enrichedData,
         page,
         limit,
         total,
@@ -350,9 +573,9 @@ export const requisitionController = {
   getById: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const ctx = await getRequestContext(req);
-      const canViewAll = ctx.role === 'org_admin' || ctx.isHeadoffice;
+      const canViewAll = ctx.role === 'org_admin' || ctx.isOrgAdmin;
 
-      const requisition = await RequisitionModel.findById(req.params.id).lean();
+      const requisition: any = await RequisitionModel.findById(readParam(req, 'id')).lean();
       if (!requisition) {
         throw createHttpError(404, 'Requisition not found');
       }
@@ -413,9 +636,16 @@ export const requisitionController = {
         getLatestVersion(issueSlipDoc),
       ]);
 
+      const enrichedLines = await enrichLinesWithMappingMetadata(lines as Array<Record<string, unknown>>);
+      const mappingSummary = buildRequisitionMappingSummary(enrichedLines as Array<Record<string, unknown>>);
+
       return res.json({
-        requisition,
-        lines,
+        requisition: {
+          ...requisition,
+          ...mappingSummary,
+        },
+        lines: enrichedLines,
+        ...mappingSummary,
         documents: {
           requisitionForm: requisitionFormDoc
             ? {
@@ -443,6 +673,101 @@ export const requisitionController = {
       return next(error);
     }
   },
+  mapLine: async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const ctx = await getRequestContext(req);
+      if (!ctx.isOrgAdmin && !['office_head', 'caretaker'].includes(ctx.role)) {
+        throw createHttpError(403, 'Not permitted to map requisition lines');
+      }
+      if (!Types.ObjectId.isValid(readParam(req, 'id'))) {
+        throw createHttpError(400, 'Requisition id is invalid');
+      }
+      if (!Types.ObjectId.isValid(readParam(req, 'lineId'))) {
+        throw createHttpError(400, 'Requisition line id is invalid');
+      }
+
+      const requisition: any = await RequisitionModel.findById(readParam(req, 'id')).lean();
+      if (!requisition) {
+        throw createHttpError(404, 'Requisition not found');
+      }
+
+      const officeId = toObjectIdString(requisition.office_id);
+      if (!officeId) {
+        throw createHttpError(400, 'Requisition office is missing');
+      }
+      if (!ctx.isOrgAdmin) {
+        if (!ctx.locationId) throw createHttpError(403, 'User is not assigned to an office');
+        if (ctx.locationId !== officeId) {
+          throw createHttpError(403, 'Access restricted to assigned office');
+        }
+      }
+
+      const line = await RequisitionLineModel.findOne({
+        _id: readParam(req, 'lineId'),
+        requisition_id: requisition._id,
+      });
+      if (!line) {
+        throw createHttpError(404, 'Requisition line not found');
+      }
+
+      const mapType = asNonEmptyString(req.body?.map_type, 'map_type').toUpperCase();
+      if (!LINE_TYPES.has(mapType)) {
+        throw createHttpError(400, "map_type must be 'MOVEABLE' or 'CONSUMABLE'");
+      }
+
+      const lineType = normalizeLineType(line.line_type);
+      if (lineType !== mapType) {
+        throw createHttpError(400, `Line type ${lineType} cannot be mapped as ${mapType}`);
+      }
+
+      if (mapType === 'MOVEABLE') {
+        const assetId = asNonEmptyString(req.body?.asset_id, 'asset_id');
+        if (!Types.ObjectId.isValid(assetId)) {
+          throw createHttpError(400, 'asset_id is invalid');
+        }
+        const asset: any = await AssetModel.findById(assetId, { _id: 1, name: 1 }).lean();
+        if (!asset) {
+          throw createHttpError(404, 'Asset not found');
+        }
+        line.asset_id = asset._id as any;
+        line.consumable_id = null;
+        line.mapped_name = String(asset.name || line.requested_name || '').trim() || null;
+      } else {
+        const consumableId = asNonEmptyString(req.body?.consumable_id, 'consumable_id');
+        if (!Types.ObjectId.isValid(consumableId)) {
+          throw createHttpError(400, 'consumable_id is invalid');
+        }
+        const consumable: any = await ConsumableItemModel.findById(consumableId, { _id: 1, name: 1 }).lean();
+        if (!consumable) {
+          throw createHttpError(404, 'Consumable item not found');
+        }
+        line.consumable_id = consumable._id as any;
+        line.asset_id = null;
+        line.mapped_name = String(consumable.name || line.requested_name || '').trim() || null;
+      }
+
+      line.mapped_by_user_id = ctx.userId as any;
+      line.mapped_at = new Date();
+      await line.save();
+
+      const allLines: any = await RequisitionLineModel.find({ requisition_id: requisition._id }).lean();
+      const enrichedLines = await enrichLinesWithMappingMetadata(allLines as Array<Record<string, unknown>>);
+      const mappingSummary = buildRequisitionMappingSummary(enrichedLines as Array<Record<string, unknown>>);
+      const lineId = String(line._id);
+      const enrichedLine = enrichedLines.find((entry) => String(entry._id) === lineId) || line.toJSON();
+
+      return res.json({
+        requisition: {
+          ...requisition,
+          ...mappingSummary,
+        },
+        line: enrichedLine,
+        ...mappingSummary,
+      });
+    } catch (error) {
+      return next(error);
+    }
+  },
   create: async (req: AuthRequest, res: Response, next: NextFunction) => {
     let requisitionId: string | null = null;
     let documentId: string | null = null;
@@ -462,45 +787,130 @@ export const requisitionController = {
 
       const fileNumber = asNonEmptyString(req.body.fileNumber, 'fileNumber');
       const officeId = asNonEmptyString(req.body.officeId, 'officeId');
-      const requestedByEmployeeId = asNullableString(req.body.requestedByEmployeeId);
+      const targetTypeInput = asNonEmptyString(req.body.target_type, 'target_type').toUpperCase();
+      if (!TARGET_TYPES.has(targetTypeInput)) {
+        throw createHttpError(400, "target_type must be 'EMPLOYEE' or 'SUB_LOCATION'");
+      }
+      const targetType = targetTypeInput as 'EMPLOYEE' | 'SUB_LOCATION';
+      const targetId = asNonEmptyString(req.body.target_id, 'target_id');
       const remarks = asNullableString(req.body.remarks);
       const lines = parseLinesInput(req.body.lines);
 
       if (!Types.ObjectId.isValid(officeId)) {
         throw createHttpError(400, 'officeId is invalid');
       }
-      if (requestedByEmployeeId && !Types.ObjectId.isValid(requestedByEmployeeId)) {
-        throw createHttpError(400, 'requestedByEmployeeId is invalid');
+      if (!Types.ObjectId.isValid(targetId)) {
+        throw createHttpError(400, 'target_id is invalid');
       }
 
       if (officeId !== ctx.locationId) {
         throw createHttpError(403, 'Access restricted to your assigned office');
       }
 
-      const office = await OfficeModel.findById(officeId, { _id: 1 }).lean();
+      const office: any = await OfficeModel.findById(officeId, { _id: 1 }).lean();
       if (!office) {
         throw createHttpError(404, 'Office not found');
       }
 
-      if (requestedByEmployeeId) {
-        const requester = await EmployeeModel.findById(requestedByEmployeeId, {
+      let requestedByEmployeeId: string | null = null;
+      if (targetType === 'EMPLOYEE') {
+        const requester: any = await EmployeeModel.findById(targetId, {
           location_id: 1,
           directorate_id: 1,
+          office_id: 1,
         }).lean();
         if (!requester) {
-          throw createHttpError(404, 'Requested-by employee not found');
+          throw createHttpError(404, 'Target employee not found');
         }
         const requesterLocation = requester.location_id ? String(requester.location_id) : null;
         const requesterDirectorate = requester.directorate_id ? String(requester.directorate_id) : null;
-        if (requesterLocation !== officeId && requesterDirectorate !== officeId) {
-          throw createHttpError(400, 'requestedByEmployeeId must belong to the selected office');
+        const requesterOffice = (requester as { office_id?: unknown }).office_id
+          ? String((requester as { office_id?: unknown }).office_id)
+          : null;
+        if (requesterLocation !== officeId && requesterDirectorate !== officeId && requesterOffice !== officeId) {
+          throw createHttpError(400, 'Target employee must belong to the selected office');
+        }
+        requestedByEmployeeId = targetId;
+      } else {
+        const subLocation: any = await OfficeSubLocationModel.findById(targetId, { office_id: 1 }).lean();
+        if (!subLocation) {
+          throw createHttpError(404, 'Target sub-location not found');
+        }
+        if (String(subLocation.office_id || '') !== officeId) {
+          throw createHttpError(400, 'Target sub-location must belong to the selected office');
         }
       }
 
-      const existing = await RequisitionModel.findOne({ file_number: fileNumber }, { _id: 1 }).lean();
+      const existing: any = await RequisitionModel.findOne({ file_number: fileNumber }, { _id: 1 }).lean();
       if (existing) {
         throw createHttpError(409, 'fileNumber already exists');
       }
+
+      const moveableAssetIds = Array.from(
+        new Set(
+          lines
+            .filter((line) => line.line_type === 'MOVEABLE')
+            .map((line) => line.asset_id)
+            .filter((id): id is string => Boolean(id))
+        )
+      );
+      const consumableIds = Array.from(
+        new Set(
+          lines
+            .filter((line) => line.line_type === 'CONSUMABLE')
+            .map((line) => line.consumable_id)
+            .filter((id): id is string => Boolean(id))
+        )
+      );
+
+      const [assets, consumables] = await Promise.all([
+        moveableAssetIds.length
+          ? AssetModel.find({ _id: { $in: moveableAssetIds } }, { name: 1 }).lean()
+          : Promise.resolve([]),
+        consumableIds.length
+          ? ConsumableItemModel.find({ _id: { $in: consumableIds } }, { name: 1 }).lean()
+          : Promise.resolve([]),
+      ]);
+      if (assets.length !== moveableAssetIds.length) {
+        throw createHttpError(404, 'One or more moveable assets were not found');
+      }
+      if (consumables.length !== consumableIds.length) {
+        throw createHttpError(404, 'One or more consumable items were not found');
+      }
+      const assetNameById = new Map(assets.map((asset) => [String(asset._id), String(asset.name || '')]));
+      const consumableNameById = new Map(
+        consumables.map((consumable) => [String(consumable._id), String(consumable.name || '')])
+      );
+      const normalizedLines = lines.map((line) => {
+        if (line.line_type === 'MOVEABLE') {
+          const assetId = line.asset_id || null;
+          const assetName = assetId ? assetNameById.get(assetId) || null : null;
+          if (assetId && !assetName) {
+            throw createHttpError(404, `Asset not found for line asset_id ${assetId}`);
+          }
+          return {
+            ...line,
+            requested_name: line.requested_name,
+            mapped_name: assetName,
+            mapped_by_user_id: assetId ? ctx.userId : null,
+            mapped_at: assetId ? new Date() : null,
+            consumable_id: null,
+          };
+        }
+        const consumableId = line.consumable_id || null;
+        const consumableName = consumableId ? consumableNameById.get(consumableId) || null : null;
+        if (consumableId && !consumableName) {
+          throw createHttpError(404, `Consumable item not found for line consumable_id ${consumableId}`);
+        }
+        return {
+          ...line,
+          requested_name: line.requested_name,
+          mapped_name: consumableName,
+          mapped_by_user_id: consumableId ? ctx.userId : null,
+          mapped_at: consumableId ? new Date() : null,
+          asset_id: null,
+        };
+      });
 
       const absolutePath = req.file.path;
       const relativePath = path.join('uploads', 'documents', path.basename(absolutePath));
@@ -511,6 +921,8 @@ export const requisitionController = {
         file_number: fileNumber,
         office_id: officeId,
         issuing_office_id: officeId,
+        target_type: targetType,
+        target_id: targetId,
         requested_by_employee_id: requestedByEmployeeId,
         submitted_by_user_id: ctx.userId,
         fulfilled_by_user_id: null,
@@ -523,7 +935,7 @@ export const requisitionController = {
       });
       requisitionId = requisition.id;
 
-      const requisitionLinePayload = lines.map((line) => ({
+      const requisitionLinePayload = normalizedLines.map((line) => ({
         requisition_id: requisition._id,
         ...line,
       }));
@@ -563,9 +975,18 @@ export const requisitionController = {
       });
       documentLinkId = link.id;
 
+      const responseLines = await enrichLinesWithMappingMetadata(
+        lineRows.map((line) => line.toJSON()) as Array<Record<string, unknown>>
+      );
+      const mappingSummary = buildRequisitionMappingSummary(responseLines as Array<Record<string, unknown>>);
+
       res.status(201).json({
-        requisition: requisition.toJSON(),
-        lines: lineRows.map((line) => line.toJSON()),
+        requisition: {
+          ...requisition.toJSON(),
+          ...mappingSummary,
+        },
+        lines: responseLines,
+        ...mappingSummary,
       });
     } catch (error) {
       if (documentLinkId) {
@@ -617,7 +1038,7 @@ export const requisitionController = {
       const decision = parseVerifyDecision(req.body?.decision);
       const remarks = asNullableString(req.body?.remarks);
 
-      const requisition = await RequisitionModel.findById(req.params.id);
+      const requisition = await RequisitionModel.findById(readParam(req, 'id'));
       if (!requisition) {
         throw createHttpError(404, 'Requisition not found');
       }
@@ -633,7 +1054,7 @@ export const requisitionController = {
         throw createHttpError(403, 'Not permitted to verify requisition for this office type');
       }
 
-      if (!ctx.isHeadoffice && ctx.locationId !== officeId) {
+      if (!ctx.isOrgAdmin && ctx.locationId !== officeId) {
         throw createHttpError(403, 'Access restricted to assigned office');
       }
 
@@ -678,7 +1099,7 @@ export const requisitionController = {
       } | null = null;
 
       await session.withTransaction(async () => {
-        const requisition = await RequisitionModel.findById(req.params.id).session(session);
+        const requisition = await RequisitionModel.findById(readParam(req, 'id')).session(session);
         if (!requisition) {
           throw createHttpError(404, 'Requisition not found');
         }
@@ -697,7 +1118,7 @@ export const requisitionController = {
         if (!allowedRoles.has(ctx.role)) {
           throw createHttpError(403, 'Not permitted to adjust requisition for this office type');
         }
-        if (!ctx.isHeadoffice && ctx.locationId !== issuingOfficeId) {
+        if (!ctx.isOrgAdmin && ctx.locationId !== issuingOfficeId) {
           throw createHttpError(403, 'Access restricted to assigned office');
         }
 
@@ -825,7 +1246,7 @@ export const requisitionController = {
       } | null = null;
 
       await session.withTransaction(async () => {
-        const requisition = await RequisitionModel.findById(req.params.id).session(session);
+        const requisition = await RequisitionModel.findById(readParam(req, 'id')).session(session);
         if (!requisition) {
           throw createHttpError(404, 'Requisition not found');
         }
@@ -844,7 +1265,7 @@ export const requisitionController = {
         if (!allowedRoles.has(ctx.role)) {
           throw createHttpError(403, 'Not permitted to finalize requisition for this office type');
         }
-        if (!ctx.isHeadoffice && ctx.locationId !== issuingOfficeId) {
+        if (!ctx.isOrgAdmin && ctx.locationId !== issuingOfficeId) {
           throw createHttpError(403, 'Access restricted to assigned office');
         }
 
@@ -932,7 +1353,7 @@ export const requisitionController = {
         const relativePath = path.join('uploads', 'documents', path.basename(uploadedFile.path)).replace(/\\/g, '/');
         const fileBuffer = await fs.readFile(uploadedFile.path);
         const sha256 = crypto.createHash('sha256').update(fileBuffer).digest('hex');
-        const lastVersion = await DocumentVersionModel.findOne({ document_id: issueSlipDoc._id }, { version_no: 1 })
+        const lastVersion: any = await DocumentVersionModel.findOne({ document_id: issueSlipDoc._id }, { version_no: 1 })
           .sort({ version_no: -1 })
           .session(session)
           .lean()
@@ -1011,7 +1432,7 @@ export const requisitionController = {
   issuanceReport: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const ctx = await getRequestContext(req);
-      const report = await generateAndStoreIssuanceReport(ctx, req.params.id);
+      const report = await generateAndStoreIssuanceReport(ctx, readParam(req, 'id'));
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `inline; filename="${report.downloadFileName}"`);
       return res.status(200).send(report.buffer);
@@ -1025,7 +1446,7 @@ export const requisitionController = {
       const ctx = await getRequestContext(req);
       const payloadLines = parseFulfillLinesInput(req.body);
 
-      const requisition = await RequisitionModel.findById(req.params.id).session(session);
+      const requisition = await RequisitionModel.findById(readParam(req, 'id')).session(session);
       if (!requisition) {
         throw createHttpError(404, 'Requisition not found');
       }
@@ -1045,7 +1466,7 @@ export const requisitionController = {
         throw createHttpError(403, 'Not permitted to fulfill requisition for this office type');
       }
 
-      if (!ctx.isHeadoffice && ctx.locationId !== issuingOfficeId) {
+      if (!ctx.isOrgAdmin && ctx.locationId !== issuingOfficeId) {
         throw createHttpError(403, 'Access restricted to assigned office');
       }
 
@@ -1070,6 +1491,8 @@ export const requisitionController = {
       let responsePayload: {
         requisition: unknown;
         lines: unknown[];
+        has_unmapped_lines: boolean;
+        unmapped_lines_count: number;
         assignments: unknown[];
         consumableTransactions: unknown[];
       } | null = null;
@@ -1092,6 +1515,7 @@ export const requisitionController = {
         }
 
         const createdAssignments: unknown[] = [];
+        const createdDraftAssignmentIds: string[] = [];
         const consumableTransactions: unknown[] = [];
 
         for (const payloadLine of payloadLines) {
@@ -1112,14 +1536,38 @@ export const requisitionController = {
               throw createHttpError(400, `Moveable line ${line.id} exceeds approved quantity`);
             }
             if (assignIds.length > 0) {
-              if (!requisition.requested_by_employee_id) {
-                throw createHttpError(400, 'Moveable fulfillment requires requested_by_employee_id');
+              const mappedAssetId = line.asset_id ? String(line.asset_id) : null;
+              if (!mappedAssetId) {
+                throw createHttpError(400, `Moveable line ${line.id} must be mapped to an asset before fulfillment`);
+              }
+              const targetType = String(requisition.target_type || '').toUpperCase();
+              if (!TARGET_TYPES.has(targetType)) {
+                throw createHttpError(400, 'Requisition target is invalid');
+              }
+              if (!requisition.target_id || !Types.ObjectId.isValid(String(requisition.target_id))) {
+                throw createHttpError(400, 'Requisition target_id is invalid');
               }
               const assetItems = await AssetItemModel.find({ _id: { $in: assignIds } }).session(session);
               if (assetItems.length !== assignIds.length) {
                 throw createHttpError(404, `One or more asset items were not found for line ${line.id}`);
               }
+              const openAssignments = await AssignmentModel.find(
+                {
+                  asset_item_id: { $in: assignIds },
+                  status: { $in: Array.from(OPEN_ASSIGNMENT_STATUSES) },
+                },
+                { asset_item_id: 1 }
+              ).session(session);
+              if (openAssignments.length > 0) {
+                const blockedIds = openAssignments
+                  .map((row) => (row.asset_item_id ? String(row.asset_item_id) : null))
+                  .filter((id): id is string => Boolean(id));
+                throw createHttpError(400, `Asset item(s) already have open assignments: ${blockedIds.join(', ')}`);
+              }
               for (const item of assetItems) {
+                if (String(item.asset_id || '') !== mappedAssetId) {
+                  throw createHttpError(400, `Asset item ${item.id} does not match mapped asset for line ${line.id}`);
+                }
                 if (!isAssetItemHeldByOffice(item, issuingOfficeId)) {
                   throw createHttpError(400, `Asset item ${item.id} is not in the issuing office`);
                 }
@@ -1134,23 +1582,23 @@ export const requisitionController = {
               const assignmentRows = await AssignmentModel.insertMany(
                 assetItems.map((item) => ({
                   asset_item_id: item._id,
-                  employee_id: requisition.requested_by_employee_id,
+                  status: 'DRAFT',
+                  assigned_to_type: targetType,
+                  assigned_to_id: requisition.target_id,
+                  employee_id: targetType === 'EMPLOYEE' ? requisition.target_id : null,
+                  requisition_id: requisition._id,
+                  requisition_line_id: line._id,
                   assigned_date: new Date(),
                   expected_return_date: null,
                   returned_date: null,
-                  notes: `Issued via requisition ${requisition.file_number} line ${line.id}`,
+                  notes: `Draft via requisition ${requisition.file_number} line ${line.id}`,
                   is_active: true,
                 })),
                 { session }
               );
               createdAssignments.push(...assignmentRows.map((assignment) => assignment.toJSON()));
-
-              await AssetItemModel.updateMany(
-                { _id: { $in: assignIds } },
-                { assignment_status: 'Assigned', item_status: 'Assigned' },
-                { session }
-              );
-              additionalFulfilled = assignIds.length;
+              createdDraftAssignmentIds.push(...assignmentRows.map((assignment) => String(assignment._id)));
+              additionalFulfilled = assignmentRows.length;
             }
           } else if (line.line_type === 'CONSUMABLE') {
             const requestedIssue = Math.max(Number(payloadLine.issuedQuantity || 0), 0);
@@ -1160,9 +1608,11 @@ export const requisitionController = {
 
             const issueCap = Math.min(requestedIssue, remainingQty);
             if (issueCap > 0) {
-              const item = await ConsumableItemModel.findOne({
-                name: { $regex: `^${escapeRegex(line.requested_name)}$`, $options: 'i' },
-              }).session(session);
+              const lineConsumableId = line.consumable_id ? String(line.consumable_id) : null;
+              if (!lineConsumableId) {
+                throw createHttpError(400, `Consumable line ${line.id} must be mapped before fulfillment`);
+              }
+              const item = await ConsumableItemModel.findById(lineConsumableId).session(session);
 
               if (item) {
                 const balances = await ConsumableInventoryBalanceModel.find({
@@ -1228,7 +1678,7 @@ export const requisitionController = {
           line.fulfilled_quantity = nextFulfilled;
           if (nextFulfilled <= 0) {
             line.status = 'NOT_AVAILABLE';
-          } else if (nextFulfilled >= approvedQty) {
+          } else if (nextFulfilled === approvedQty) {
             line.status = 'ASSIGNED';
           } else {
             line.status = 'PARTIALLY_ASSIGNED';
@@ -1242,12 +1692,20 @@ export const requisitionController = {
             line.approved_quantity === null || line.approved_quantity === undefined
               ? Number(line.requested_quantity || 0)
               : Number(line.approved_quantity || 0);
-          return Number(line.fulfilled_quantity || 0) >= approved && approved > 0;
+          return Number(line.fulfilled_quantity || 0) === approved;
         });
 
         requisition.fulfilled_by_user_id = ctx.userId as any;
         requisition.status = allFulfilled ? 'FULFILLED_PENDING_SIGNATURE' : 'PARTIALLY_FULFILLED';
         await requisition.save({ session });
+
+        if (createdDraftAssignmentIds.length > 0) {
+          await dispatchDraftAssignmentNotifications({
+            officeId: issuingOfficeId,
+            requisition,
+            assignmentIds: createdDraftAssignmentIds,
+          });
+        }
 
         await logAudit({
           ctx,
@@ -1266,10 +1724,17 @@ export const requisitionController = {
           session,
         });
 
-        const responseLines = finalLines.map((line) => line.toJSON());
+        const responseLines = await enrichLinesWithMappingMetadata(
+          finalLines.map((line) => line.toJSON()) as Array<Record<string, unknown>>
+        );
+        const mappingSummary = buildRequisitionMappingSummary(responseLines as Array<Record<string, unknown>>);
         responsePayload = {
-          requisition: requisition.toJSON(),
+          requisition: {
+            ...requisition.toJSON(),
+            ...mappingSummary,
+          },
           lines: responseLines,
+          ...mappingSummary,
           assignments: createdAssignments,
           consumableTransactions,
         };
@@ -1286,3 +1751,7 @@ export const requisitionController = {
     }
   },
 };
+
+
+
+

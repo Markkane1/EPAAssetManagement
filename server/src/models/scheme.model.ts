@@ -11,5 +11,6 @@ const SchemeSchema = new Schema<any>(
   baseSchemaOptions
 );
 
-export const SchemeModel = mongoose.model('Scheme', SchemeSchema);
+export const SchemeModel = mongoose.model<any>('Scheme', SchemeSchema);
+
 

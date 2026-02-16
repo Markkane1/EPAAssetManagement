@@ -29,14 +29,14 @@ type ComplianceIssue = {
 
 export default function Compliance() {
   const navigate = useNavigate();
-  const { isSuperAdmin, locationId } = useAuth();
+  const { isOrgAdmin, locationId } = useAuth();
   const { data: locations } = useLocations();
   const locationList = locations || [];
 
   const currentLocation = locationId
     ? locationList.find((location) => location.id === locationId) || null
     : null;
-  const isHqView = isSuperAdmin || isHeadOfficeLocation(currentLocation);
+  const isHqView = isOrgAdmin || isHeadOfficeLocation(currentLocation);
 
   const [selectedOfficeId, setSelectedOfficeId] = useState("ALL");
   const [fromDate, setFromDate] = useState("");

@@ -41,7 +41,7 @@ function officeTypeLabel(type?: string | null) {
 }
 
 export default function Offices() {
-  const { isSuperAdmin } = useAuth();
+  const { isOrgAdmin } = useAuth();
   const { data: offices, isLoading, error } = useOffices();
   const createOffice = useCreateOffice();
   const updateOffice = useUpdateOffice();
@@ -114,7 +114,7 @@ export default function Offices() {
         description="Manage all offices, divisions, and districts"
         action={{ label: "Add Office", onClick: handleAddOffice }}
         extra={
-          isSuperAdmin ? (
+          isOrgAdmin ? (
             <div className="flex gap-2">
               <Button variant="outline" onClick={() => setDivisionModalOpen(true)}>
                 Manage Divisions
@@ -193,7 +193,7 @@ export default function Offices() {
         onSubmit={handleOfficeSubmit}
       />
 
-      {isSuperAdmin && (
+      {isOrgAdmin && (
         <>
           <DivisionManagementModal open={divisionModalOpen} onOpenChange={setDivisionModalOpen} />
           <DistrictManagementModal

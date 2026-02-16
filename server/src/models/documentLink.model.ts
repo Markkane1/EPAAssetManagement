@@ -21,5 +21,6 @@ const DocumentLinkSchema = new Schema<any>(
 DocumentLinkSchema.index({ entity_type: 1, entity_id: 1 });
 DocumentLinkSchema.index({ document_id: 1, entity_type: 1, entity_id: 1 }, { unique: true });
 
-export const DocumentLinkModel = mongoose.model('DocumentLink', DocumentLinkSchema);
+export const DocumentLinkModel = mongoose.model<any>('DocumentLink', DocumentLinkSchema);
+
 

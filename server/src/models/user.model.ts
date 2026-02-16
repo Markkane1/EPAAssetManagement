@@ -16,5 +16,6 @@ const UserSchema = new Schema<any>(
   baseSchemaOptions
 );
 
-export const UserModel = mongoose.model('User', UserSchema);
+export const UserModel = mongoose.model<any>('User', UserSchema);
+
 

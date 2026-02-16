@@ -41,5 +41,6 @@ const SystemSettingsSchema = new Schema<any>(
   baseSchemaOptions
 );
 
-export const SystemSettingsModel = mongoose.model('SystemSettings', SystemSettingsSchema);
+export const SystemSettingsModel = mongoose.model<any>('SystemSettings', SystemSettingsSchema);
+
 

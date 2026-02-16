@@ -62,6 +62,12 @@ function buildPayload(body: Record<string, unknown>) {
   return payload;
 }
 
+function readParam(req: Request, key: string) {
+  const raw = req.params?.[key];
+  if (Array.isArray(raw)) return String(raw[0] || '').trim();
+  return String(raw || '').trim();
+}
+
 export const employeeController = {
   ...baseController,
   list: async (req: AuthRequest, res: Response, next: NextFunction) => {
@@ -71,7 +77,7 @@ export const employeeController = {
         return res.status(401).json({ message: 'Unauthorized' });
       }
       const { limit, skip } = readPagination(req.query as Record<string, unknown>);
-      const isGlobal = user.role === 'org_admin' || user.isHeadoffice;
+      const isGlobal = user.role === 'org_admin' || user.isOrgAdmin;
       const locationId = user.locationId ? String(user.locationId) : null;
 
       if (!isGlobal && !locationId) {
@@ -95,10 +101,10 @@ export const employeeController = {
       if (!user) {
         return res.status(401).json({ message: 'Unauthorized' });
       }
-      const employee = await EmployeeModel.findById(req.params.id).lean();
+      const employee = await EmployeeModel.findById(readParam(req, 'id')).lean();
       if (!employee) return res.status(404).json({ message: 'Not found' });
 
-      const isGlobal = user.role === 'org_admin' || user.isHeadoffice;
+      const isGlobal = user.role === 'org_admin' || user.isOrgAdmin;
       if (!isGlobal) {
         if (!user.locationId) {
           return res.status(403).json({ message: 'User is not assigned to an office' });
@@ -131,7 +137,7 @@ export const employeeController = {
 
       const firstName = payload.first_name ? String(payload.first_name) : null;
       const lastName = payload.last_name ? String(payload.last_name) : null;
-      const isGlobal = authUser.role === 'org_admin' || authUser.isHeadoffice;
+      const isGlobal = authUser.role === 'org_admin' || authUser.isOrgAdmin;
       const locationId = payload.location_id ? String(payload.location_id) : null;
       if (!isGlobal) {
         if (!authUser.locationId) {
@@ -202,10 +208,11 @@ export const employeeController = {
       if (!canManage) {
         return res.status(403).json({ message: 'Access denied' });
       }
-      const existing = await EmployeeModel.findById(req.params.id);
+      const employeeId = readParam(req, 'id');
+      const existing = await EmployeeModel.findById(employeeId);
       if (!existing) return res.status(404).json({ message: 'Not found' });
 
-      const isGlobal = user.role === 'org_admin' || user.isHeadoffice;
+      const isGlobal = user.role === 'org_admin' || user.isOrgAdmin;
       if (!isGlobal) {
         if (!user.locationId) {
           return res.status(403).json({ message: 'User is not assigned to an office' });
@@ -224,7 +231,7 @@ export const employeeController = {
         payload.location_id = user.locationId;
       }
 
-      const updated = await employeeRepository.updateById(req.params.id, payload);
+      const updated = await employeeRepository.updateById(employeeId, payload);
       if (!updated) return res.status(404).json({ message: 'Not found' });
       if (payload.location_id && existing.user_id) {
         await UserModel.findByIdAndUpdate(existing.user_id, { location_id: payload.location_id });
@@ -244,10 +251,10 @@ export const employeeController = {
       if (!canManage) {
         return res.status(403).json({ message: 'Access denied' });
       }
-      const existing = await EmployeeModel.findById(req.params.id);
+      const existing = await EmployeeModel.findById(readParam(req, 'id'));
       if (!existing) return res.status(404).json({ message: 'Not found' });
 
-      const isGlobal = user.role === 'org_admin' || user.isHeadoffice;
+      const isGlobal = user.role === 'org_admin' || user.isOrgAdmin;
       if (!isGlobal) {
         if (!user.locationId) {
           return res.status(403).json({ message: 'User is not assigned to an office' });
@@ -271,7 +278,7 @@ export const employeeController = {
         return res.status(401).json({ message: 'Unauthorized' });
       }
 
-      const canTransferAcrossOffices = user.role === 'org_admin' || Boolean(user.isHeadoffice);
+      const canTransferAcrossOffices = user.role === 'org_admin' || Boolean(user.isOrgAdmin);
       if (!canTransferAcrossOffices) {
         return res.status(403).json({ message: 'Access denied' });
       }
@@ -286,12 +293,14 @@ export const employeeController = {
         return res.status(400).json({ message: 'newOfficeId is invalid' });
       }
 
-      const employee = await EmployeeModel.findById(req.params.id);
+      const employee = await EmployeeModel.findById(readParam(req, 'id'));
       if (!employee) {
         return res.status(404).json({ message: 'Not found' });
       }
 
-      const destinationOffice = await OfficeModel.findById(newOfficeId, { _id: 1, is_active: 1 }).lean();
+      const destinationOffice = (await OfficeModel.findById(newOfficeId, { _id: 1, is_active: 1 }).lean()) as
+        | { is_active?: boolean }
+        | null;
       if (!destinationOffice) {
         return res.status(404).json({ message: 'Office not found' });
       }
@@ -344,14 +353,14 @@ export const employeeController = {
         return res.status(401).json({ message: 'Unauthorized' });
       }
       const { limit, skip } = readPagination(req.query as Record<string, unknown>);
-      const isGlobal = user.role === 'org_admin' || user.isHeadoffice;
+      const isGlobal = user.role === 'org_admin' || user.isOrgAdmin;
       const locationId = user.locationId ? String(user.locationId) : null;
       if (!isGlobal && !locationId) {
         return res.status(403).json({ message: 'User is not assigned to an office' });
       }
 
       const filter: Record<string, unknown> = {
-        directorate_id: req.params.directorateId,
+        directorate_id: readParam(req, 'directorateId'),
       };
       if (!isGlobal && locationId) {
         filter.location_id = locationId;
@@ -367,3 +376,5 @@ export const employeeController = {
     }
   },
 };
+
+

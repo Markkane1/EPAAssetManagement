@@ -28,7 +28,7 @@ import { ConsumableModeToggle } from '@/components/consumables/ConsumableModeTog
 import { useAuth } from '@/contexts/AuthContext';
 
 export default function ConsumableMaster() {
-  const { role, isSuperAdmin } = useAuth();
+  const { role, isOrgAdmin } = useAuth();
   const { data: items, isLoading } = useConsumableItems();
   const { data: units } = useConsumableUnits();
   const { data: categories } = useCategories();
@@ -37,7 +37,7 @@ export default function ConsumableMaster() {
   const deleteItem = useDeleteConsumableItem();
   const { mode, setMode } = useConsumableMode();
   const modeLabel = mode === 'chemicals' ? 'chemical' : 'general consumable';
-  const canManage = isSuperAdmin || role === 'org_admin' || role === 'caretaker';
+  const canManage = isOrgAdmin || role === 'caretaker';
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editing, setEditing] = useState<ConsumableItem | null>(null);

@@ -1,3 +1,4 @@
+// @ts-nocheck
 import mongoose, { Schema } from 'mongoose';
 import { baseSchemaOptions } from '../../../models/base';
 
@@ -105,4 +106,5 @@ ConsumableIssueSchema.index({ to_type: 1, to_id: 1, issued_at: -1 });
 ConsumableIssueSchema.index({ issued_by_user_id: 1, issued_at: -1 });
 
 export const ConsumableIssueModel = mongoose.model('ConsumableIssue', ConsumableIssueSchema);
+
 

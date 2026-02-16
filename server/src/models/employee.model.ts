@@ -26,5 +26,6 @@ EmployeeSchema.index({ directorate_id: 1, location_id: 1, created_at: -1 });
 EmployeeSchema.index({ transferred_to_office_id: 1, transferred_at: -1 });
 EmployeeSchema.index({ transferred_from_office_id: 1, transferred_at: -1 });
 
-export const EmployeeModel = mongoose.model('Employee', EmployeeSchema);
+export const EmployeeModel = mongoose.model<any>('Employee', EmployeeSchema);
+
 

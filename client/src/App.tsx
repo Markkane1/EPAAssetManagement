@@ -6,7 +6,6 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
-import type { AppRole } from "@/services/authService";
 import { API_CONFIG } from "@/config/api.config";
 
 const Dashboard = lazy(() => import("./pages/Dashboard"));
@@ -64,17 +63,6 @@ const UserManagement = lazy(() => import("./pages/UserManagement"));
 const UserActivity = lazy(() => import("./pages/UserActivity"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
-const fullAccessRoles: AppRole[] = ["org_admin", "office_head", "caretaker", "employee"];
-const assignmentAccessRoles: AppRole[] = [...fullAccessRoles];
-const consumableAccessRoles: AppRole[] = [...fullAccessRoles];
-const adminAccessRoles: AppRole[] = ["org_admin"];
-const complianceAccessRoles: AppRole[] = [...fullAccessRoles];
-const requisitionSubmitRoles: AppRole[] = ["employee", "caretaker", "office_head"];
-const requisitionReadRoles: AppRole[] = [...fullAccessRoles];
-const returnCreateRoles: AppRole[] = ["employee"];
-const returnIssuerRoles: AppRole[] = ["org_admin", "office_head", "caretaker"];
-const returnReadRoles: AppRole[] = [...returnIssuerRoles, "employee"];
-
 const RouteFallback = () => (
   <div className="flex min-h-screen items-center justify-center text-sm text-muted-foreground">
     Loading...
@@ -108,57 +96,57 @@ const App = () => {
               <Routes>
                 <Route path="/login" element={<Login />} />
                 <Route path="/forgot-password" element={<ForgotPassword />} />
-                <Route path="/" element={<ProtectedRoute allowedRoles={fullAccessRoles}><Dashboard /></ProtectedRoute>} />
-                <Route path="/assets" element={<ProtectedRoute allowedRoles={fullAccessRoles}><Assets /></ProtectedRoute>} />
-                <Route path="/assets/:id" element={<ProtectedRoute allowedRoles={fullAccessRoles}><AssetDetail /></ProtectedRoute>} />
-                <Route path="/asset-items" element={<ProtectedRoute allowedRoles={fullAccessRoles}><AssetItems /></ProtectedRoute>} />
-                <Route path="/consumables" element={<ProtectedRoute allowedRoles={consumableAccessRoles}><ConsumableMaster /></ProtectedRoute>} />
-                <Route path="/consumables/locations" element={<ProtectedRoute allowedRoles={consumableAccessRoles}><ConsumableLocations /></ProtectedRoute>} />
-                <Route path="/consumables/receive" element={<ProtectedRoute allowedRoles={consumableAccessRoles}><ConsumableReceive /></ProtectedRoute>} />
-                <Route path="/consumables/lots" element={<ProtectedRoute allowedRoles={consumableAccessRoles}><ConsumableLots /></ProtectedRoute>} />
-                <Route path="/consumables/units" element={<ProtectedRoute allowedRoles={consumableAccessRoles}><ConsumableUnits /></ProtectedRoute>} />
-                <Route path="/consumables/inventory" element={<ProtectedRoute allowedRoles={consumableAccessRoles}><ConsumableInventory /></ProtectedRoute>} />
-                <Route path="/consumables/transfers" element={<ProtectedRoute allowedRoles={consumableAccessRoles}><ConsumableTransfers /></ProtectedRoute>} />
-                <Route path="/consumables/consume" element={<ProtectedRoute allowedRoles={consumableAccessRoles}><ConsumableConsume /></ProtectedRoute>} />
-                <Route path="/consumables/adjustments" element={<ProtectedRoute allowedRoles={consumableAccessRoles}><ConsumableAdjustments /></ProtectedRoute>} />
-                <Route path="/consumables/disposal" element={<ProtectedRoute allowedRoles={consumableAccessRoles}><ConsumableDisposal /></ProtectedRoute>} />
-                <Route path="/consumables/returns" element={<ProtectedRoute allowedRoles={consumableAccessRoles}><ConsumableReturns /></ProtectedRoute>} />
-                <Route path="/consumables/ledger" element={<ProtectedRoute allowedRoles={consumableAccessRoles}><ConsumableLedger /></ProtectedRoute>} />
-                <Route path="/consumables/expiry" element={<ProtectedRoute allowedRoles={consumableAccessRoles}><ConsumableExpiry /></ProtectedRoute>} />
-                <Route path="/employees" element={<ProtectedRoute allowedRoles={fullAccessRoles}><Employees /></ProtectedRoute>} />
-                <Route path="/employees/:id" element={<ProtectedRoute allowedRoles={fullAccessRoles}><EmployeeDetail /></ProtectedRoute>} />
-                <Route path="/assignments" element={<ProtectedRoute allowedRoles={assignmentAccessRoles}><Assignments /></ProtectedRoute>} />
-                <Route path="/transfers" element={<ProtectedRoute allowedRoles={fullAccessRoles}><Transfers /></ProtectedRoute>} />
-                <Route path="/maintenance" element={<ProtectedRoute allowedRoles={fullAccessRoles}><Maintenance /></ProtectedRoute>} />
-                <Route path="/purchase-orders" element={<ProtectedRoute allowedRoles={fullAccessRoles}><PurchaseOrders /></ProtectedRoute>} />
-                <Route path="/offices" element={<ProtectedRoute allowedRoles={adminAccessRoles}><Offices /></ProtectedRoute>} />
-                <Route path="/categories" element={<ProtectedRoute allowedRoles={fullAccessRoles}><Categories /></ProtectedRoute>} />
-                <Route path="/vendors" element={<ProtectedRoute allowedRoles={fullAccessRoles}><Vendors /></ProtectedRoute>} />
-                <Route path="/projects" element={<ProtectedRoute allowedRoles={fullAccessRoles}><Projects /></ProtectedRoute>} />
-                <Route path="/schemes" element={<ProtectedRoute allowedRoles={fullAccessRoles}><Schemes /></ProtectedRoute>} />
-                <Route path="/reports" element={<ProtectedRoute allowedRoles={fullAccessRoles}><Reports /></ProtectedRoute>} />
-                <Route path="/compliance" element={<ProtectedRoute allowedRoles={complianceAccessRoles}><Compliance /></ProtectedRoute>} />
-                <Route path="/inventory" element={<ProtectedRoute allowedRoles={fullAccessRoles}><InventoryHub /></ProtectedRoute>} />
-                <Route path="/requisitions" element={<ProtectedRoute allowedRoles={requisitionReadRoles}><Requisitions /></ProtectedRoute>} />
-                <Route path="/requisitions/new" element={<ProtectedRoute allowedRoles={requisitionSubmitRoles}><RequisitionNew /></ProtectedRoute>} />
-                <Route path="/requisitions/:id" element={<ProtectedRoute allowedRoles={requisitionReadRoles}><RequisitionDetail /></ProtectedRoute>} />
-                <Route path="/returns/new" element={<ProtectedRoute allowedRoles={returnCreateRoles}><ReturnRequestNew /></ProtectedRoute>} />
-                <Route path="/returns" element={<ProtectedRoute allowedRoles={returnIssuerRoles}><Returns /></ProtectedRoute>} />
-                <Route path="/returns/:id" element={<ProtectedRoute allowedRoles={returnReadRoles}><ReturnDetail /></ProtectedRoute>} />
-                <Route path="/reports/asset-summary" element={<ProtectedRoute allowedRoles={fullAccessRoles}><AssetSummaryReport /></ProtectedRoute>} />
-                <Route path="/reports/asset-items-inventory" element={<ProtectedRoute allowedRoles={fullAccessRoles}><AssetItemsInventoryReport /></ProtectedRoute>} />
-                <Route path="/reports/assignment-summary" element={<ProtectedRoute allowedRoles={fullAccessRoles}><AssignmentSummaryReport /></ProtectedRoute>} />
-                <Route path="/reports/status-distribution" element={<ProtectedRoute allowedRoles={fullAccessRoles}><StatusDistributionReport /></ProtectedRoute>} />
-                <Route path="/reports/maintenance-report" element={<ProtectedRoute allowedRoles={fullAccessRoles}><MaintenanceReport /></ProtectedRoute>} />
-                <Route path="/reports/location-inventory" element={<ProtectedRoute allowedRoles={fullAccessRoles}><LocationInventoryReport /></ProtectedRoute>} />
-                <Route path="/reports/financial-summary" element={<ProtectedRoute allowedRoles={fullAccessRoles}><FinancialSummaryReport /></ProtectedRoute>} />
-                <Route path="/reports/employee-assets" element={<ProtectedRoute allowedRoles={fullAccessRoles}><EmployeeAssetsReport /></ProtectedRoute>} />
-                <Route path="/settings" element={<ProtectedRoute allowedRoles={fullAccessRoles}><Settings /></ProtectedRoute>} />
-                <Route path="/audit-logs" element={<ProtectedRoute allowedRoles={fullAccessRoles}><AuditLogs /></ProtectedRoute>} />
-                <Route path="/user-permissions" element={<ProtectedRoute allowedRoles={adminAccessRoles}><UserPermissions /></ProtectedRoute>} />
-                <Route path="/user-management" element={<ProtectedRoute allowedRoles={adminAccessRoles}><UserManagement /></ProtectedRoute>} />
-                <Route path="/user-activity" element={<ProtectedRoute allowedRoles={adminAccessRoles}><UserActivity /></ProtectedRoute>} />
-                <Route path="/profile" element={<ProtectedRoute allowedRoles={assignmentAccessRoles}><Profile /></ProtectedRoute>} />
+                <Route path="/" element={<ProtectedRoute page="dashboard"><Dashboard /></ProtectedRoute>} />
+                <Route path="/assets" element={<ProtectedRoute page="assets"><Assets /></ProtectedRoute>} />
+                <Route path="/assets/:id" element={<ProtectedRoute page="assets"><AssetDetail /></ProtectedRoute>} />
+                <Route path="/asset-items" element={<ProtectedRoute page="asset-items"><AssetItems /></ProtectedRoute>} />
+                <Route path="/consumables" element={<ProtectedRoute page="consumables"><ConsumableMaster /></ProtectedRoute>} />
+                <Route path="/consumables/locations" element={<ProtectedRoute page="consumables"><ConsumableLocations /></ProtectedRoute>} />
+                <Route path="/consumables/receive" element={<ProtectedRoute page="consumables"><ConsumableReceive /></ProtectedRoute>} />
+                <Route path="/consumables/lots" element={<ProtectedRoute page="consumables"><ConsumableLots /></ProtectedRoute>} />
+                <Route path="/consumables/units" element={<ProtectedRoute page="consumables"><ConsumableUnits /></ProtectedRoute>} />
+                <Route path="/consumables/inventory" element={<ProtectedRoute page="consumables"><ConsumableInventory /></ProtectedRoute>} />
+                <Route path="/consumables/transfers" element={<ProtectedRoute page="consumables"><ConsumableTransfers /></ProtectedRoute>} />
+                <Route path="/consumables/consume" element={<ProtectedRoute page="consumables"><ConsumableConsume /></ProtectedRoute>} />
+                <Route path="/consumables/adjustments" element={<ProtectedRoute page="consumables"><ConsumableAdjustments /></ProtectedRoute>} />
+                <Route path="/consumables/disposal" element={<ProtectedRoute page="consumables"><ConsumableDisposal /></ProtectedRoute>} />
+                <Route path="/consumables/returns" element={<ProtectedRoute page="consumables"><ConsumableReturns /></ProtectedRoute>} />
+                <Route path="/consumables/ledger" element={<ProtectedRoute page="consumables"><ConsumableLedger /></ProtectedRoute>} />
+                <Route path="/consumables/expiry" element={<ProtectedRoute page="consumables"><ConsumableExpiry /></ProtectedRoute>} />
+                <Route path="/employees" element={<ProtectedRoute page="employees"><Employees /></ProtectedRoute>} />
+                <Route path="/employees/:id" element={<ProtectedRoute page="employees"><EmployeeDetail /></ProtectedRoute>} />
+                <Route path="/assignments" element={<ProtectedRoute page="assignments"><Assignments /></ProtectedRoute>} />
+                <Route path="/transfers" element={<ProtectedRoute page="transfers"><Transfers /></ProtectedRoute>} />
+                <Route path="/maintenance" element={<ProtectedRoute page="maintenance"><Maintenance /></ProtectedRoute>} />
+                <Route path="/purchase-orders" element={<ProtectedRoute page="purchase-orders"><PurchaseOrders /></ProtectedRoute>} />
+                <Route path="/offices" element={<ProtectedRoute page="offices"><Offices /></ProtectedRoute>} />
+                <Route path="/categories" element={<ProtectedRoute page="categories"><Categories /></ProtectedRoute>} />
+                <Route path="/vendors" element={<ProtectedRoute page="vendors"><Vendors /></ProtectedRoute>} />
+                <Route path="/projects" element={<ProtectedRoute page="projects"><Projects /></ProtectedRoute>} />
+                <Route path="/schemes" element={<ProtectedRoute page="schemes"><Schemes /></ProtectedRoute>} />
+                <Route path="/reports" element={<ProtectedRoute page="reports"><Reports /></ProtectedRoute>} />
+                <Route path="/compliance" element={<ProtectedRoute page="compliance"><Compliance /></ProtectedRoute>} />
+                <Route path="/inventory" element={<ProtectedRoute page="inventory"><InventoryHub /></ProtectedRoute>} />
+                <Route path="/requisitions" element={<ProtectedRoute page="requisitions"><Requisitions /></ProtectedRoute>} />
+                <Route path="/requisitions/new" element={<ProtectedRoute page="requisitions-new"><RequisitionNew /></ProtectedRoute>} />
+                <Route path="/requisitions/:id" element={<ProtectedRoute page="requisitions"><RequisitionDetail /></ProtectedRoute>} />
+                <Route path="/returns/new" element={<ProtectedRoute page="returns-new"><ReturnRequestNew /></ProtectedRoute>} />
+                <Route path="/returns" element={<ProtectedRoute page="returns"><Returns /></ProtectedRoute>} />
+                <Route path="/returns/:id" element={<ProtectedRoute page="returns-detail"><ReturnDetail /></ProtectedRoute>} />
+                <Route path="/reports/asset-summary" element={<ProtectedRoute page="reports"><AssetSummaryReport /></ProtectedRoute>} />
+                <Route path="/reports/asset-items-inventory" element={<ProtectedRoute page="reports"><AssetItemsInventoryReport /></ProtectedRoute>} />
+                <Route path="/reports/assignment-summary" element={<ProtectedRoute page="reports"><AssignmentSummaryReport /></ProtectedRoute>} />
+                <Route path="/reports/status-distribution" element={<ProtectedRoute page="reports"><StatusDistributionReport /></ProtectedRoute>} />
+                <Route path="/reports/maintenance-report" element={<ProtectedRoute page="reports"><MaintenanceReport /></ProtectedRoute>} />
+                <Route path="/reports/location-inventory" element={<ProtectedRoute page="reports"><LocationInventoryReport /></ProtectedRoute>} />
+                <Route path="/reports/financial-summary" element={<ProtectedRoute page="reports"><FinancialSummaryReport /></ProtectedRoute>} />
+                <Route path="/reports/employee-assets" element={<ProtectedRoute page="reports"><EmployeeAssetsReport /></ProtectedRoute>} />
+                <Route path="/settings" element={<ProtectedRoute page="settings"><Settings /></ProtectedRoute>} />
+                <Route path="/audit-logs" element={<ProtectedRoute page="audit-logs"><AuditLogs /></ProtectedRoute>} />
+                <Route path="/user-permissions" element={<ProtectedRoute page="user-permissions"><UserPermissions /></ProtectedRoute>} />
+                <Route path="/user-management" element={<ProtectedRoute page="user-management"><UserManagement /></ProtectedRoute>} />
+                <Route path="/user-activity" element={<ProtectedRoute page="user-activity"><UserActivity /></ProtectedRoute>} />
+                <Route path="/profile" element={<ProtectedRoute page="profile"><Profile /></ProtectedRoute>} />
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </Suspense>

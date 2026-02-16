@@ -40,7 +40,7 @@ export async function createRecord(
   const officeId = input.officeId || ctx.locationId;
   if (!officeId) throw createHttpError(400, 'Office is required for record');
 
-  if (!ctx.isHeadoffice && officeId !== ctx.locationId) {
+  if (!ctx.isOrgAdmin && officeId !== ctx.locationId) {
     throw createHttpError(403, 'Access restricted to assigned office');
   }
 
@@ -96,7 +96,7 @@ export async function listRecords(
 export async function getRecordById(ctx: RequestContext, id: string) {
   const record = await RecordModel.findById(id).lean();
   if (!record) throw createHttpError(404, 'Record not found');
-  if (!ctx.isHeadoffice && String((record as { office_id?: unknown }).office_id) !== ctx.locationId) {
+  if (!ctx.isOrgAdmin && String((record as { office_id?: unknown }).office_id) !== ctx.locationId) {
     throw createHttpError(403, 'Access restricted to assigned office');
   }
   return record;
@@ -143,7 +143,7 @@ export async function updateRecordStatus(
   const record = await RecordModel.findById(recordId).session(session || null);
   if (!record) throw createHttpError(404, 'Record not found');
   const recordDoc = record as any;
-  if (!ctx.isHeadoffice && recordDoc.office_id.toString() !== ctx.locationId) {
+  if (!ctx.isOrgAdmin && recordDoc.office_id.toString() !== ctx.locationId) {
     throw createHttpError(403, 'Access restricted to assigned office');
   }
 
@@ -159,7 +159,7 @@ export async function updateRecordStatus(
       ? recordDoc.maintenance_record_id.toString()
       : null;
   const approvalRequired = (APPROVAL_REQUIRED[recordType] || []).includes(status);
-  if (approvalRequired && !ctx.isHeadoffice) {
+  if (approvalRequired && !ctx.isOrgAdmin) {
     const approved = await hasApprovedApproval(recordDoc.id);
     if (!approved) throw createHttpError(400, 'Approval required before this status transition');
   }
@@ -250,3 +250,4 @@ export async function attachDocumentToRecord(recordId: string, documentId: strin
     required_for_status: requiredForStatus || null,
   });
 }
+

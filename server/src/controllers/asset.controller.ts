@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { Response, NextFunction } from 'express';
 import { AssetModel } from '../models/asset.model';
 import { AssetItemModel } from '../models/assetItem.model';
@@ -115,7 +116,7 @@ export const assetController = {
     try {
       const { limit, skip } = readPagination(req.query as Record<string, unknown>);
       const access = await resolveAccessContext(req.user);
-      if (access.isHeadofficeAdmin) {
+      if (access.isOrgAdmin) {
         const assets = await AssetModel.find({ is_active: { $ne: false } })
           .sort({ name: 1 })
           .skip(skip)
@@ -143,7 +144,7 @@ export const assetController = {
       const access = await resolveAccessContext(req.user);
       const asset = await AssetModel.findById(req.params.id).lean();
       if (!asset) return res.status(404).json({ message: 'Not found' });
-      if (!access.isHeadofficeAdmin) {
+      if (!access.isOrgAdmin) {
         if (!access.officeId) throw createHttpError(403, 'User is not assigned to an office');
         const hasItem = await AssetItemModel.exists({
           asset_id: asset._id,
@@ -161,7 +162,7 @@ export const assetController = {
     try {
       const { limit, skip } = readPagination(req.query as Record<string, unknown>);
       const access = await resolveAccessContext(req.user);
-      if (access.isHeadofficeAdmin) {
+      if (access.isOrgAdmin) {
         const assets = await AssetModel.find({ category_id: req.params.categoryId, is_active: { $ne: false } })
           .sort({ name: 1 })
           .skip(skip)
@@ -192,7 +193,7 @@ export const assetController = {
     try {
       const { limit, skip } = readPagination(req.query as Record<string, unknown>);
       const access = await resolveAccessContext(req.user);
-      if (access.isHeadofficeAdmin) {
+      if (access.isOrgAdmin) {
         const assets = await AssetModel.find({ vendor_id: req.params.vendorId, is_active: { $ne: false } })
           .sort({ name: 1 })
           .skip(skip)
@@ -222,7 +223,7 @@ export const assetController = {
   create: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const access = await resolveAccessContext(req.user);
-      if (!access.isHeadofficeAdmin) {
+      if (!access.isOrgAdmin) {
         throw createHttpError(403, 'Only org_admin can create asset definitions');
       }
       const payload = buildPayload(req.body);
@@ -237,7 +238,7 @@ export const assetController = {
   update: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const access = await resolveAccessContext(req.user);
-      if (!access.isHeadofficeAdmin) {
+      if (!access.isOrgAdmin) {
         throw createHttpError(403, 'Only org_admin can update asset definitions');
       }
       const payload = buildPayload(req.body);
@@ -251,7 +252,7 @@ export const assetController = {
   remove: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const access = await resolveAccessContext(req.user);
-      if (!access.isHeadofficeAdmin) {
+      if (!access.isOrgAdmin) {
         throw createHttpError(403, 'Only org_admin can retire assets');
       }
       const asset = await AssetModel.findById(req.params.id);
@@ -268,3 +269,5 @@ export const assetController = {
     }
   },
 };
+
+

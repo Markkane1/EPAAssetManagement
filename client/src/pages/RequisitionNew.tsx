@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,10 +10,12 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Plus, Trash2, Loader2, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import { requisitionService } from "@/services/requisitionService";
 import type { RequisitionCreateLineInput } from "@/services/requisitionService";
+import { officeSubLocationService } from "@/services/officeSubLocationService";
 import { useEmployees } from "@/hooks/useEmployees";
 import { useLocations } from "@/hooks/useLocations";
 import { useAuth } from "@/contexts/AuthContext";
@@ -45,9 +48,18 @@ export default function RequisitionNew() {
   const { user, role, locationId } = useAuth();
   const { data: employees, isLoading: employeesLoading } = useEmployees();
   const { data: locations } = useLocations();
+  const roomsQuery = useQuery({
+    queryKey: ["office-sub-locations", locationId],
+    queryFn: () => officeSubLocationService.list({ officeId: locationId || undefined }),
+    enabled: Boolean(locationId),
+  });
 
   const [fileNumber, setFileNumber] = useState("");
-  const [requestedByEmployeeId, setRequestedByEmployeeId] = useState("");
+  const [targetType, setTargetType] = useState<"EMPLOYEE" | "SUB_LOCATION">("EMPLOYEE");
+  const [targetEmployeeId, setTargetEmployeeId] = useState("");
+  const [targetSubLocationId, setTargetSubLocationId] = useState("");
+  const [employeeSearch, setEmployeeSearch] = useState("");
+  const [roomSearch, setRoomSearch] = useState("");
   const [lines, setLines] = useState<DraftLine[]>([{ ...DEFAULT_LINE }]);
   const [attachment, setAttachment] = useState<File | null>(null);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
@@ -65,6 +77,21 @@ export default function RequisitionNew() {
     if (!locationId) return [];
     return employeeList.filter((employee) => employee.location_id === locationId);
   }, [employeeList, locationId]);
+  const roomList = roomsQuery.data || [];
+
+  const filteredOfficeEmployees = useMemo(() => {
+    const token = employeeSearch.trim().toLowerCase();
+    if (!token) return officeEmployees;
+    return officeEmployees.filter((employee) =>
+      `${employee.first_name} ${employee.last_name} ${employee.email}`.toLowerCase().includes(token)
+    );
+  }, [officeEmployees, employeeSearch]);
+
+  const filteredRooms = useMemo(() => {
+    const token = roomSearch.trim().toLowerCase();
+    if (!token) return roomList;
+    return roomList.filter((room) => room.name.toLowerCase().includes(token));
+  }, [roomList, roomSearch]);
 
   useEffect(() => {
     if (employeeDefaultResolved || role !== "employee") return;
@@ -74,7 +101,8 @@ export default function RequisitionNew() {
     const byEmail = officeEmployees.find((employee) => employee.email?.toLowerCase() === currentUserEmail);
     const mapped = byUserId || byEmail;
     if (mapped?.id) {
-      setRequestedByEmployeeId(mapped.id);
+      setTargetType("EMPLOYEE");
+      setTargetEmployeeId(mapped.id);
     }
     setEmployeeDefaultResolved(true);
   }, [employeeDefaultResolved, role, user?.id, user?.email, officeEmployees]);
@@ -118,28 +146,44 @@ export default function RequisitionNew() {
         errors.push(`Line ${index + 1}: requested quantity must be greater than 0.`);
       }
     });
+    if (targetType === "EMPLOYEE") {
+      if (!targetEmployeeId) {
+        errors.push("Select target employee.");
+      } else if (!officeEmployees.some((employee) => employee.id === targetEmployeeId)) {
+        errors.push("Selected target employee is not valid for your office.");
+      }
+    } else {
+      if (!targetSubLocationId) {
+        errors.push("Select target room.");
+      } else if (!roomList.some((room) => (room.id || room._id) === targetSubLocationId)) {
+        errors.push("Selected target room is not valid for your office.");
+      }
+    }
     setValidationErrors(errors);
     return errors.length === 0;
   };
 
   const handleSubmit = async () => {
     if (!validate() || !locationId || !attachment) return;
+    const targetId = targetType === "EMPLOYEE" ? targetEmployeeId : targetSubLocationId;
+    if (!targetId) return;
 
     const payloadLines: RequisitionCreateLineInput[] = lines.map((line) => ({
-      lineType: line.line_type,
-      requestedName: line.requested_name.trim(),
-      requestedQuantity: Number(line.requested_quantity || 1),
+      line_type: line.line_type,
+      requested_name: line.requested_name.trim(),
+      requested_quantity: Number(line.requested_quantity || 1),
       notes: line.notes.trim() || undefined,
     }));
 
     setIsSubmitting(true);
     try {
       const created = await requisitionService.create({
-        fileNumber: fileNumber.trim(),
-        officeId: locationId,
-        requestedByEmployeeId: requestedByEmployeeId || undefined,
+        file_number: fileNumber.trim(),
+        office_id: locationId,
+        target_type: targetType,
+        target_id: targetId,
         lines: payloadLines,
-        requisitionFile: attachment,
+        requisition_file: attachment,
       });
 
       const requisitionId = created.requisition.id || created.requisition._id;
@@ -202,27 +246,81 @@ export default function RequisitionNew() {
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Label>Requested By Employee</Label>
-              <Select value={requestedByEmployeeId || "none"} onValueChange={(value) => setRequestedByEmployeeId(value === "none" ? "" : value)}>
-                <SelectTrigger>
-                  <SelectValue
-                    placeholder={
-                      employeesLoading
-                        ? "Loading employees..."
-                        : "Select employee (optional)"
-                    }
+            <div className="space-y-3 rounded-md border p-3">
+              <Label>Requisition Target *</Label>
+              <RadioGroup
+                value={targetType}
+                onValueChange={(value) => setTargetType(value as "EMPLOYEE" | "SUB_LOCATION")}
+                className="grid gap-2 md:grid-cols-2"
+              >
+                <label className="flex items-center gap-2 rounded border p-2">
+                  <RadioGroupItem id="target-employee" value="EMPLOYEE" />
+                  <span className="text-sm font-medium">Employee</span>
+                </label>
+                <label className="flex items-center gap-2 rounded border p-2">
+                  <RadioGroupItem id="target-room" value="SUB_LOCATION" />
+                  <span className="text-sm font-medium">Room</span>
+                </label>
+              </RadioGroup>
+
+              {targetType === "EMPLOYEE" ? (
+                <div className="space-y-2">
+                  <Label htmlFor="employeeSearch">Employee Search</Label>
+                  <Input
+                    id="employeeSearch"
+                    value={employeeSearch}
+                    onChange={(event) => setEmployeeSearch(event.target.value)}
+                    placeholder="Type employee name or email"
                   />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No specific employee</SelectItem>
-                  {officeEmployees.map((employee) => (
-                    <SelectItem key={employee.id} value={employee.id}>
-                      {employee.first_name} {employee.last_name} ({employee.email})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                  <Select
+                    value={targetEmployeeId || undefined}
+                    onValueChange={(value) => setTargetEmployeeId(value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue
+                        placeholder={employeesLoading ? "Loading employees..." : "Select target employee"}
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {filteredOfficeEmployees.map((employee) => (
+                        <SelectItem key={employee.id} value={employee.id}>
+                          {employee.first_name} {employee.last_name} ({employee.email})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <Label htmlFor="roomSearch">Room Search</Label>
+                  <Input
+                    id="roomSearch"
+                    value={roomSearch}
+                    onChange={(event) => setRoomSearch(event.target.value)}
+                    placeholder="Type room name"
+                  />
+                  <Select
+                    value={targetSubLocationId || undefined}
+                    onValueChange={(value) => setTargetSubLocationId(value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue
+                        placeholder={roomsQuery.isLoading ? "Loading rooms..." : "Select target room"}
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {filteredRooms.map((room) => {
+                        const roomId = room.id || room._id || "";
+                        return (
+                          <SelectItem key={roomId} value={roomId}>
+                            {room.name}
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
 
             <div className="space-y-2">

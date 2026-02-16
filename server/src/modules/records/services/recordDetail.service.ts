@@ -13,7 +13,7 @@ export async function getRecordDetail(ctx: RequestContext, recordId: string) {
   if (!record) throw createHttpError(404, 'Record not found');
   const recordDoc = record as any;
 
-  if (!ctx.isHeadoffice && recordDoc.office_id.toString() !== ctx.locationId) {
+  if (!ctx.isOrgAdmin && recordDoc.office_id.toString() !== ctx.locationId) {
     throw createHttpError(403, 'Access restricted to assigned office');
   }
 
@@ -107,3 +107,4 @@ export async function getRecordDetail(ctx: RequestContext, recordId: string) {
     missingRequirements: Array.from(missingSet),
   };
 }
+

@@ -23,7 +23,7 @@ import { ConsumableUnitFormModal } from '@/components/forms/ConsumableUnitFormMo
 import { useAuth } from '@/contexts/AuthContext';
 
 export default function ConsumableUnits() {
-  const { role, isSuperAdmin } = useAuth();
+  const { role, isOrgAdmin } = useAuth();
   const { data: units, isLoading } = useConsumableUnits(false);
   const createUnit = useCreateConsumableUnit();
   const updateUnit = useUpdateConsumableUnit();
@@ -32,7 +32,7 @@ export default function ConsumableUnits() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<ConsumableUnit | null>(null);
 
-  const canManage = isSuperAdmin || role === 'org_admin' || role === 'caretaker';
+  const canManage = isOrgAdmin || role === 'caretaker';
 
   const handleAdd = () => {
     setEditing(null);

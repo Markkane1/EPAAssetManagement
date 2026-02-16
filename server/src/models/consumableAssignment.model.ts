@@ -20,8 +20,9 @@ ConsumableAssignmentSchema.index({ consumable_id: 1, assigned_date: -1 });
 ConsumableAssignmentSchema.index({ assignee_type: 1, assignee_id: 1, assigned_date: -1 });
 ConsumableAssignmentSchema.index({ assigned_date: -1, created_at: -1 });
 
-export const ConsumableAssignmentModel = mongoose.model(
+export const ConsumableAssignmentModel = mongoose.model<any>(
   'ConsumableAssignment',
   ConsumableAssignmentSchema
 );
+
 

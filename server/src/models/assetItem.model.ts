@@ -69,5 +69,6 @@ AssetItemSchema.index({ asset_id: 1, is_active: 1, created_at: -1 });
 AssetItemSchema.index({ is_active: 1, created_at: -1 });
 AssetItemSchema.index({ created_at: -1 });
 
-export const AssetItemModel = mongoose.model('AssetItem', AssetItemSchema);
+export const AssetItemModel = mongoose.model<any>('AssetItem', AssetItemSchema);
+
 

@@ -27,7 +27,7 @@ import { ConsumableModeToggle } from "@/components/consumables/ConsumableModeTog
 import { useAuth } from "@/contexts/AuthContext";
 
 export default function ConsumableLots() {
-  const { role, isSuperAdmin } = useAuth();
+  const { role, isOrgAdmin } = useAuth();
   const { mode, setMode } = useConsumableMode();
   const { data: items, isLoading: itemsLoading } = useConsumableItems();
   const { data: suppliers } = useConsumableSuppliers();
@@ -40,7 +40,7 @@ export default function ConsumableLots() {
   const [editing, setEditing] = useState<ConsumableLot | null>(null);
 
   const canManage =
-    isSuperAdmin || role === "org_admin" || role === "caretaker";
+    isOrgAdmin || role === "caretaker";
 
   const itemList = filterItemsByMode(items || [], mode);
   const itemMap = useMemo(

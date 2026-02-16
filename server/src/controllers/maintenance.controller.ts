@@ -85,7 +85,7 @@ export const maintenanceController = {
       const limit = clampInt(req.query.limit, 200, 1000);
       const page = clampInt(req.query.page, 1, 10_000);
       const access = await resolveAccessContext(req.user);
-      if (access.isHeadofficeAdmin) {
+      if (access.isOrgAdmin) {
         const records = await MaintenanceRecordModel.find({ is_active: { $ne: false } })
           .sort({ created_at: -1 })
           .skip((page - 1) * limit)
@@ -118,7 +118,7 @@ export const maintenanceController = {
         maintenance_status: 'Scheduled',
         is_active: { $ne: false },
       };
-      if (!access.isHeadofficeAdmin) {
+      if (!access.isOrgAdmin) {
         if (!access.officeId) throw createHttpError(403, 'User is not assigned to an office');
         const assetItemIds = await AssetItemModel.distinct('_id', {
           ...officeAssetItemFilter(access.officeId),
@@ -140,7 +140,7 @@ export const maintenanceController = {
       const record = await MaintenanceRecordModel.findById(req.params.id);
       if (!record) return res.status(404).json({ message: 'Not found' });
       const access = await resolveAccessContext(req.user);
-      if (!access.isHeadofficeAdmin) {
+      if (!access.isOrgAdmin) {
         const item = await AssetItemModel.findById(record.asset_item_id);
         const officeId = item ? getAssetItemOfficeId(item) : null;
         if (!officeId) throw createHttpError(403, 'Access restricted to assigned office');
@@ -156,7 +156,7 @@ export const maintenanceController = {
       const limit = clampInt(req.query.limit, 200, 1000);
       const page = clampInt(req.query.page, 1, 10_000);
       const access = await resolveAccessContext(req.user);
-      if (!access.isHeadofficeAdmin) {
+      if (!access.isOrgAdmin) {
         const item = await AssetItemModel.findById(req.params.assetItemId);
         const officeId = item ? getAssetItemOfficeId(item) : null;
         if (!officeId) throw createHttpError(403, 'Access restricted to assigned office');
@@ -178,7 +178,7 @@ export const maintenanceController = {
     const session = await mongoose.startSession();
     try {
       const access = await resolveAccessContext(req.user);
-      if (!access.isHeadofficeAdmin && !isOfficeManager(access.role)) {
+      if (!access.isOrgAdmin && !isOfficeManager(access.role)) {
         throw createHttpError(403, 'Not permitted to create maintenance records');
       }
       const payload = buildPayload(req.body);
@@ -192,7 +192,7 @@ export const maintenanceController = {
         throw createHttpError(400, 'Cannot create maintenance for an inactive asset item');
       }
       const assetItemOfficeId = requireAssetItemOfficeId(assetItem, 'Maintenance is allowed only for office-held assets');
-      if (!access.isHeadofficeAdmin) {
+      if (!access.isOrgAdmin) {
         ensureOfficeScope(access, assetItemOfficeId);
       }
 
@@ -209,7 +209,7 @@ export const maintenanceController = {
             userId: access.userId,
             role: access.role,
             locationId: access.officeId,
-            isHeadoffice: access.isHeadofficeAdmin,
+            isOrgAdmin: access.isOrgAdmin,
           },
           {
             recordType: 'MAINTENANCE',
@@ -227,7 +227,7 @@ export const maintenanceController = {
             userId: access.userId,
             role: access.role,
             locationId: access.officeId,
-            isHeadoffice: access.isHeadofficeAdmin,
+            isOrgAdmin: access.isOrgAdmin,
           },
           action: 'MAINTENANCE_CREATE',
           entityType: 'MaintenanceRecord',
@@ -248,7 +248,7 @@ export const maintenanceController = {
   update: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const access = await resolveAccessContext(req.user);
-      if (!access.isHeadofficeAdmin && !isOfficeManager(access.role)) {
+      if (!access.isOrgAdmin && !isOfficeManager(access.role)) {
         throw createHttpError(403, 'Not permitted to update maintenance records');
       }
       const payload = buildPayload(req.body);
@@ -263,7 +263,7 @@ export const maintenanceController = {
     const session = await mongoose.startSession();
     try {
       const access = await resolveAccessContext(req.user);
-      if (!access.isHeadofficeAdmin && !isOfficeManager(access.role)) {
+      if (!access.isOrgAdmin && !isOfficeManager(access.role)) {
         throw createHttpError(403, 'Not permitted to complete maintenance');
       }
       const { completedDate } = req.body as { completedDate?: string };
@@ -272,7 +272,7 @@ export const maintenanceController = {
       const assetItem = await AssetItemModel.findById(record.asset_item_id);
       if (!assetItem) throw createHttpError(404, 'Asset item not found');
       const assetItemOfficeId = requireAssetItemOfficeId(assetItem, 'Maintenance is allowed only for office-held assets');
-      if (!access.isHeadofficeAdmin) {
+      if (!access.isOrgAdmin) {
         ensureOfficeScope(access, assetItemOfficeId);
       }
       const hasDocs = await hasCompletionDocs(record.id);
@@ -306,7 +306,7 @@ export const maintenanceController = {
               userId: access.userId,
               role: access.role,
               locationId: access.officeId,
-              isHeadoffice: access.isHeadofficeAdmin,
+              isOrgAdmin: access.isOrgAdmin,
             },
             existingRecord.id,
             'Completed',
@@ -319,7 +319,7 @@ export const maintenanceController = {
               userId: access.userId,
               role: access.role,
               locationId: access.officeId,
-              isHeadoffice: access.isHeadofficeAdmin,
+              isOrgAdmin: access.isOrgAdmin,
             },
             {
               recordType: 'MAINTENANCE',
@@ -338,7 +338,7 @@ export const maintenanceController = {
             userId: access.userId,
             role: access.role,
             locationId: access.officeId,
-            isHeadoffice: access.isHeadofficeAdmin,
+            isOrgAdmin: access.isOrgAdmin,
           },
           action: 'MAINTENANCE_COMPLETE',
           entityType: 'MaintenanceRecord',
@@ -359,7 +359,7 @@ export const maintenanceController = {
   remove: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const access = await resolveAccessContext(req.user);
-      if (!access.isHeadofficeAdmin && !isOfficeManager(access.role)) {
+      if (!access.isOrgAdmin && !isOfficeManager(access.role)) {
         throw createHttpError(403, 'Not permitted to remove maintenance records');
       }
       const record = await MaintenanceRecordModel.findById(req.params.id);
@@ -372,3 +372,5 @@ export const maintenanceController = {
     }
   },
 };
+
+

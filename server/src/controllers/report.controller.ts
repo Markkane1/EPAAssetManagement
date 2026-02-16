@@ -22,13 +22,13 @@ function parseDateInput(value: unknown, fieldName: string) {
   return parsed;
 }
 
-function resolveScopedOfficeId(ctx: { isHeadoffice: boolean; locationId: string | null }, rawOfficeId: unknown) {
+function resolveScopedOfficeId(ctx: { isOrgAdmin: boolean; locationId: string | null }, rawOfficeId: unknown) {
   const requestedOfficeId = rawOfficeId === undefined || rawOfficeId === null ? null : String(rawOfficeId).trim();
   if (requestedOfficeId && !Types.ObjectId.isValid(requestedOfficeId)) {
     throw createHttpError(400, 'officeId is invalid');
   }
 
-  if (!ctx.isHeadoffice) {
+  if (!ctx.isOrgAdmin) {
     if (!ctx.locationId) throw createHttpError(403, 'User is not assigned to an office');
     if (requestedOfficeId && requestedOfficeId !== ctx.locationId) {
       throw createHttpError(403, 'Access restricted to assigned office');
@@ -216,3 +216,4 @@ export const reportController = {
     }
   },
 };
+

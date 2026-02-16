@@ -128,7 +128,7 @@ export const assetItemController = {
       const page = clampInt(req.query.page, 1, 10_000);
       const access = await resolveAccessContext(req.user);
       const filter: Record<string, unknown> = { is_active: { $ne: false } };
-      if (!access.isHeadofficeAdmin) {
+      if (!access.isOrgAdmin) {
         if (!access.officeId) throw createHttpError(403, 'User is not assigned to an office');
         Object.assign(filter, officeAssetItemFilter(access.officeId));
       }
@@ -146,7 +146,7 @@ export const assetItemController = {
       const item = await AssetItemModel.findById(req.params.id);
       if (!item) return res.status(404).json({ message: 'Not found' });
       const access = await resolveAccessContext(req.user);
-      if (!access.isHeadofficeAdmin) {
+      if (!access.isOrgAdmin) {
         const officeId = getAssetItemOfficeId(item);
         if (!officeId) throw createHttpError(403, 'Asset item is not assigned to an office');
         ensureOfficeScope(access, officeId);
@@ -162,7 +162,7 @@ export const assetItemController = {
       const page = clampInt(req.query.page, 1, 10_000);
       const access = await resolveAccessContext(req.user);
       const filter: Record<string, unknown> = { asset_id: req.params.assetId, is_active: { $ne: false } };
-      if (!access.isHeadofficeAdmin) {
+      if (!access.isOrgAdmin) {
         if (!access.officeId) throw createHttpError(403, 'User is not assigned to an office');
         Object.assign(filter, officeAssetItemFilter(access.officeId));
       }
@@ -181,7 +181,7 @@ export const assetItemController = {
       const page = clampInt(req.query.page, 1, 10_000);
       const access = await resolveAccessContext(req.user);
       const locationId = String(req.params.locationId || "");
-      if (!access.isHeadofficeAdmin) {
+      if (!access.isOrgAdmin) {
         ensureOfficeScope(access, locationId);
       }
       const items = await AssetItemModel.find({
@@ -206,7 +206,7 @@ export const assetItemController = {
         assignment_status: 'Unassigned',
         is_active: { $ne: false },
       };
-      if (!access.isHeadofficeAdmin) {
+      if (!access.isOrgAdmin) {
         if (!access.officeId) throw createHttpError(403, 'User is not assigned to an office');
         Object.assign(filter, officeAssetItemFilter(access.officeId));
       }
@@ -222,7 +222,7 @@ export const assetItemController = {
   create: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const access = await resolveAccessContext(req.user);
-      if (!access.isHeadofficeAdmin) {
+      if (!access.isOrgAdmin) {
         throw createHttpError(403, 'Only org_admin can create asset items');
       }
       const payload = buildPayload(req.body);
@@ -262,7 +262,7 @@ export const assetItemController = {
   createBatch: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const access = await resolveAccessContext(req.user);
-      if (!access.isHeadofficeAdmin) {
+      if (!access.isOrgAdmin) {
         throw createHttpError(403, 'Only org_admin can create asset items');
       }
       const {
@@ -335,13 +335,13 @@ export const assetItemController = {
   update: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const access = await resolveAccessContext(req.user);
-      if (!access.isHeadofficeAdmin && !isOfficeManager(access.role)) {
+      if (!access.isOrgAdmin && !isOfficeManager(access.role)) {
         throw createHttpError(403, 'Not permitted to manage asset items');
       }
 
       const payload = buildPayload(req.body);
       const payloadKeys = Object.keys(payload);
-      if (!access.isHeadofficeAdmin) {
+      if (!access.isOrgAdmin) {
         const forbiddenFields = payloadKeys.filter((field) => !MANAGER_ALLOWED_UPDATE_FIELDS.has(field));
         if (forbiddenFields.length > 0) {
           throw createHttpError(
@@ -356,7 +356,7 @@ export const assetItemController = {
       const item = await AssetItemModel.findById(req.params.id);
       if (!item) return res.status(404).json({ message: 'Not found' });
       const officeId = getAssetItemOfficeId(item);
-      if (!access.isHeadofficeAdmin && officeId) {
+      if (!access.isOrgAdmin && officeId) {
         ensureOfficeScope(access, officeId);
       }
       const targetAssetId = String(payload.asset_id || item.asset_id || '');
@@ -373,7 +373,7 @@ export const assetItemController = {
   remove: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const access = await resolveAccessContext(req.user);
-      if (!access.isHeadofficeAdmin) {
+      if (!access.isOrgAdmin) {
         throw createHttpError(403, 'Only org_admin can retire asset items');
       }
       const item = await AssetItemModel.findById(req.params.id);
@@ -388,3 +388,4 @@ export const assetItemController = {
     }
   },
 };
+

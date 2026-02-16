@@ -29,6 +29,12 @@ function buildPayload(body: Record<string, unknown>, fieldMap?: Record<string, s
 export function createCrudController(config: CrudConfig) {
   const { repository, createMap, updateMap } = config;
 
+  function readId(req: Request) {
+    const raw = req.params?.id;
+    if (Array.isArray(raw)) return String(raw[0] || '').trim();
+    return String(raw || '').trim();
+  }
+
   return {
     list: async (_req: Request, res: Response, next: NextFunction) => {
       try {
@@ -40,7 +46,7 @@ export function createCrudController(config: CrudConfig) {
     },
     getById: async (req: Request, res: Response, next: NextFunction) => {
       try {
-        const data = await repository.findById(req.params.id);
+        const data = await repository.findById(readId(req));
         if (!data) return res.status(404).json({ message: 'Not found' });
         return res.json(data);
       } catch (error) {
@@ -59,7 +65,7 @@ export function createCrudController(config: CrudConfig) {
     update: async (req: Request, res: Response, next: NextFunction) => {
       try {
         const payload = buildPayload(req.body, updateMap);
-        const data = await repository.updateById(req.params.id, payload);
+        const data = await repository.updateById(readId(req), payload);
         if (!data) return res.status(404).json({ message: 'Not found' });
         return res.json(data);
       } catch (error) {
@@ -68,7 +74,7 @@ export function createCrudController(config: CrudConfig) {
     },
     remove: async (req: Request, res: Response, next: NextFunction) => {
       try {
-        const data = await repository.deleteById(req.params.id);
+        const data = await repository.deleteById(readId(req));
         if (!data) return res.status(404).json({ message: 'Not found' });
         return res.status(204).send();
       } catch (error) {
@@ -77,3 +83,4 @@ export function createCrudController(config: CrudConfig) {
     },
   };
 }
+

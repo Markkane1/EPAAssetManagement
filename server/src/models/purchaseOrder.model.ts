@@ -21,5 +21,6 @@ PurchaseOrderSchema.index({ vendor_id: 1, order_date: -1 });
 PurchaseOrderSchema.index({ project_id: 1, order_date: -1 });
 PurchaseOrderSchema.index({ order_date: -1 });
 
-export const PurchaseOrderModel = mongoose.model('PurchaseOrder', PurchaseOrderSchema);
+export const PurchaseOrderModel = mongoose.model<any>('PurchaseOrder', PurchaseOrderSchema);
+
 

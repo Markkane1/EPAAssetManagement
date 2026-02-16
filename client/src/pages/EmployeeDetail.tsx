@@ -19,7 +19,7 @@ import { EmployeeTransferModal } from "@/components/forms/EmployeeTransferModal"
 export default function EmployeeDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { role, isSuperAdmin, locationId } = useAuth();
+  const { role, isOrgAdmin, locationId } = useAuth();
 
   const { data: employees, isLoading } = useEmployees();
   const { data: directorates } = useDirectorates();
@@ -43,7 +43,7 @@ export default function EmployeeDetail() {
   const isHeadofficeIssuer =
     isHeadOfficeLocation(currentLocation) &&
     (role === "office_head" || role === "caretaker");
-  const canTransferEmployee = isSuperAdmin || role === "org_admin" || isHeadofficeIssuer;
+  const canTransferEmployee = isOrgAdmin || isHeadofficeIssuer;
   const directorate = employee && isHeadOfficeLocation(location)
     ? directorateList.find((d) => d.id === employee.directorate_id)
     : null;

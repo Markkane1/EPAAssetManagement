@@ -13,7 +13,7 @@ export interface ApprovalRequestInput {
 export async function requestApproval(ctx: RequestContext, recordId: string, input: ApprovalRequestInput) {
   const record = await RecordModel.findById(recordId);
   if (!record) throw createHttpError(404, 'Record not found');
-  if (!ctx.isHeadoffice && record.office_id.toString() !== ctx.locationId) {
+  if (!ctx.isOrgAdmin && record.office_id.toString() !== ctx.locationId) {
     throw createHttpError(403, 'Access restricted to assigned office');
   }
 
@@ -56,15 +56,15 @@ export async function decideApproval(ctx: RequestContext, approvalId: string, in
   const record = await RecordModel.findById(approval.record_id);
   if (!record) throw createHttpError(404, 'Record not found');
 
-  if (!ctx.isHeadoffice && record.office_id.toString() !== ctx.locationId) {
+  if (!ctx.isOrgAdmin && record.office_id.toString() !== ctx.locationId) {
     throw createHttpError(403, 'Access restricted to assigned office');
   }
 
-  if (approval.approver_user_id && approval.approver_user_id.toString() !== ctx.userId && !ctx.isHeadoffice) {
+  if (approval.approver_user_id && approval.approver_user_id.toString() !== ctx.userId && !ctx.isOrgAdmin) {
     throw createHttpError(403, 'Not authorized to decide this approval');
   }
 
-  if (!approval.approver_user_id && approval.approver_role && approval.approver_role !== ctx.role && !ctx.isHeadoffice) {
+  if (!approval.approver_user_id && approval.approver_role && approval.approver_role !== ctx.role && !ctx.isOrgAdmin) {
     throw createHttpError(403, 'Not authorized to decide this approval');
   }
 
@@ -94,3 +94,4 @@ export async function decideApproval(ctx: RequestContext, approvalId: string, in
 
   return approval;
 }
+

@@ -30,7 +30,7 @@ import { useAuth } from "@/contexts/AuthContext";
 
 export default function Employees() {
   const navigate = useNavigate();
-  const { role, isSuperAdmin, locationId } = useAuth();
+  const { role, isOrgAdmin, locationId } = useAuth();
   const { data: employees, isLoading, error } = useEmployees();
   const { data: directorates } = useDirectorates();
   const { data: locations } = useLocations();
@@ -48,15 +48,15 @@ export default function Employees() {
   const locationList = locations || [];
 
   const currentLocation = locationId ? locationList.find((loc) => loc.id === locationId) : undefined;
-  const isHeadofficeAdmin = isSuperAdmin || (role === "org_admin" && isHeadOfficeLocation(currentLocation));
-  const isOfficeAdmin = role === "office_head" || (role === "org_admin" && !isHeadofficeAdmin);
+  const isOrgAdminHeadOffice = isOrgAdmin && isHeadOfficeLocation(currentLocation);
+  const isOfficeAdmin = role === "office_head" || (isOrgAdmin && !isOrgAdminHeadOffice);
   const isHeadofficeIssuer =
     isHeadOfficeLocation(currentLocation) &&
     (role === "office_head" || role === "caretaker");
-  const canManageEmployees = isHeadofficeAdmin || isOfficeAdmin;
-  const canTransferEmployees = isSuperAdmin || role === "org_admin" || isHeadofficeIssuer;
+  const canManageEmployees = isOrgAdminHeadOffice || isOfficeAdmin;
+  const canTransferEmployees = isOrgAdmin || isHeadofficeIssuer;
 
-  const allowedLocations = isHeadofficeAdmin
+  const allowedLocations = isOrgAdminHeadOffice
     ? locationList
     : locationId
       ? locationList.filter((loc) => loc.id === locationId)
@@ -194,8 +194,8 @@ export default function Employees() {
         employee={editingEmployee}
         directorates={directorateList}
         locations={allowedLocations}
-        locationLocked={!isHeadofficeAdmin}
-        fixedLocationId={!isHeadofficeAdmin ? locationId : null}
+        locationLocked={!isOrgAdminHeadOffice}
+        fixedLocationId={!isOrgAdminHeadOffice ? locationId : null}
         onSubmit={handleSubmit}
       />
       <EmployeeTransferModal

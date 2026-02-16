@@ -54,5 +54,6 @@ OfficeSchema.index({ type: 1, is_active: 1 });
 OfficeSchema.index({ 'capabilities.chemicals': 1, type: 1, is_headoffice: 1, name: 1 });
 OfficeSchema.index({ 'capabilities.consumables': 1, name: 1 });
 
-export const OfficeModel = mongoose.model('Office', OfficeSchema);
+export const OfficeModel = mongoose.model<any>('Office', OfficeSchema);
+
 

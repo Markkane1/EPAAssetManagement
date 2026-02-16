@@ -45,20 +45,23 @@ export interface RequisitionListParams {
 }
 
 export interface RequisitionCreateLineInput {
-  lineType: 'MOVEABLE' | 'CONSUMABLE';
-  requestedName: string;
-  requestedQuantity?: number;
-  approvedQuantity?: number;
+  line_type: 'MOVEABLE' | 'CONSUMABLE';
+  requested_name: string;
+  requested_quantity?: number;
+  approved_quantity?: number;
+  asset_id?: string;
+  consumable_id?: string;
   notes?: string;
 }
 
 export interface RequisitionCreateFormInput {
-  fileNumber: string;
-  officeId: string;
-  requestedByEmployeeId?: string;
+  file_number: string;
+  office_id: string;
+  target_type: 'EMPLOYEE' | 'SUB_LOCATION';
+  target_id: string;
   remarks?: string;
   lines: RequisitionCreateLineInput[];
-  requisitionFile: File;
+  requisition_file: File;
 }
 
 export interface RequisitionVerifyPayload {
@@ -74,6 +77,12 @@ export interface RequisitionFulfillLinePayload {
 
 export interface RequisitionFulfillPayload {
   lines: RequisitionFulfillLinePayload[];
+}
+
+export interface RequisitionLineMapPayload {
+  map_type: 'MOVEABLE' | 'CONSUMABLE';
+  asset_id?: string;
+  consumable_id?: string;
 }
 
 export interface RequisitionAdjustPayload {
@@ -110,14 +119,20 @@ export const requisitionService = {
   getById: (id: string) => api.get<RequisitionDetailResponse>(`/requisitions/${id}`),
   create: (input: RequisitionCreateFormInput) => {
     const form = new FormData();
-    form.append('fileNumber', input.fileNumber);
-    form.append('officeId', input.officeId);
-    if (input.requestedByEmployeeId) form.append('requestedByEmployeeId', input.requestedByEmployeeId);
+    form.append('fileNumber', input.file_number);
+    form.append('officeId', input.office_id);
+    form.append('target_type', input.target_type);
+    form.append('target_id', input.target_id);
     if (input.remarks) form.append('remarks', input.remarks);
     form.append('lines', JSON.stringify(input.lines));
-    form.append('requisitionFile', input.requisitionFile);
+    form.append('requisitionFile', input.requisition_file);
     return api.upload<RequisitionCreateResponse>('/requisitions', form);
   },
+  mapLine: (requisitionId: string, lineId: string, payload: RequisitionLineMapPayload) =>
+    api.post<{ requisition: Requisition; line: RequisitionLine }>(
+      `/requisitions/${requisitionId}/lines/${lineId}/map`,
+      payload
+    ),
   verify: (id: string, payload: RequisitionVerifyPayload) =>
     api.post<Requisition>(`/requisitions/${id}/verify`, payload),
   fulfill: (id: string, payload: RequisitionFulfillPayload) =>

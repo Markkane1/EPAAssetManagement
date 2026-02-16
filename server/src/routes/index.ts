@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import categoryRoutes from './category.routes';
 import officeRoutes from './office.routes';
+import officeSubLocationRoutes from './officeSubLocation.routes';
 import vendorRoutes from './vendor.routes';
 import projectRoutes from './project.routes';
 import schemeRoutes from './scheme.routes';
@@ -23,6 +24,7 @@ import settingsRoutes from './settings.routes';
 import requisitionRoutes from './requisition.routes';
 import returnRequestRoutes from './returnRequest.routes';
 import reportRoutes from './report.routes';
+import notificationRoutes from './notification.routes';
 
 const router = Router();
 
@@ -31,11 +33,13 @@ router.use('/users', userRoutes);
 router.use('/activities', activityRoutes);
 router.use('/dashboard', dashboardRoutes);
 router.use('/settings', settingsRoutes);
+router.use('/notifications', notificationRoutes);
 
 router.use('/categories', categoryRoutes);
 router.use('/divisions', divisionRoutes);
 router.use('/districts', districtRoutes);
 router.use('/offices', officeRoutes);
+router.use('/office-sub-locations', officeSubLocationRoutes);
 router.use('/vendors', vendorRoutes);
 router.use('/projects', projectRoutes);
 router.use('/schemes', schemeRoutes);

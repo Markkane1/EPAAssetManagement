@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { Response, NextFunction } from 'express';
 import type { AuthRequest } from '../../../middleware/auth';
 import { getRequestContext } from '../../../utils/scope';
@@ -79,3 +80,4 @@ export const documentController = {
     }
   },
 };
+

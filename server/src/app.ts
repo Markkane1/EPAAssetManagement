@@ -20,23 +20,43 @@ export function createApp() {
   const app = express();
   app.disable('x-powered-by');
 
-  const allowedOrigins = env.corsOrigin
-    .split(',')
-    .map((value) => value.trim())
-    .filter(Boolean);
+  const normalizeOrigin = (value: string) => value.trim().replace(/\/+$/, '');
+  const parseAllowedOrigins = (value: string) =>
+    value
+      .split(',')
+      .map((entry) => normalizeOrigin(entry))
+      .filter(Boolean);
+  const isLoopbackOrigin = (originValue: string) => {
+    try {
+      const parsed = new URL(originValue);
+      return ['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname);
+    } catch {
+      return false;
+    }
+  };
+
+  const allowedOrigins = parseAllowedOrigins(env.corsOrigin);
+  const allowAllOrigins = allowedOrigins.includes('*');
+  const allowAnyLoopbackOrigin = allowedOrigins.some((entry) => isLoopbackOrigin(entry));
 
   app.use(
     cors({
       origin(origin, callback) {
-        if (!origin || allowedOrigins.includes('*')) {
+        if (!origin || allowAllOrigins) {
           return callback(null, true);
         }
-        if (allowedOrigins.includes(origin)) {
+        const normalized = normalizeOrigin(origin);
+        if (allowedOrigins.includes(normalized)) {
           return callback(null, true);
         }
-        return callback(new Error('Not allowed by CORS'));
+        if (allowAnyLoopbackOrigin && isLoopbackOrigin(normalized)) {
+          return callback(null, true);
+        }
+        // Do not throw; throwing here becomes a 500 and hides the real CORS cause.
+        return callback(null, false);
       },
       credentials: true,
+      optionsSuccessStatus: 204,
     })
   );
   app.use(helmet());

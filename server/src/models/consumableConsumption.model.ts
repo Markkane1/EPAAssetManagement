@@ -13,8 +13,9 @@ const ConsumableConsumptionSchema = new Schema<any>(
   baseSchemaOptions
 );
 
-export const ConsumableConsumptionModel = mongoose.model(
+export const ConsumableConsumptionModel = mongoose.model<any>(
   'ConsumableConsumption',
   ConsumableConsumptionSchema
 );
+
 

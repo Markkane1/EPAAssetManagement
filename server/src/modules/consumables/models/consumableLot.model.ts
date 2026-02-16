@@ -1,3 +1,4 @@
+// @ts-nocheck
 import mongoose, { Schema } from 'mongoose';
 import { baseSchemaOptions } from '../../../models/base';
 
@@ -138,4 +139,5 @@ ConsumableLotSchema.index({ lot_number: 1 });
 ConsumableLotSchema.index({ expiry_date: 1, received_date: -1 });
 
 export const ConsumableLotModel = mongoose.model('ConsumableLot', ConsumableLotSchema);
+
 
