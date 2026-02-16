@@ -4,7 +4,7 @@ import { baseSchemaOptions } from './base';
 const ENTITY_TYPES = ['Record', 'AssetItem', 'Assignment', 'Transfer', 'MaintenanceRecord', 'Requisition'] as const;
 const REQUIRED_STATUSES = ['PendingApproval', 'Approved', 'Completed'] as const;
 
-const DocumentLinkSchema = new Schema<any>(
+const DocumentLinkSchema = new Schema(
   {
     // Document being linked
     document_id: { type: Schema.Types.ObjectId, ref: 'Document', required: true },
@@ -21,6 +21,8 @@ const DocumentLinkSchema = new Schema<any>(
 DocumentLinkSchema.index({ entity_type: 1, entity_id: 1 });
 DocumentLinkSchema.index({ document_id: 1, entity_type: 1, entity_id: 1 }, { unique: true });
 
-export const DocumentLinkModel = mongoose.model<any>('DocumentLink', DocumentLinkSchema);
+export type DocumentLinkDoc = mongoose.InferSchemaType<typeof DocumentLinkSchema>;
+
+export const DocumentLinkModel = mongoose.model<DocumentLinkDoc>('DocumentLink', DocumentLinkSchema);
 
 

@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { CategoryModel } from '../models/category.model';
 import { createHttpError } from '../utils/httpError';
+import { escapeRegex, readPagination } from '../utils/requestParsing';
 
 const CATEGORY_SCOPES = new Set(['GENERAL', 'LAB_ONLY']);
 
@@ -28,9 +29,24 @@ function parseDescription(value: unknown) {
 }
 
 export const categoryController = {
-  list: async (_req: Request, res: Response, next: NextFunction) => {
+  list: async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const categories = await CategoryModel.find().sort({ name: 1 });
+      const query = req.query as Record<string, unknown>;
+      const { limit, skip } = readPagination(query, { defaultLimit: 200, maxLimit: 1000 });
+      const filter: Record<string, unknown> = {};
+      if (query.scope !== undefined) {
+        filter.scope = parseScope(query.scope, 'GENERAL');
+      }
+      const search = String(query.search || '').trim();
+      if (search) {
+        filter.name = new RegExp(escapeRegex(search), 'i');
+      }
+
+      const categories = await CategoryModel.find(filter, { name: 1, description: 1, scope: 1, created_at: 1 })
+        .sort({ name: 1 })
+        .skip(skip)
+        .limit(limit)
+        .lean();
       res.json(categories);
     } catch (error) {
       next(error);
@@ -38,7 +54,7 @@ export const categoryController = {
   },
   getById: async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const category = await CategoryModel.findById(req.params.id);
+      const category = await CategoryModel.findById(req.params.id).lean();
       if (!category) return res.status(404).json({ message: 'Not found' });
       res.json(category);
     } catch (error) {
@@ -88,4 +104,3 @@ export const categoryController = {
     }
   },
 };
-

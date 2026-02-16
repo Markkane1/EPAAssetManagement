@@ -42,7 +42,7 @@ function officeTypeLabel(type?: string | null) {
 
 export default function Offices() {
   const { isOrgAdmin } = useAuth();
-  const { data: offices, isLoading, error } = useOffices();
+  const { data: offices, isLoading } = useOffices();
   const createOffice = useCreateOffice();
   const updateOffice = useUpdateOffice();
   const deleteOffice = useDeleteOffice();
@@ -75,7 +75,6 @@ export default function Offices() {
     address?: string;
     contactNumber?: string;
     type?: OfficeType;
-    isHeadoffice?: boolean;
     capabilities?: {
       moveables?: boolean;
       consumables?: boolean;
@@ -104,8 +103,6 @@ export default function Offices() {
       </MainLayout>
     );
   }
-
-  if (error) console.warn("API unavailable:", error);
 
   return (
     <MainLayout title="Offices" description="Manage offices, divisions, and districts">

@@ -15,7 +15,6 @@ export interface OfficeCreateDto {
     consumables?: boolean;
     chemicals?: boolean;
   };
-  isHeadoffice?: boolean;
 }
 
 export interface OfficeUpdateDto {
@@ -30,7 +29,6 @@ export interface OfficeUpdateDto {
     consumables?: boolean;
     chemicals?: boolean;
   };
-  isHeadoffice?: boolean;
 }
 
 export const officeService = {

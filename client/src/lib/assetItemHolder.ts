@@ -4,11 +4,7 @@ export function getOfficeHolderId(item: AssetItem): string | null {
   if (item.holder_type === "OFFICE") {
     return item.holder_id || null;
   }
-  if (item.holder_type === "STORE") {
-    return null;
-  }
-  // Back-compat for records not migrated to holder fields yet.
-  return item.location_id || null;
+  return null;
 }
 
 export function isStoreHolder(item: AssetItem): boolean {

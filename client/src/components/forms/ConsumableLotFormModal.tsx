@@ -57,11 +57,11 @@ export function ConsumableLotFormModal({
   const form = useForm<LotFormData>({
     resolver: zodResolver(lotSchema),
     defaultValues: {
-      itemId: lot?.consumable_item_id || "",
+      itemId: lot?.consumable_id || "",
       supplierId: lot?.supplier_id || "",
-      lotNumber: lot?.lot_number || "",
-      receivedDate: lot?.received_date
-        ? new Date(lot.received_date).toISOString().split("T")[0]
+      lotNumber: lot?.batch_no || "",
+      receivedDate: lot?.received_at
+        ? new Date(lot.received_at).toISOString().split("T")[0]
         : new Date().toISOString().split("T")[0],
       expiryDate: lot?.expiry_date
         ? new Date(lot.expiry_date).toISOString().split("T")[0]
@@ -72,11 +72,11 @@ export function ConsumableLotFormModal({
   useEffect(() => {
     if (lot) {
       form.reset({
-        itemId: lot.consumable_item_id,
+        itemId: lot.consumable_id,
         supplierId: lot.supplier_id || "",
-        lotNumber: lot.lot_number,
-        receivedDate: lot.received_date
-          ? new Date(lot.received_date).toISOString().split("T")[0]
+        lotNumber: lot.batch_no,
+        receivedDate: lot.received_at
+          ? new Date(lot.received_at).toISOString().split("T")[0]
           : new Date().toISOString().split("T")[0],
         expiryDate: lot.expiry_date
           ? new Date(lot.expiry_date).toISOString().split("T")[0]
@@ -97,9 +97,11 @@ export function ConsumableLotFormModal({
     setIsSubmitting(true);
     try {
       await onSubmit({
-        ...data,
-        supplierId: data.supplierId || undefined,
-        expiryDate: data.expiryDate || undefined,
+        consumable_id: data.itemId,
+        supplier_id: data.supplierId || undefined,
+        batch_no: data.lotNumber,
+        received_at: data.receivedDate,
+        expiry_date: data.expiryDate || undefined,
       });
       onOpenChange(false);
     } finally {

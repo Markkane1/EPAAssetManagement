@@ -22,105 +22,22 @@ import { logAudit } from '../modules/records/services/audit.service';
 import { createRecord } from '../modules/records/services/record.service';
 import { generateAndStoreReturnReceipt } from '../services/returnRequestReceipt.service';
 import { officeAssetItemFilter } from '../utils/assetHolder';
+import { assertUploadedFileIntegrity } from '../utils/uploadValidation';
 
-const RECEIVE_ALLOWED_STATUSES = new Set(['SUBMITTED', 'RECEIVED_CONFIRMED']);
-const SIGNED_UPLOAD_ALLOWED_STATUSES = new Set(['CLOSED_PENDING_SIGNATURE']);
-
-type AuthRequestWithFiles = AuthRequest & {
-  files?:
-    | Express.Multer.File[]
-    | {
-        [fieldname: string]: Express.Multer.File[];
-      };
-};
-
-function asNullableString(value: unknown): string | null {
-  if (value === undefined || value === null) return null;
-  const parsed = String(value).trim();
-  if (!parsed || parsed === 'null' || parsed === 'undefined') return null;
-  return parsed;
-}
-
-function parseBoolean(value: unknown, fieldName: string) {
-  if (typeof value === 'boolean') return value;
-  if (typeof value === 'string') {
-    const parsed = value.trim().toLowerCase();
-    if (parsed === 'true') return true;
-    if (parsed === 'false' || parsed === '') return false;
-  }
-  if (value === undefined || value === null) return false;
-  throw createHttpError(400, `${fieldName} must be a boolean`);
-}
-
-function parseDateInput(value: unknown, fieldName: string) {
-  if (value === undefined || value === null || value === '') return null;
-  const parsed = new Date(String(value));
-  if (Number.isNaN(parsed.getTime())) {
-    throw createHttpError(400, `${fieldName} must be a valid date`);
-  }
-  return parsed;
-}
-
-function parsePositiveInt(value: unknown, fallback: number, max: number) {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return fallback;
-  return Math.max(1, Math.min(Math.floor(parsed), max));
-}
-
-function readParam(req: AuthRequest, key: string) {
-  const raw = (req.params as Record<string, string | string[] | undefined>)[key];
-  if (Array.isArray(raw)) return String(raw[0] || '').trim();
-  return String(raw || '').trim();
-}
-
-function parseAssetItemIds(value: unknown) {
-  if (value === undefined || value === null || value === '') return [] as string[];
-  if (!Array.isArray(value)) {
-    throw createHttpError(400, 'assetItemIds must be an array');
-  }
-
-  const seen = new Set<string>();
-  const parsed: string[] = [];
-  value.forEach((row, index) => {
-    const id = String(row ?? '').trim();
-    if (!id) {
-      throw createHttpError(400, `assetItemIds[${index}] is required`);
-    }
-    if (!Types.ObjectId.isValid(id)) {
-      throw createHttpError(400, `assetItemIds[${index}] is invalid`);
-    }
-    if (seen.has(id)) return;
-    seen.add(id);
-    parsed.push(id);
-  });
-  return parsed;
-}
-
-function uniqueIds(ids: Array<string | null | undefined>) {
-  return Array.from(new Set(ids.filter((id): id is string => Boolean(id))));
-}
-
-function displayEmployeeName(employee: {
-  first_name?: string | null;
-  last_name?: string | null;
-  email?: string | null;
-}) {
-  const fullName = `${String(employee.first_name || '').trim()} ${String(employee.last_name || '').trim()}`.trim();
-  if (fullName) return fullName;
-  return String(employee.email || 'Unknown Employee');
-}
-
-function getSignedReturnFile(req: AuthRequestWithFiles) {
-  if (req.file) return req.file;
-  if (Array.isArray(req.files)) {
-    return req.files[0];
-  }
-  if (req.files && typeof req.files === 'object') {
-    const asMap = req.files as Record<string, Express.Multer.File[]>;
-    return asMap.signedReturnFile?.[0] || asMap.file?.[0] || null;
-  }
-  return null;
-}
+import {
+  RECEIVE_ALLOWED_STATUSES,
+  SIGNED_UPLOAD_ALLOWED_STATUSES,
+  AuthRequestWithFiles,
+  asNullableString,
+  parseBoolean,
+  parseDateInput,
+  parsePositiveInt,
+  readParam,
+  parseAssetItemIds,
+  uniqueIds,
+  displayEmployeeName,
+  getSignedReturnFile,
+} from './returnRequest.controller.helpers';
 
 export const returnRequestController = {
   list: async (req: AuthRequest, res: Response, next: NextFunction) => {
@@ -766,6 +683,7 @@ export const returnRequestController = {
       if (!uploadedFile) {
         throw createHttpError(400, 'Signed return file is required');
       }
+      await assertUploadedFileIntegrity(uploadedFile, 'signedReturnFile');
 
       const ctx = await getRequestContext(req);
       if (!ctx.isOrgAdmin && !isOfficeManager(ctx.role)) {

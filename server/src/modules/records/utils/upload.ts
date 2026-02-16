@@ -1,6 +1,11 @@
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import {
+  getAllowedUploadMimeTypes,
+  isAllowedUploadExtension,
+  isAllowedUploadMimeType,
+} from '../../../utils/uploadValidation';
 
 const uploadRoot = path.resolve(process.cwd(), 'uploads');
 const documentsRoot = path.join(uploadRoot, 'documents');
@@ -21,12 +26,15 @@ const storage = multer.diskStorage({
 });
 
 const fileFilter: multer.Options['fileFilter'] = (_req, file, cb) => {
-  const allowed = ['application/pdf', 'image/jpeg', 'image/png'];
-  if (allowed.includes(file.mimetype)) {
-    cb(null, true);
+  if (!isAllowedUploadMimeType(file.mimetype)) {
+    cb(new Error(`Invalid file type. Allowed: ${getAllowedUploadMimeTypes().join(', ')}`));
     return;
   }
-  cb(new Error('Invalid file type'));
+  if (!isAllowedUploadExtension(file.originalname, file.mimetype)) {
+    cb(new Error('Invalid file extension for MIME type'));
+    return;
+  }
+  cb(null, true);
 };
 
 export const upload = multer({

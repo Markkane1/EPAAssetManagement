@@ -25,6 +25,7 @@ import requisitionRoutes from './requisition.routes';
 import returnRequestRoutes from './returnRequest.routes';
 import reportRoutes from './report.routes';
 import notificationRoutes from './notification.routes';
+import metricsRoutes from './metrics.routes';
 
 const router = Router();
 
@@ -51,19 +52,10 @@ router.use('/maintenance', maintenanceRoutes);
 router.use('/transfers', transferRoutes);
 router.use('/purchase-orders', purchaseOrderRoutes);
 router.use('/consumables', consumableInventoryRoutes);
-router.use('/consumable-assignments', (_req, res) => {
-  res.status(410).json({
-    message: 'Legacy consumable assignments endpoint is deprecated. Use /consumables/* module endpoints.',
-  });
-});
-router.use('/consumable-consumptions', (_req, res) => {
-  res.status(410).json({
-    message: 'Legacy consumable consumptions endpoint is deprecated. Use /consumables/* module endpoints.',
-  });
-});
 router.use('/requisitions', requisitionRoutes);
 router.use('/return-requests', returnRequestRoutes);
 router.use('/reports', reportRoutes);
+router.use('/observability/metrics', metricsRoutes);
 router.use('/', recordRoutes);
 
 export default router;

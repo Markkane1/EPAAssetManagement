@@ -2,7 +2,6 @@ import mongoose from 'mongoose';
 import type { NextFunction, Response } from 'express';
 import type { AuthRequest } from '../../../middleware/auth';
 import { CategoryModel } from '../../../models/category.model';
-import { ConsumableModel } from '../../../models/consumable.model';
 import { OfficeModel } from '../../../models/office.model';
 import { StoreModel } from '../../../models/store.model';
 import { UserModel } from '../../../models/user.model';
@@ -32,16 +31,8 @@ function normalizeMode(value: unknown): ReturnMode {
 
 async function resolveCategoryScope(consumableId: string, session: mongoose.ClientSession) {
   const moduleItem = await ConsumableItemModel.findById(consumableId).session(session).lean();
-  if (moduleItem) {
-    const categoryId = (moduleItem as any).category_id;
-    if (!categoryId) return 'GENERAL' as const;
-    const category = await CategoryModel.findById(categoryId).session(session).lean();
-    return ((category as any)?.scope || 'GENERAL') as 'GENERAL' | 'LAB_ONLY';
-  }
-
-  const legacyConsumable = await ConsumableModel.findById(consumableId).session(session).lean();
-  if (!legacyConsumable) throw createHttpError(404, 'Consumable not found');
-  const categoryId = (legacyConsumable as any).category_id;
+  if (!moduleItem) throw createHttpError(404, 'Consumable item not found');
+  const categoryId = (moduleItem as any).category_id;
   if (!categoryId) return 'GENERAL' as const;
   const category = await CategoryModel.findById(categoryId).session(session).lean();
   return ((category as any)?.scope || 'GENERAL') as 'GENERAL' | 'LAB_ONLY';
@@ -245,7 +236,7 @@ export const consumableReturnController = {
           throw createHttpError(400, 'to_lot_id must belong to HEAD_OFFICE_STORE');
         }
 
-        const lotConsumableId = String((targetLot as any).consumable_id || (targetLot as any).consumable_item_id || '').trim();
+        const lotConsumableId = String((targetLot as any).consumable_id || '').trim();
         if (!lotConsumableId || lotConsumableId !== consumableId) {
           throw createHttpError(400, 'to_lot_id consumable does not match consumable_id');
         }

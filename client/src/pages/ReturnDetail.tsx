@@ -24,9 +24,7 @@ const API_ORIGIN = API_BASE_URL.replace(/\/api\/?$/, "");
 
 const ISSUER_ROLES = new Set([
   "org_admin",
-  "org_admin",
   "office_head",
-  "caretaker",
   "caretaker",
 ]);
 
@@ -82,7 +80,7 @@ export default function ReturnDetail() {
   });
 
   const returnRequest = detailQuery.data?.returnRequest;
-  const lines = detailQuery.data?.lines || [];
+  const lines = useMemo(() => detailQuery.data?.lines || [], [detailQuery.data?.lines]);
   const currentStatus = String(returnRequest?.status || "");
   const canIssuerAct = Boolean(role && ISSUER_ROLES.has(role));
   const canReceive = canIssuerAct && RECEIVE_ALLOWED_STATUSES.has(currentStatus as ReturnRequestStatus);

@@ -40,7 +40,7 @@ import { RecordDetailModal } from "@/components/records/RecordDetailModal";
 import { getOfficeHolderId } from "@/lib/assetItemHolder";
 
 export default function Maintenance() {
-  const { data: maintenanceRecords, isLoading, error } = useMaintenance();
+  const { data: maintenanceRecords, isLoading } = useMaintenance();
   const { data: assetItems } = useAssetItems();
   const { data: assets } = useAssets();
   const createMaintenance = useCreateMaintenance();
@@ -269,10 +269,6 @@ export default function Maintenance() {
         </div>
       </MainLayout>
     );
-  }
-
-  if (error) {
-    console.warn("API unavailable:", error);
   }
 
   return (

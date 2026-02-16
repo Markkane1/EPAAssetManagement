@@ -168,7 +168,7 @@ export default function Dashboard() {
                 const itemKey = itemId || `recent-item-${index}-${item.tag || "untagged"}-${item.serial_number || "noserial"}`;
                 return (
                   <div
-                    key={itemKey}
+                    key={`${itemKey}-${index}`}
                     className="flex items-center justify-between p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
                   >
                     <div className="flex items-center gap-3">
@@ -205,7 +205,7 @@ export default function Dashboard() {
                 const locationKey = locationId || `location-${index}-${location.name || "unknown"}`;
                 return (
                   <div
-                    key={locationKey}
+                    key={`${locationKey}-${index}`}
                     className="flex items-center justify-between p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
                   >
                     <div>

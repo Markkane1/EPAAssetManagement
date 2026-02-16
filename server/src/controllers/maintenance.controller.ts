@@ -79,6 +79,21 @@ function requireAssetItemOfficeId(item: { holder_type?: string | null; holder_id
   return officeId;
 }
 
+async function ensureMaintenanceScope(
+  access: Awaited<ReturnType<typeof resolveAccessContext>>,
+  maintenanceRecord: { asset_item_id?: unknown }
+) {
+  const item = await AssetItemModel.findById(maintenanceRecord.asset_item_id);
+  const officeId = item ? getAssetItemOfficeId(item) : null;
+  if (!officeId) {
+    throw createHttpError(403, 'Access restricted to assigned office');
+  }
+  if (!access.isOrgAdmin) {
+    ensureOfficeScope(access, officeId);
+  }
+  return officeId;
+}
+
 export const maintenanceController = {
   list: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
@@ -251,10 +266,23 @@ export const maintenanceController = {
       if (!access.isOrgAdmin && !isOfficeManager(access.role)) {
         throw createHttpError(403, 'Not permitted to update maintenance records');
       }
+      const current = await MaintenanceRecordModel.findById(req.params.id);
+      if (!current) return res.status(404).json({ message: 'Not found' });
+      await ensureMaintenanceScope(access, current);
+
       const payload = buildPayload(req.body);
-      const record = await MaintenanceRecordModel.findByIdAndUpdate(req.params.id, payload, { new: true });
-      if (!record) return res.status(404).json({ message: 'Not found' });
-      return res.json(record);
+      if (payload.asset_item_id) {
+        const targetItem = await AssetItemModel.findById(payload.asset_item_id);
+        if (!targetItem) throw createHttpError(404, 'Target asset item not found');
+        const targetOfficeId = requireAssetItemOfficeId(targetItem, 'Maintenance is allowed only for office-held assets');
+        if (!access.isOrgAdmin) {
+          ensureOfficeScope(access, targetOfficeId);
+        }
+      }
+
+      Object.assign(current, payload);
+      await current.save();
+      return res.json(current);
     } catch (error) {
       next(error);
     }
@@ -364,6 +392,7 @@ export const maintenanceController = {
       }
       const record = await MaintenanceRecordModel.findById(req.params.id);
       if (!record) return res.status(404).json({ message: 'Not found' });
+      await ensureMaintenanceScope(access, record);
       record.is_active = false;
       await record.save();
       return res.status(204).send();

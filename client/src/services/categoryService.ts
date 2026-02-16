@@ -1,6 +1,8 @@
 import api from '@/lib/api';
 import { Category } from '@/types';
 
+const LIST_LIMIT = 1000;
+
 export interface CategoryCreateDto {
   name: string;
   description?: string;
@@ -14,7 +16,7 @@ export interface CategoryUpdateDto {
 }
 
 export const categoryService = {
-  getAll: () => api.get<Category[]>('/categories'),
+  getAll: () => api.get<Category[]>(`/categories?limit=${LIST_LIMIT}`),
   
   getById: (id: string) => api.get<Category>(`/categories/${id}`),
   

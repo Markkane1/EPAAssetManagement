@@ -34,6 +34,9 @@ interface DataTableProps<T> {
   searchPlaceholder?: string;
   onRowClick?: (row: T) => void;
   actions?: (row: T) => React.ReactNode;
+  virtualized?: boolean;
+  virtualRowHeight?: number;
+  virtualViewportHeight?: number;
 }
 
 export function DataTable<T extends { id: string }>({
@@ -43,17 +46,25 @@ export function DataTable<T extends { id: string }>({
   searchPlaceholder = "Search...",
   onRowClick,
   actions,
+  virtualized = false,
+  virtualRowHeight = 52,
+  virtualViewportHeight = 560,
 }: DataTableProps<T>) {
   const [search, setSearch] = useState("");
   const pageSearch = usePageSearch();
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  const [virtualScrollTop, setVirtualScrollTop] = useState(0);
 
   const effectiveSearch = pageSearch ? pageSearch.term : search;
 
   useEffect(() => {
     setPage(1);
   }, [effectiveSearch]);
+
+  useEffect(() => {
+    setVirtualScrollTop(0);
+  }, [page, pageSize, effectiveSearch, data.length, virtualized]);
 
   const normalizedSearch = effectiveSearch.trim().toLowerCase();
 
@@ -71,6 +82,26 @@ export function DataTable<T extends { id: string }>({
     () => filteredData.slice((page - 1) * pageSize, page * pageSize),
     [filteredData, page, pageSize]
   );
+  const virtualOverscan = 6;
+  const virtualWindow = useMemo(() => {
+    if (!virtualized) {
+      return {
+        visibleRows: paginatedData,
+        topSpacerHeight: 0,
+        bottomSpacerHeight: 0,
+      };
+    }
+
+    const totalRows = paginatedData.length;
+    const startIndex = Math.max(0, Math.floor(virtualScrollTop / virtualRowHeight) - virtualOverscan);
+    const visibleCount = Math.ceil(virtualViewportHeight / virtualRowHeight) + virtualOverscan * 2;
+    const endIndex = Math.min(totalRows, startIndex + visibleCount);
+    return {
+      visibleRows: paginatedData.slice(startIndex, endIndex),
+      topSpacerHeight: startIndex * virtualRowHeight,
+      bottomSpacerHeight: Math.max(0, (totalRows - endIndex) * virtualRowHeight),
+    };
+  }, [paginatedData, virtualized, virtualScrollTop, virtualRowHeight, virtualViewportHeight]);
 
   const getValue = (row: T, key: string): unknown => {
     return key.split(".").reduce<unknown>((obj, k) => {
@@ -120,7 +151,11 @@ export function DataTable<T extends { id: string }>({
       </div>
 
       {/* Table */}
-      <div className="rounded-lg border bg-card overflow-hidden">
+      <div
+        className={cn("rounded-lg border bg-card overflow-hidden", virtualized && "overflow-y-auto")}
+        style={virtualized ? { maxHeight: `${virtualViewportHeight}px` } : undefined}
+        onScroll={virtualized ? (event) => setVirtualScrollTop(event.currentTarget.scrollTop) : undefined}
+      >
         <Table className="data-table">
           <TableHeader>
             <TableRow className="hover:bg-transparent">
@@ -143,7 +178,16 @@ export function DataTable<T extends { id: string }>({
                 </TableCell>
               </TableRow>
             ) : (
-              paginatedData.map((row) => (
+              <>
+                {virtualized && virtualWindow.topSpacerHeight > 0 && (
+                  <TableRow>
+                    <TableCell
+                      colSpan={columns.length + (actions ? 1 : 0)}
+                      style={{ height: `${virtualWindow.topSpacerHeight}px` }}
+                    />
+                  </TableRow>
+                )}
+                {(virtualized ? virtualWindow.visibleRows : paginatedData).map((row) => (
                 <TableRow
                   key={row.id}
                   className={cn(onRowClick && "cursor-pointer")}
@@ -162,7 +206,16 @@ export function DataTable<T extends { id: string }>({
                     </TableCell>
                   )}
                 </TableRow>
-              ))
+                ))}
+                {virtualized && virtualWindow.bottomSpacerHeight > 0 && (
+                  <TableRow>
+                    <TableCell
+                      colSpan={columns.length + (actions ? 1 : 0)}
+                      style={{ height: `${virtualWindow.bottomSpacerHeight}px` }}
+                    />
+                  </TableRow>
+                )}
+              </>
             )}
           </TableBody>
         </Table>

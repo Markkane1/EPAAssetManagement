@@ -31,6 +31,21 @@ export interface ActivityLogWithUser extends ActivityLog {
   user_name?: string;
 }
 
+export interface ActivityListQuery {
+  page?: number;
+  limit?: number;
+  search?: string;
+  activityType?: string;
+}
+
+export interface PagedActivityResponse {
+  items: ActivityLogWithUser[];
+  page: number;
+  limit: number;
+  total: number;
+  hasMore: boolean;
+}
+
 export const activityService = {
   logActivity: async (activityType: ActivityType, description?: string, metadata?: Record<string, unknown>) => {
     const user = authService.getCurrentUser();
@@ -48,6 +63,15 @@ export const activityService = {
     await activityService.logActivity('logout', 'User logged out');
   },
   getRecentActivities: (limit = 50) => api.get<ActivityLogWithUser[]>(`/activities?limit=${limit}`),
+  getPagedActivities: (query: ActivityListQuery = {}) => {
+    const params = new URLSearchParams();
+    params.set('meta', '1');
+    if (query.page) params.set('page', String(query.page));
+    if (query.limit) params.set('limit', String(query.limit));
+    if (query.search && query.search.trim()) params.set('search', query.search.trim());
+    if (query.activityType && query.activityType.trim()) params.set('activityType', query.activityType.trim());
+    return api.get<PagedActivityResponse>(`/activities?${params.toString()}`);
+  },
   getUserActivities: (userId: string, limit = 20) =>
     api.get<ActivityLog[]>(`/activities/user/${userId}?limit=${limit}`),
 };

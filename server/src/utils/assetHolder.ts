@@ -18,10 +18,7 @@ export function getAssetItemOfficeId(item: AssetItemHolderShape): string | null 
   if (holderType === 'OFFICE') {
     return toIdString(item?.holder_id);
   }
-  if (holderType === 'STORE') {
-    return null;
-  }
-  return toIdString(item?.location_id);
+  return null;
 }
 
 export function getAssetItemHolder(item: AssetItemHolderShape): { holderType: AssetHolderType; holderId: string } | null {
@@ -34,13 +31,7 @@ export function getAssetItemHolder(item: AssetItemHolderShape): { holderType: As
       holderId,
     };
   }
-
-  const locationId = toIdString(item?.location_id);
-  if (!locationId) return null;
-  return {
-    holderType: 'OFFICE',
-    holderId: locationId,
-  };
+  return null;
 }
 
 export function isAssetItemHeldByOffice(item: AssetItemHolderShape, officeId: string) {
@@ -49,24 +40,14 @@ export function isAssetItemHeldByOffice(item: AssetItemHolderShape, officeId: st
 }
 
 export function officeAssetItemFilter(officeId: string) {
-  return {
-    $or: [
-      { holder_type: 'OFFICE', holder_id: officeId },
-      { holder_type: { $exists: false }, location_id: officeId },
-      { holder_type: null, location_id: officeId },
-    ],
-  };
+  return { holder_type: 'OFFICE', holder_id: officeId };
 }
 
-export function setAssetItemOfficeHolderUpdate(officeId: string, includeLegacyLocation = false) {
-  const update: Record<string, unknown> = {
+export function setAssetItemOfficeHolderUpdate(officeId: string) {
+  return {
     holder_type: 'OFFICE',
     holder_id: officeId,
   };
-  if (includeLegacyLocation) {
-    update.location_id = officeId;
-  }
-  return update;
 }
 
 export function setAssetItemStoreHolderUpdate(storeId: string) {

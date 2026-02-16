@@ -64,6 +64,13 @@ export const documentController = {
       const version = await uploadDocumentVersion(ctx, String(req.params.id), req.file);
       res.status(201).json(version);
     } catch (error) {
+      if (req.file?.path) {
+        try {
+          await fs.unlink(req.file.path);
+        } catch {
+          // ignore cleanup failures
+        }
+      }
       next(error);
     }
   },

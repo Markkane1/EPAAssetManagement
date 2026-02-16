@@ -66,8 +66,8 @@ export default function RequisitionNew() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [employeeDefaultResolved, setEmployeeDefaultResolved] = useState(false);
 
-  const employeeList = employees || [];
-  const locationList = locations || [];
+  const employeeList = useMemo(() => employees || [], [employees]);
+  const locationList = useMemo(() => locations || [], [locations]);
   const officeName = useMemo(() => {
     const office = locationList.find((entry) => entry.id === locationId);
     return office?.name || locationId || "Unassigned Office";
@@ -77,7 +77,7 @@ export default function RequisitionNew() {
     if (!locationId) return [];
     return employeeList.filter((employee) => employee.location_id === locationId);
   }, [employeeList, locationId]);
-  const roomList = roomsQuery.data || [];
+  const roomList = useMemo(() => roomsQuery.data || [], [roomsQuery.data]);
 
   const filteredOfficeEmployees = useMemo(() => {
     const token = employeeSearch.trim().toLowerCase();

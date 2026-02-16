@@ -2,7 +2,6 @@ import mongoose from 'mongoose';
 import type { NextFunction, Response } from 'express';
 import type { AuthRequest } from '../../../middleware/auth';
 import { CategoryModel } from '../../../models/category.model';
-import { ConsumableModel } from '../../../models/consumable.model';
 import { OfficeModel } from '../../../models/office.model';
 import { UserModel } from '../../../models/user.model';
 import { createHttpError } from '../utils/httpError';
@@ -41,16 +40,8 @@ function parseConsumedAt(value: unknown) {
 
 async function resolveCategoryScope(consumableId: string, session: mongoose.ClientSession) {
   const moduleItem = await ConsumableItemModel.findById(consumableId).session(session).lean();
-  if (moduleItem) {
-    const categoryId = (moduleItem as any).category_id;
-    if (!categoryId) return 'GENERAL' as const;
-    const category = await CategoryModel.findById(categoryId).session(session).lean();
-    return ((category as any)?.scope || 'GENERAL') as 'GENERAL' | 'LAB_ONLY';
-  }
-
-  const legacyConsumable = await ConsumableModel.findById(consumableId).session(session).lean();
-  if (!legacyConsumable) throw createHttpError(404, 'Consumable not found');
-  const categoryId = (legacyConsumable as any).category_id;
+  if (!moduleItem) throw createHttpError(404, 'Consumable item not found');
+  const categoryId = (moduleItem as any).category_id;
   if (!categoryId) return 'GENERAL' as const;
   const category = await CategoryModel.findById(categoryId).session(session).lean();
   return ((category as any)?.scope || 'GENERAL') as 'GENERAL' | 'LAB_ONLY';
@@ -117,17 +108,12 @@ async function resolveIssueLot(
     throw createHttpError(400, 'issue_id does not belong to the specified source_type/source_id');
   }
 
-  const directIssueConsumableId = String((issue as any).consumable_id || '').trim();
-  if (directIssueConsumableId && directIssueConsumableId !== consumableId) {
-    throw createHttpError(400, 'issue_id consumable does not match consumable_id');
-  }
-
   const lotId = String((issue as any).lot_id || '').trim();
   if (!lotId) throw createHttpError(400, 'Issue is missing lot_id');
 
   const lot = await ConsumableLotModel.findById(lotId).session(session).lean();
   if (!lot) throw createHttpError(404, 'Issue lot not found');
-  const issueConsumableId = String((lot as any).consumable_id || (lot as any).consumable_item_id || '').trim();
+  const issueConsumableId = String((lot as any).consumable_id || '').trim();
   if (!issueConsumableId) throw createHttpError(400, 'Issue lot consumable is not configured');
   if (issueConsumableId !== consumableId) {
     throw createHttpError(400, 'issue_id consumable does not match consumable_id');

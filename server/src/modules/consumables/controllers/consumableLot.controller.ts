@@ -6,7 +6,6 @@ import type { AuthRequest } from '../../../middleware/auth';
 import { OfficeModel } from '../../../models/office.model';
 import { StoreModel } from '../../../models/store.model';
 import { CategoryModel } from '../../../models/category.model';
-import { ConsumableModel } from '../../../models/consumable.model';
 import { ConsumableItemModel } from '../models/consumableItem.model';
 import { roundQty, validateQtyInput } from '../services/balance.service';
 
@@ -15,15 +14,13 @@ const fieldMap = {
   holderType: 'holder_type',
   holderId: 'holder_id',
   batchNo: 'batch_no',
+  receivedAt: 'received_at',
   expiryDate: 'expiry_date',
   qtyReceived: 'qty_received',
   qtyAvailable: 'qty_available',
   notes: 'notes',
   documentId: 'document_id',
-  itemId: 'consumable_item_id',
   supplierId: 'supplier_id',
-  lotNumber: 'lot_number',
-  receivedDate: 'received_date',
 };
 
 const HEAD_OFFICE_STORE_CODE = 'HEAD_OFFICE_STORE';
@@ -57,26 +54,14 @@ function buildPayload(body: Record<string, unknown>) {
 
 async function resolveConsumableScope(consumableId: string) {
   const moduleItem = await ConsumableItemModel.findById(consumableId).lean();
-  if (moduleItem) {
-    const categoryId = (moduleItem as any).category_id;
-    if (!categoryId) return { categoryScope: 'GENERAL' as const, consumableItemId: String((moduleItem as any)._id) };
-    const category = await CategoryModel.findById(categoryId).lean();
-    return {
-      categoryScope: ((category as any)?.scope || 'GENERAL') as 'GENERAL' | 'LAB_ONLY',
-      consumableItemId: String((moduleItem as any)._id),
-    };
+  if (!moduleItem) {
+    throw createHttpError(404, 'Consumable item not found');
   }
-
-  const legacyConsumable = await ConsumableModel.findById(consumableId).lean();
-  if (!legacyConsumable) {
-    throw createHttpError(404, 'Consumable not found');
-  }
-  const categoryId = (legacyConsumable as any).category_id;
-  if (!categoryId) return { categoryScope: 'GENERAL' as const, consumableItemId: consumableId };
+  const categoryId = (moduleItem as any).category_id;
+  if (!categoryId) return { categoryScope: 'GENERAL' as const };
   const category = await CategoryModel.findById(categoryId).lean();
   return {
     categoryScope: ((category as any)?.scope || 'GENERAL') as 'GENERAL' | 'LAB_ONLY',
-    consumableItemId: consumableId,
   };
 }
 
@@ -106,9 +91,7 @@ export const consumableLotController = {
       if (req.query.holder_type) filter.holder_type = String(req.query.holder_type).toUpperCase();
       if (req.query.holder_id) filter.holder_id = req.query.holder_id;
       if (req.query.consumable_id) filter.consumable_id = req.query.consumable_id;
-      if (req.query.itemId) filter.consumable_item_id = req.query.itemId;
-      if (req.query.supplierId) filter.supplier_id = req.query.supplierId;
-      if (req.query.lotNumber) filter.lot_number = req.query.lotNumber;
+      if (req.query.supplier_id) filter.supplier_id = req.query.supplier_id;
       if (req.query.batch_no) filter.batch_no = req.query.batch_no;
       if (!parseBooleanFlag(req.query.include_zero, false)) {
         (filter as any).$or = [{ qty_available: { $gt: 0 } }, { qty_available: { $exists: false } }];
@@ -117,7 +100,7 @@ export const consumableLotController = {
       const page = clampInt((req.query as Record<string, unknown>).page, 1, 1, 100000);
       const skip = (page - 1) * limit;
       const lots = await ConsumableLotModel.find(filter)
-        .sort({ expiry_date: 1, received_at: -1, received_date: -1 })
+        .sort({ expiry_date: 1, received_at: -1 })
         .skip(skip)
         .limit(limit)
         .lean();
@@ -161,7 +144,7 @@ export const consumableLotController = {
       }
 
       const qtyReceived = roundQty(validateQtyInput(Number(body.qty_received)));
-      const { categoryScope, consumableItemId } = await resolveConsumableScope(consumableId);
+      const { categoryScope } = await resolveConsumableScope(consumableId);
       if (categoryScope === 'LAB_ONLY') {
         await enforceLabOnlyHolder(holderType as 'OFFICE' | 'STORE', holderId);
       }
@@ -174,22 +157,25 @@ export const consumableLotController = {
         if (!store) throw createHttpError(404, 'Store not found');
       }
 
-      const now = new Date();
+      const receivedAtInput = String(body.received_at || '').trim();
+      const receivedAt = receivedAtInput ? new Date(receivedAtInput) : new Date();
+      if (Number.isNaN(receivedAt.getTime())) {
+        throw createHttpError(400, 'received_at must be a valid date');
+      }
       const lot = await ConsumableLotModel.create({
         consumable_id: consumableId,
-        consumable_item_id: consumableItemId,
         holder_type: holderType,
         holder_id: holderId,
         batch_no: batchNo,
-        lot_number: batchNo,
         expiry_date: expiryDate,
         qty_received: qtyReceived,
         qty_available: qtyReceived,
-        received_at: now,
-        received_date: now.toISOString(),
+        received_at: receivedAt,
         received_by_user_id: userId,
         notes: body.notes ?? null,
+        supplier_id: body.supplier_id ?? null,
         document_id: body.document_id ?? null,
+        docs: body.docs ?? undefined,
       });
 
       res.status(201).json(lot);

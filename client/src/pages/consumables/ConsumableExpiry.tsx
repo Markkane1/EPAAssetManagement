@@ -30,9 +30,12 @@ export default function ConsumableExpiry() {
     capability: mode === 'chemicals' ? 'chemicals' : 'consumables',
   });
   const { data: lots } = useConsumableLots();
+  const selectedHolderType = locationId !== ALL_VALUE ? 'OFFICE' : undefined;
+  const selectedHolderId = locationId !== ALL_VALUE ? locationId : undefined;
   const { data: expiry = [] } = useConsumableExpiry(
     days,
-    locationId !== ALL_VALUE ? locationId : undefined
+    selectedHolderType,
+    selectedHolderId
   );
 
   const filteredItems = filterItemsByMode(items || [], mode);
@@ -51,7 +54,7 @@ export default function ConsumableExpiry() {
     {
       key: 'lotId',
       label: 'Lot',
-      render: (value: string) => lots?.find((lot) => lot.id === value)?.lot_number || 'Unknown',
+      render: (value: string) => lots?.find((lot) => lot.id === value)?.batch_no || 'Unknown',
     },
     {
       key: 'itemId',
@@ -59,9 +62,13 @@ export default function ConsumableExpiry() {
       render: (value: string) => filteredItems.find((item) => item.id === value)?.name || 'Unknown',
     },
     {
-      key: 'locationId',
-      label: 'Location',
-      render: (value: string) => filteredLocations.find((loc) => loc.id === value)?.name || 'Unknown',
+      key: 'holderId',
+      label: 'Holder',
+      render: (_value: string, row: ConsumableExpiryRow) => {
+        if (row.holderType === 'STORE') return 'Head Office Store';
+        const officeId = row.holderId || '';
+        return filteredLocations.find((loc) => loc.id === officeId)?.name || 'Unknown';
+      },
     },
     {
       key: 'expiryDate',

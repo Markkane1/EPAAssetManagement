@@ -9,12 +9,17 @@ type Agent = ReturnType<typeof request.agent>;
 
 type EndpointBenchmark = {
   endpoint: string;
+  scenario: string;
   iterations: number;
+  concurrency: number;
+  totalRequests: number;
   avgMs: number;
   p50Ms: number;
   p95Ms: number;
+  p99Ms: number;
   minMs: number;
   maxMs: number;
+  throughputRps: number;
 };
 
 type BenchmarkOutput = {
@@ -28,7 +33,7 @@ type BenchmarkOutput = {
     maintenanceRecords: number;
     purchaseOrders: number;
     consumables: number;
-    consumableAssignments: number;
+    consumableBalances: number;
     divisions: number;
     districts: number;
     consumableItems: number;
@@ -55,7 +60,7 @@ const SEED = {
   maintenanceRecords: 7000,
   purchaseOrders: 5000,
   consumables: 3500,
-  consumableAssignments: 12000,
+  consumableBalances: 12000,
   divisions: 800,
   districts: 3500,
   consumableItems: 2000,
@@ -69,7 +74,7 @@ const SEED = {
 const CASES: BenchCase[] = [
   { name: 'dashboard_activity', path: '/api/dashboard/activity?limit=50' },
   { name: 'dashboard_all', path: '/api/dashboard' },
-  { name: 'consumable_assignments', path: '/api/consumable-assignments' },
+  { name: 'consumable_inventory_balances', path: '/api/consumables/inventory/balances' },
   { name: 'divisions_list', path: '/api/divisions' },
   { name: 'districts_list', path: '/api/districts' },
   { name: 'suppliers_list', path: '/api/consumables/suppliers' },
@@ -89,7 +94,14 @@ function parseArgs() {
 
   const warmup = Math.max(1, getArg('warmup', 5));
   const iterations = Math.max(5, getArg('iterations', 30));
-  return { warmup, iterations };
+  const concurrency = Math.max(1, getArg('concurrency', 1));
+  const scenario = (() => {
+    const idx = args.findIndex((arg) => arg === '--scenario');
+    if (idx < 0 || idx + 1 >= args.length) return 'baseline';
+    return String(args[idx + 1] || 'baseline').trim().toLowerCase() || 'baseline';
+  })();
+
+  return { warmup, iterations, concurrency, scenario };
 }
 
 function percentile(sorted: number[], p: number) {
@@ -103,31 +115,48 @@ async function login(agent: Agent, email: string, password: string) {
   assert.equal(res.status, 200, `Expected login to succeed for ${email}, got ${res.status}`);
 }
 
-async function benchmarkEndpoint(agent: Agent, path: string, warmup: number, iterations: number) {
+async function benchmarkEndpoint(agent: Agent, path: string, warmup: number, iterations: number, concurrency: number) {
   for (let i = 0; i < warmup; i += 1) {
-    const res = await agent.get(path);
-    assert.equal(res.status, 200, `Warmup failed for ${path} with status ${res.status}`);
+    await Promise.all(
+      Array.from({ length: concurrency }, async () => {
+        const res = await agent.get(path);
+        assert.equal(res.status, 200, `Warmup failed for ${path} with status ${res.status}`);
+      })
+    );
   }
 
   const durations: number[] = [];
+  const benchmarkStarted = performance.now();
   for (let i = 0; i < iterations; i += 1) {
-    const started = performance.now();
-    const res = await agent.get(path);
-    const ended = performance.now();
-    assert.equal(res.status, 200, `Benchmark request failed for ${path} with status ${res.status}`);
-    durations.push(ended - started);
+    const batchDurations = await Promise.all(
+      Array.from({ length: concurrency }, async () => {
+        const started = performance.now();
+        const res = await agent.get(path);
+        const ended = performance.now();
+        assert.equal(res.status, 200, `Benchmark request failed for ${path} with status ${res.status}`);
+        return ended - started;
+      })
+    );
+    durations.push(...batchDurations);
   }
+  const benchmarkEnded = performance.now();
 
   const sorted = [...durations].sort((a, b) => a - b);
   const sum = durations.reduce((acc, value) => acc + value, 0);
+  const totalRequests = durations.length;
+  const totalSeconds = Math.max(0.001, (benchmarkEnded - benchmarkStarted) / 1000);
 
   return {
     iterations,
+    concurrency,
+    totalRequests,
     avgMs: Number((sum / durations.length).toFixed(2)),
     p50Ms: Number(percentile(sorted, 50).toFixed(2)),
     p95Ms: Number(percentile(sorted, 95).toFixed(2)),
+    p99Ms: Number(percentile(sorted, 99).toFixed(2)),
     minMs: Number(sorted[0].toFixed(2)),
     maxMs: Number(sorted[sorted.length - 1].toFixed(2)),
+    throughputRps: Number((totalRequests / totalSeconds).toFixed(2)),
   };
 }
 
@@ -142,7 +171,8 @@ async function seedData() {
   const { MaintenanceRecordModel } = await import('../../src/models/maintenanceRecord.model');
   const { PurchaseOrderModel } = await import('../../src/models/purchaseOrder.model');
   const { ConsumableModel } = await import('../../src/models/consumable.model');
-  const { ConsumableAssignmentModel } = await import('../../src/models/consumableAssignment.model');
+  const { RequisitionModel } = await import('../../src/models/requisition.model');
+  const { RequisitionLineModel } = await import('../../src/models/requisitionLine.model');
   const { DivisionModel } = await import('../../src/models/division.model');
   const { DistrictModel } = await import('../../src/models/district.model');
   const { ConsumableItemModel } = await import('../../src/modules/consumables/models/consumableItem.model');
@@ -151,14 +181,20 @@ async function seedData() {
   const { ConsumableContainerModel } = await import('../../src/modules/consumables/models/consumableContainer.model');
   const { ConsumableReasonCodeModel } = await import('../../src/modules/consumables/models/consumableReasonCode.model');
   const { ConsumableUnitModel } = await import('../../src/modules/consumables/models/consumableUnit.model');
+  const { ConsumableInventoryBalanceModel } = await import(
+    '../../src/modules/consumables/models/consumableInventoryBalance.model'
+  );
 
+  const officeTypes = ['DIRECTORATE', 'DISTRICT_OFFICE', 'DISTRICT_LAB'] as const;
   const offices = await OfficeModel.insertMany(
     Array.from({ length: SEED.offices }, (_, i) => ({
       name: i === 0 ? 'Head Office' : `Office ${i + 1}`,
-      type: i % 3 === 0 ? 'CENTRAL' : i % 3 === 1 ? 'LAB' : 'SUBSTORE',
-      is_headoffice: i === 0,
+      type: officeTypes[i % officeTypes.length],
       is_active: true,
-      capabilities: i % 2 === 0 ? { chemicals: true, consumables: true, moveables: true } : undefined,
+      capabilities:
+        i % officeTypes.length === 2
+          ? { chemicals: true, consumables: true, moveables: true }
+          : { chemicals: false, consumables: true, moveables: true },
     })),
     { ordered: false }
   );
@@ -167,7 +203,7 @@ async function seedData() {
   const adminUser = await UserModel.create({
     email: 'perf-admin@example.com',
     password_hash: passwordHash,
-    role: 'super_admin',
+    role: 'org_admin',
     first_name: 'Perf',
     last_name: 'Admin',
   });
@@ -200,10 +236,11 @@ async function seedData() {
     { ordered: false }
   );
 
-  await AssetItemModel.insertMany(
+  const assetItems = await AssetItemModel.insertMany(
     Array.from({ length: SEED.assetItems }, (_, i) => ({
       asset_id: assets[i % assets.length]._id,
-      location_id: offices[i % offices.length]._id,
+      holder_type: 'OFFICE',
+      holder_id: offices[i % offices.length]._id,
       item_status: i % 3 === 0 ? 'Assigned' : i % 3 === 1 ? 'Available' : 'Maintenance',
       is_active: true,
       assignment_status: i % 3 === 0 ? 'Assigned' : 'Unassigned',
@@ -211,22 +248,50 @@ async function seedData() {
     { ordered: false }
   );
 
+  const benchmarkRequisition = await RequisitionModel.create({
+    file_number: 'PERF-REQ-0001',
+    office_id: offices[0]._id,
+    issuing_office_id: offices[0]._id,
+    requested_by_employee_id: employees[0]._id,
+    target_type: 'EMPLOYEE',
+    target_id: employees[0]._id,
+    submitted_by_user_id: adminUser._id,
+    status: 'VERIFIED_APPROVED',
+  });
+  const benchmarkRequisitionLine = await RequisitionLineModel.create({
+    requisition_id: benchmarkRequisition._id,
+    line_type: 'MOVEABLE',
+    asset_id: assets[0]._id,
+    requested_name: assets[0].name,
+    requested_quantity: 1,
+    approved_quantity: 1,
+    fulfilled_quantity: 1,
+    status: 'ASSIGNED',
+  });
+
   await AssignmentModel.insertMany(
     Array.from({ length: SEED.assignments }, (_, i) => ({
       employee_id: employees[i % employees.length]._id,
-      asset_item_id: undefined,
-      assigned_date: new Date(Date.now() - (i % 40) * 86400000).toISOString(),
-      is_active: true,
+      asset_item_id: assetItems[i % assetItems.length]._id,
+      status: i % 5 === 0 ? 'RETURNED' : 'ISSUED',
+      assigned_to_type: 'EMPLOYEE',
+      assigned_to_id: employees[i % employees.length]._id,
+      requisition_id: benchmarkRequisition._id,
+      requisition_line_id: benchmarkRequisitionLine._id,
+      issued_by_user_id: adminUser._id,
+      issued_at: new Date(Date.now() - (i % 40) * 86400000),
+      assigned_date: new Date(Date.now() - (i % 40) * 86400000),
+      returned_date: i % 5 === 0 ? new Date(Date.now() - (i % 20) * 86400000) : null,
     })),
     { ordered: false }
   );
 
   await MaintenanceRecordModel.insertMany(
     Array.from({ length: SEED.maintenanceRecords }, (_, i) => ({
-      asset_item_id: undefined,
+      asset_item_id: assetItems[i % assetItems.length]._id,
       maintenance_type: 'Preventive',
       description: `Maintenance ${i}`,
-      scheduled_date: new Date(Date.now() + (i % 30) * 86400000).toISOString(),
+      scheduled_date: new Date(Date.now() + (i % 30) * 86400000),
       performed_by: `Technician ${i % 200}`,
       is_active: true,
     })),
@@ -250,17 +315,6 @@ async function seedData() {
       total_quantity: 100 + (i % 100),
       available_quantity: i % 5 === 0 ? 5 : 80,
       is_active: true,
-    })),
-    { ordered: false }
-  );
-
-  await ConsumableAssignmentModel.insertMany(
-    Array.from({ length: SEED.consumableAssignments }, (_, i) => ({
-      consumable_id: consumables[i % consumables.length]._id,
-      assignee_type: i % 2 === 0 ? 'employee' : 'location',
-      assignee_id: i % 2 === 0 ? employees[i % employees.length]._id : offices[i % offices.length]._id,
-      quantity: (i % 10) + 1,
-      assigned_date: new Date(Date.now() - (i % 50) * 86400000).toISOString(),
     })),
     { ordered: false }
   );
@@ -304,11 +358,19 @@ async function seedData() {
 
   const lots = await ConsumableLotModel.insertMany(
     Array.from({ length: SEED.lots }, (_, i) => ({
+      consumable_id: consumables[i % consumables.length]._id,
+      holder_type: 'OFFICE',
+      holder_id: offices[i % offices.length]._id,
+      batch_no: `LOT-${i + 1}`,
+      qty_received: 100 + (i % 50),
+      qty_available: i % 7 === 0 ? 0 : 75,
+      received_at: new Date(Date.now() - (i % 120) * 86400000),
+      received_by_user_id: adminUser._id,
       consumable_item_id: consumableItems[i % consumableItems.length]._id,
       supplier_id: suppliers[i % suppliers.length]._id,
       lot_number: `LOT-${i + 1}`,
-      received_date: new Date(Date.now() - (i % 120) * 86400000).toISOString().slice(0, 10),
-      expiry_date: new Date(Date.now() + (i % 365) * 86400000).toISOString().slice(0, 10),
+      received_date: new Date(Date.now() - (i % 120) * 86400000).toISOString(),
+      expiry_date: new Date(Date.now() + (i % 365) * 86400000),
     })),
     { ordered: false }
   );
@@ -345,11 +407,27 @@ async function seedData() {
     { ordered: false }
   );
 
+  await ConsumableInventoryBalanceModel.insertMany(
+    Array.from({ length: SEED.consumableBalances }, (_, i) => {
+      const cycle = Math.floor(i / lots.length);
+      const officeIndex = (i + cycle) % offices.length;
+      return {
+        holder_type: 'OFFICE',
+        holder_id: offices[officeIndex]._id,
+        consumable_item_id: consumableItems[i % consumableItems.length]._id,
+        lot_id: lots[i % lots.length]._id,
+        qty_on_hand_base: 10 + (i % 100),
+        qty_reserved_base: i % 3,
+      };
+    }),
+    { ordered: false }
+  );
+
   return { adminUser };
 }
 
 async function main() {
-  const { warmup, iterations } = parseArgs();
+  const { warmup, iterations, concurrency, scenario } = parseArgs();
   const mongo = await MongoMemoryServer.create();
   const originalStdoutWrite = process.stdout.write.bind(process.stdout);
 
@@ -374,9 +452,10 @@ async function main() {
 
   const endpoints: EndpointBenchmark[] = [];
   for (const benchCase of CASES) {
-    const stats = await benchmarkEndpoint(agent, benchCase.path, warmup, iterations);
+    const stats = await benchmarkEndpoint(agent, benchCase.path, warmup, iterations, concurrency);
     endpoints.push({
       endpoint: benchCase.name,
+      scenario,
       ...stats,
     });
   }

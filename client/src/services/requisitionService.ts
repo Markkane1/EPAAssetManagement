@@ -1,8 +1,6 @@
 import api from '@/lib/api';
 import type { DocumentVersion, Requisition, RequisitionLine } from '@/types';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
-
 function toQueryString(params?: Record<string, unknown>) {
   if (!params) return '';
   const query = Object.entries(params).reduce<Record<string, string>>((acc, [key, value]) => {
@@ -13,18 +11,6 @@ function toQueryString(params?: Record<string, unknown>) {
   }, {});
   const encoded = new URLSearchParams(query).toString();
   return encoded ? `?${encoded}` : '';
-}
-
-async function downloadPdf(endpoint: string): Promise<Blob> {
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-    method: 'GET',
-    credentials: 'include',
-  });
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(errorText || `HTTP error! status: ${response.status}`);
-  }
-  return response.blob();
 }
 
 export interface PaginatedResponse<T> {
@@ -140,7 +126,7 @@ export const requisitionService = {
       `/requisitions/${id}/fulfill`,
       payload
     ),
-  downloadIssuanceReportPdf: (id: string) => downloadPdf(`/requisitions/${id}/issuance-report.pdf`),
+  downloadIssuanceReportPdf: (id: string) => api.download(`/requisitions/${id}/issuance-report.pdf`),
   uploadSignedIssuance: (id: string, formData: FormData) =>
     api.upload<{ requisition: Requisition; record: unknown; document: unknown; documentVersion: unknown }>(
       `/requisitions/${id}/upload-signed-issuance`,

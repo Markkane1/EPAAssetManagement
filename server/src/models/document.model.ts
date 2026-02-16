@@ -16,7 +16,7 @@ const DOCUMENT_TYPES = [
 
 const DOCUMENT_STATUSES = ['Draft', 'Final', 'Archived'] as const;
 
-const DocumentSchema = new Schema<any>(
+const DocumentSchema = new Schema(
   {
     // Title or short name for the document
     title: { type: String, required: true, trim: true },
@@ -36,6 +36,8 @@ DocumentSchema.index({ office_id: 1, doc_type: 1 });
 DocumentSchema.index({ office_id: 1, status: 1, created_at: -1 });
 DocumentSchema.index({ doc_type: 1, created_at: -1 });
 
-export const DocumentModel = mongoose.model<any>('Document', DocumentSchema);
+export type DocumentDoc = mongoose.InferSchemaType<typeof DocumentSchema>;
+
+export const DocumentModel = mongoose.model<DocumentDoc>('Document', DocumentSchema);
 
 

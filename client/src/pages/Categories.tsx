@@ -18,7 +18,7 @@ import { Category } from "@/types";
 const categoryIcons = ["💻", "🖥️", "🪑", "🚗", "🌐", "🖨️"];
 
 export default function Categories() {
-  const { data: categories, isLoading, error } = useCategories();
+  const { data: categories, isLoading } = useCategories();
   const createCategory = useCreateCategory();
   const updateCategory = useUpdateCategory();
   const deleteCategory = useDeleteCategory();
@@ -61,8 +61,6 @@ export default function Categories() {
       </MainLayout>
     );
   }
-
-  if (error) console.warn("API unavailable:", error);
 
   return (
     <MainLayout title="Categories" description="Organize assets by type">

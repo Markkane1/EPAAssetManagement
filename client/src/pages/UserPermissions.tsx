@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { PageHeader } from "@/components/shared/PageHeader";
@@ -419,7 +419,7 @@ export default function UserPermissions() {
             <CardContent className="space-y-2">
               {rolesWithCounts.map((role) => (
                 <button
-                  key={role.id}
+                  key={`${role.id}-${role.name}`}
                   onClick={() => setSelectedRole(role.id)}
                   className={`w-full text-left p-3 rounded-lg transition-colors ${
                     selectedRole === role.id
@@ -503,8 +503,8 @@ export default function UserPermissions() {
                   </TableHeader>
                   <TableBody>
                     {Object.entries(groupedPages).map(([category, pages]) => (
-                      <>
-                        <TableRow key={category} className="bg-muted/50">
+                      <Fragment key={category}>
+                        <TableRow className="bg-muted/50">
                           <TableCell colSpan={6} className="font-semibold text-sm">
                             {category}
                           </TableCell>
@@ -558,7 +558,7 @@ export default function UserPermissions() {
                             </TableCell>
                           </TableRow>
                         ))}
-                      </>
+                      </Fragment>
                     ))}
                   </TableBody>
                 </Table>

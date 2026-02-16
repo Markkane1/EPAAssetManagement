@@ -114,8 +114,8 @@ const saveAuditLog = (entry: AuditLogEntry): void => {
     const trimmedLogs = logs.slice(0, MAX_LOGS);
     
     localStorage.setItem(AUDIT_LOG_KEY, JSON.stringify(trimmedLogs));
-  } catch (error) {
-    console.error('Failed to save audit log:', error);
+  } catch {
+    // Ignore localStorage write errors
   }
 };
 

@@ -55,6 +55,11 @@ export interface User {
   role: AppRole;
 }
 
+export interface ResetPasswordDto {
+  token: string;
+  newPassword: string;
+}
+
 export const authService = {
   login: async (data: LoginDto): Promise<AuthResponse> => {
     const response = await api.post<AuthResponse>('/auth/login', data);
@@ -78,6 +83,14 @@ export const authService = {
   
   logout: () => {
     localStorage.removeItem('user');
+  },
+
+  requestPasswordReset: async (email: string): Promise<{ message: string }> => {
+    return api.post<{ message: string }>('/auth/forgot-password', { email });
+  },
+
+  resetPassword: async (data: ResetPasswordDto): Promise<{ message: string }> => {
+    return api.post<{ message: string }>('/auth/reset-password', data);
   },
   
   getCurrentUser: (): User | null => {

@@ -12,6 +12,9 @@ const VendorSchema = new Schema<any>(
   baseSchemaOptions
 );
 
+VendorSchema.index({ created_at: -1 });
+VendorSchema.index({ name: 1 });
+
 export const VendorModel = mongoose.model<any>('Vendor', VendorSchema);
 
 

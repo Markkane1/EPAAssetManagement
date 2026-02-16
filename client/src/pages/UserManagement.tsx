@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { PageHeader } from "@/components/shared/PageHeader";
@@ -51,6 +51,8 @@ import {
   UserPlus,
   Trash2,
   KeyRound,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AppRole } from "@/services/authService";
@@ -79,6 +81,8 @@ const roleColors: Record<AppRole, string> = {
 export default function UserManagement() {
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
   const [editingUser, setEditingUser] = useState<UserWithDetails | null>(null);
   const [selectedRole, setSelectedRole] = useState<AppRole | "">("");
   const [selectedLocation, setSelectedLocation] = useState<string>("");
@@ -97,10 +101,15 @@ export default function UserManagement() {
   const [newUserLocation, setNewUserLocation] = useState<string>("none");
 
   // Fetch all users with their profiles and roles
-  const { data: users = [], isLoading: usersLoading } = useQuery({
-    queryKey: ["users-management", searchQuery],
-    queryFn: () => userService.getAll({ limit: 500, search: searchQuery || undefined }),
-  });
+  const { data: users = { items: [], page: 1, limit: 50, total: 0, hasMore: false }, isLoading: usersLoading } =
+    useQuery({
+    queryKey: ["users-management", page, pageSize, searchQuery],
+    queryFn: () => userService.getPaged({ page, limit: pageSize, search: searchQuery || undefined }),
+    });
+
+  useEffect(() => {
+    setPage(1);
+  }, [searchQuery, pageSize]);
 
   // Fetch all locations
   const { data: locations = [] } = useQuery({
@@ -257,20 +266,9 @@ export default function UserManagement() {
     }
   };
 
-  const visibleUsers = useMemo(() => users, [users]);
-
-  const filteredUsers = useMemo(() => {
-    const searchLower = searchQuery.toLowerCase();
-    if (!searchLower) return visibleUsers;
-    return visibleUsers.filter((user) => {
-      return (
-        user.email?.toLowerCase().includes(searchLower) ||
-        user.first_name?.toLowerCase().includes(searchLower) ||
-        user.last_name?.toLowerCase().includes(searchLower) ||
-        user.location_name?.toLowerCase().includes(searchLower)
-      );
-    });
-  }, [visibleUsers, searchQuery]);
+  const visibleUsers = useMemo(() => users.items || [], [users.items]);
+  const totalUsers = users.total || 0;
+  const totalPages = Math.max(1, Math.ceil(totalUsers / pageSize));
 
   const getRoleBadge = (role: AppRole | null) => {
     if (!role) return <Badge variant="outline">No Role</Badge>;
@@ -308,7 +306,7 @@ export default function UserManagement() {
             </div>
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Users className="h-4 w-4" />
-              <span>{visibleUsers.length} total users</span>
+              <span>{totalUsers} total users</span>
             </div>
           </div>
 
@@ -331,14 +329,14 @@ export default function UserManagement() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredUsers.length === 0 ? (
+                  {visibleUsers.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
                         No users found
                       </TableCell>
                     </TableRow>
                   ) : (
-                    filteredUsers.map((user) => (
+                    visibleUsers.map((user) => (
                       <TableRow key={user.id}>
                         <TableCell>
                           <div className="flex items-center gap-3">
@@ -405,6 +403,39 @@ export default function UserManagement() {
                   )}
                 </TableBody>
               </Table>
+            </div>
+          )}
+          {!usersLoading && totalUsers > 0 && (
+            <div className="mt-4 flex items-center justify-between">
+              <p className="text-sm text-muted-foreground">
+                Showing {(page - 1) * pageSize + 1} to {Math.min(page * pageSize, totalUsers)} of {totalUsers}
+              </p>
+              <div className="flex items-center gap-2">
+                <Select value={String(pageSize)} onValueChange={(value) => setPageSize(Number(value))}>
+                  <SelectTrigger className="w-[130px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="25">25 / page</SelectItem>
+                    <SelectItem value="50">50 / page</SelectItem>
+                    <SelectItem value="100">100 / page</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button variant="outline" size="icon" disabled={page <= 1} onClick={() => setPage((prev) => prev - 1)}>
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <span className="text-sm font-medium">
+                  Page {page} of {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((prev) => prev + 1)}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
           )}
         </CardContent>

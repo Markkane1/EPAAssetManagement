@@ -3,24 +3,9 @@ import { Types } from 'mongoose';
 import type { AuthRequest } from '../middleware/auth';
 import { RequisitionModel } from '../models/requisition.model';
 import { ReturnRequestModel } from '../models/returnRequest.model';
-import { DocumentModel } from '../models/document.model';
 import { createHttpError } from '../utils/httpError';
 import { getRequestContext } from '../utils/scope';
-
-function clampInt(value: unknown, fallback: number, max: number) {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return fallback;
-  return Math.max(1, Math.min(Math.floor(parsed), max));
-}
-
-function parseDateInput(value: unknown, fieldName: string) {
-  if (value === undefined || value === null || value === '') return null;
-  const parsed = new Date(String(value));
-  if (Number.isNaN(parsed.getTime())) {
-    throw createHttpError(400, `${fieldName} must be a valid date`);
-  }
-  return parsed;
-}
+import { parseDateInput, readPagination } from '../utils/requestParsing';
 
 function resolveScopedOfficeId(ctx: { isOrgAdmin: boolean; locationId: string | null }, rawOfficeId: unknown) {
   const requestedOfficeId = rawOfficeId === undefined || rawOfficeId === null ? null : String(rawOfficeId).trim();
@@ -47,13 +32,112 @@ function applyCreatedAtRange(filter: Record<string, unknown>, from: Date | null,
   filter.created_at = createdRange;
 }
 
+function buildRequisitionNonCompliancePipeline(filter: Record<string, unknown>) {
+  return [
+    { $match: filter },
+    {
+      $lookup: {
+        from: 'documents',
+        let: { docId: '$signed_issuance_document_id' },
+        pipeline: [
+          {
+            $match: {
+              $expr: {
+                $and: [
+                  { $eq: ['$_id', '$$docId'] },
+                  { $eq: ['$doc_type', 'IssueSlip'] },
+                  { $eq: ['$status', 'Final'] },
+                ],
+              },
+            },
+          },
+          { $project: { _id: 1 } },
+        ],
+        as: 'valid_signed_doc',
+      },
+    },
+    {
+      $match: {
+        $or: [
+          { signed_issuance_document_id: null },
+          { signed_issuance_uploaded_at: null },
+          { $expr: { $eq: [{ $size: '$valid_signed_doc' }, 0] } },
+        ],
+      },
+    },
+    {
+      $project: {
+        _id: 0,
+        type: { $literal: 'REQUISITION' },
+        issue: { $literal: 'MISSING_SIGNED_ISSUE_SLIP' },
+        id: '$_id',
+        office_id: '$office_id',
+        status: '$status',
+        file_number: '$file_number',
+        signed_document_id: '$signed_issuance_document_id',
+        created_at: '$created_at',
+        updated_at: '$updated_at',
+      },
+    },
+  ];
+}
+
+function buildReturnRequestNonCompliancePipeline(filter: Record<string, unknown>) {
+  return [
+    { $match: filter },
+    {
+      $lookup: {
+        from: 'documents',
+        let: { docId: '$receipt_document_id' },
+        pipeline: [
+          {
+            $match: {
+              $expr: {
+                $and: [
+                  { $eq: ['$_id', '$$docId'] },
+                  { $eq: ['$doc_type', 'ReturnSlip'] },
+                  { $eq: ['$status', 'Final'] },
+                ],
+              },
+            },
+          },
+          { $project: { _id: 1 } },
+        ],
+        as: 'valid_signed_doc',
+      },
+    },
+    {
+      $match: {
+        $or: [
+          { receipt_document_id: null },
+          { $expr: { $eq: [{ $size: '$valid_signed_doc' }, 0] } },
+        ],
+      },
+    },
+    {
+      $project: {
+        _id: 0,
+        type: { $literal: 'RETURN_REQUEST' },
+        issue: { $literal: 'MISSING_SIGNED_RETURN_SLIP' },
+        id: '$_id',
+        office_id: '$office_id',
+        status: '$status',
+        signed_document_id: '$receipt_document_id',
+        created_at: '$created_at',
+        updated_at: '$updated_at',
+      },
+    },
+  ];
+}
+
 export const reportController = {
   requisitions: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const ctx = await getRequestContext(req);
-      const page = clampInt(req.query.page, 1, 100_000);
-      const limit = clampInt(req.query.limit, 200, 1000);
-      const skip = (page - 1) * limit;
+      const { page, limit, skip } = readPagination(req.query as Record<string, unknown>, {
+        defaultLimit: 100,
+        maxLimit: 500,
+      });
       const status = req.query.status ? String(req.query.status).trim() : null;
       const from = parseDateInput(req.query.from, 'from');
       const to = parseDateInput(req.query.to, 'to');
@@ -95,9 +179,10 @@ export const reportController = {
   noncompliance: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const ctx = await getRequestContext(req);
-      const page = clampInt(req.query.page, 1, 100_000);
-      const limit = clampInt(req.query.limit, 200, 1000);
-      const skip = (page - 1) * limit;
+      const { page, limit, skip } = readPagination(req.query as Record<string, unknown>, {
+        defaultLimit: 100,
+        maxLimit: 500,
+      });
       const from = parseDateInput(req.query.from, 'from');
       const to = parseDateInput(req.query.to, 'to');
       if (from && to && from.getTime() > to.getTime()) {
@@ -119,97 +204,50 @@ export const reportController = {
       applyCreatedAtRange(requisitionFilter, from, to);
       applyCreatedAtRange(returnRequestFilter, from, to);
 
-      const [requisitions, returnRequests] = await Promise.all([
-        RequisitionModel.find(requisitionFilter).sort({ created_at: -1 }).lean(),
-        ReturnRequestModel.find(returnRequestFilter).sort({ created_at: -1 }).lean(),
+      const requisitionPipeline = buildRequisitionNonCompliancePipeline(requisitionFilter);
+      const returnRequestPipeline = buildReturnRequestNonCompliancePipeline(returnRequestFilter);
+      const returnRequestCollection = ReturnRequestModel.collection.name;
+
+      const aggregated = await RequisitionModel.aggregate([
+        ...requisitionPipeline,
+        {
+          $unionWith: {
+            coll: returnRequestCollection,
+            pipeline: returnRequestPipeline,
+          },
+        },
+        { $sort: { created_at: -1 } },
+        {
+          $facet: {
+            items: [{ $skip: skip }, { $limit: limit }],
+            total: [{ $count: 'count' }],
+            requisitions: [{ $match: { type: 'REQUISITION' } }, { $count: 'count' }],
+            returnRequests: [{ $match: { type: 'RETURN_REQUEST' } }, { $count: 'count' }],
+          },
+        },
       ]);
 
-      const requisitionDocIds = Array.from(
-        new Set(
-          requisitions
-            .map((row) => (row.signed_issuance_document_id ? String(row.signed_issuance_document_id) : null))
-            .filter((id): id is string => Boolean(id))
-        )
-      );
-      const returnDocIds = Array.from(
-        new Set(
-          returnRequests
-            .map((row) => (row.receipt_document_id ? String(row.receipt_document_id) : null))
-            .filter((id): id is string => Boolean(id))
-        )
-      );
-
-      const [issueSlipDocs, returnSlipDocs] = await Promise.all([
-        requisitionDocIds.length
-          ? DocumentModel.find(
-              { _id: { $in: requisitionDocIds }, doc_type: 'IssueSlip', status: 'Final' },
-              { _id: 1 }
-            ).lean()
-          : [],
-        returnDocIds.length
-          ? DocumentModel.find(
-              { _id: { $in: returnDocIds }, doc_type: 'ReturnSlip', status: 'Final' },
-              { _id: 1 }
-            ).lean()
-          : [],
-      ]);
-
-      const validIssueSlipDocIds = new Set(issueSlipDocs.map((row) => String(row._id)));
-      const validReturnSlipDocIds = new Set(returnSlipDocs.map((row) => String(row._id)));
-
-      const requisitionIssues = requisitions
-        .filter((row) => {
-          const signedDocId = row.signed_issuance_document_id ? String(row.signed_issuance_document_id) : null;
-          if (!signedDocId || !row.signed_issuance_uploaded_at) return true;
-          return !validIssueSlipDocIds.has(signedDocId);
-        })
-        .map((row) => ({
-          type: 'REQUISITION',
-          issue: 'MISSING_SIGNED_ISSUE_SLIP',
-          id: row._id,
-          office_id: row.office_id,
-          status: row.status,
-          file_number: row.file_number,
-          signed_document_id: row.signed_issuance_document_id || null,
-          created_at: row.created_at,
-          updated_at: row.updated_at,
-        }));
-
-      const returnRequestIssues = returnRequests
-        .filter((row) => {
-          const signedDocId = row.receipt_document_id ? String(row.receipt_document_id) : null;
-          if (!signedDocId) return true;
-          return !validReturnSlipDocIds.has(signedDocId);
-        })
-        .map((row) => ({
-          type: 'RETURN_REQUEST',
-          issue: 'MISSING_SIGNED_RETURN_SLIP',
-          id: row._id,
-          office_id: row.office_id,
-          status: row.status,
-          signed_document_id: row.receipt_document_id || null,
-          created_at: row.created_at,
-          updated_at: row.updated_at,
-        }));
-
-      const combined = [...requisitionIssues, ...returnRequestIssues].sort((a, b) => {
-        const aTime = new Date(String(a.created_at || 0)).getTime();
-        const bTime = new Date(String(b.created_at || 0)).getTime();
-        return bTime - aTime;
-      });
-      const paged = combined.slice(skip, skip + limit);
+      const bucket = aggregated[0] || {
+        items: [],
+        total: [],
+        requisitions: [],
+        returnRequests: [],
+      };
+      const total = Number((bucket.total?.[0] as { count?: number } | undefined)?.count || 0);
+      const requisitionCount = Number((bucket.requisitions?.[0] as { count?: number } | undefined)?.count || 0);
+      const returnRequestCount = Number((bucket.returnRequests?.[0] as { count?: number } | undefined)?.count || 0);
 
       return res.json({
         page,
         limit,
-        total: combined.length,
+        total,
         officeId,
         counts: {
-          requisitionsWithoutSignedIssueSlip: requisitionIssues.length,
-          returnRequestsWithoutSignedReturnSlip: returnRequestIssues.length,
-          total: combined.length,
+          requisitionsWithoutSignedIssueSlip: requisitionCount,
+          returnRequestsWithoutSignedReturnSlip: returnRequestCount,
+          total,
         },
-        items: paged,
+        items: bucket.items || [],
       });
     } catch (error) {
       return next(error);

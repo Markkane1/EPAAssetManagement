@@ -34,6 +34,7 @@ function toCsv(rows: any[], columns: string[]) {
 export default function ConsumableLedger() {
   const ALL_VALUE = '__all__';
   const STORE_FILTER = '__store__';
+  const STORE_CODE = 'HEAD_OFFICE_STORE';
   const { mode, setMode } = useConsumableMode();
   const { data: items } = useConsumableItems();
   const { data: locations } = useConsumableLocations({
@@ -52,12 +53,18 @@ export default function ConsumableLedger() {
     const filters: any = {};
     if (from) filters.from = from;
     if (to) filters.to = to;
-    if (locationId !== ALL_VALUE && locationId !== STORE_FILTER) filters.locationId = locationId;
+    if (locationId === STORE_FILTER) {
+      filters.holderType = 'STORE';
+      filters.holderId = STORE_CODE;
+    } else if (locationId !== ALL_VALUE) {
+      filters.holderType = 'OFFICE';
+      filters.holderId = locationId;
+    }
     if (itemId !== ALL_VALUE) filters.itemId = itemId;
     if (lotId !== ALL_VALUE) filters.lotId = lotId;
     if (txType !== ALL_VALUE) filters.txType = txType;
     return filters;
-  }, [from, to, locationId, itemId, lotId, txType, ALL_VALUE, STORE_FILTER]);
+  }, [from, to, locationId, itemId, lotId, txType, ALL_VALUE, STORE_FILTER, STORE_CODE]);
 
   const filteredItems = useMemo(() => filterItemsByMode(items || [], mode), [items, mode]);
   const filteredLocations = useMemo(() => filterLocationsByMode(locations || [], mode), [locations, mode]);
@@ -73,7 +80,10 @@ export default function ConsumableLedger() {
     if (locationId === STORE_FILTER) {
       return entry.from_holder_type === 'STORE' || entry.to_holder_type === 'STORE';
     }
-    return entry.from_location_id === locationId || entry.to_location_id === locationId;
+    return (
+      (entry.from_holder_type === 'OFFICE' && entry.from_holder_id === locationId) ||
+      (entry.to_holder_type === 'OFFICE' && entry.to_holder_id === locationId)
+    );
   });
 
   useEffect(() => {
@@ -97,23 +107,23 @@ export default function ConsumableLedger() {
     {
       key: 'lot_id',
       label: 'Lot',
-      render: (value: string | null) => value ? lots?.find((lot) => lot.id === value)?.lot_number || 'Unknown' : 'N/A',
+      render: (value: string | null) => value ? lots?.find((lot) => lot.id === value)?.batch_no || 'Unknown' : 'N/A',
     },
     {
-      key: 'from_location_id',
+      key: 'from_holder_id',
       label: 'From',
       render: (_value: string | null, row: ConsumableInventoryTransaction) => {
         if (row.from_holder_type === 'STORE') return 'Head Office Store';
-        const officeId = row.from_location_id || row.from_holder_id;
+        const officeId = row.from_holder_id;
         return officeId ? filteredLocations.find((loc) => loc.id === officeId)?.name || 'Unknown' : 'N/A';
       },
     },
     {
-      key: 'to_location_id',
+      key: 'to_holder_id',
       label: 'To',
       render: (_value: string | null, row: ConsumableInventoryTransaction) => {
         if (row.to_holder_type === 'STORE') return 'Head Office Store';
-        const officeId = row.to_location_id || row.to_holder_id;
+        const officeId = row.to_holder_id;
         return officeId ? filteredLocations.find((loc) => loc.id === officeId)?.name || 'Unknown' : 'N/A';
       },
     },
@@ -125,18 +135,18 @@ export default function ConsumableLedger() {
       date: row.tx_time,
       type: row.tx_type,
       item: filteredItems.find((item) => item.id === row.consumable_item_id)?.name || row.consumable_item_id,
-      lot: row.lot_id ? lots?.find((lot) => lot.id === row.lot_id)?.lot_number || row.lot_id : '',
+      lot: row.lot_id ? lots?.find((lot) => lot.id === row.lot_id)?.batch_no || row.lot_id : '',
       from:
         row.from_holder_type === 'STORE'
           ? 'Head Office Store'
-          : row.from_location_id
-            ? filteredLocations.find((loc) => loc.id === row.from_location_id)?.name || row.from_location_id
+          : row.from_holder_id
+            ? filteredLocations.find((loc) => loc.id === row.from_holder_id)?.name || row.from_holder_id
             : '',
       to:
         row.to_holder_type === 'STORE'
           ? 'Head Office Store'
-          : row.to_location_id
-            ? filteredLocations.find((loc) => loc.id === row.to_location_id)?.name || row.to_location_id
+          : row.to_holder_id
+            ? filteredLocations.find((loc) => loc.id === row.to_holder_id)?.name || row.to_holder_id
             : '',
       qty_base: row.qty_base,
       entered_qty: row.entered_qty,
@@ -226,11 +236,11 @@ export default function ConsumableLedger() {
                   <SelectItem value={ALL_VALUE}>All lots</SelectItem>
                   {(lots || [])
                     .filter((lot) => {
-                      if (itemId !== ALL_VALUE) return lot.consumable_item_id === itemId;
-                      return allowedItemIds.has(lot.consumable_item_id);
+                      if (itemId !== ALL_VALUE) return lot.consumable_id === itemId;
+                      return allowedItemIds.has(lot.consumable_id);
                     })
                     .map((lot) => (
-                      <SelectItem key={lot.id} value={lot.id}>{lot.lot_number}</SelectItem>
+                      <SelectItem key={lot.id} value={lot.id}>{lot.batch_no}</SelectItem>
                     ))}
                 </SelectContent>
               </Select>
@@ -243,6 +253,7 @@ export default function ConsumableLedger() {
         columns={columns}
         data={visibleLedger as ConsumableInventoryTransaction[] as any}
         searchPlaceholder="Search ledger..."
+        virtualized
       />
     </MainLayout>
   );

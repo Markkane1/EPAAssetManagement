@@ -14,6 +14,10 @@ const ProjectSchema = new Schema<any>(
   baseSchemaOptions
 );
 
+ProjectSchema.index({ is_active: 1, created_at: -1 });
+ProjectSchema.index({ created_at: -1 });
+ProjectSchema.index({ name: 1, is_active: 1 });
+
 export const ProjectModel = mongoose.model<any>('Project', ProjectSchema);
 
 

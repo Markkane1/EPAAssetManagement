@@ -31,7 +31,7 @@ import { useAuth } from "@/contexts/AuthContext";
 export default function Employees() {
   const navigate = useNavigate();
   const { role, isOrgAdmin, locationId } = useAuth();
-  const { data: employees, isLoading, error } = useEmployees();
+  const { data: employees, isLoading } = useEmployees();
   const { data: directorates } = useDirectorates();
   const { data: locations } = useLocations();
   const createEmployee = useCreateEmployee();
@@ -171,8 +171,6 @@ export default function Employees() {
       </MainLayout>
     );
   }
-
-  if (error) console.warn("API unavailable:", error);
 
   return (
     <MainLayout title="Employees" description="Manage your organization's personnel">

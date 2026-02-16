@@ -22,7 +22,7 @@ import { exportToCSV, exportToJSON, filterRowsBySearch, formatDateForExport, for
 import { usePageSearch } from "@/contexts/PageSearchContext";
 
 export default function PurchaseOrders() {
-  const { data: purchaseOrders, isLoading, error } = usePurchaseOrders();
+  const { data: purchaseOrders, isLoading } = usePurchaseOrders();
   const { data: vendors } = useVendors();
   const { data: projects } = useProjects();
   const createPurchaseOrder = useCreatePurchaseOrder();
@@ -147,10 +147,6 @@ export default function PurchaseOrders() {
         </div>
       </MainLayout>
     );
-  }
-
-  if (error) {
-    console.warn("API unavailable:", error);
   }
 
   const handleExportCSV = () => {

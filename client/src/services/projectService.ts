@@ -1,6 +1,8 @@
 import api from '@/lib/api';
 import { Project } from '@/types';
 
+const LIST_LIMIT = 1000;
+
 export interface ProjectCreateDto {
   name: string;
   code: string;
@@ -22,11 +24,11 @@ export interface ProjectUpdateDto {
 }
 
 export const projectService = {
-  getAll: () => api.get<Project[]>('/projects'),
+  getAll: () => api.get<Project[]>(`/projects?limit=${LIST_LIMIT}`),
   
   getById: (id: string) => api.get<Project>(`/projects/${id}`),
   
-  getActive: () => api.get<Project[]>('/projects/active'),
+  getActive: () => api.get<Project[]>(`/projects/active?limit=${LIST_LIMIT}`),
   
   create: (data: ProjectCreateDto) => api.post<Project>('/projects', data),
   

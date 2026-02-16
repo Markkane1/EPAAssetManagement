@@ -6,7 +6,6 @@ import { ConsumableLotModel } from '../models/consumableLot.model';
 import { ConsumableIssueModel } from '../models/consumableIssue.model';
 import { addIn, roundQty, validateQtyInput } from '../services/balance.service';
 import { CategoryModel } from '../../../models/category.model';
-import { ConsumableModel } from '../../../models/consumable.model';
 import { ConsumableItemModel } from '../models/consumableItem.model';
 import { OfficeModel } from '../../../models/office.model';
 import { UserModel } from '../../../models/user.model';
@@ -37,16 +36,8 @@ function ensureIssuePermission(
 
 async function resolveCategoryScope(consumableId: string, session: mongoose.ClientSession) {
   const moduleItem = await ConsumableItemModel.findById(consumableId).session(session).lean();
-  if (moduleItem) {
-    const categoryId = (moduleItem as any).category_id;
-    if (!categoryId) return 'GENERAL';
-    const category = await CategoryModel.findById(categoryId).session(session).lean();
-    return ((category as any)?.scope || 'GENERAL') as 'GENERAL' | 'LAB_ONLY';
-  }
-
-  const legacyConsumable = await ConsumableModel.findById(consumableId).session(session).lean();
-  if (!legacyConsumable) throw createHttpError(404, 'Consumable not found');
-  const categoryId = (legacyConsumable as any).category_id;
+  if (!moduleItem) throw createHttpError(404, 'Consumable item not found');
+  const categoryId = (moduleItem as any).category_id;
   if (!categoryId) return 'GENERAL';
   const category = await CategoryModel.findById(categoryId).session(session).lean();
   return ((category as any)?.scope || 'GENERAL') as 'GENERAL' | 'LAB_ONLY';
@@ -118,7 +109,7 @@ export const consumableIssueController = {
         if (!fromHolderId) {
           throw createHttpError(400, 'Lot holder is not configured');
         }
-        const lotConsumableId = String((lot as any).consumable_id || (lot as any).consumable_item_id || '').trim();
+        const lotConsumableId = String((lot as any).consumable_id || '').trim();
         if (!lotConsumableId) {
           throw createHttpError(400, 'Lot consumable is not configured');
         }

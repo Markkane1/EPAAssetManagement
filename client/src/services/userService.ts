@@ -28,6 +28,14 @@ export interface UserListQuery {
   search?: string;
 }
 
+export interface PagedUsersResponse {
+  items: UserWithDetails[];
+  page: number;
+  limit: number;
+  total: number;
+  hasMore: boolean;
+}
+
 export const userService = {
   getAll: (query: UserListQuery = {}) => {
     const params = new URLSearchParams();
@@ -36,6 +44,14 @@ export const userService = {
     if (query.search && query.search.trim().length > 0) params.set('search', query.search.trim());
     const suffix = params.toString() ? `?${params.toString()}` : '';
     return api.get<UserWithDetails[]>(`/users${suffix}`);
+  },
+  getPaged: (query: UserListQuery = {}) => {
+    const params = new URLSearchParams();
+    params.set('meta', '1');
+    if (query.page) params.set('page', String(query.page));
+    if (query.limit) params.set('limit', String(query.limit));
+    if (query.search && query.search.trim().length > 0) params.set('search', query.search.trim());
+    return api.get<PagedUsersResponse>(`/users?${params.toString()}`);
   },
   create: (data: CreateUserDto) => api.post<UserWithDetails>('/users', data),
   updateRole: (userId: string, role: AppRole) => api.put(`/users/${userId}/role`, { role }),

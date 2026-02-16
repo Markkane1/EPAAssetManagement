@@ -1,8 +1,5 @@
 import mongoose from 'mongoose';
 import { connectDatabase } from '../src/config/db';
-import { ConsumableAssignmentModel } from '../src/models/consumableAssignment.model';
-import { ConsumableConsumptionModel as LegacyConsumableConsumptionModel } from '../src/models/consumableConsumption.model';
-import { EmployeeModel } from '../src/models/employee.model';
 import { UserModel } from '../src/models/user.model';
 import { ConsumableBalanceModel } from '../src/modules/consumables/models/consumableBalance.model';
 import { ConsumableBalanceTxnModel } from '../src/modules/consumables/models/consumableBalanceTxn.model';
@@ -116,25 +113,6 @@ function printTopAnomalies(anomalies: Anomaly[], max = 100) {
   }
 }
 
-async function resolveEmployeeUserMap() {
-  const rows = (await EmployeeModel.collection
-    .find({}, { projection: { _id: 1, user_id: 1 } })
-    .toArray()) as Array<{ _id: mongoose.Types.ObjectId; user_id?: mongoose.Types.ObjectId | null }>;
-
-  const map = new Map<string, string | null>();
-  for (const row of rows) {
-    map.set(String(row._id), row.user_id ? String(row.user_id) : null);
-  }
-  return map;
-}
-
-async function resolveUserIdSet() {
-  const ids = (await UserModel.collection.find({}, { projection: { _id: 1 } }).toArray()) as Array<{
-    _id: mongoose.Types.ObjectId;
-  }>;
-  return new Set(ids.map((row) => String(row._id)));
-}
-
 async function resolveConsumableByLot() {
   const rows = (await ConsumableLotModel.collection
     .find({}, { projection: { _id: 1, consumable_id: 1, consumable_item_id: 1 } })
@@ -229,104 +207,6 @@ async function buildModuleIssueRecords(anomalies: Anomaly[]): Promise<ReplayReco
   return records;
 }
 
-async function buildLegacyAssignmentRecords(anomalies: Anomaly[]): Promise<ReplayRecord[]> {
-  const rows = (await ConsumableAssignmentModel.collection
-    .find(
-      {},
-      {
-        projection: {
-          _id: 1,
-          consumable_id: 1,
-          assignee_type: 1,
-          assignee_id: 1,
-          received_by_employee_id: 1,
-          quantity: 1,
-          assigned_date: 1,
-          created_at: 1,
-        },
-      }
-    )
-    .toArray()) as Array<Record<string, unknown>>;
-
-  const employeeToUser = await resolveEmployeeUserMap();
-  const userIds = await resolveUserIdSet();
-  const records: ReplayRecord[] = [];
-
-  for (const row of rows) {
-    const sourceId = String(row._id);
-    const consumableId = asIdString(row.consumable_id);
-    const assigneeType = String(row.assignee_type ?? '').trim().toLowerCase();
-    const assigneeId = asIdString(row.assignee_id);
-    const performedAt = asDate(row.assigned_date, row.created_at);
-
-    if (!consumableId || !assigneeId) {
-      anomalies.push({
-        source_kind: 'legacy_assignment',
-        source_id: sourceId,
-        reason: 'Missing consumable_id or assignee_id',
-      });
-      continue;
-    }
-
-    let holderType: HolderType;
-    let holderId: string | null = null;
-
-    if (assigneeType === 'location') {
-      holderType = 'OFFICE';
-      holderId = assigneeId;
-    } else if (assigneeType === 'employee') {
-      holderType = 'USER';
-      const mappedUserId = employeeToUser.get(assigneeId);
-      if (mappedUserId) {
-        holderId = mappedUserId;
-      } else if (userIds.has(assigneeId)) {
-        holderId = assigneeId;
-      }
-    } else {
-      anomalies.push({
-        source_kind: 'legacy_assignment',
-        source_id: sourceId,
-        reason: `Unknown assignee_type '${assigneeType}'`,
-      });
-      continue;
-    }
-
-    if (!holderId) {
-      anomalies.push({
-        source_kind: 'legacy_assignment',
-        source_id: sourceId,
-        reason: 'Unable to map employee assignee to user holder',
-      });
-      continue;
-    }
-
-    const receiverEmployeeId = asIdString(row.received_by_employee_id);
-    const performedBy = receiverEmployeeId ? employeeToUser.get(receiverEmployeeId) || null : null;
-
-    records.push({
-      source_kind: 'legacy_assignment',
-      source_id: sourceId,
-      performed_at: performedAt,
-      ops: [
-        {
-          source_kind: 'legacy_assignment',
-          source_id: sourceId,
-          event_type: 'ISSUE_IN',
-          holder_type: holderType,
-          holder_id: holderId,
-          consumable_id: consumableId,
-          quantity: Number(row.quantity),
-          performed_at: performedAt,
-          performed_by_user_id: performedBy,
-          marker: markerOf('legacy_assignment', sourceId),
-        },
-      ],
-    });
-  }
-
-  return records;
-}
-
 async function buildModuleConsumptionRecords(anomalies: Anomaly[]): Promise<ReplayRecord[]> {
   const rows = (await ConsumableConsumptionModel.collection
     .find(
@@ -391,60 +271,6 @@ async function buildModuleConsumptionRecords(anomalies: Anomaly[]): Promise<Repl
     });
   }
 
-  return records;
-}
-
-async function buildLegacyConsumptionRecords(anomalies: Anomaly[]): Promise<ReplayRecord[]> {
-  const rows = (await LegacyConsumableConsumptionModel.collection
-    .find(
-      {},
-      {
-        projection: {
-          _id: 1,
-          location_id: 1,
-          consumable_id: 1,
-          consumed_quantity: 1,
-          consumed_at: 1,
-          created_at: 1,
-        },
-      }
-    )
-    .toArray()) as Array<Record<string, unknown>>;
-
-  const records: ReplayRecord[] = [];
-  for (const row of rows) {
-    const sourceId = String(row._id);
-    const locationId = asIdString(row.location_id);
-    const consumableId = asIdString(row.consumable_id);
-    const performedAt = asDate(row.consumed_at, row.created_at);
-    if (!locationId || !consumableId) {
-      anomalies.push({
-        source_kind: 'legacy_consumption',
-        source_id: sourceId,
-        reason: 'Missing location_id or consumable_id',
-      });
-      continue;
-    }
-    records.push({
-      source_kind: 'legacy_consumption',
-      source_id: sourceId,
-      performed_at: performedAt,
-      ops: [
-        {
-          source_kind: 'legacy_consumption',
-          source_id: sourceId,
-          event_type: 'CONSUME_OUT',
-          holder_type: 'OFFICE',
-          holder_id: locationId,
-          consumable_id: consumableId,
-          quantity: Number(row.consumed_quantity),
-          performed_at: performedAt,
-          performed_by_user_id: null,
-          marker: markerOf('legacy_consumption', sourceId),
-        },
-      ],
-    });
-  }
   return records;
 }
 
@@ -665,7 +491,7 @@ function replay(
 }
 
 async function resolveFallbackTxnUserId() {
-  const preferredRoles = ['org_admin', 'admin', 'super_admin'];
+  const preferredRoles = ['org_admin', 'office_head', 'caretaker'];
   for (const role of preferredRoles) {
     const row = (await UserModel.collection.findOne(
       { role },
@@ -775,20 +601,16 @@ async function run() {
   try {
     await connectDatabase();
 
-    const [moduleIssueRecords, legacyAssignmentRecords, moduleConsumptionRecords, legacyConsumptionRecords, moduleReturnRecords] =
+    const [moduleIssueRecords, moduleConsumptionRecords, moduleReturnRecords] =
       await Promise.all([
         buildModuleIssueRecords(anomalies),
-        buildLegacyAssignmentRecords(anomalies),
         buildModuleConsumptionRecords(anomalies),
-        buildLegacyConsumptionRecords(anomalies),
         buildModuleReturnRecords(anomalies),
       ]);
 
     const records = [
       ...moduleIssueRecords,
-      ...legacyAssignmentRecords,
       ...moduleConsumptionRecords,
-      ...legacyConsumptionRecords,
       ...moduleReturnRecords,
     ].sort((a, b) => {
       const t = a.performed_at.getTime() - b.performed_at.getTime();
@@ -846,4 +668,3 @@ async function run() {
 }
 
 run();
-

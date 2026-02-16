@@ -41,7 +41,7 @@ function isHqDirectorateOffice(officeId: string, offices: Office[]) {
   const office = offices.find((entry) => entry.id === officeId);
   if (!office) return false;
   if (office.type === "DIRECTORATE") return true;
-  const parentId = office.parent_office_id || office.parent_location_id;
+  const parentId = office.parent_office_id;
   if (!parentId) return false;
   const parent = offices.find((entry) => entry.id === parentId);
   return parent?.type === "DIRECTORATE";
@@ -104,7 +104,7 @@ export default function RequisitionDetail() {
   const queryClient = useQueryClient();
   const { role } = useAuth();
   const { data: locations } = useLocations();
-  const locationList = locations || [];
+  const locationList = useMemo(() => locations || [], [locations]);
 
   const [rejectRemarks, setRejectRemarks] = useState("");
   const [showRejectInput, setShowRejectInput] = useState(false);
@@ -122,7 +122,7 @@ export default function RequisitionDetail() {
   });
 
   const requisition = requisitionQuery.data?.requisition;
-  const lines = requisitionQuery.data?.lines || [];
+  const lines = useMemo(() => requisitionQuery.data?.lines || [], [requisitionQuery.data?.lines]);
   const issuingOfficeId = String(requisition?.issuing_office_id || requisition?.office_id || "");
   const officeId = String(requisition?.office_id || "");
   const officeName =
@@ -202,8 +202,8 @@ export default function RequisitionDetail() {
     });
   }, [lineById, officeStockItems, pickerLineId, pickerSearch]);
 
-  const assetList = assetsQuery.data || [];
-  const consumableList = consumablesQuery.data || [];
+  const assetList = useMemo(() => assetsQuery.data || [], [assetsQuery.data]);
+  const consumableList = useMemo(() => consumablesQuery.data || [], [consumablesQuery.data]);
 
   const assetById = useMemo(() => {
     const map = new Map<string, Asset>();

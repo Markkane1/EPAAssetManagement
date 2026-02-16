@@ -22,8 +22,6 @@ const TransferLineSchema = new Schema<any>(
 
 const TransferSchema = new Schema<any>(
   {
-    // Deprecated single-line field kept for migration compatibility.
-    asset_item_id: { type: Schema.Types.ObjectId, ref: 'AssetItem', default: null },
     // Multi-line transfer payload.
     lines: { type: [TransferLineSchema], default: [] },
     // Office the item is moving from
@@ -61,9 +59,6 @@ const TransferSchema = new Schema<any>(
     received_at_dest_at: { type: Date, default: null },
     rejected_at: { type: Date, default: null },
     cancelled_at: { type: Date, default: null },
-    // Deprecated compatibility timestamps.
-    dispatched_at: { type: Date, default: null },
-    received_at: { type: Date, default: null },
     // Transfer workflow status
     status: { type: String, enum: TRANSFER_STATUSES, default: 'REQUESTED', required: true },
     // Notes for the transfer request or handling
@@ -74,7 +69,6 @@ const TransferSchema = new Schema<any>(
   baseSchemaOptions
 );
 
-TransferSchema.index({ asset_item_id: 1, transfer_date: -1 });
 TransferSchema.index({ 'lines.asset_item_id': 1, transfer_date: -1 });
 TransferSchema.index({ from_office_id: 1, transfer_date: -1 });
 TransferSchema.index({ to_office_id: 1, transfer_date: -1 });

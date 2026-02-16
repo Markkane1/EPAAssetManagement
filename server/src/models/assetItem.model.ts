@@ -8,18 +8,14 @@ const FUNCTIONAL_STATUSES = ['Functional', 'Need Repairs', 'Dead'] as const;
 const ITEM_SOURCES = ['Purchased', 'Transferred'] as const;
 const HOLDER_TYPES = ['OFFICE', 'STORE'] as const;
 
-const baseTransform = (baseSchemaOptions.toJSON as any)?.transform;
-
 const AssetItemSchema = new Schema<any>(
   {
     // Reference to the master asset definition
     asset_id: { type: Schema.Types.ObjectId, ref: 'Asset', required: true },
-    // Current holder type. Deprecated documents may still rely on location_id only.
+    // Current holder type.
     holder_type: { type: String, enum: HOLDER_TYPES, default: null },
     // Current holder id (Office or Store based on holder_type)
     holder_id: { type: Schema.Types.ObjectId, default: null },
-    // Deprecated compatibility field. New writes should use holder_type/holder_id.
-    location_id: { type: Schema.Types.ObjectId, ref: 'Office', default: null },
     // Manufacturer serial number (if available)
     serial_number: { type: String, default: null },
     // Internal tag/label for physical tracking
@@ -43,28 +39,13 @@ const AssetItemSchema = new Schema<any>(
     // Soft-active flag to preserve history
     is_active: { type: Boolean, default: true },
   },
-  {
-    ...baseSchemaOptions,
-    toJSON: {
-      ...(baseSchemaOptions.toJSON || {}),
-      transform: (doc: unknown, ret: Record<string, unknown>) => {
-        if (typeof baseTransform === 'function') {
-          baseTransform(doc, ret);
-        }
-        if ((!ret.location_id || ret.location_id === null) && ret.holder_type === 'OFFICE' && ret.holder_id) {
-          ret.location_id = ret.holder_id;
-        }
-      },
-    },
-  }
+  baseSchemaOptions
 );
 
-AssetItemSchema.index({ location_id: 1, is_active: 1 });
 AssetItemSchema.index({ holder_type: 1, holder_id: 1, is_active: 1 });
 AssetItemSchema.index({ asset_id: 1, is_active: 1 });
 AssetItemSchema.index({ item_status: 1, is_active: 1 });
 AssetItemSchema.index({ assignment_status: 1, is_active: 1 });
-AssetItemSchema.index({ location_id: 1, is_active: 1, created_at: -1 });
 AssetItemSchema.index({ asset_id: 1, is_active: 1, created_at: -1 });
 AssetItemSchema.index({ is_active: 1, created_at: -1 });
 AssetItemSchema.index({ created_at: -1 });

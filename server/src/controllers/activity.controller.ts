@@ -3,6 +3,7 @@ import { ActivityLogModel } from '../models/activityLog.model';
 import { UserModel } from '../models/user.model';
 import type { AuthRequest } from '../middleware/auth';
 import { ADMIN_ROLES } from '../middleware/authorize';
+import { escapeRegex } from '../utils/requestParsing';
 
 function isAdmin(role?: string | null) {
   return Boolean(role && ADMIN_ROLES.has(role));
@@ -21,7 +22,16 @@ export const activityController = {
       const limit = clampInt(req.query.limit, 50, 200);
       const page = clampInt(req.query.page, 1, 10_000);
       const skip = (page - 1) * limit;
-      const query = isAdmin(req.user.role) ? {} : { user_id: req.user.userId };
+      const search = String(req.query.search || '').trim();
+      const activityType = String(req.query.activityType || '').trim();
+      const query: Record<string, unknown> = isAdmin(req.user.role) ? {} : { user_id: req.user.userId };
+      if (activityType) {
+        query.activity_type = activityType;
+      }
+      if (search) {
+        const regex = new RegExp(escapeRegex(search), 'i');
+        query.$or = [{ activity_type: regex }, { description: regex }];
+      }
       const activities = await ActivityLogModel.find(
         query,
         {
@@ -36,25 +46,43 @@ export const activityController = {
       )
         .sort({ created_at: -1 })
         .skip(skip)
-        .limit(limit);
+        .limit(limit)
+        .lean();
+      const includeMeta = String(req.query.meta || '').trim().toLowerCase();
+      const wantsMeta = includeMeta === '1' || includeMeta === 'true';
 
       const userIds = [...new Set(activities.map((a) => a.user_id.toString()))];
       const users = await UserModel.find(
         { _id: { $in: userIds } },
         { email: 1, first_name: 1, last_name: 1 }
-      );
-      const userMap = new Map(users.map((u) => [u.id, u]));
+      ).lean();
+      const userMap = new Map(users.map((user) => [String((user as { _id: unknown })._id), user]));
 
       const mapped = activities.map((activity) => {
         const user = userMap.get(activity.user_id.toString());
+        const raw = activity as Record<string, unknown>;
+        const { _id, ...rest } = raw;
         return {
-          ...activity.toJSON(),
+          ...rest,
+          id: String(_id),
           user_email: user?.email,
           user_name: user ? `${user.first_name || ''} ${user.last_name || ''}`.trim() || undefined : undefined,
         };
       });
 
-      res.json(mapped);
+      if (!wantsMeta) {
+        res.json(mapped);
+        return;
+      }
+
+      const total = await ActivityLogModel.countDocuments(query);
+      res.json({
+        items: mapped,
+        page,
+        limit,
+        total,
+        hasMore: skip + mapped.length < total,
+      });
     } catch (error) {
       next(error);
     }

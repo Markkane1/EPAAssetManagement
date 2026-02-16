@@ -17,7 +17,7 @@ import { useVendors, useCreateVendor, useUpdateVendor, useDeleteVendor } from "@
 import { VendorFormModal } from "@/components/forms/VendorFormModal";
 
 export default function Vendors() {
-  const { data: vendors, isLoading, error } = useVendors();
+  const { data: vendors, isLoading } = useVendors();
   const createVendor = useCreateVendor();
   const updateVendor = useUpdateVendor();
   const deleteVendor = useDeleteVendor();
@@ -96,8 +96,6 @@ export default function Vendors() {
       </MainLayout>
     );
   }
-
-  if (error) console.warn("API unavailable:", error);
 
   return (
     <MainLayout title="Vendors" description="Manage your suppliers">

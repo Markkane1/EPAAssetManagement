@@ -1,0 +1,14 @@
+{
+  "generatedAt": "2026-02-16T20:30:55.276Z",
+  "notes": "Phase 8 baseline from initial monthly ratchet run. Values must not increase.",
+  "debtMax": {
+    "tsNoCheckCount": 7,
+    "explicitAnyCount": 378,
+    "schemaAnyCount": 46,
+    "modelAnyCount": 26,
+    "outlierFilesCount": 22
+  },
+  "securityMax": {
+    "highCriticalAdvisories": 0
+  }
+}

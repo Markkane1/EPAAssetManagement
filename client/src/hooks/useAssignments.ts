@@ -66,19 +66,17 @@ export const useUpdateAssignment = () => {
   });
 };
 
-export const useReturnAsset = () => {
+export const useRequestReturn = () => {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: ({ id, returnDate }: { id: string; returnDate: string }) =>
-      assignmentService.returnAsset(id, returnDate),
+    mutationFn: ({ id }: { id: string }) => assignmentService.requestReturn(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['assignments'] });
-      queryClient.invalidateQueries({ queryKey: ['assetItems'] });
-      toast.success('Asset returned successfully');
+      toast.success('Return requested successfully');
     },
     onError: (error: Error) => {
-      toast.error(`Failed to return asset: ${error.message}`);
+      toast.error(`Failed to request return: ${error.message}`);
     },
   });
 };

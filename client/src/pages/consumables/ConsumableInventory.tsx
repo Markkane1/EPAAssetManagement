@@ -25,6 +25,7 @@ import { ConsumableModeToggle } from '@/components/consumables/ConsumableModeTog
 export default function ConsumableInventory() {
   const ALL_VALUE = '__all__';
   const STORE_FILTER = '__store__';
+  const STORE_CODE = 'HEAD_OFFICE_STORE';
   const { mode, setMode } = useConsumableMode();
   const { data: items } = useConsumableItems();
   const { data: locations } = useConsumableLocations({
@@ -58,11 +59,17 @@ export default function ConsumableInventory() {
 
   const balanceFilters = useMemo(() => {
     const filters: any = {};
-    if (locationId !== ALL_VALUE && locationId !== STORE_FILTER) filters.locationId = locationId;
+    if (locationId === STORE_FILTER) {
+      filters.holderType = 'STORE';
+      filters.holderId = STORE_CODE;
+    } else if (locationId !== ALL_VALUE) {
+      filters.holderType = 'OFFICE';
+      filters.holderId = locationId;
+    }
     if (itemId !== ALL_VALUE) filters.itemId = itemId;
     if (lotId !== ALL_VALUE) filters.lotId = lotId;
     return Object.keys(filters).length ? filters : undefined;
-  }, [locationId, itemId, lotId, ALL_VALUE, STORE_FILTER]);
+  }, [locationId, itemId, lotId, ALL_VALUE, STORE_FILTER, STORE_CODE]);
 
   const { data: balances = [] } = useConsumableBalances(balanceFilters);
 
@@ -80,7 +87,7 @@ export default function ConsumableInventory() {
         if (!filteredItems.some((item) => item.id === balance.consumable_item_id)) return false;
         if (locationId === ALL_VALUE) return true;
         if (locationId === STORE_FILTER) return balance.holder_type === 'STORE';
-        return balance.location_id === locationId || (balance.holder_type === 'OFFICE' && balance.holder_id === locationId);
+        return balance.holder_type === 'OFFICE' && balance.holder_id === locationId;
       }),
     [balances, filteredItems, locationId, ALL_VALUE, STORE_FILTER]
   );
@@ -96,7 +103,7 @@ export default function ConsumableInventory() {
       label: 'Holder',
       render: (_: string, row: ConsumableInventoryBalance) => {
         if (row.holder_type === 'STORE') return 'Head Office Store';
-        const officeId = row.location_id || row.holder_id || '';
+        const officeId = row.holder_id || '';
         return filteredLocations.find((loc) => loc.id === officeId)?.name || 'Unknown';
       },
     },
@@ -105,7 +112,7 @@ export default function ConsumableInventory() {
       label: 'Lot',
       render: (value: string | null) => {
         if (!value) return 'N/A';
-        return lots?.find((lot) => lot.id === value)?.lot_number || 'Unknown';
+        return lots?.find((lot) => lot.id === value)?.batch_no || 'Unknown';
       },
     },
     {
@@ -164,11 +171,11 @@ export default function ConsumableInventory() {
                   <SelectItem value={ALL_VALUE}>All lots</SelectItem>
                   {(lots || [])
                     .filter((lot) => {
-                      if (itemId !== ALL_VALUE) return lot.consumable_item_id === itemId;
-                      return allowedItemIds.has(lot.consumable_item_id);
+                      if (itemId !== ALL_VALUE) return lot.consumable_id === itemId;
+                      return allowedItemIds.has(lot.consumable_id);
                     })
                     .map((lot) => (
-                      <SelectItem key={lot.id} value={lot.id}>{lot.lot_number}</SelectItem>
+                      <SelectItem key={lot.id} value={lot.id}>{lot.batch_no}</SelectItem>
                     ))}
                 </SelectContent>
               </Select>
@@ -222,7 +229,7 @@ export default function ConsumableInventory() {
                 </div>
                 <div className="text-right">
                   <p className="font-medium">{entry.qty_base} {filteredItems.find((i) => i.id === entry.consumable_item_id)?.base_uom}</p>
-                  <p className="text-muted-foreground">{entry.lot_id ? lots?.find((lot) => lot.id === entry.lot_id)?.lot_number : 'No lot'}</p>
+                  <p className="text-muted-foreground">{entry.lot_id ? lots?.find((lot) => lot.id === entry.lot_id)?.batch_no : 'No lot'}</p>
                 </div>
               </div>
             ))}

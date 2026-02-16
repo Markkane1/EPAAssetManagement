@@ -14,7 +14,7 @@ const REQUISITION_STATUSES = [
 
 const REQUISITION_TARGET_TYPES = ['EMPLOYEE', 'SUB_LOCATION'] as const;
 
-const RequisitionSchema = new Schema<any>(
+const RequisitionSchema = new Schema(
   {
     // File number from official paperwork/workflow.
     file_number: { type: String, required: true, trim: true },
@@ -146,6 +146,8 @@ function guardStatusUpdate(this: any, next: (error?: Error) => void) {
 RequisitionSchema.pre('updateOne', guardStatusUpdate);
 RequisitionSchema.pre('updateMany', guardStatusUpdate);
 
-export const RequisitionModel = mongoose.model<any>('Requisition', RequisitionSchema);
+export type RequisitionDoc = mongoose.InferSchemaType<typeof RequisitionSchema>;
+
+export const RequisitionModel = mongoose.model<RequisitionDoc>('Requisition', RequisitionSchema);
 
 

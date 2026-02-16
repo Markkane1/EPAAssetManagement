@@ -35,7 +35,7 @@ import {
 } from "@/components/ui/dialog";
 
 export default function AssetItems() {
-  const { data: assetItems, isLoading, error } = useAssetItems();
+  const { data: assetItems, isLoading } = useAssetItems();
   const { data: assets } = useAssets();
   const { data: locations } = useLocations();
   const { data: assignments } = useAssignments();
@@ -181,8 +181,6 @@ export default function AssetItems() {
   );
 
   if (isLoading) return <MainLayout title="Asset Items" description="Track individual asset instances"><div className="flex items-center justify-center h-64"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div></MainLayout>;
-  if (error) console.warn("API unavailable:", error);
-
   return (
     <MainLayout title="Asset Items" description="Track individual asset instances">
       <PageHeader 
@@ -190,7 +188,13 @@ export default function AssetItems() {
         description="View and manage individual asset items by serial number and tag" 
         action={{ label: "Add Item", onClick: handleAddItem }} 
       />
-      <DataTable columns={columns} data={enrichedItems} searchPlaceholder="Search by tag, serial number..." actions={actions} />
+      <DataTable
+        columns={columns}
+        data={enrichedItems}
+        searchPlaceholder="Search by tag, serial number..."
+        actions={actions}
+        virtualized
+      />
 
       <AssetItemFormModal
         open={isModalOpen}

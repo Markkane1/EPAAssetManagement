@@ -52,7 +52,7 @@ export default function ConsumableLots() {
     [suppliers]
   );
 
-  const filteredLots = (lots || []).filter((lot) => itemMap.has(lot.consumable_item_id));
+  const filteredLots = (lots || []).filter((lot) => itemMap.has(lot.consumable_id));
 
   const handleAdd = () => {
     setEditing(null);
@@ -73,19 +73,19 @@ export default function ConsumableLots() {
   };
 
   const handleDelete = (lot: ConsumableLot) => {
-    if (confirm(`Delete lot ${lot.lot_number}?`)) {
+    if (confirm(`Delete lot ${lot.batch_no}?`)) {
       deleteLot.mutate(lot.id);
     }
   };
 
   const columns = [
     {
-      key: "lot_number",
+      key: "batch_no",
       label: "Lot",
       render: (value: string) => <span className="font-mono">{value}</span>,
     },
     {
-      key: "consumable_item_id",
+      key: "consumable_id",
       label: "Item",
       render: (value: string) => itemMap.get(value)?.name || "Unknown",
     },
@@ -95,7 +95,7 @@ export default function ConsumableLots() {
       render: (value: string | null) => supplierMap.get(value || "")?.name || "N/A",
     },
     {
-      key: "received_date",
+      key: "received_at",
       label: "Received",
       render: (value: string) => new Date(value).toLocaleDateString(),
     },

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import crypto from 'crypto';
 import fs from 'fs/promises';
 import path from 'path';
@@ -41,6 +40,17 @@ type LoadedSlipContext = {
   asset: any;
   office: any;
   target: ResolvedTarget;
+};
+
+type NamedEmployee = {
+  first_name?: string | null;
+  last_name?: string | null;
+  email?: string | null;
+};
+
+type OfficeRoom = {
+  name?: string | null;
+  office_id?: unknown;
 };
 
 function sanitizeFilename(value: string) {
@@ -119,7 +129,9 @@ async function resolveTarget(assignment: any, requisition: any): Promise<Resolve
   }
 
   if (targetType === 'EMPLOYEE') {
-    const employee = await EmployeeModel.findById(targetId, { first_name: 1, last_name: 1, email: 1 }).lean();
+    const employee = (await EmployeeModel.findById(targetId, { first_name: 1, last_name: 1, email: 1 }).lean()) as
+      | NamedEmployee
+      | null;
     if (!employee) {
       throw createHttpError(404, 'Target employee not found');
     }
@@ -129,7 +141,7 @@ async function resolveTarget(assignment: any, requisition: any): Promise<Resolve
     };
   }
 
-  const room = await OfficeSubLocationModel.findById(targetId, { name: 1, office_id: 1 }).lean();
+  const room = (await OfficeSubLocationModel.findById(targetId, { name: 1, office_id: 1 }).lean()) as OfficeRoom | null;
   if (!room) {
     throw createHttpError(404, 'Target sub-location not found');
   }
@@ -168,11 +180,11 @@ async function loadSlipContext(assignmentId: string): Promise<LoadedSlipContext>
     throw createHttpError(400, 'Assignment asset item is missing');
   }
 
-  const [requisition, requisitionLine, assetItem] = await Promise.all([
+  const [requisition, requisitionLine, assetItem] = (await Promise.all([
     RequisitionModel.findById(requisitionId).lean(),
     RequisitionLineModel.findById(requisitionLineId).lean(),
     AssetItemModel.findById(assetItemId).lean(),
-  ]);
+  ])) as [Record<string, unknown> | null, Record<string, unknown> | null, Record<string, unknown> | null];
 
   if (!requisition) {
     throw createHttpError(404, 'Requisition not found');
@@ -193,11 +205,11 @@ async function loadSlipContext(assignmentId: string): Promise<LoadedSlipContext>
     throw createHttpError(400, 'Requisition office is missing');
   }
 
-  const [asset, office, target] = await Promise.all([
+  const [asset, office, target] = (await Promise.all([
     AssetModel.findById(assetId, { name: 1 }).lean(),
     OfficeModel.findById(officeId, { name: 1 }).lean(),
     resolveTarget(assignment, requisition),
-  ]);
+  ])) as [Record<string, unknown> | null, Record<string, unknown> | null, ResolvedTarget];
 
   if (!asset) {
     throw createHttpError(404, 'Asset not found');

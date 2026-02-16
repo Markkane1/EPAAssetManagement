@@ -79,6 +79,7 @@ AssignmentSchema.index(
 AssignmentSchema.index({ is_active: 1, assigned_date: -1 });
 AssignmentSchema.index({ employee_id: 1, assigned_date: -1 });
 AssignmentSchema.index({ asset_item_id: 1, assigned_date: -1 });
+AssignmentSchema.index({ requisition_id: 1, requisition_line_id: 1, assigned_date: 1, created_at: 1 });
 AssignmentSchema.index({ created_at: -1 });
 
 export const AssignmentModel = mongoose.model<any>('Assignment', AssignmentSchema);

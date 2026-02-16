@@ -10,6 +10,7 @@ export interface AuthPayload {
   role: string;
   locationId: string | null;
   isOrgAdmin: boolean;
+  tokenVersion: number;
 }
 
 export interface AuthRequest extends Request {
@@ -18,6 +19,7 @@ export interface AuthRequest extends Request {
 
 type RequestWithCache = AuthRequest & { __userLoaded?: boolean };
 type RequestWithCookies = Request & { cookies?: Record<string, string> };
+type JwtWithClaims = AuthPayload & jwt.JwtPayload;
 
 function readToken(req: Request) {
   const header = req.headers.authorization;
@@ -25,6 +27,18 @@ function readToken(req: Request) {
     return header.replace('Bearer ', '').trim();
   }
   return (req as RequestWithCookies).cookies?.auth_token || null;
+}
+
+function isTokenInvalidatedByCutoff(payload: jwt.JwtPayload) {
+  if (!env.jwtInvalidateBefore) return false;
+  const issuedAt =
+    typeof payload.iat === 'number'
+      ? payload.iat
+      : typeof payload.iat === 'string'
+      ? Number.parseInt(payload.iat, 10)
+      : NaN;
+  if (!Number.isFinite(issuedAt)) return true;
+  return issuedAt < env.jwtInvalidateBefore;
 }
 
 async function attachUserContext(req: AuthRequest) {
@@ -47,6 +61,13 @@ async function attachUserContext(req: AuthRequest) {
     return;
   }
 
+  const payloadTokenVersion = Number(req.user.tokenVersion);
+  const dbTokenVersion = Number(userDoc.token_version || 0);
+  if (!Number.isFinite(payloadTokenVersion) || payloadTokenVersion !== dbTokenVersion) {
+    req.user = undefined;
+    return;
+  }
+
   const normalizedRole = normalizeRole(userDoc.role);
   const locationId = userDoc.location_id ? userDoc.location_id.toString() : null;
   const isOrgAdmin = normalizedRole === 'org_admin';
@@ -56,6 +77,7 @@ async function attachUserContext(req: AuthRequest) {
     role: normalizedRole,
     locationId,
     isOrgAdmin,
+    tokenVersion: dbTokenVersion,
   };
 
   (req as RequestWithCache).__userLoaded = true;
@@ -68,8 +90,15 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
   }
 
   try {
-    const payload = jwt.verify(token, env.jwtSecret) as AuthPayload;
+    const payload = jwt.verify(token, env.jwtSecret) as JwtWithClaims;
+    if (isTokenInvalidatedByCutoff(payload)) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
     if (!isKnownRole(payload.role)) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+    const tokenVersion = Number(payload.tokenVersion);
+    if (!Number.isFinite(tokenVersion) || tokenVersion < 0) {
       return res.status(401).json({ message: 'Unauthorized' });
     }
     req.user = {
@@ -77,6 +106,7 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
       role: normalizeRole(payload.role),
       locationId: payload.locationId ?? null,
       isOrgAdmin: payload.isOrgAdmin ?? normalizeRole(payload.role) === 'org_admin',
+      tokenVersion,
     };
     await attachUserContext(req);
     if (!req.user) {
@@ -95,8 +125,17 @@ export async function optionalAuth(req: AuthRequest, _res: Response, next: NextF
   }
 
   try {
-    const payload = jwt.verify(token, env.jwtSecret) as AuthPayload;
+    const payload = jwt.verify(token, env.jwtSecret) as JwtWithClaims;
+    if (isTokenInvalidatedByCutoff(payload)) {
+      req.user = undefined;
+      return next();
+    }
     if (!isKnownRole(payload.role)) {
+      req.user = undefined;
+      return next();
+    }
+    const tokenVersion = Number(payload.tokenVersion);
+    if (!Number.isFinite(tokenVersion) || tokenVersion < 0) {
       req.user = undefined;
       return next();
     }
@@ -105,6 +144,7 @@ export async function optionalAuth(req: AuthRequest, _res: Response, next: NextF
       role: normalizeRole(payload.role),
       locationId: payload.locationId ?? null,
       isOrgAdmin: payload.isOrgAdmin ?? normalizeRole(payload.role) === 'org_admin',
+      tokenVersion,
     };
     await attachUserContext(req);
     if (!req.user) {

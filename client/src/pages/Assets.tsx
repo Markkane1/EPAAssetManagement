@@ -35,7 +35,7 @@ function formatDimensions(asset: Asset) {
 export default function Assets() {
   const navigate = useNavigate();
   
-  const { data: assets, isLoading, error } = useAssets();
+  const { data: assets, isLoading } = useAssets();
   const { data: categories } = useCategories();
   const { data: vendors } = useVendors();
   const { data: projects } = useProjects();
@@ -137,8 +137,6 @@ export default function Assets() {
       </MainLayout>
     );
   }
-
-  if (error) console.warn("API unavailable:", error);
 
   const handleExportCSV = () => {
     exportToCSV(

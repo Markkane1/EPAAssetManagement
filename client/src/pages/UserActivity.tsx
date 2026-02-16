@@ -1,10 +1,11 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -34,8 +35,10 @@ import {
   Loader2,
   Clock,
   Eye,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
-import { activityService, ActivityLogWithUser } from "@/services/activityService";
+import { activityService } from "@/services/activityService";
 import { formatDistanceToNow } from "date-fns";
 
 const activityIcons: Record<string, React.ElementType> = {
@@ -71,26 +74,28 @@ const activityColors: Record<string, string> = {
 export default function UserActivity() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activityFilter, setActivityFilter] = useState<string>("all");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
 
-  const { data: activities = [], isLoading } = useQuery({
-    queryKey: ["user-activities"],
-    queryFn: () => activityService.getRecentActivities(100),
+  const { data, isLoading } = useQuery({
+    queryKey: ["user-activities", page, pageSize, searchQuery, activityFilter],
+    queryFn: () =>
+      activityService.getPagedActivities({
+        page,
+        limit: pageSize,
+        search: searchQuery || undefined,
+        activityType: activityFilter === "all" ? undefined : activityFilter,
+      }),
   });
+  const activities = useMemo(() => data?.items ?? [], [data?.items]);
+  const totalActivities = data?.total || 0;
+  const totalPages = Math.max(1, Math.ceil(totalActivities / pageSize));
 
-  const normalizedSearch = searchQuery.trim().toLowerCase();
-  const filteredActivities = useMemo(() => {
-    return activities.filter((activity) => {
-      const matchesSearch =
-        activity.user_email?.toLowerCase().includes(normalizedSearch) ||
-        activity.user_name?.toLowerCase().includes(normalizedSearch) ||
-        activity.description?.toLowerCase().includes(normalizedSearch) ||
-        activity.activity_type.toLowerCase().includes(normalizedSearch);
+  useEffect(() => {
+    setPage(1);
+  }, [searchQuery, activityFilter, pageSize]);
 
-      const matchesFilter = activityFilter === "all" || activity.activity_type === activityFilter;
-
-      return matchesSearch && matchesFilter;
-    });
-  }, [activities, activityFilter, normalizedSearch]);
+  const filteredActivities = useMemo(() => activities, [activities]);
 
   const uniqueActivityTypes = useMemo(
     () => [...new Set(activities.map((activity) => activity.activity_type))],
@@ -171,7 +176,7 @@ export default function UserActivity() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Total Activities</p>
-                <p className="text-2xl font-bold">{activities.length}</p>
+                <p className="text-2xl font-bold">{totalActivities}</p>
               </div>
               <Clock className="h-8 w-8 text-muted-foreground/20" />
             </div>
@@ -289,6 +294,39 @@ export default function UserActivity() {
                   )}
                 </TableBody>
               </Table>
+            </div>
+          )}
+          {!isLoading && totalActivities > 0 && (
+            <div className="mt-4 flex items-center justify-between">
+              <p className="text-sm text-muted-foreground">
+                Showing {(page - 1) * pageSize + 1} to {Math.min(page * pageSize, totalActivities)} of {totalActivities}
+              </p>
+              <div className="flex items-center gap-2">
+                <Select value={String(pageSize)} onValueChange={(value) => setPageSize(Number(value))}>
+                  <SelectTrigger className="w-[130px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="25">25 / page</SelectItem>
+                    <SelectItem value="50">50 / page</SelectItem>
+                    <SelectItem value="100">100 / page</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button variant="outline" size="icon" disabled={page <= 1} onClick={() => setPage((prev) => prev - 1)}>
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <span className="text-sm font-medium">
+                  Page {page} of {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((prev) => prev + 1)}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
           )}
         </CardContent>

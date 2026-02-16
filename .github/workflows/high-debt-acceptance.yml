@@ -1,0 +1,32 @@
+name: High Debt Module Acceptance
+
+on:
+  pull_request:
+    paths:
+      - 'server/src/controllers/**'
+      - 'server/src/modules/consumables/**'
+      - 'server/src/modules/records/**'
+      - 'server/src/models/**'
+      - 'client/src/pages/**'
+      - 'client/src/components/**'
+      - 'client/src/hooks/**'
+
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run high-debt acceptance gates
+        run: npm run phase8:acceptance
+

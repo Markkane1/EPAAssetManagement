@@ -36,7 +36,6 @@ const officeSchema = z.object({
   address: z.string().optional(),
   contactNumber: z.string().optional(),
   type: z.enum(["DIRECTORATE", "DISTRICT_OFFICE", "DISTRICT_LAB"]).optional(),
-  isHeadoffice: z.boolean().optional(),
   capabilities: z.object({
     moveables: z.boolean().optional(),
     consumables: z.boolean().optional(),
@@ -74,7 +73,6 @@ export function OfficeFormModal({
       address: office?.address || "",
       contactNumber: office?.contact_number || "",
       type: coerceOfficeType(office?.type),
-      isHeadoffice: office?.is_headoffice || false,
       capabilities: {
         moveables: office?.capabilities?.moveables ?? true,
         consumables: office?.capabilities?.consumables ?? true,
@@ -92,7 +90,6 @@ export function OfficeFormModal({
         address: office.address || "",
         contactNumber: office.contact_number || "",
         type: coerceOfficeType(office.type),
-        isHeadoffice: office.is_headoffice || false,
         capabilities: {
           moveables: office.capabilities?.moveables ?? true,
           consumables: office.capabilities?.consumables ?? true,
@@ -107,7 +104,6 @@ export function OfficeFormModal({
         address: "",
         contactNumber: "",
         type: "DISTRICT_OFFICE",
-        isHeadoffice: false,
         capabilities: {
           moveables: true,
           consumables: true,
@@ -284,7 +280,7 @@ export function OfficeFormModal({
                 </FormItem>
               )}
             />
-            <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
               <div className="space-y-2">
                 <FormLabel>Office Type</FormLabel>
                 <Select
@@ -302,13 +298,6 @@ export function OfficeFormModal({
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
-              <div className="flex items-center gap-2 pt-7">
-                <Checkbox
-                  checked={form.watch("isHeadoffice") || false}
-                  onCheckedChange={(checked) => form.setValue("isHeadoffice", Boolean(checked))}
-                />
-                <FormLabel>Headoffice</FormLabel>
               </div>
             </div>
             <div className="grid grid-cols-3 gap-4">

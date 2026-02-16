@@ -1,0 +1,43 @@
+{
+  "generatedAt": "2026-02-16T20:41:52.006Z",
+  "monthKey": "2026-02",
+  "securityRuntimeTests": {
+    "status": "skipped",
+    "exitCode": 0
+  },
+  "dependencyAdvisories": {
+    "total": 0,
+    "critical": 0,
+    "high": 0,
+    "moderate": 0,
+    "low": 0,
+    "info": 0
+  },
+  "policyChecks": [
+    {
+      "id": "csrf_middleware_registered",
+      "status": "fail",
+      "evidence": "server/src/app.ts"
+    },
+    {
+      "id": "helmet_enabled",
+      "status": "pass",
+      "evidence": "server/src/app.ts"
+    },
+    {
+      "id": "auth_requires_jwt_secret",
+      "status": "pass",
+      "evidence": "server/src/config/env.ts"
+    },
+    {
+      "id": "token_invalidation_supported",
+      "status": "pass",
+      "evidence": "server/src/middleware/auth.ts"
+    },
+    {
+      "id": "rate_limit_backend_configurable",
+      "status": "pass",
+      "evidence": "server/src/middleware/rateLimit.ts"
+    }
+  ]
+}

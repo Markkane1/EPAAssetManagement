@@ -44,7 +44,7 @@ const LotDocsSchema = new Schema<any>(
 
 const ConsumableLotSchema = new Schema<any>(
   {
-    consumable_id: { type: Schema.Types.ObjectId, ref: 'Consumable', required: true },
+    consumable_id: { type: Schema.Types.ObjectId, ref: 'ConsumableItem', required: true },
     holder_type: { type: String, enum: HOLDER_TYPES, required: true },
     holder_id: {
       type: Schema.Types.ObjectId,
@@ -61,43 +61,11 @@ const ConsumableLotSchema = new Schema<any>(
     received_by_user_id: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     notes: { type: String, default: null },
     document_id: { type: Schema.Types.ObjectId, ref: 'Document', default: null },
-    // Legacy field retained for compatibility with existing module flows.
-    consumable_item_id: { type: Schema.Types.ObjectId, ref: 'ConsumableItem', required: true },
-    // Legacy optional supplier field.
     supplier_id: { type: Schema.Types.ObjectId, ref: 'ConsumableSupplier', default: null },
-    // Legacy alias for batch_no.
-    lot_number: { type: String, required: true, trim: true },
-    // Legacy alias for received_at.
-    received_date: { type: String, required: true },
-    // Legacy docs structure retained.
     docs: { type: LotDocsSchema, default: () => ({}) },
   },
   baseSchemaOptions
 );
-
-ConsumableLotSchema.pre('validate', function (next) {
-  try {
-    if (!this.consumable_item_id && this.consumable_id) {
-      this.consumable_item_id = this.consumable_id;
-    }
-    if (!this.lot_number && this.batch_no) {
-      this.lot_number = this.batch_no;
-    }
-    if (!this.batch_no && this.lot_number) {
-      this.batch_no = this.lot_number;
-    }
-    if (!this.received_date) {
-      const receivedAt = this.received_at ? new Date(this.received_at) : new Date();
-      this.received_date = receivedAt.toISOString();
-    }
-    if (!this.received_at) {
-      this.received_at = this.received_date ? new Date(this.received_date) : new Date();
-    }
-    next();
-  } catch (error) {
-    next(error as Error);
-  }
-});
 
 function applyQtyUpdateRules(update: any) {
   if (!update || typeof update !== 'object') return;
@@ -131,12 +99,8 @@ ConsumableLotSchema.index({ holder_type: 1, holder_id: 1 });
 ConsumableLotSchema.index({ consumable_id: 1 });
 ConsumableLotSchema.index({ expiry_date: 1 });
 ConsumableLotSchema.index({ batch_no: 1 });
-
-// Legacy indexes retained for compatibility.
-ConsumableLotSchema.index({ consumable_item_id: 1, expiry_date: 1, received_date: -1 });
-ConsumableLotSchema.index({ supplier_id: 1, expiry_date: 1, received_date: -1 });
-ConsumableLotSchema.index({ lot_number: 1 });
-ConsumableLotSchema.index({ expiry_date: 1, received_date: -1 });
+ConsumableLotSchema.index({ supplier_id: 1, expiry_date: 1, received_at: -1 });
+ConsumableLotSchema.index({ expiry_date: 1, received_at: -1 });
 
 export const ConsumableLotModel = mongoose.model('ConsumableLot', ConsumableLotSchema);
 

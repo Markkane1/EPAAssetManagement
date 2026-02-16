@@ -111,7 +111,7 @@ export default function ConsumableReturns() {
     return containers.filter((container) => {
       const lot = lotMap.get(container.lot_id);
       if (!lot) return false;
-      if (lot.consumable_item_id !== selectedItem.id) return false;
+      if (lot.consumable_id !== selectedItem.id) return false;
       return (container.current_qty_base || 0) > 0;
     });
   }, [containers, lots, selectedItem]);
@@ -144,7 +144,11 @@ export default function ConsumableReturns() {
 
   const balanceFilters = useMemo(() => {
     if (!form.watch('fromLocationId') || !form.watch('itemId')) return undefined;
-    return { locationId: form.watch('fromLocationId'), itemId: form.watch('itemId') };
+    return {
+      holderType: 'OFFICE' as const,
+      holderId: form.watch('fromLocationId'),
+      itemId: form.watch('itemId'),
+    };
   }, [form]);
 
   const { data: balances = [] } = useConsumableBalances(balanceFilters);
@@ -224,11 +228,11 @@ export default function ConsumableReturns() {
                     <SelectItem value={FEFO_VALUE}>FEFO default</SelectItem>
                     {(lots || [])
                       .filter((lot) => {
-                        if (form.watch('itemId')) return lot.consumable_item_id === form.watch('itemId');
-                        return allowedItemIds.has(lot.consumable_item_id);
+                        if (form.watch('itemId')) return lot.consumable_id === form.watch('itemId');
+                        return allowedItemIds.has(lot.consumable_id);
                       })
                       .map((lot) => (
-                        <SelectItem key={lot.id} value={lot.id}>{lot.lot_number}</SelectItem>
+                        <SelectItem key={lot.id} value={lot.id}>{lot.batch_no}</SelectItem>
                       ))}
                   </SelectContent>
                 </Select>

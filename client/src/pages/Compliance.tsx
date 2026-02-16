@@ -31,7 +31,7 @@ export default function Compliance() {
   const navigate = useNavigate();
   const { isOrgAdmin, locationId } = useAuth();
   const { data: locations } = useLocations();
-  const locationList = locations || [];
+  const locationList = useMemo(() => locations || [], [locations]);
 
   const currentLocation = locationId
     ? locationList.find((location) => location.id === locationId) || null

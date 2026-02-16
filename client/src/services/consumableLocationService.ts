@@ -10,8 +10,7 @@ export interface ConsumableLocationCreateDto {
   address?: string;
   contactNumber?: string;
   type?: 'DIRECTORATE' | 'DISTRICT_LAB' | 'DISTRICT_OFFICE';
-  parentLocationId?: string;
-  labCode?: string;
+  parentOfficeId?: string;
   isActive?: boolean;
   capabilities?: {
     moveables?: boolean;

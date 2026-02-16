@@ -44,8 +44,7 @@ import {
 const locationSchema = z.object({
   name: z.string().min(1, 'Name is required').max(120),
   type: z.enum(['DIRECTORATE', 'DISTRICT_LAB', 'DISTRICT_OFFICE']).optional(),
-  labCode: z.string().max(64).optional(),
-  parentLocationId: z.string().optional(),
+  parentOfficeId: z.string().optional(),
   division: z.string().max(120).optional(),
   district: z.string().max(120).optional(),
   address: z.string().max(200).optional(),
@@ -74,8 +73,7 @@ export default function ConsumableLocations() {
     defaultValues: {
       name: '',
       type: 'DISTRICT_LAB',
-      labCode: '',
-      parentLocationId: '',
+      parentOfficeId: '',
       division: '',
       district: '',
       address: '',
@@ -94,8 +92,7 @@ export default function ConsumableLocations() {
       form.reset({
         name: editing.name,
         type: (editing.type as 'DIRECTORATE' | 'DISTRICT_LAB' | 'DISTRICT_OFFICE') || 'DISTRICT_LAB',
-        labCode: editing.lab_code || '',
-        parentLocationId: editing.parent_location_id || '',
+        parentOfficeId: editing.parent_office_id || '',
         division: editing.division || '',
         district: editing.district || '',
         address: editing.address || '',
@@ -111,8 +108,7 @@ export default function ConsumableLocations() {
       form.reset({
         name: '',
         type: 'DISTRICT_LAB',
-        labCode: '',
-        parentLocationId: '',
+        parentOfficeId: '',
         division: '',
         district: '',
         address: '',
@@ -130,8 +126,7 @@ export default function ConsumableLocations() {
   const handleSubmit = async (data: LocationFormData) => {
     const payload = {
       ...data,
-      parentLocationId: data.parentLocationId || undefined,
-      labCode: data.labCode || undefined,
+      parentOfficeId: data.parentOfficeId || undefined,
       division: data.division || undefined,
       district: data.district || undefined,
       address: data.address || undefined,
@@ -166,7 +161,6 @@ export default function ConsumableLocations() {
         return enabled ? 'Yes' : 'No';
       },
     },
-    { key: 'lab_code', label: 'Lab Code' },
     {
       key: 'is_active',
       label: 'Status',
@@ -245,15 +239,9 @@ export default function ConsumableLocations() {
                 </Select>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="labCode">Lab Code</Label>
-                <Input id="labCode" {...form.register('labCode')} />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="parentLocationId">Parent Location ID</Label>
-                <Input id="parentLocationId" {...form.register('parentLocationId')} placeholder="Optional" />
-              </div>
+            <div className="space-y-2">
+              <Label htmlFor="parentOfficeId">Parent Office ID</Label>
+              <Input id="parentOfficeId" {...form.register('parentOfficeId')} placeholder="Optional" />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">

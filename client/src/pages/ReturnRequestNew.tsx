@@ -27,10 +27,10 @@ export default function ReturnRequestNew() {
   const [selectedAssetItemIds, setSelectedAssetItemIds] = useState<string[]>([]);
   const [returnAll, setReturnAll] = useState(false);
 
-  const employeeList = employees || [];
-  const assignmentList = assignments || [];
-  const assetItemList = assetItems || [];
-  const assetList = assets || [];
+  const employeeList = useMemo(() => employees || [], [employees]);
+  const assignmentList = useMemo(() => assignments || [], [assignments]);
+  const assetItemList = useMemo(() => assetItems || [], [assetItems]);
+  const assetList = useMemo(() => assets || [], [assets]);
 
   const currentEmployee = useMemo(() => {
     const byUserId = employeeList.find((employee) => employee.user_id === user?.id);

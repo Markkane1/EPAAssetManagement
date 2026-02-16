@@ -9,14 +9,14 @@ const RETURN_REQUEST_STATUSES = [
   'REJECTED',
 ] as const;
 
-const ReturnRequestLineSchema = new Schema<any>(
+const ReturnRequestLineSchema = new Schema(
   {
     asset_item_id: { type: Schema.Types.ObjectId, ref: 'AssetItem', required: true },
   },
   { _id: false }
 );
 
-const ReturnRequestSchema = new Schema<any>(
+const ReturnRequestSchema = new Schema(
   {
     employee_id: { type: Schema.Types.ObjectId, ref: 'Employee', required: true },
     office_id: { type: Schema.Types.ObjectId, ref: 'Office', required: true },
@@ -44,6 +44,8 @@ ReturnRequestSchema.index({ record_id: 1 });
 ReturnRequestSchema.index({ receipt_document_id: 1 });
 ReturnRequestSchema.index({ created_at: -1 });
 
-export const ReturnRequestModel = mongoose.model<any>('ReturnRequest', ReturnRequestSchema);
+export type ReturnRequestDoc = mongoose.InferSchemaType<typeof ReturnRequestSchema>;
+
+export const ReturnRequestModel = mongoose.model<ReturnRequestDoc>('ReturnRequest', ReturnRequestSchema);
 
 

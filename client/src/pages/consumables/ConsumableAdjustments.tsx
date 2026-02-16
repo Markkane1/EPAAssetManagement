@@ -110,7 +110,7 @@ export default function ConsumableAdjustments() {
     return containers.filter((container) => {
       const lot = lotMap.get(container.lot_id);
       if (!lot) return false;
-      if (lot.consumable_item_id !== selectedItem.id) return false;
+      if (lot.consumable_id !== selectedItem.id) return false;
       return (container.current_qty_base || 0) > 0;
     });
   }, [containers, lots, selectedItem]);
@@ -143,7 +143,8 @@ export default function ConsumableAdjustments() {
   const balanceFilters = useMemo(() => {
     if (!form.watch('locationId') || !form.watch('itemId')) return undefined;
     return {
-      locationId: form.watch('locationId'),
+      holderType: 'OFFICE' as const,
+      holderId: form.watch('locationId'),
       itemId: form.watch('itemId'),
       lotId: form.watch('lotId') && form.watch('lotId') !== ALL_VALUE ? form.watch('lotId') : undefined,
     };
@@ -169,7 +170,8 @@ export default function ConsumableAdjustments() {
     const qty = Math.abs(variance);
 
     await adjustMutation.mutateAsync({
-      locationId: data.locationId,
+      holderType: 'OFFICE',
+      holderId: data.locationId,
       itemId: data.itemId,
       lotId: data.lotId && data.lotId !== ALL_VALUE ? data.lotId : undefined,
       containerId: data.containerId || undefined,
@@ -233,11 +235,11 @@ export default function ConsumableAdjustments() {
                     <SelectItem value={ALL_VALUE}>All lots</SelectItem>
                     {(lots || [])
                       .filter((lot) => {
-                        if (form.watch('itemId')) return lot.consumable_item_id === form.watch('itemId');
-                        return allowedItemIds.has(lot.consumable_item_id);
+                        if (form.watch('itemId')) return lot.consumable_id === form.watch('itemId');
+                        return allowedItemIds.has(lot.consumable_id);
                       })
                       .map((lot) => (
-                        <SelectItem key={lot.id} value={lot.id}>{lot.lot_number}</SelectItem>
+                        <SelectItem key={lot.id} value={lot.id}>{lot.batch_no}</SelectItem>
                       ))}
                   </SelectContent>
                 </Select>

@@ -62,7 +62,7 @@ function pickFile(accept = ".pdf,.jpg,.jpeg,.png") {
 
 export default function Transfers() {
   const { role, isOrgAdmin, locationId } = useAuth();
-  const { data: transfers = [], isLoading, error } = useTransfers();
+  const { data: transfers = [], isLoading } = useTransfers();
   const { data: assetItems = [] } = useAssetItems();
   const { data: assets = [] } = useAssets();
   const { data: locations = [] } = useLocations();
@@ -109,12 +109,7 @@ export default function Transfers() {
   const tableRows: TransferRow[] = useMemo(
     () =>
       transfers.map((transfer) => {
-        const lines = Array.isArray(transfer.lines)
-          ? transfer.lines
-          // Back-compat for legacy transfer records before lines[] migration.
-          : transfer.asset_item_id
-            ? [{ asset_item_id: transfer.asset_item_id }]
-            : [];
+        const lines = Array.isArray(transfer.lines) ? transfer.lines : [];
 
         const preview = lines
           .slice(0, 2)
@@ -337,10 +332,6 @@ export default function Transfers() {
     );
   }
 
-  if (error) {
-    console.warn("API unavailable:", error);
-  }
-
   const destinationOffices = locations.filter((office) => office.id !== fromOfficeId);
 
   return (
@@ -444,7 +435,13 @@ export default function Transfers() {
         </Card>
       )}
 
-      <DataTable columns={columns} data={tableRows} searchPlaceholder="Search transfers..." actions={actions} />
+      <DataTable
+        columns={columns}
+        data={tableRows}
+        searchPlaceholder="Search transfers..."
+        actions={actions}
+        virtualized
+      />
 
       <RecordDetailModal
         open={recordModal.open}

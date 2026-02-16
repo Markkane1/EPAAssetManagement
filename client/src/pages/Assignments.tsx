@@ -20,8 +20,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Assignment } from "@/types";
-import { useAssignments, useCreateAssignment, useReturnAsset, useReassignAsset } from "@/hooks/useAssignments";
-import { useAssetItems, useUpdateAssetItem } from "@/hooks/useAssetItems";
+import { useAssignments, useCreateAssignment, useRequestReturn, useReassignAsset } from "@/hooks/useAssignments";
+import { useAssetItems } from "@/hooks/useAssetItems";
 import { useAssets } from "@/hooks/useAssets";
 import { useEmployees } from "@/hooks/useEmployees";
 import { AssignmentFormModal } from "@/components/forms/AssignmentFormModal";
@@ -31,14 +31,13 @@ import { useAuth } from "@/contexts/AuthContext";
 
 export default function Assignments() {
   const { role, user } = useAuth();
-  const { data: assignments, isLoading, error } = useAssignments();
+  const { data: assignments, isLoading } = useAssignments();
   const { data: assetItems } = useAssetItems();
   const { data: assets } = useAssets();
   const { data: employees } = useEmployees();
   const createAssignment = useCreateAssignment();
-  const returnAsset = useReturnAsset();
+  const requestReturn = useRequestReturn();
   const reassignAsset = useReassignAsset();
-  const updateAssetItem = useUpdateAssetItem();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isReassignOpen, setIsReassignOpen] = useState(false);
@@ -165,28 +164,11 @@ export default function Assignments() {
   };
 
   const handleReturnAsset = (id: string) => {
-    returnAsset.mutate({ id, returnDate: new Date().toISOString() });
+    requestReturn.mutate({ id });
   };
 
-  const handleReturnSubmit = async (data: { assignmentId: string; returnDate: string; condition: string; notes?: string }) => {
-    // First, return the asset
-    await returnAsset.mutateAsync({ 
-      id: data.assignmentId, 
-      returnDate: data.returnDate,
-    });
-    
-    // Then update the asset item condition
-    const assignment = assignmentList.find(a => a.id === data.assignmentId);
-    if (assignment) {
-      await updateAssetItem.mutateAsync({
-        id: assignment.asset_item_id,
-        data: {
-          itemCondition: data.condition as any,
-          itemStatus: "Available",
-          assignmentStatus: "Unassigned",
-        },
-      });
-    }
+  const handleReturnSubmit = async (data: { assignmentId: string }) => {
+    await requestReturn.mutateAsync({ id: data.assignmentId });
   };
 
   const handleReassignSubmit = async (data: { assignmentId: string; newEmployeeId: string; notes?: string }) => {
@@ -212,7 +194,7 @@ export default function Assignments() {
           <>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => handleReturnAsset(row.id)}>
-              <RotateCcw className="h-4 w-4 mr-2" /> Quick Return
+              <RotateCcw className="h-4 w-4 mr-2" /> Request Return
             </DropdownMenuItem>
           </>
         )}
@@ -228,10 +210,6 @@ export default function Assignments() {
         </div>
       </MainLayout>
     );
-  }
-
-  if (error) {
-    console.warn("API unavailable:", error);
   }
 
   return (
@@ -252,7 +230,7 @@ export default function Assignments() {
             <div className="flex gap-2">
               <Button variant="outline" onClick={() => setIsReturnOpen(true)}>
                 <PackageCheck className="h-4 w-4 mr-2" />
-                Record Return
+                Request Return
               </Button>
               <Button variant="outline" onClick={() => setIsReassignOpen(true)}>
                 <RefreshCw className="h-4 w-4 mr-2" />
@@ -268,6 +246,7 @@ export default function Assignments() {
         data={enrichedAssignments}
         searchPlaceholder="Search assignments..."
         actions={isLimitedRole ? undefined : actions}
+        virtualized
       />
 
       {!isLimitedRole && (

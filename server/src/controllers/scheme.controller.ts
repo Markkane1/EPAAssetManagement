@@ -1,6 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
 import { createCrudController } from './crudController';
 import { schemeRepository } from '../repositories/scheme.repository';
+import { SchemeModel } from '../models/scheme.model';
+import { escapeRegex, readPagination } from '../utils/requestParsing';
 
 const baseController = createCrudController({
   repository: schemeRepository,
@@ -16,15 +18,40 @@ const baseController = createCrudController({
 
 export const schemeController = {
   ...baseController,
+  list: async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { limit, skip } = readPagination(req.query as Record<string, unknown>, { defaultLimit: 200, maxLimit: 1000 });
+      const search = String((req.query as Record<string, unknown>).search || '').trim();
+      const filter: Record<string, unknown> = {};
+      if (search) {
+        filter.name = new RegExp(escapeRegex(search), 'i');
+      }
+
+      const schemes = await SchemeModel.find(filter, { name: 1, project_id: 1, description: 1, is_active: 1, created_at: 1 })
+        .sort({ created_at: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean();
+      res.json(schemes);
+    } catch (error) {
+      next(error);
+    }
+  },
   getByProject: async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const schemes = await schemeRepository.findAll();
-      type SchemeLike = { project_id?: { toString(): string } | string | null };
-      const filtered = schemes.filter((scheme) => {
-        const projectId = (scheme as SchemeLike).project_id;
-        return projectId?.toString() === req.params.projectId;
-      });
-      res.json(filtered);
+      const { limit, skip } = readPagination(req.query as Record<string, unknown>, { defaultLimit: 200, maxLimit: 1000 });
+      const search = String((req.query as Record<string, unknown>).search || '').trim();
+      const filter: Record<string, unknown> = { project_id: req.params.projectId };
+      if (search) {
+        filter.name = new RegExp(escapeRegex(search), 'i');
+      }
+
+      const schemes = await SchemeModel.find(filter, { name: 1, project_id: 1, description: 1, is_active: 1, created_at: 1 })
+        .sort({ created_at: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean();
+      res.json(schemes);
     } catch (error) {
       next(error);
     }

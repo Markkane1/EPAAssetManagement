@@ -10,8 +10,6 @@ const fieldMap = {
   contactNumber: 'contact_number',
   type: 'type',
   parentOfficeId: 'parent_office_id',
-  parentLocationId: 'parent_location_id',
-  labCode: 'lab_code',
   isActive: 'is_active',
   capabilities: 'capabilities',
 };
@@ -29,12 +27,7 @@ function buildPayload(body: Record<string, unknown>) {
       payload[dbKey] = body[dbKey];
     }
   });
-  if (payload.parent_location_id === '') payload.parent_location_id = null;
   if (payload.parent_office_id === '') payload.parent_office_id = null;
-  if (payload.parent_office_id === undefined && payload.parent_location_id !== undefined) {
-    payload.parent_office_id = payload.parent_location_id;
-  }
-  delete payload.parent_location_id;
   if (body.capabilities !== undefined) payload.capabilities = body.capabilities;
   if (!payload.capabilities && payload.type === 'DISTRICT_LAB') {
     payload.capabilities = { chemicals: true };

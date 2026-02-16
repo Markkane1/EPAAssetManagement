@@ -1,4 +1,3 @@
-// @ts-nocheck
 import crypto from 'crypto';
 import fs from 'fs/promises';
 import path from 'path';
@@ -19,6 +18,7 @@ import { logAudit } from '../modules/records/services/audit.service';
 
 type AssignmentWithDetails = {
   id: string;
+  requisitionLineId: string | null;
   notes: string | null;
   assignedDate: string;
   assetItemId: string | null;
@@ -39,9 +39,20 @@ type ReportLine = {
   assignedItems: AssignmentWithDetails[];
 };
 
-function escapeRegex(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
+type RequisitionDoc = {
+  _id?: unknown;
+  office_id?: unknown;
+  file_number?: string | null;
+  status?: string | null;
+};
+
+type OfficeNameDoc = {
+  name?: string | null;
+};
+
+type VersionDoc = {
+  version_no?: number;
+};
 
 function normalizeText(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, ' ');
@@ -123,22 +134,26 @@ function wrapText(text: string, maxChars = 95) {
 
 async function buildLineReports(requisition: any, lines: any[]) {
   const reportLines: ReportLine[] = [];
-  const requestedByEmployeeId = requisition.requested_by_employee_id?.toString() || null;
+  const requisitionId = docId(requisition);
+  const candidateAssignments: any[] = requisitionId
+    ? await AssignmentModel.find(
+        {
+          requisition_id: requisitionId,
+          status: { $in: ['DRAFT', 'ISSUED', 'RETURN_REQUESTED', 'RETURNED'] },
+        },
+        { _id: 1, requisition_line_id: 1, asset_item_id: 1, assigned_date: 1, notes: 1, created_at: 1 }
+      )
+        .sort({ assigned_date: 1, created_at: 1 })
+        .lean()
+    : [];
 
-  let candidateAssignments: any[] = [];
-  if (requestedByEmployeeId) {
-    const requisitionRegex = new RegExp(`Requisition\\s+${escapeRegex(requisition.file_number)}`, 'i');
-    candidateAssignments = await AssignmentModel.find({
-      employee_id: requestedByEmployeeId,
-      notes: { $regex: requisitionRegex },
-    })
-      .sort({ assigned_date: 1, created_at: 1 })
-      .lean();
-  }
-
-  const assetItemIds = candidateAssignments
-    .map((assignment) => assignment.asset_item_id?.toString())
-    .filter((id): id is string => Boolean(id));
+  const assetItemIds = Array.from(
+    new Set(
+      candidateAssignments
+        .map((assignment) => assignment.asset_item_id?.toString())
+        .filter((id): id is string => Boolean(id))
+    )
+  );
   const assetItems = assetItemIds.length
     ? await AssetItemModel.find({ _id: { $in: assetItemIds } }, { asset_id: 1, tag: 1, serial_number: 1 }).lean()
     : [];
@@ -147,9 +162,13 @@ async function buildLineReports(requisition: any, lines: any[]) {
       .map((item) => [docId(item), item] as const)
       .filter(([id]) => Boolean(id)) as Array<[string, any]>
   );
-  const assetIds = assetItems
-    .map((item) => item.asset_id?.toString())
-    .filter((id): id is string => Boolean(id));
+  const assetIds = Array.from(
+    new Set(
+      assetItems
+        .map((item) => item.asset_id?.toString())
+        .filter((id): id is string => Boolean(id))
+    )
+  );
   const assets = assetIds.length ? await AssetModel.find({ _id: { $in: assetIds } }, { name: 1 }).lean() : [];
   const assetById = new Map(
     assets
@@ -165,6 +184,7 @@ async function buildLineReports(requisition: any, lines: any[]) {
       `${toIdString(assignment.asset_item_id) || 'assignment'}:${toDateString(assignment.assigned_date)}:${String(assignment.notes || '')}`;
     return {
       id: assignmentId,
+      requisitionLineId: toIdString(assignment.requisition_line_id),
       notes: assignment.notes || null,
       assignedDate: toDateString(assignment.assigned_date),
       assetItemId: docId(item),
@@ -172,6 +192,14 @@ async function buildLineReports(requisition: any, lines: any[]) {
       serialNumber: item?.serial_number || null,
       assetName: asset?.name || 'Unknown Asset',
     };
+  });
+
+  const assignmentByLineId = new Map<string, AssignmentWithDetails[]>();
+  assignmentsWithDetails.forEach((assignment) => {
+    if (!assignment.requisitionLineId) return;
+    const existing = assignmentByLineId.get(assignment.requisitionLineId) || [];
+    existing.push(assignment);
+    assignmentByLineId.set(assignment.requisitionLineId, existing);
   });
 
   const usedAssignmentIds = new Set<string>();
@@ -184,26 +212,17 @@ async function buildLineReports(requisition: any, lines: any[]) {
 
     if (line.line_type === 'MOVEABLE') {
       const lineId = docId(line) || '';
-      const lineRegex = new RegExp(`line\\s+${escapeRegex(lineId)}\\b`, 'i');
       const requestedNameNorm = normalizeText(String(line.requested_name || ''));
       const expectedCount = Math.max(Math.floor(issuedQuantity), 0);
-
-      const explicit = assignmentsWithDetails.filter(
-        (assignment) =>
-          !usedAssignmentIds.has(assignment.id) &&
-          Boolean(assignment.notes) &&
-          lineRegex.test(String(assignment.notes))
-      );
-
-      if (explicit.length > 0) {
-        assignedItems = explicit.slice(0, expectedCount || explicit.length);
-      } else {
-        const fallback = assignmentsWithDetails.filter((assignment) => {
-          if (usedAssignmentIds.has(assignment.id)) return false;
-          return normalizeText(assignment.assetName) === requestedNameNorm;
-        });
-        assignedItems = fallback.slice(0, expectedCount || fallback.length);
-      }
+      const explicit = lineId
+        ? (assignmentByLineId.get(lineId) || []).filter((assignment) => !usedAssignmentIds.has(assignment.id))
+        : [];
+      const fallback = assignmentsWithDetails.filter((assignment) => {
+        if (usedAssignmentIds.has(assignment.id)) return false;
+        return normalizeText(assignment.assetName) === requestedNameNorm;
+      });
+      const matched = explicit.length > 0 ? explicit : fallback;
+      assignedItems = matched.slice(0, expectedCount || matched.length);
 
       assignedItems.forEach((assignment) => usedAssignmentIds.add(assignment.id));
     }
@@ -297,7 +316,7 @@ async function renderIssuanceReportPdf(input: {
 }
 
 export async function generateAndStoreIssuanceReport(ctx: RequestContext, requisitionId: string) {
-  const requisition = await RequisitionModel.findById(requisitionId).lean();
+  const requisition = (await RequisitionModel.findById(requisitionId).lean()) as RequisitionDoc | null;
   if (!requisition) {
     throw createHttpError(404, 'Requisition not found');
   }
@@ -310,7 +329,7 @@ export async function generateAndStoreIssuanceReport(ctx: RequestContext, requis
     throw createHttpError(403, 'Access restricted to assigned office');
   }
 
-  const office = await OfficeModel.findById(officeId, { name: 1 }).lean();
+  const office = (await OfficeModel.findById(officeId, { name: 1 }).lean()) as OfficeNameDoc | null;
   if (!office) {
     throw createHttpError(404, 'Office not found');
   }
@@ -371,10 +390,10 @@ export async function generateAndStoreIssuanceReport(ctx: RequestContext, requis
     await issueSlipDoc.save();
   }
 
-  const lastVersion = await DocumentVersionModel.findOne({ document_id: issueSlipDoc._id }, { version_no: 1 })
+  const lastVersion = (await DocumentVersionModel.findOne({ document_id: issueSlipDoc._id }, { version_no: 1 })
     .sort({ version_no: -1 })
     .lean()
-    .exec();
+    .exec()) as VersionDoc | null;
   const nextVersion = lastVersion && typeof lastVersion.version_no === 'number' ? lastVersion.version_no + 1 : 1;
 
   const versionId = new Types.ObjectId();

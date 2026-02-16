@@ -32,8 +32,6 @@ type AuditMeta = Record<string, unknown> | undefined;
 type BalanceKey = {
   holderType?: HolderType | null;
   holderId?: string | null;
-  // Deprecated compatibility input key.
-  locationId?: string | null;
   itemId: string;
   lotId?: string | null;
 };
@@ -42,7 +40,7 @@ type HolderContext = {
   holderType: HolderType;
   holderId: string;
   name: string;
-  office?: any;
+  office?: unknown;
   store?: any;
 };
 
@@ -92,13 +90,7 @@ function normalizeHolderType(value: unknown, fallback: HolderType = 'OFFICE'): H
 }
 
 function officeHolderFilter(holderId: string) {
-  return {
-    $or: [
-      { holder_type: 'OFFICE', holder_id: holderId },
-      { holder_type: { $exists: false }, location_id: holderId },
-      { holder_type: null, location_id: holderId },
-    ],
-  };
+  return { holder_type: 'OFFICE', holder_id: holderId };
 }
 
 function balanceHolderFilter(holderType: HolderType, holderId: string) {
@@ -128,10 +120,10 @@ function resolveBalanceHolder(key: BalanceKey): { holderType: HolderType; holder
       holderId: String(key.holderId),
     };
   }
-  if (key.locationId) {
+  if (key.holderId) {
     return {
-      holderType: 'OFFICE',
-      holderId: String(key.locationId),
+      holderType: normalizeHolderType(key.holderType),
+      holderId: String(key.holderId),
     };
   }
   throw createHttpError(400, 'Balance holder is required');
@@ -173,17 +165,14 @@ function extractHolderArgs(
   options: {
     holderIdKey: string;
     holderTypeKey: string;
-    legacyLocationIdKey?: string;
     defaultType?: HolderType;
   }
 ) {
-  const holderId = String(
-    payload?.[options.holderIdKey] || (options.legacyLocationIdKey ? payload?.[options.legacyLocationIdKey] : '') || ''
-  ).trim();
-  const inferredType: HolderType = options.legacyLocationIdKey && payload?.[options.legacyLocationIdKey] ? 'OFFICE' : (options.defaultType || 'OFFICE');
+  const holderId = String(payload?.[options.holderIdKey] || '').trim();
+  const inferredType: HolderType = options.defaultType || 'OFFICE';
   const holderType = normalizeHolderType(payload?.[options.holderTypeKey], inferredType);
   if (!holderId) {
-    throw createHttpError(400, `${options.holderIdKey}${options.legacyLocationIdKey ? ` (or ${options.legacyLocationIdKey})` : ''} is required`);
+    throw createHttpError(400, `${options.holderIdKey} is required`);
   }
   return { holderId, holderType };
 }
@@ -206,11 +195,7 @@ function txAnySideHolderFilter(holderType: HolderType, holderId: string) {
   return {
     $or: [
       { from_holder_type: 'OFFICE', from_holder_id: holderId },
-      { from_holder_type: { $exists: false }, from_location_id: holderId },
-      { from_holder_type: null, from_location_id: holderId },
       { to_holder_type: 'OFFICE', to_holder_id: holderId },
-      { to_holder_type: { $exists: false }, to_location_id: holderId },
-      { to_holder_type: null, to_location_id: holderId },
     ],
   };
 }
@@ -389,7 +374,8 @@ async function pickLotsByFefo(
 
 async function ensureLotMatchesItem(lotId: string, itemId: string, session: ClientSession) {
   const lot = await getLot(lotId, session);
-  if (lot.consumable_item_id.toString() !== itemId) {
+  const lotItemId = lot.consumable_id ? String(lot.consumable_id) : '';
+  if (lotItemId !== itemId) {
     throw createHttpError(400, 'Lot does not belong to consumable item');
   }
   return lot;
@@ -398,7 +384,8 @@ async function ensureLotMatchesItem(lotId: string, itemId: string, session: Clie
 async function ensureContainerMatchesItem(containerId: string, itemId: string, session: ClientSession) {
   const container = await getContainer(containerId, session);
   const lot = await getLot(container.lot_id.toString(), session);
-  if (lot.consumable_item_id.toString() !== itemId) {
+  const lotItemId = lot.consumable_id ? String(lot.consumable_id) : '';
+  if (lotItemId !== itemId) {
     throw createHttpError(400, 'Container does not belong to consumable item');
   }
   return container;
@@ -470,14 +457,11 @@ export const inventoryService = {
             [
               {
                 consumable_id: item.id,
-                consumable_item_id: item.id,
                 holder_type: storeHolder.holderType,
                 holder_id: storeHolder.holderId,
                 batch_no: payload.lot.lotNumber,
                 supplier_id: payload.lot.supplierId || null,
-                lot_number: payload.lot.lotNumber,
                 received_at: new Date(payload.lot.receivedDate || nowIso()),
-                received_date: payload.lot.receivedDate || nowIso(),
                 expiry_date: expiryDate,
                 qty_received: receivedQty,
                 qty_available: receivedQty,
@@ -582,10 +566,10 @@ export const inventoryService = {
         const permissions = resolveConsumablePermissions(user.role);
 
         const item = await getItem(payload.itemId, session);
-        const fromHolderId = String(payload.fromHolderId || payload.fromLocationId || '').trim();
-        const toHolderId = String(payload.toHolderId || payload.toLocationId || '').trim();
+        const fromHolderId = String(payload.fromHolderId || '').trim();
+        const toHolderId = String(payload.toHolderId || '').trim();
         if (!fromHolderId || !toHolderId) {
-          throw createHttpError(400, 'fromHolderId/toHolderId (or fromLocationId/toLocationId) are required');
+          throw createHttpError(400, 'fromHolderId/toHolderId are required');
         }
         const fromHolder = await resolveHolder(fromHolderId, payload.fromHolderType || 'OFFICE', session);
         const toHolder = await resolveHolder(toHolderId, payload.toHolderType || 'OFFICE', session);
@@ -682,8 +666,6 @@ export const inventoryService = {
               fromHolderId: fromHolder.holderId,
               toHolderType: toHolder.holderType,
               toHolderId: toHolder.holderId,
-              fromLocationId: fromHolder.holderType === 'OFFICE' ? fromHolder.holderId : null,
-              toLocationId: toHolder.holderType === 'OFFICE' ? toHolder.holderId : null,
               lotId: container.lot_id,
             },
             session
@@ -764,8 +746,6 @@ export const inventoryService = {
             fromHolderId: fromHolder.holderId,
             toHolderType: toHolder.holderType,
             toHolderId: toHolder.holderId,
-            fromLocationId: fromHolder.holderType === 'OFFICE' ? fromHolder.holderId : null,
-            toLocationId: toHolder.holderType === 'OFFICE' ? toHolder.holderId : null,
           },
           session
         );
@@ -789,7 +769,6 @@ export const inventoryService = {
         const { holderId, holderType } = extractHolderArgs(payload, {
           holderIdKey: 'holderId',
           holderTypeKey: 'holderType',
-          legacyLocationIdKey: 'locationId',
         });
         const holder = await resolveHolder(holderId, holderType, session);
         const unitLookup = await getUnitLookup({ session });
@@ -960,7 +939,6 @@ export const inventoryService = {
         const { holderId, holderType } = extractHolderArgs(payload, {
           holderIdKey: 'holderId',
           holderTypeKey: 'holderType',
-          legacyLocationIdKey: 'locationId',
         });
         const holder = await resolveHolder(holderId, holderType, session);
         const unitLookup = await getUnitLookup({ session });
@@ -1065,7 +1043,6 @@ export const inventoryService = {
         const { holderId, holderType } = extractHolderArgs(payload, {
           holderIdKey: 'holderId',
           holderTypeKey: 'holderType',
-          legacyLocationIdKey: 'locationId',
         });
         const holder = await resolveHolder(holderId, holderType, session);
         const unitLookup = await getUnitLookup({ session });
@@ -1173,7 +1150,6 @@ export const inventoryService = {
         const fromArgs = extractHolderArgs(payload, {
           holderIdKey: 'fromHolderId',
           holderTypeKey: 'fromHolderType',
-          legacyLocationIdKey: 'fromLocationId',
         });
         const fromHolder = await resolveHolder(fromArgs.holderId, fromArgs.holderType, session);
         if (fromHolder.holderType !== 'OFFICE') {
@@ -1183,11 +1159,10 @@ export const inventoryService = {
 
         const toSystemStore = await getCentralStoreHolder(session);
         let toHolder = toSystemStore;
-        if (payload.toHolderId || payload.toLocationId) {
+        if (payload.toHolderId) {
           const toArgs = extractHolderArgs(payload, {
             holderIdKey: 'toHolderId',
             holderTypeKey: 'toHolderType',
-            legacyLocationIdKey: 'toLocationId',
           });
           toHolder = await resolveHolder(toArgs.holderId, toArgs.holderType, session);
         }
@@ -1281,8 +1256,6 @@ export const inventoryService = {
               fromHolderId: fromHolder.holderId,
               toHolderType: toHolder.holderType,
               toHolderId: toHolder.holderId,
-              fromLocationId: fromHolder.holderId,
-              toLocationId: null,
             },
             session
           );
@@ -1362,8 +1335,6 @@ export const inventoryService = {
             fromHolderId: fromHolder.holderId,
             toHolderType: toHolder.holderType,
             toHolderId: toHolder.holderId,
-            fromLocationId: fromHolder.holderId,
-            toLocationId: null,
           },
           session
         );
@@ -1390,7 +1361,6 @@ export const inventoryService = {
           const holderArgs = extractHolderArgs(entry, {
             holderIdKey: 'holderId',
             holderTypeKey: 'holderType',
-            legacyLocationIdKey: 'locationId',
           });
           const holder = await resolveHolder(holderArgs.holderId, holderArgs.holderType, session);
           ensureChemicalsHolder(item, holder, 'Opening balance holder');
@@ -1463,7 +1433,6 @@ export const inventoryService = {
     const holderArgs = extractHolderArgs(query, {
       holderIdKey: 'holderId',
       holderTypeKey: 'holderType',
-      legacyLocationIdKey: 'locationId',
     });
     if (holderArgs.holderType === 'OFFICE') {
       await ensureLocationAccess(user, holderArgs.holderId);
@@ -1486,11 +1455,10 @@ export const inventoryService = {
     const allowedLocationId = await resolveAccessibleLocationId(user.userId, role);
 
     let filter: any = {};
-    if (query.holderId || query.locationId) {
+    if (query.holderId) {
       const holderArgs = extractHolderArgs(query, {
         holderIdKey: 'holderId',
         holderTypeKey: 'holderType',
-        legacyLocationIdKey: 'locationId',
       });
       filter = withAnd(filter, balanceHolderFilter(holderArgs.holderType, holderArgs.holderId));
     }
@@ -1502,7 +1470,11 @@ export const inventoryService = {
       if (query.holderId && normalizeHolderType(query.holderType || 'OFFICE') === 'STORE') {
         throw createHttpError(403, 'User does not have access to this store');
       }
-      if (query.locationId && query.locationId !== allowedLocationId) {
+      if (
+        query.holderId &&
+        normalizeHolderType(query.holderType || 'OFFICE') === 'OFFICE' &&
+        query.holderId !== allowedLocationId
+      ) {
         throw createHttpError(403, 'User does not have access to this location');
       }
       filter = withAnd(filter, allowedOfficeFilter);
@@ -1522,11 +1494,10 @@ export const inventoryService = {
 
     let match: any = {};
     if (query.itemId) match.consumable_item_id = new mongoose.Types.ObjectId(query.itemId);
-    if (query.holderId || query.locationId) {
+    if (query.holderId) {
       const holderArgs = extractHolderArgs(query, {
         holderIdKey: 'holderId',
         holderTypeKey: 'holderType',
-        legacyLocationIdKey: 'locationId',
       });
       match = withAnd(match, balanceHolderFilter(holderArgs.holderType, holderArgs.holderId));
     }
@@ -1536,7 +1507,11 @@ export const inventoryService = {
       if (query.holderId && normalizeHolderType(query.holderType || 'OFFICE') === 'STORE') {
         throw createHttpError(403, 'User does not have access to this store');
       }
-      if (query.locationId && query.locationId !== allowedLocationId) {
+      if (
+        query.holderId &&
+        normalizeHolderType(query.holderType || 'OFFICE') === 'OFFICE' &&
+        query.holderId !== allowedLocationId
+      ) {
         throw createHttpError(403, 'User does not have access to this location');
       }
       match = withAnd(match, officeHolderFilter(allowedLocationId));
@@ -1549,7 +1524,7 @@ export const inventoryService = {
           _id: {
             itemId: '$consumable_item_id',
             holderType: { $ifNull: ['$holder_type', 'OFFICE'] },
-            holderId: { $ifNull: ['$holder_id', '$location_id'] },
+            holderId: '$holder_id',
           },
           qty_on_hand_base: { $sum: '$qty_on_hand_base' },
         },
@@ -1590,22 +1565,25 @@ export const inventoryService = {
     if (query.lotId) filter.lot_id = query.lotId;
     if (query.txType) filter.tx_type = query.txType;
 
-    if (query.holderId || query.locationId) {
+    if (query.holderId) {
       const holderArgs = extractHolderArgs(query, {
         holderIdKey: 'holderId',
         holderTypeKey: 'holderType',
-        legacyLocationIdKey: 'locationId',
       });
       filter = withAnd(filter, txAnySideHolderFilter(holderArgs.holderType, holderArgs.holderId));
     }
 
     const allowedLocationId = await resolveAccessibleLocationId(user.userId, user.role);
     if (allowedLocationId) {
-      if (query.locationId && query.locationId !== allowedLocationId) {
-        throw createHttpError(403, 'User does not have access to this location');
-      }
       if (query.holderId && normalizeHolderType(query.holderType || 'OFFICE') === 'STORE') {
         throw createHttpError(403, 'User does not have access to this store');
+      }
+      if (
+        query.holderId &&
+        normalizeHolderType(query.holderType || 'OFFICE') === 'OFFICE' &&
+        query.holderId !== allowedLocationId
+      ) {
+        throw createHttpError(403, 'User does not have access to this location');
       }
       filter = withAnd(filter, txAnySideHolderFilter('OFFICE', allowedLocationId));
     }
@@ -1628,21 +1606,24 @@ export const inventoryService = {
     cutoff.setDate(cutoff.getDate() + days);
 
     let balanceFilter: any = { qty_on_hand_base: { $gt: 0 } };
-    if (query.holderId || query.locationId) {
+    if (query.holderId) {
       const holderArgs = extractHolderArgs(query, {
         holderIdKey: 'holderId',
         holderTypeKey: 'holderType',
-        legacyLocationIdKey: 'locationId',
       });
       balanceFilter = withAnd(balanceFilter, balanceHolderFilter(holderArgs.holderType, holderArgs.holderId));
     }
     const allowedLocationId = await resolveAccessibleLocationId(user.userId, user.role);
     if (allowedLocationId) {
-      if (query.locationId && query.locationId !== allowedLocationId) {
-        throw createHttpError(403, 'User does not have access to this location');
-      }
       if (query.holderId && normalizeHolderType(query.holderType || 'OFFICE') === 'STORE') {
         throw createHttpError(403, 'User does not have access to this store');
+      }
+      if (
+        query.holderId &&
+        normalizeHolderType(query.holderType || 'OFFICE') === 'OFFICE' &&
+        query.holderId !== allowedLocationId
+      ) {
+        throw createHttpError(403, 'User does not have access to this location');
       }
       balanceFilter = withAnd(balanceFilter, officeHolderFilter(allowedLocationId));
     }
@@ -1663,15 +1644,14 @@ export const inventoryService = {
       if (!lot?.expiry_date) continue;
       const expiryDate = new Date(lot.expiry_date);
       if (expiryDate <= cutoff) {
+        const holderType = balance.holder_type || null;
+        const holderId = balance.holder_id || null;
         expiring.push({
           lotId: lot.id,
-          itemId: lot.consumable_item_id,
-          holderType: balance.holder_type || (balance.location_id ? 'OFFICE' : null),
-          holderId: balance.holder_id || balance.location_id || null,
-          locationId:
-            (balance.holder_type === 'OFFICE' && balance.holder_id) || (!balance.holder_type && balance.location_id)
-              ? balance.holder_id || balance.location_id
-              : null,
+          itemId: String(lot.consumable_id),
+          holderType,
+          holderId,
+          locationId: holderType === 'OFFICE' ? holderId : null,
           expiryDate: lot.expiry_date,
           qtyOnHandBase: balance.qty_on_hand_base,
         });
@@ -1681,4 +1661,5 @@ export const inventoryService = {
     return expiring.sort((a, b) => new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime());
   },
 };
+
 

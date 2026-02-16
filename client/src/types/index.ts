@@ -91,18 +91,13 @@ export interface Office {
   district: string | null;
   address: string | null;
   contact_number: string | null;
-  // Keep a string fallback so legacy values from existing data do not break UI.
-  type?: OfficeType | string | null;
+  type?: OfficeType | null;
   parent_office_id?: string | null;
-  // Deprecated: kept for backward compatibility during migration.
-  parent_location_id?: string | null;
-  lab_code?: string | null;
   capabilities?: {
     moveables?: boolean;
     consumables?: boolean;
     chemicals?: boolean;
   } | null;
-  is_headoffice?: boolean | null;
   is_active?: boolean | null;
   created_at: string;
   updated_at: string;
@@ -255,7 +250,6 @@ export interface AssetItem {
   asset_id: string;
   holder_type?: "OFFICE" | "STORE" | null;
   holder_id?: string | null;
-  location_id: string | null;
   serial_number: string | null;
   tag: string | null;
   assignment_status: AssignmentStatus | null;
@@ -332,7 +326,6 @@ export interface TransferLine {
 
 export interface Transfer {
   id: string;
-  asset_item_id?: string | null;
   lines: TransferLine[];
   from_office_id: string;
   to_office_id: string;
@@ -632,10 +625,10 @@ export interface ConsumableSupplier {
 
 export interface ConsumableLot {
   id: string;
-  consumable_item_id: string;
+  consumable_id: string;
   supplier_id: string | null;
-  lot_number: string;
-  received_date: string;
+  batch_no: string;
+  received_at: string;
   expiry_date: string | null;
   docs?: {
     sds_url?: string | null;
@@ -663,7 +656,6 @@ export interface ConsumableInventoryBalance {
   id: string;
   holder_type?: 'OFFICE' | 'STORE' | null;
   holder_id?: string | null;
-  location_id?: string | null;
   consumable_item_id: string;
   lot_id: string | null;
   qty_on_hand_base: number;
@@ -681,8 +673,6 @@ export interface ConsumableInventoryTransaction {
   from_holder_id?: string | null;
   to_holder_type?: 'OFFICE' | 'STORE' | null;
   to_holder_id?: string | null;
-  from_location_id?: string | null;
-  to_location_id?: string | null;
   consumable_item_id: string;
   lot_id: string | null;
   container_id: string | null;

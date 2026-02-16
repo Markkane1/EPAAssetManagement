@@ -17,7 +17,7 @@ import { ProjectFormModal } from "@/components/forms/ProjectFormModal";
 import { Project } from "@/types";
 
 export default function Projects() {
-  const { data: projects, isLoading, error } = useProjects();
+  const { data: projects, isLoading } = useProjects();
   const createProject = useCreateProject();
   const updateProject = useUpdateProject();
   const deleteProject = useDeleteProject();
@@ -60,8 +60,6 @@ export default function Projects() {
       </MainLayout>
     );
   }
-
-  if (error) console.warn("API unavailable:", error);
 
   return (
     <MainLayout title="Projects" description="Manage organizational projects">

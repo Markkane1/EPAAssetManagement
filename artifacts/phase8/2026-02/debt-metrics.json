@@ -1,0 +1,110 @@
+{
+  "generatedAt": "2026-02-16T20:41:44.494Z",
+  "monthKey": "2026-02",
+  "counts": {
+    "tsNoCheckCount": 7,
+    "explicitAnyCount": 378,
+    "schemaAnyCount": 46,
+    "modelAnyCount": 26,
+    "outlierFilesCount": 22,
+    "trackedSourceFiles": 407
+  },
+  "outlierFiles": [
+    {
+      "file": "server/src/modules/consumables/services/inventory.service.ts",
+      "lines": 1667
+    },
+    {
+      "file": "server/src/controllers/requisition.controller.ts",
+      "lines": 1346
+    },
+    {
+      "file": "client/src/pages/RequisitionDetail.tsx",
+      "lines": 1036
+    },
+    {
+      "file": "server/src/controllers/returnRequest.controller.ts",
+      "lines": 857
+    },
+    {
+      "file": "client/src/pages/Reports.tsx",
+      "lines": 857
+    },
+    {
+      "file": "client/src/types/index.ts",
+      "lines": 797
+    },
+    {
+      "file": "server/src/controllers/assignment.controller.ts",
+      "lines": 794
+    },
+    {
+      "file": "client/src/pages/UserManagement.tsx",
+      "lines": 742
+    },
+    {
+      "file": "client/src/components/ui/sidebar.tsx",
+      "lines": 639
+    },
+    {
+      "file": "client/src/pages/UserPermissions.tsx",
+      "lines": 593
+    },
+    {
+      "file": "server/src/controllers/transfer.controller.ts",
+      "lines": 589
+    },
+    {
+      "file": "client/src/components/layout/Sidebar.tsx",
+      "lines": 582
+    },
+    {
+      "file": "server/src/controllers/requisition.controller.helpers.ts",
+      "lines": 491
+    },
+    {
+      "file": "client/src/pages/Settings.tsx",
+      "lines": 486
+    },
+    {
+      "file": "server/src/controllers/auth.controller.ts",
+      "lines": 482
+    },
+    {
+      "file": "server/src/services/assignmentSlip.service.ts",
+      "lines": 457
+    },
+    {
+      "file": "client/src/pages/Transfers.tsx",
+      "lines": 455
+    },
+    {
+      "file": "server/src/services/requisitionIssuanceReport.service.ts",
+      "lines": 438
+    },
+    {
+      "file": "client/src/pages/RequisitionNew.tsx",
+      "lines": 433
+    },
+    {
+      "file": "client/src/components/forms/AssetFormModal.tsx",
+      "lines": 408
+    },
+    {
+      "file": "server/src/controllers/maintenance.controller.ts",
+      "lines": 406
+    },
+    {
+      "file": "client/src/pages/consumables/ConsumableTransfers.tsx",
+      "lines": 403
+    }
+  ],
+  "testHealth": [
+    {
+      "command": "health checks skipped",
+      "status": "skipped",
+      "exitCode": 0,
+      "durationMs": 0
+    }
+  ]
+}

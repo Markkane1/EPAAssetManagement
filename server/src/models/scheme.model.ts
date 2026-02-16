@@ -11,6 +11,10 @@ const SchemeSchema = new Schema<any>(
   baseSchemaOptions
 );
 
+SchemeSchema.index({ project_id: 1, is_active: 1, created_at: -1 });
+SchemeSchema.index({ created_at: -1 });
+SchemeSchema.index({ name: 1, project_id: 1 });
+
 export const SchemeModel = mongoose.model<any>('Scheme', SchemeSchema);
 
 

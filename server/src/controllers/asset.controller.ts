@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { Response, NextFunction } from 'express';
 import { AssetModel } from '../models/asset.model';
 import { AssetItemModel } from '../models/assetItem.model';
@@ -142,7 +141,7 @@ export const assetController = {
   getById: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const access = await resolveAccessContext(req.user);
-      const asset = await AssetModel.findById(req.params.id).lean();
+      const asset = (await AssetModel.findById(req.params.id).lean()) as ({ _id: unknown } & Record<string, unknown>) | null;
       if (!asset) return res.status(404).json({ message: 'Not found' });
       if (!access.isOrgAdmin) {
         if (!access.officeId) throw createHttpError(403, 'User is not assigned to an office');

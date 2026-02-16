@@ -1,4 +1,3 @@
-// @ts-nocheck
 import path from 'path';
 import crypto from 'crypto';
 import fs from 'fs/promises';
@@ -9,6 +8,7 @@ import { DocumentVersionModel } from '../../../models/documentVersion.model';
 import { createHttpError } from '../../../utils/httpError';
 import { buildOfficeFilter, RequestContext } from '../../../utils/scope';
 import { logAudit } from './audit.service';
+import { assertUploadedFileIntegrity } from '../../../utils/uploadValidation';
 
 export interface DocumentCreateInput {
   title: string;
@@ -21,6 +21,16 @@ interface PaginationOptions {
   page?: number;
   limit?: number;
 }
+
+type LastVersionDoc = {
+  version_no?: number;
+};
+
+type StoredVersionDoc = {
+  document_id?: unknown;
+  storage_key?: string | null;
+  file_path?: string | null;
+};
 
 function clampInt(value: unknown, fallback: number, min: number, max: number) {
   const parsed = Number.parseInt(String(value ?? ''), 10);
@@ -89,54 +99,69 @@ export async function uploadDocumentVersion(
   documentId: string,
   file: Express.Multer.File
 ) {
-  const document = await DocumentModel.findById(documentId, { office_id: 1 }).lean();
-  if (!document) throw createHttpError(404, 'Document not found');
-  if (!ctx.isOrgAdmin && String((document as { office_id?: unknown }).office_id) !== ctx.locationId) {
-    throw createHttpError(403, 'Access restricted to assigned office');
+  let persistedVersion = false;
+  try {
+    await assertUploadedFileIntegrity(file, 'file');
+
+    const document = await DocumentModel.findById(documentId, { office_id: 1 }).lean();
+    if (!document) throw createHttpError(404, 'Document not found');
+    if (!ctx.isOrgAdmin && String((document as { office_id?: unknown }).office_id) !== ctx.locationId) {
+      throw createHttpError(403, 'Access restricted to assigned office');
+    }
+
+    const lastVersion = (await DocumentVersionModel.findOne({ document_id: documentId }, { version_no: 1 })
+      .sort({ version_no: -1 })
+      .lean()
+      .exec()) as LastVersionDoc | null;
+    const nextVersion = lastVersion && typeof lastVersion.version_no === 'number' ? lastVersion.version_no + 1 : 1;
+
+    const fileBuffer = await fs.readFile(file.path);
+    const sha256 = crypto.createHash('sha256').update(fileBuffer).digest('hex');
+
+    const relativePath = path.join('uploads', 'documents', path.basename(file.path));
+    const versionId = new Types.ObjectId();
+    const fileUrl = `/api/documents/versions/${versionId.toString()}/download`;
+
+    const version = await DocumentVersionModel.create({
+      _id: versionId,
+      document_id: documentId,
+      version_no: nextVersion,
+      file_name: file.originalname,
+      mime_type: file.mimetype,
+      size_bytes: file.size,
+      storage_key: relativePath,
+      file_path: relativePath,
+      file_url: fileUrl,
+      sha256,
+      uploaded_by_user_id: ctx.userId,
+      uploaded_at: new Date(),
+    });
+    persistedVersion = true;
+
+    await logAudit({
+      ctx,
+      action: 'UPLOAD_DOCUMENT',
+      entityType: 'Document',
+      entityId: documentId,
+      officeId: String((document as { office_id?: unknown }).office_id || ''),
+      diff: { version: nextVersion },
+    });
+
+    return version;
+  } catch (error) {
+    if (!persistedVersion && file?.path) {
+      try {
+        await fs.unlink(file.path);
+      } catch {
+        // ignore cleanup failures
+      }
+    }
+    throw error;
   }
-
-  const lastVersion = await DocumentVersionModel.findOne({ document_id: documentId }, { version_no: 1 })
-    .sort({ version_no: -1 })
-    .lean()
-    .exec();
-  const nextVersion = lastVersion && typeof lastVersion.version_no === 'number' ? lastVersion.version_no + 1 : 1;
-
-  const fileBuffer = await fs.readFile(file.path);
-  const sha256 = crypto.createHash('sha256').update(fileBuffer).digest('hex');
-
-  const relativePath = path.join('uploads', 'documents', path.basename(file.path));
-  const versionId = new Types.ObjectId();
-  const fileUrl = `/api/documents/versions/${versionId.toString()}/download`;
-
-  const version = await DocumentVersionModel.create({
-    _id: versionId,
-    document_id: documentId,
-    version_no: nextVersion,
-    file_name: file.originalname,
-    mime_type: file.mimetype,
-    size_bytes: file.size,
-    storage_key: relativePath,
-    file_path: relativePath,
-    file_url: fileUrl,
-    sha256,
-    uploaded_by_user_id: ctx.userId,
-    uploaded_at: new Date(),
-  });
-
-  await logAudit({
-    ctx,
-    action: 'UPLOAD_DOCUMENT',
-    entityType: 'Document',
-    entityId: documentId,
-    officeId: String((document as { office_id?: unknown }).office_id || ''),
-    diff: { version: nextVersion },
-  });
-
-  return version;
 }
 
 export async function getDocumentVersionDownload(ctx: RequestContext, versionId: string) {
-  const version = await DocumentVersionModel.findById(versionId).lean();
+  const version = (await DocumentVersionModel.findById(versionId).lean()) as StoredVersionDoc | null;
   if (!version) throw createHttpError(404, 'Document version not found');
 
   const document = await DocumentModel.findById(version.document_id, { office_id: 1 }).lean();

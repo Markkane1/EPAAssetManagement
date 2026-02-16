@@ -33,25 +33,15 @@ const OfficeSchema = new Schema<any>(
     capabilities: { type: CapabilitySchema, default: undefined },
     // Parent office reference for hierarchy (canonical field)
     parent_office_id: { type: Schema.Types.ObjectId, ref: 'Office', default: null },
-    // Deprecated: kept for backward compatibility with legacy clients/data
-    parent_location_id: { type: Schema.Types.ObjectId, ref: 'Office', default: null },
-    // Optional lab code (kept for compatibility)
-    lab_code: { type: String, default: null, trim: true },
-    // Deprecated: kept temporarily; head office inventory is moving to Store
-    is_headoffice: { type: Boolean, default: false },
     // Soft-active flag for office availability
     is_active: { type: Boolean, default: true },
   },
   baseSchemaOptions
 );
 
-OfficeSchema.index(
-  { is_headoffice: 1 },
-  { unique: true, partialFilterExpression: { is_headoffice: true } }
-);
 OfficeSchema.index({ is_active: 1, created_at: -1 });
 OfficeSchema.index({ type: 1, is_active: 1 });
-OfficeSchema.index({ 'capabilities.chemicals': 1, type: 1, is_headoffice: 1, name: 1 });
+OfficeSchema.index({ 'capabilities.chemicals': 1, type: 1, name: 1 });
 OfficeSchema.index({ 'capabilities.consumables': 1, name: 1 });
 
 export const OfficeModel = mongoose.model<any>('Office', OfficeSchema);

@@ -1,6 +1,8 @@
 import api from '@/lib/api';
 import { Vendor } from '@/types';
 
+const LIST_LIMIT = 1000;
+
 export interface VendorCreateDto {
   name: string;
   contactInfo?: string;
@@ -18,7 +20,7 @@ export interface VendorUpdateDto {
 }
 
 export const vendorService = {
-  getAll: () => api.get<Vendor[]>('/vendors'),
+  getAll: () => api.get<Vendor[]>(`/vendors?limit=${LIST_LIMIT}`),
   
   getById: (id: string) => api.get<Vendor>(`/vendors/${id}`),
   

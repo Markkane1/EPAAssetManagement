@@ -23,7 +23,6 @@ export { default as requisitionService } from './requisitionService';
 export { default as returnRequestService } from './returnRequestService';
 export { default as reportService } from './reportService';
 export { default as consumableService } from './consumableService';
-export { default as consumableAssignmentService } from './consumableAssignmentService';
 export { default as consumableItemService } from './consumableItemService';
 export { default as consumableSupplierService } from './consumableSupplierService';
 export { default as consumableLotService } from './consumableLotService';

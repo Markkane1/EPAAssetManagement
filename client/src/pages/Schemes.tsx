@@ -17,7 +17,7 @@ import { useSchemes, useCreateScheme, useUpdateScheme, useDeleteScheme } from "@
 import { useProjects } from "@/hooks/useProjects";
 
 export default function Schemes() {
-  const { data: schemes, isLoading, error } = useSchemes();
+  const { data: schemes, isLoading } = useSchemes();
   const { data: projects } = useProjects();
   const createScheme = useCreateScheme();
   const updateScheme = useUpdateScheme();
@@ -102,8 +102,6 @@ export default function Schemes() {
       </MainLayout>
     );
   }
-
-  if (error) console.warn("API unavailable:", error);
 
   return (
     <MainLayout title="Schemes" description="Manage project schemes">
