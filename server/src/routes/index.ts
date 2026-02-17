@@ -26,6 +26,7 @@ import returnRequestRoutes from './returnRequest.routes';
 import reportRoutes from './report.routes';
 import notificationRoutes from './notification.routes';
 import metricsRoutes from './metrics.routes';
+import openApiRoutes from './openapi.routes';
 
 const router = Router();
 
@@ -56,6 +57,7 @@ router.use('/requisitions', requisitionRoutes);
 router.use('/return-requests', returnRequestRoutes);
 router.use('/reports', reportRoutes);
 router.use('/observability/metrics', metricsRoutes);
+router.use('/', openApiRoutes);
 router.use('/', recordRoutes);
 
 export default router;

@@ -13,6 +13,7 @@
     "seed:consumables": "tsx scripts/seed-consumables.ts",
     "migrate:assetitem-holders": "tsx scripts/migrate-assetitems-holder-fields.ts",
     "migrate:transfer-lines": "tsx scripts/migrate-transfers-to-lines.ts",
+    "openapi:generate": "node scripts/generate-openapi.js",
     "test:consumables": "tsx tests/consumables/unitConversion.test.ts",
     "test:security": "tsx tests/security/security-runtime-tests.ts"
   },
