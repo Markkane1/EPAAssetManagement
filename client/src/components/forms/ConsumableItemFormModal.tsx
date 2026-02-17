@@ -173,7 +173,7 @@ export function ConsumableItemFormModal({
                 <SelectContent>
                   {unitOptions.length > 0 ? (
                     unitOptions.map((uom) => (
-                      <SelectItem key={uom.id} value={uom.code}>{uom.code}</SelectItem>
+                      <SelectItem key={uom.code} value={uom.code}>{uom.code}</SelectItem>
                     ))
                   ) : (
                     <SelectItem value={fallbackUom}>{fallbackUom}</SelectItem>

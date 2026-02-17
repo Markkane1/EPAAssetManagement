@@ -116,7 +116,10 @@ async function getAssetsByCategoryInternal() {
         },
       },
     ]),
-    CategoryModel.find({}, { name: 1 }).lean(),
+    CategoryModel.find(
+      { $or: [{ asset_type: 'ASSET' }, { asset_type: { $exists: false } }] },
+      { name: 1 }
+    ).lean(),
   ]);
 
   const categoryMap = new Map(

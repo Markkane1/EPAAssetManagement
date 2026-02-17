@@ -3,7 +3,6 @@ export type ConsumableRole = 'org_admin' | 'office_head' | 'caretaker' | 'employ
 export type ConsumablePermissions = {
   canManageItems: boolean;
   canManageLocations: boolean;
-  canManageSuppliers: boolean;
   canManageLots: boolean;
   canManageContainers: boolean;
   canReceiveCentral: boolean;
@@ -21,7 +20,6 @@ export type ConsumablePermissions = {
 const basePermissions: ConsumablePermissions = {
   canManageItems: false,
   canManageLocations: false,
-  canManageSuppliers: false,
   canManageLots: false,
   canManageContainers: false,
   canReceiveCentral: false,
@@ -43,7 +41,6 @@ export function resolveConsumablePermissions(role?: string | null): ConsumablePe
     return {
       canManageItems: true,
       canManageLocations: true,
-      canManageSuppliers: true,
       canManageLots: true,
       canManageContainers: true,
       canReceiveCentral: true,
@@ -65,7 +62,6 @@ export function resolveConsumablePermissions(role?: string | null): ConsumablePe
       canManageItems: true,
       canManageLots: true,
       canManageContainers: true,
-      canManageSuppliers: true,
       canReceiveCentral: true,
       canTransferCentral: true,
       canTransferLab: true,

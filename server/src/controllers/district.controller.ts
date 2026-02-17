@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { createCrudController } from './crudController';
 import { DistrictModel } from '../models/district.model';
+import { DivisionModel } from '../models/division.model';
 
 const baseController = createCrudController({
   repository: {
@@ -17,6 +18,31 @@ function clampInt(value: unknown, fallback: number, min: number, max: number) {
   const parsed = Number.parseInt(String(value ?? ''), 10);
   if (Number.isNaN(parsed)) return fallback;
   return Math.min(max, Math.max(min, parsed));
+}
+
+function readDivisionId(body: Record<string, unknown>, required: boolean) {
+  const source = body.division_id ?? body.divisionId;
+  if (source === undefined) {
+    if (required) {
+      throw new Error('Division is required');
+    }
+    return undefined;
+  }
+  const divisionId = String(source || '').trim();
+  if (!divisionId) {
+    throw new Error('Division is required');
+  }
+  if (!/^[a-f\d]{24}$/i.test(divisionId)) {
+    throw new Error('Division id is invalid');
+  }
+  return divisionId;
+}
+
+async function ensureDivisionExists(divisionId: string) {
+  const exists = await DivisionModel.exists({ _id: divisionId });
+  if (!exists) {
+    throw new Error('Division not found');
+  }
 }
 
 export const districtController = {
@@ -38,6 +64,58 @@ export const districtController = {
         .lean();
       res.json(data);
     } catch (error) {
+      next(error);
+    }
+  },
+  create: async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const body = (req.body || {}) as Record<string, unknown>;
+      const divisionId = readDivisionId(body, true);
+      await ensureDivisionExists(String(divisionId));
+      const payload: Record<string, unknown> = {
+        ...body,
+        division_id: divisionId,
+      };
+      delete payload.divisionId;
+      const data = await DistrictModel.create(payload);
+      res.status(201).json(data);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to create district';
+      if (message === 'Division is required' || message === 'Division id is invalid') {
+        return res.status(400).json({ message });
+      }
+      if (message === 'Division not found') {
+        return res.status(404).json({ message });
+      }
+      next(error);
+    }
+  },
+  update: async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const body = (req.body || {}) as Record<string, unknown>;
+      const divisionId = readDivisionId(body, false);
+      const payload: Record<string, unknown> = { ...body };
+      if (divisionId !== undefined) {
+        await ensureDivisionExists(divisionId);
+        payload.division_id = divisionId;
+      }
+      delete payload.divisionId;
+      const updated = await DistrictModel.findByIdAndUpdate(req.params.id, payload, {
+        new: true,
+        runValidators: true,
+      });
+      if (!updated) {
+        return res.status(404).json({ message: 'Not found' });
+      }
+      return res.json(updated);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to update district';
+      if (message === 'Division is required' || message === 'Division id is invalid') {
+        return res.status(400).json({ message });
+      }
+      if (message === 'Division not found') {
+        return res.status(404).json({ message });
+      }
       next(error);
     }
   },

@@ -18,11 +18,11 @@ import { Loader2 } from "lucide-react";
 import { Vendor } from "@/types";
 
 const vendorSchema = z.object({
-  name: z.string().min(1, "Name is required").max(100),
-  contactInfo: z.string().max(200).optional(),
-  email: z.string().email("Invalid email").optional().or(z.literal("")),
-  phone: z.string().max(20).optional(),
-  address: z.string().max(500).optional(),
+  name: z.string().trim().min(1, "Name is required").max(100),
+  contactInfo: z.string().trim().min(1, "Contact person is required").max(200),
+  email: z.string().trim().min(1, "Email is required").email("Invalid email"),
+  phone: z.string().trim().min(1, "Phone is required").max(20),
+  address: z.string().trim().min(1, "Address is required").max(500),
 });
 
 type VendorFormData = z.infer<typeof vendorSchema>;
@@ -40,6 +40,7 @@ export function VendorFormModal({ open, onOpenChange, vendor, onSubmit }: Vendor
 
   const form = useForm<VendorFormData>({
     resolver: zodResolver(vendorSchema),
+    mode: "onChange",
     defaultValues: {
       name: vendor?.name || "",
       contactInfo: vendor?.contact_info || "",
@@ -92,37 +93,46 @@ export function VendorFormModal({ open, onOpenChange, vendor, onSubmit }: Vendor
         <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="name">Name *</Label>
-            <Input id="name" {...form.register("name")} placeholder="e.g., Dell Technologies" />
+            <Input id="name" {...form.register("name")} placeholder="e.g., Dell Technologies" required />
             {form.formState.errors.name && (
               <p className="text-sm text-destructive">{form.formState.errors.name.message}</p>
             )}
           </div>
           <div className="space-y-2">
-            <Label htmlFor="contactInfo">Contact Person</Label>
-            <Input id="contactInfo" {...form.register("contactInfo")} placeholder="John Smith" />
+            <Label htmlFor="contactInfo">Contact Person *</Label>
+            <Input id="contactInfo" {...form.register("contactInfo")} placeholder="John Smith" required />
+            {form.formState.errors.contactInfo && (
+              <p className="text-sm text-destructive">{form.formState.errors.contactInfo.message}</p>
+            )}
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input id="email" type="email" {...form.register("email")} placeholder="contact@vendor.com" />
+              <Label htmlFor="email">Email *</Label>
+              <Input id="email" type="email" {...form.register("email")} placeholder="contact@vendor.com" required />
               {form.formState.errors.email && (
                 <p className="text-sm text-destructive">{form.formState.errors.email.message}</p>
               )}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="phone">Phone</Label>
-              <Input id="phone" {...form.register("phone")} placeholder="+92 42 35761234" />
+              <Label htmlFor="phone">Phone *</Label>
+              <Input id="phone" {...form.register("phone")} placeholder="+92 42 35761234" required />
+              {form.formState.errors.phone && (
+                <p className="text-sm text-destructive">{form.formState.errors.phone.message}</p>
+              )}
             </div>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="address">Address</Label>
-            <Textarea id="address" {...form.register("address")} placeholder="Full address..." rows={2} />
+            <Label htmlFor="address">Address *</Label>
+            <Textarea id="address" {...form.register("address")} placeholder="Full address..." rows={2} required />
+            {form.formState.errors.address && (
+              <p className="text-sm text-destructive">{form.formState.errors.address.message}</p>
+            )}
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
               Cancel
             </Button>
-            <Button type="submit" disabled={isSubmitting}>
+            <Button type="submit" disabled={isSubmitting || !form.formState.isValid}>
               {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {isEditing ? "Update" : "Create"}
             </Button>

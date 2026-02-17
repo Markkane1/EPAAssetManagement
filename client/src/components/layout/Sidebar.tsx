@@ -68,10 +68,10 @@ const systemNavItems: NavItem[] = [
 ];
 
 const reportsRootItem: NavItem = { label: "Reports", href: "/reports", icon: FileText, page: "reports" };
+const complianceItem: NavItem = { label: "Compliance", href: "/compliance", icon: Shield, page: "compliance" };
 
 const reportNavItems: NavItem[] = [
   { label: "Overview", href: "/reports", icon: FileText, page: "reports" },
-  { label: "Compliance", href: "/compliance", icon: Shield, page: "compliance" },
   { label: "Asset Summary", href: "/reports/asset-summary", icon: FileText, page: "reports" },
   { label: "Asset Items Inventory", href: "/reports/asset-items-inventory", icon: FileText, page: "reports" },
   { label: "Assignment Summary", href: "/reports/assignment-summary", icon: FileText, page: "reports" },
@@ -86,25 +86,34 @@ const movableAssetsRootItem: NavItem = { label: "Movable Assets", href: "/assets
 const movableAssetsNavItems: NavItem[] = [
   { label: "Assets", href: "/assets", icon: Package, page: "assets" },
   { label: "Asset Items", href: "/asset-items", icon: PackageOpen, page: "asset-items" },
-  { label: "Assignments", href: "/assignments", icon: ClipboardList, page: "assignments" },
+  { label: "Transfers", href: "/transfers", icon: ArrowRightLeft, page: "transfers" },
+  { label: "Maintenance", href: "/maintenance", icon: Wrench, page: "maintenance" },
+];
+
+const employeeServicesRootItem: NavItem = {
+  label: "Employee Services",
+  href: "/assignments",
+  icon: ClipboardList,
+  page: "assignments",
+};
+const employeeServicesNavItems: NavItem[] = [
+  { label: "Assignment Records", href: "/assignments", icon: ClipboardList, page: "assignments" },
   { label: "Requisitions", href: "/requisitions", icon: ClipboardList, page: "requisitions" },
   { label: "New Requisition", href: "/requisitions/new", icon: ClipboardList, page: "requisitions-new" },
   { label: "Return Requests", href: "/returns", icon: ArrowRightLeft, page: "returns" },
   { label: "New Return Request", href: "/returns/new", icon: ArrowRightLeft, page: "returns-new" },
-  { label: "Transfers", href: "/transfers", icon: ArrowRightLeft, page: "transfers" },
-  { label: "Maintenance", href: "/maintenance", icon: Wrench, page: "maintenance" },
 ];
 
 
 const consumablesRootItem: NavItem = { label: "Consumables", href: "/consumables", icon: Layers, page: "consumables" };
 const consumableNavItems: NavItem[] = [
-  { label: "Master Register", href: "/consumables", icon: Layers, page: "consumables" },
-  { label: "Locations", href: "/consumables/locations", icon: MapPin, page: "consumables" },
+  { label: "Item Master", href: "/consumables", icon: Layers, page: "consumables" },
   { label: "Lot Receiving", href: "/consumables/receive", icon: PackageOpen, page: "consumables" },
-  { label: "Lots", href: "/consumables/lots", icon: PackageOpen, page: "consumables" },
+  { label: "Containers", href: "/consumables/containers", icon: PackageOpen, page: "consumables" },
   { label: "Units", href: "/consumables/units", icon: Ruler, page: "consumables" },
   { label: "Inventory", href: "/consumables/inventory", icon: Package, page: "consumables" },
   { label: "Transfers", href: "/consumables/transfers", icon: ArrowRightLeft, page: "consumables" },
+  { label: "Assignments", href: "/consumables/assignments", icon: ClipboardList, page: "consumables" },
   { label: "Consumption", href: "/consumables/consume", icon: ClipboardList, page: "consumables" },
   { label: "Adjustments", href: "/consumables/adjustments", icon: Wrench, page: "consumables" },
   { label: "Disposal", href: "/consumables/disposal", icon: Trash2, page: "consumables" },
@@ -132,15 +141,17 @@ export function Sidebar({ className }: SidebarProps) {
   const [movableOpen, setMovableOpen] = useState(
     location.pathname.startsWith("/assets") ||
       location.pathname.startsWith("/asset-items") ||
-      location.pathname.startsWith("/assignments") ||
-      location.pathname.startsWith("/requisitions") ||
-      location.pathname.startsWith("/returns") ||
       location.pathname.startsWith("/transfers") ||
       location.pathname.startsWith("/maintenance")
   );
+  const [employeeServicesOpen, setEmployeeServicesOpen] = useState(
+    location.pathname.startsWith("/assignments") ||
+      location.pathname.startsWith("/requisitions") ||
+      location.pathname.startsWith("/returns")
+  );
   const [consumablesOpen, setConsumablesOpen] = useState(location.pathname.startsWith("/consumables"));
   const [reportsOpen, setReportsOpen] = useState(
-    location.pathname.startsWith("/reports") || location.pathname.startsWith("/compliance")
+    location.pathname.startsWith("/reports")
   );
   const [authOpen, setAuthOpen] = useState(location.pathname.startsWith("/user-management") || location.pathname.startsWith("/user-activity") || location.pathname.startsWith("/user-permissions"));
   const [managementOpen, setManagementOpen] = useState(
@@ -175,7 +186,7 @@ export function Sidebar({ className }: SidebarProps) {
   }, [location.pathname]);
 
   useEffect(() => {
-    if (location.pathname.startsWith("/reports") || location.pathname.startsWith("/compliance")) {
+    if (location.pathname.startsWith("/reports")) {
       setReportsOpen(true);
     }
     if (
@@ -202,13 +213,17 @@ export function Sidebar({ className }: SidebarProps) {
     if (
       location.pathname.startsWith("/assets") ||
       location.pathname.startsWith("/asset-items") ||
-      location.pathname.startsWith("/assignments") ||
-      location.pathname.startsWith("/requisitions") ||
-      location.pathname.startsWith("/returns") ||
       location.pathname.startsWith("/transfers") ||
       location.pathname.startsWith("/maintenance")
   ) {
       setMovableOpen(true);
+    }
+    if (
+      location.pathname.startsWith("/assignments") ||
+      location.pathname.startsWith("/requisitions") ||
+      location.pathname.startsWith("/returns")
+    ) {
+      setEmployeeServicesOpen(true);
     }
     if (
       location.pathname.startsWith("/consumables")
@@ -221,6 +236,17 @@ export function Sidebar({ className }: SidebarProps) {
     return items.filter((item) => {
       return canAccessPage({ page: item.page, role, isOrgAdmin });
     });
+  };
+
+  const filterReportItems = (items: NavItem[]) => {
+    const base = filterItems(items);
+    if (role !== "employee") return base;
+    const employeeAllowed = new Set([
+      "/reports",
+      "/reports/assignment-summary",
+      "/reports/employee-assets",
+    ]);
+    return base.filter((item) => employeeAllowed.has(item.href));
   };
 
   const getUserInitials = () => {
@@ -331,20 +357,23 @@ export function Sidebar({ className }: SidebarProps) {
           {(() => {
             const items = filterItems(mainNavItems);
             const movableItems = filterItems(movableAssetsNavItems);
+            const employeeServiceItems = filterItems(employeeServicesNavItems);
             const consumableItems = filterItems(consumableNavItems);
             const showMovable = movableItems.length > 0;
+            const showEmployeeServices = employeeServiceItems.length > 0;
             const showConsumables = consumableItems.length > 0;
             const isMovableActive =
               location.pathname.startsWith("/assets") ||
               location.pathname.startsWith("/asset-items") ||
-              location.pathname.startsWith("/assignments") ||
-              location.pathname.startsWith("/requisitions") ||
-              location.pathname.startsWith("/returns") ||
               location.pathname.startsWith("/transfers") ||
               location.pathname.startsWith("/maintenance");
+            const isEmployeeServicesActive =
+              location.pathname.startsWith("/assignments") ||
+              location.pathname.startsWith("/requisitions") ||
+              location.pathname.startsWith("/returns");
             const isConsumablesActive =
       location.pathname.startsWith("/consumables");
-            if (items.length === 0 && !showMovable && !showConsumables) return null;
+            if (items.length === 0 && !showMovable && !showEmployeeServices && !showConsumables) return null;
             const dashboardItem = items.find((item) => item.href === "/");
             const remainingItems = items.filter((item) => item.href !== "/");
             return (
@@ -376,6 +405,32 @@ export function Sidebar({ className }: SidebarProps) {
                   </Collapsible>
                 )}
                 {showMovable && collapsed && <NavLink item={movableAssetsRootItem} />}
+                {showEmployeeServices && !collapsed && (
+                  <Collapsible open={employeeServicesOpen} onOpenChange={setEmployeeServicesOpen}>
+                    <CollapsibleTrigger asChild>
+                      <Button
+                        variant={isEmployeeServicesActive ? "secondary" : "ghost"}
+                        size="sm"
+                        className="w-full justify-start"
+                      >
+                        <ClipboardList className="mr-2 h-4 w-4 shrink-0" />
+                        <span className="truncate">Employee Services</span>
+                        <ChevronDown
+                          className={cn(
+                            "ml-auto h-4 w-4 transition-transform",
+                            employeeServicesOpen && "rotate-180"
+                          )}
+                        />
+                      </Button>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent className="mt-1 space-y-1">
+                      {employeeServiceItems.map((item) => (
+                        <NavLink key={item.href} item={item} className="pl-6" />
+                      ))}
+                    </CollapsibleContent>
+                  </Collapsible>
+                )}
+                {showEmployeeServices && collapsed && <NavLink item={employeeServicesRootItem} />}
                 {showConsumables && !collapsed && (
                   <Collapsible open={consumablesOpen} onOpenChange={setConsumablesOpen}>
                     <CollapsibleTrigger asChild>
@@ -457,17 +512,17 @@ export function Sidebar({ className }: SidebarProps) {
           {/* System */}
           {(() => {
             const items = filterItems(systemNavItems);
-            const reportItems = filterItems(reportNavItems);
+            const reportItems = filterReportItems(reportNavItems);
+            const showCompliance = canAccessPage({ page: complianceItem.page, role, isOrgAdmin });
             const showReports = reportItems.length > 0;
-            const isReportsActive =
-              location.pathname.startsWith("/reports") || location.pathname.startsWith("/compliance");
+            const isReportsActive = location.pathname.startsWith("/reports");
             const authItems = filterItems(authManagementNavItems);
             const showAuth = authItems.length > 0;
             const isAuthActive =
               location.pathname.startsWith("/user-management") ||
               location.pathname.startsWith("/user-activity") ||
               location.pathname.startsWith("/user-permissions");
-            if (items.length === 0 && !showReports) return null;
+            if (items.length === 0 && !showReports && !showAuth && !showCompliance) return null;
             return (
               <div className="space-y-1">
                 {!collapsed && (
@@ -527,6 +582,7 @@ export function Sidebar({ className }: SidebarProps) {
                   </Collapsible>
                 )}
                 {showReports && collapsed && <NavLink item={reportsRootItem} />}
+                {showCompliance && <NavLink item={complianceItem} />}
                 {items.map((item) => (
                   <NavLink key={item.href} item={item} />
                 ))}

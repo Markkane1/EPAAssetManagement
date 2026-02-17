@@ -26,7 +26,7 @@ const OfficeSchema = new Schema<any>(
     // Office classification (new canonical set)
     type: {
       type: String,
-      enum: ['DIRECTORATE', 'DISTRICT_OFFICE', 'DISTRICT_LAB'],
+      enum: ['HEAD_OFFICE', 'DIRECTORATE', 'DISTRICT_OFFICE', 'DISTRICT_LAB'],
       default: 'DISTRICT_OFFICE',
     },
     // Capability flags used for module filtering and enforcement

@@ -186,5 +186,39 @@ export const officeSubLocationController = {
       return next(error);
     }
   },
+  remove: async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      ensureWritePermission(req);
+      const user = req.user!;
+      const subLocationId = readParamId(req, 'id');
+      if (!Types.ObjectId.isValid(subLocationId)) {
+        throw createHttpError(400, 'id is invalid');
+      }
+
+      const existing = await OfficeSubLocationModel.findById(subLocationId);
+      if (!existing) {
+        throw createHttpError(404, 'Not found');
+      }
+
+      const officeId = existing.office_id ? String(existing.office_id) : null;
+      if (!officeId) {
+        throw createHttpError(400, 'Office is missing on sub-location');
+      }
+      if (!user.isOrgAdmin) {
+        if (!user.locationId) {
+          throw createHttpError(400, 'User is not assigned to an office');
+        }
+        if (officeId !== user.locationId) {
+          throw createHttpError(403, 'Access restricted to assigned office');
+        }
+      }
+
+      existing.is_active = false;
+      await existing.save();
+      return res.json(existing);
+    } catch (error) {
+      return next(error);
+    }
+  },
 };
 

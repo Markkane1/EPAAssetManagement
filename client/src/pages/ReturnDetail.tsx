@@ -90,7 +90,7 @@ export default function ReturnDetail() {
     currentStatus === ReturnRequestStatus.ClosedPendingSignature ||
     currentStatus === ReturnRequestStatus.Closed ||
     Boolean(returnRequest?.receipt_document_id);
-  const backPath = canIssuerAct ? "/returns" : "/assignments";
+  const backPath = canIssuerAct ? "/returns" : role === "employee" ? "/returns" : "/assignments";
 
   const employeeName = useMemo(() => {
     const employeeId = String(returnRequest?.employee_id || "");

@@ -40,11 +40,11 @@ function asId<T extends { id?: string; _id?: string }>(row: T): string {
 function isHqDirectorateOffice(officeId: string, offices: Office[]) {
   const office = offices.find((entry) => entry.id === officeId);
   if (!office) return false;
-  if (office.type === "DIRECTORATE") return true;
+  if (office.type === "HEAD_OFFICE" || office.type === "DIRECTORATE") return true;
   const parentId = office.parent_office_id;
   if (!parentId) return false;
   const parent = offices.find((entry) => entry.id === parentId);
-  return parent?.type === "DIRECTORATE";
+  return parent?.type === "HEAD_OFFICE" || parent?.type === "DIRECTORATE";
 }
 
 function buildApiUrl(path: string | null | undefined) {

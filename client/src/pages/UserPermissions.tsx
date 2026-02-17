@@ -45,6 +45,7 @@ import {
 import { toast } from "sonner";
 import { userService } from "@/services/userService";
 import { normalizeRole } from "@/services/authService";
+import { usePageSearch } from "@/contexts/PageSearchContext";
 
 // Define app pages/modules
 const appPages = [
@@ -79,35 +80,39 @@ interface UserRole {
   description: string;
   permissions: Record<string, PermissionType[]>;
   usersCount: number;
+  sourceRoles?: string[];
 }
 
 // Mock roles data
 const initialRoles: UserRole[] = [
   {
-    id: "org_admin",
+    id: "super_administrator",
     name: "Super Administrator",
     description: "Full access to all locations and features",
     usersCount: 0,
+    sourceRoles: ["org_admin"],
     permissions: appPages.reduce((acc, page) => {
       acc[page.id] = ["view", "create", "edit", "delete"];
       return acc;
     }, {} as Record<string, PermissionType[]>),
   },
   {
-    id: "org_admin",
+    id: "administrator",
     name: "Administrator",
     description: "Full access to all locations and features",
     usersCount: 0,
+    sourceRoles: ["org_admin"],
     permissions: appPages.reduce((acc, page) => {
       acc[page.id] = ["view", "create", "edit", "delete"];
       return acc;
     }, {} as Record<string, PermissionType[]>),
   },
   {
-    id: "office_head",
+    id: "location_head",
     name: "Location Admin",
     description: "Access to assets and consumables for a single location",
     usersCount: 0,
+    sourceRoles: ["office_head"],
     permissions: {
       dashboard: ["view"],
       assets: [],
@@ -132,10 +137,11 @@ const initialRoles: UserRole[] = [
     },
   },
   {
-    id: "employee",
+    id: "standard_user",
     name: "Standard User",
     description: "Basic view access with limited modifications",
     usersCount: 0,
+    sourceRoles: ["employee"],
     permissions: {
       dashboard: ["view"],
       assets: ["view"],
@@ -163,6 +169,7 @@ const initialRoles: UserRole[] = [
     name: "Employee",
     description: "View assigned assets and assignment history only",
     usersCount: 0,
+    sourceRoles: ["employee"],
     permissions: {
       dashboard: [],
       assets: [],
@@ -187,10 +194,11 @@ const initialRoles: UserRole[] = [
     },
   },
   {
-    id: "office_head",
+    id: "directorate_head",
     name: "Directorate Head",
     description: "View assignments for the entire directorate",
     usersCount: 0,
+    sourceRoles: ["office_head"],
     permissions: {
       dashboard: [],
       assets: [],
@@ -218,8 +226,9 @@ const initialRoles: UserRole[] = [
 
 export default function UserPermissions() {
   const [roles, setRoles] = useState<UserRole[]>(initialRoles);
-  const [selectedRole, setSelectedRole] = useState<string>("org_admin");
-  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedRole, setSelectedRole] = useState<string>("super_administrator");
+  const pageSearch = usePageSearch();
+  const searchQuery = pageSearch?.term || "";
   const [isAddRoleOpen, setIsAddRoleOpen] = useState(false);
   const [newRoleName, setNewRoleName] = useState("");
   const [newRoleDescription, setNewRoleDescription] = useState("");
@@ -242,7 +251,7 @@ export default function UserPermissions() {
     () =>
       roles.map((role) => ({
         ...role,
-        usersCount: roleCounts[role.id] || 0,
+        usersCount: (role.sourceRoles || [role.id]).reduce((total, roleKey) => total + (roleCounts[roleKey] || 0), 0),
       })),
     [roles, roleCounts],
   );
@@ -462,7 +471,7 @@ export default function UserPermissions() {
                   <Input
                     placeholder="Search pages..."
                     value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onChange={(e) => pageSearch?.setTerm(e.target.value)}
                     className="pl-10"
                   />
                 </div>

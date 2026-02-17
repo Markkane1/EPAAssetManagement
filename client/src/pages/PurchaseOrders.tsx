@@ -17,6 +17,7 @@ import { PurchaseOrder } from "@/types";
 import { usePurchaseOrders, useCreatePurchaseOrder, useUpdatePurchaseOrder, useDeletePurchaseOrder } from "@/hooks/usePurchaseOrders";
 import { useVendors } from "@/hooks/useVendors";
 import { useProjects } from "@/hooks/useProjects";
+import { useSchemes } from "@/hooks/useSchemes";
 import { PurchaseOrderFormModal } from "@/components/forms/PurchaseOrderFormModal";
 import { exportToCSV, exportToJSON, filterRowsBySearch, formatDateForExport, formatCurrencyForExport, pickExportFields } from "@/lib/exportUtils";
 import { usePageSearch } from "@/contexts/PageSearchContext";
@@ -25,6 +26,7 @@ export default function PurchaseOrders() {
   const { data: purchaseOrders, isLoading } = usePurchaseOrders();
   const { data: vendors } = useVendors();
   const { data: projects } = useProjects();
+  const { data: schemes } = useSchemes();
   const createPurchaseOrder = useCreatePurchaseOrder();
   const updatePurchaseOrder = useUpdatePurchaseOrder();
   const deletePurchaseOrder = useDeletePurchaseOrder();
@@ -36,10 +38,13 @@ export default function PurchaseOrders() {
   const orderList = purchaseOrders || [];
   const vendorList = vendors || [];
   const projectList = projects || [];
+  const schemeList = schemes || [];
 
   const enrichedOrders = orderList.map((order) => ({
     ...order,
     vendorName: vendorList.find((v) => v.id === order.vendor_id)?.name || "N/A",
+    projectName: projectList.find((project) => project.id === order.project_id)?.name || "N/A",
+    schemeName: schemeList.find((scheme) => (scheme.id || scheme._id) === order.scheme_id)?.name || "N/A",
   }));
 
   const columns = [
@@ -52,10 +57,19 @@ export default function PurchaseOrders() {
     },
     {
       key: "vendorName",
-      label: "Vendor",
-      render: (value: string) => (
-        <span className="font-medium">{value}</span>
+      label: "Vendor / Project",
+      render: (value: string, row: PurchaseOrder & { projectName?: string; schemeName?: string }) => (
+        <span className="font-medium">
+          {row.source_type === "project"
+            ? `${row.projectName || "N/A"}${row.schemeName && row.schemeName !== "N/A" ? ` / ${row.schemeName}` : ""}`
+            : value}
+        </span>
       ),
+    },
+    {
+      key: "source_name",
+      label: "Procurement / Project Name",
+      render: (value: string) => <span className="font-medium">{value || "N/A"}</span>,
     },
     {
       key: "order_date",
@@ -63,10 +77,24 @@ export default function PurchaseOrders() {
       render: (value: string) => new Date(value).toLocaleDateString(),
     },
     {
+      key: "unit_price",
+      label: "Unit Price",
+      render: (value: number) => <span>PKR {Number(value || 0).toLocaleString("en-PK")}</span>,
+    },
+    {
       key: "total_amount",
       label: "Total Amount",
       render: (value: number) => (
         <span className="font-medium">PKR {value?.toLocaleString("en-PK") || 0}</span>
+      ),
+    },
+    {
+      key: "tax_amount",
+      label: "Tax",
+      render: (_: number, row: PurchaseOrder) => (
+        <span>
+          {Number(row.tax_percentage || 0).toFixed(2)}% (PKR {Number(row.tax_amount || 0).toLocaleString("en-PK")})
+        </span>
       ),
     },
     {
@@ -152,9 +180,14 @@ export default function PurchaseOrders() {
   const handleExportCSV = () => {
     exportToCSV(filteredOrders as any, [
       { key: "order_number", header: "Order Number" },
-      { key: "vendorName", header: "Vendor" },
+      { key: "source_type", header: "Source Type" },
+      { key: "source_name", header: "Source Name" },
+      { key: "vendorName", header: "Vendor / Project" },
       { key: "order_date", header: "Order Date", formatter: (v) => formatDateForExport(v as Date) },
+      { key: "unit_price", header: "Unit Price", formatter: (v) => formatCurrencyForExport(v as number) },
       { key: "total_amount", header: "Total Amount", formatter: (v) => formatCurrencyForExport(v as number) },
+      { key: "tax_percentage", header: "Tax %" },
+      { key: "tax_amount", header: "Tax Amount", formatter: (v) => formatCurrencyForExport(v as number) },
       { key: "status", header: "Status" },
       { key: "notes", header: "Notes" },
     ], "purchase-orders");
@@ -164,9 +197,14 @@ export default function PurchaseOrders() {
     exportToJSON(
       pickExportFields(filteredOrders as any, [
         "order_number",
+        "source_type",
+        "source_name",
         "vendorName",
         "order_date",
+        "unit_price",
         "total_amount",
+        "tax_percentage",
+        "tax_amount",
         "status",
         "notes",
       ]),
@@ -199,6 +237,7 @@ export default function PurchaseOrders() {
         purchaseOrder={editingOrder}
         vendors={vendorList}
         projects={projectList}
+        schemes={schemeList}
         onSubmit={handleSubmit}
       />
     </MainLayout>

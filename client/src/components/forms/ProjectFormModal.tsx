@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -22,7 +22,33 @@ const projectSchema = z.object({
   code: z.string().min(1, "Code is required").max(20),
   description: z.string().max(500).optional(),
   startDate: z.string().min(1, "Start date is required"),
-  endDate: z.string().optional(),
+  endDate: z.string().min(1, "End date is required"),
+}).superRefine((data, ctx) => {
+  const start = new Date(data.startDate);
+  const end = new Date(data.endDate);
+  if (Number.isNaN(start.getTime())) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["startDate"],
+      message: "Start date is invalid",
+    });
+    return;
+  }
+  if (Number.isNaN(end.getTime())) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["endDate"],
+      message: "End date is invalid",
+    });
+    return;
+  }
+  if (start >= end) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["endDate"],
+      message: "End date must be later than start date",
+    });
+  }
 });
 
 type ProjectFormData = z.infer<typeof projectSchema>;
@@ -37,6 +63,11 @@ interface ProjectFormModalProps {
 export function ProjectFormModal({ open, onOpenChange, project, onSubmit }: ProjectFormModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const isEditing = !!project;
+  const defaultEndDate = useMemo(() => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    return tomorrow.toISOString().split("T")[0];
+  }, []);
 
   const form = useForm<ProjectFormData>({
     resolver: zodResolver(projectSchema),
@@ -64,10 +95,10 @@ export function ProjectFormModal({ open, onOpenChange, project, onSubmit }: Proj
         code: "",
         description: "",
         startDate: new Date().toISOString().split('T')[0],
-        endDate: "",
+        endDate: defaultEndDate,
       });
     }
-  }, [project, form]);
+  }, [project, form, defaultEndDate]);
 
   const handleSubmit = async (data: ProjectFormData) => {
     setIsSubmitting(true);
@@ -119,8 +150,11 @@ export function ProjectFormModal({ open, onOpenChange, project, onSubmit }: Proj
               )}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="endDate">End Date</Label>
+              <Label htmlFor="endDate">End Date *</Label>
               <Input id="endDate" type="date" {...form.register("endDate")} />
+              {form.formState.errors.endDate && (
+                <p className="text-sm text-destructive">{form.formState.errors.endDate.message}</p>
+              )}
             </div>
           </div>
           <DialogFooter>

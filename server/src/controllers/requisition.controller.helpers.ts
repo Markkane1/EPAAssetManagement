@@ -175,11 +175,11 @@ async function isHqDirectorateOffice(officeId: string) {
     parent_office_id: 1,
   }).lean();
   if (!office) throw createHttpError(404, 'Office not found');
-  if (office.type === 'DIRECTORATE') return true;
+  if (office.type === 'HEAD_OFFICE' || office.type === 'DIRECTORATE') return true;
   const parentOfficeId = office.parent_office_id;
   if (!parentOfficeId) return false;
   const parent: any = await OfficeModel.findById(parentOfficeId, { type: 1 }).lean();
-  return parent?.type === 'DIRECTORATE';
+  return parent?.type === 'HEAD_OFFICE' || parent?.type === 'DIRECTORATE';
 }
 
 function parseVerifyDecision(raw: unknown) {

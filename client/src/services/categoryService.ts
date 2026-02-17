@@ -1,22 +1,36 @@
 import api from '@/lib/api';
-import { Category } from '@/types';
+import { Category, CategoryAssetType, CategoryScope } from '@/types';
 
 const LIST_LIMIT = 1000;
+
+export interface CategoryListParams {
+  scope?: CategoryScope;
+  assetType?: CategoryAssetType;
+  search?: string;
+}
 
 export interface CategoryCreateDto {
   name: string;
   description?: string;
-  scope?: 'GENERAL' | 'LAB_ONLY';
+  scope?: CategoryScope;
+  assetType?: CategoryAssetType;
 }
 
 export interface CategoryUpdateDto {
   name?: string;
   description?: string;
-  scope?: 'GENERAL' | 'LAB_ONLY';
+  scope?: CategoryScope;
+  assetType?: CategoryAssetType;
 }
 
 export const categoryService = {
-  getAll: () => api.get<Category[]>(`/categories?limit=${LIST_LIMIT}`),
+  getAll: (params?: CategoryListParams) => {
+    const query = new URLSearchParams({ limit: String(LIST_LIMIT) });
+    if (params?.scope) query.set('scope', params.scope);
+    if (params?.assetType) query.set('assetType', params.assetType);
+    if (params?.search?.trim()) query.set('search', params.search.trim());
+    return api.get<Category[]>(`/categories?${query.toString()}`);
+  },
   
   getById: (id: string) => api.get<Category>(`/categories/${id}`),
   

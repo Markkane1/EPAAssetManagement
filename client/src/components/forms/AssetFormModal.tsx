@@ -116,6 +116,25 @@ function hasDimensionValues(dimensions?: Asset["dimensions"] | null) {
   return dimensions.length != null || dimensions.width != null || dimensions.height != null;
 }
 
+function getEntityId(value: unknown): string {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "object") {
+    const record = value as { id?: unknown; _id?: unknown; toString?: () => string };
+    if (typeof record.id === "string") return record.id;
+    if (typeof record._id === "string") return record._id;
+    if (record._id && typeof record._id === "object" && "toString" in (record._id as object)) {
+      const parsed = String(record._id);
+      if (parsed && parsed !== "[object Object]") return parsed;
+    }
+    if (typeof record.toString === "function") {
+      const parsed = record.toString();
+      if (parsed && parsed !== "[object Object]") return parsed;
+    }
+  }
+  return "";
+}
+
 function isPdfAttachment(file: File) {
   if (file.type === "application/pdf") return true;
   return /\.pdf$/i.test(file.name);
@@ -205,7 +224,7 @@ export function AssetFormModal({ open, onOpenChange, asset, categories, vendors,
   const selectedProjectId = form.watch("projectId");
   const attachmentLabel = selectedSource === "project" ? "Project Handover Documentation" : "Invoice";
   const filteredSchemes = selectedProjectId
-    ? schemes.filter((scheme) => scheme.project_id === selectedProjectId)
+    ? schemes.filter((scheme) => getEntityId(scheme.project_id) === selectedProjectId)
     : [];
 
   const handleAttachmentChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -333,12 +352,14 @@ export function AssetFormModal({ open, onOpenChange, asset, categories, vendors,
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Category *</Label>
-              <Select value={form.watch("categoryId")} onValueChange={(v) => form.setValue("categoryId", v)}>
+              <Select value={form.watch("categoryId") || undefined} onValueChange={(v) => form.setValue("categoryId", v)}>
                 <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
                 <SelectContent>
-                  {categories.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                  ))}
+                  {categories.map((c) => {
+                    const id = getEntityId(c);
+                    if (!id) return null;
+                    return <SelectItem key={id} value={id}>{c.name}</SelectItem>;
+                  })}
                 </SelectContent>
               </Select>
               {form.formState.errors.categoryId && (
@@ -377,9 +398,11 @@ export function AssetFormModal({ open, onOpenChange, asset, categories, vendors,
                   <SelectTrigger><SelectValue placeholder="Select vendor" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">Select vendor</SelectItem>
-                    {vendors.map((v) => (
-                      <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>
-                    ))}
+                    {vendors.map((v) => {
+                      const id = getEntityId(v);
+                      if (!id) return null;
+                      return <SelectItem key={id} value={id}>{v.name}</SelectItem>;
+                    })}
                   </SelectContent>
                 </Select>
                 {form.formState.errors.vendorId && (
@@ -399,7 +422,7 @@ export function AssetFormModal({ open, onOpenChange, asset, categories, vendors,
               <div className="space-y-2">
                 <Label>Project *</Label>
                 <Select
-                  value={selectedProjectId || ""}
+                  value={selectedProjectId || undefined}
                   onValueChange={(v) => {
                     form.setValue("projectId", v);
                     form.setValue("schemeId", "");
@@ -407,9 +430,11 @@ export function AssetFormModal({ open, onOpenChange, asset, categories, vendors,
                 >
                   <SelectTrigger><SelectValue placeholder="Select project" /></SelectTrigger>
                   <SelectContent>
-                    {projects.map((p) => (
-                      <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                    ))}
+                    {projects.map((p) => {
+                      const id = getEntityId(p);
+                      if (!id) return null;
+                      return <SelectItem key={id} value={id}>{p.name}</SelectItem>;
+                    })}
                   </SelectContent>
                 </Select>
                 {form.formState.errors.projectId && (
@@ -419,7 +444,7 @@ export function AssetFormModal({ open, onOpenChange, asset, categories, vendors,
               <div className="space-y-2">
                 <Label>Scheme *</Label>
                 <Select
-                  value={form.watch("schemeId") || ""}
+                  value={form.watch("schemeId") || undefined}
                   onValueChange={(v) => form.setValue("schemeId", v)}
                   disabled={!selectedProjectId}
                 >
@@ -430,9 +455,11 @@ export function AssetFormModal({ open, onOpenChange, asset, categories, vendors,
                         No schemes found
                       </div>
                     ) : (
-                      filteredSchemes.map((scheme) => (
-                        <SelectItem key={scheme.id} value={scheme.id}>{scheme.name}</SelectItem>
-                      ))
+                      filteredSchemes.map((scheme) => {
+                        const id = getEntityId(scheme);
+                        if (!id) return null;
+                        return <SelectItem key={id} value={id}>{scheme.name}</SelectItem>;
+                      })
                     )}
                   </SelectContent>
                 </Select>

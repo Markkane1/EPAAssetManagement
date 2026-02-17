@@ -39,11 +39,10 @@ import {
 import { format } from "date-fns";
 import { 
   getAuditLogs,
-  type AuditLogEntry,
   type AuditAction,
-  type AuditCategory 
 } from "@/lib/auditLog";
 import { exportToCSV, exportToJSON } from "@/lib/exportUtils";
+import { usePageSearch } from "@/contexts/PageSearchContext";
 
 const actionIcons: Record<AuditAction, React.ReactNode> = {
   LOGIN_SUCCESS: <LogIn className="h-4 w-4 text-primary" />,
@@ -72,7 +71,8 @@ const actionLabels: Record<AuditAction, string> = {
 };
 
 export default function AuditLogs() {
-  const [searchQuery, setSearchQuery] = useState("");
+  const pageSearch = usePageSearch();
+  const searchQuery = pageSearch?.term || "";
   const [actionFilter, setActionFilter] = useState<string>("all");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -235,7 +235,7 @@ export default function AuditLogs() {
                 <Input
                   placeholder="Search logs..."
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={(e) => pageSearch?.setTerm(e.target.value)}
                   className="pl-10"
                 />
               </div>

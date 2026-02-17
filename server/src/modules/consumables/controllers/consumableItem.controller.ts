@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { ConsumableItemModel } from '../models/consumableItem.model';
+import { CategoryModel } from '../../../models/category.model';
 import { mapFields, pickDefined } from '../../../utils/mapFields';
 import type { AuthRequest } from '../../../middleware/auth';
 import { createHttpError } from '../utils/httpError';
@@ -48,6 +49,18 @@ function buildPayload(body: Record<string, unknown>) {
   return pickDefined(payload);
 }
 
+async function ensureConsumableCategoryType(categoryId: unknown) {
+  if (!categoryId) return;
+  const category = await CategoryModel.findById(categoryId, { asset_type: 1 }).lean();
+  if (!category) {
+    throw createHttpError(400, 'Selected category does not exist');
+  }
+  const categoryAssetType = String((category as Record<string, unknown>).asset_type || 'ASSET').toUpperCase();
+  if (categoryAssetType !== 'CONSUMABLE') {
+    throw createHttpError(400, 'Selected category is not valid for consumables');
+  }
+}
+
 export const consumableItemController = {
   list: async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -83,6 +96,7 @@ export const consumableItemController = {
   create: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const payload = buildPayload(req.body);
+      await ensureConsumableCategoryType(payload.category_id);
       if (payload.base_uom) {
         const lookup = await getUnitLookup({ activeOnly: true });
         payload.base_uom = normalizeUom(String(payload.base_uom), lookup);
@@ -101,6 +115,9 @@ export const consumableItemController = {
   update: async (req: Request, res: Response, next: NextFunction) => {
     try {
       const payload = buildPayload(req.body);
+      if (payload.category_id !== undefined) {
+        await ensureConsumableCategoryType(payload.category_id);
+      }
       if (payload.base_uom) {
         const lookup = await getUnitLookup({ activeOnly: true });
         payload.base_uom = normalizeUom(String(payload.base_uom), lookup);

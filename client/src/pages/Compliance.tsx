@@ -14,6 +14,7 @@ import { reportService } from "@/services/reportService";
 import { useLocations } from "@/hooks/useLocations";
 import { useAuth } from "@/contexts/AuthContext";
 import { isHeadOfficeLocation } from "@/lib/locationUtils";
+import { usePageSearch } from "@/contexts/PageSearchContext";
 
 type ComplianceIssue = {
   type: "REQUISITION" | "RETURN_REQUEST";
@@ -30,6 +31,8 @@ type ComplianceIssue = {
 export default function Compliance() {
   const navigate = useNavigate();
   const { isOrgAdmin, locationId } = useAuth();
+  const pageSearch = usePageSearch();
+  const searchTerm = (pageSearch?.term || "").trim().toLowerCase();
   const { data: locations } = useLocations();
   const locationList = useMemo(() => locations || [], [locations]);
 
@@ -80,24 +83,40 @@ export default function Compliance() {
     () =>
       (query.data?.items || [])
         .filter((item): item is ComplianceIssue => item.type === "REQUISITION")
+        .filter((item) => {
+          if (!searchTerm) return true;
+          const officeName = officeNameById.get(String(item.office_id || "")) || "";
+          return [item.id, item.file_number, officeName, item.status]
+            .join(" ")
+            .toLowerCase()
+            .includes(searchTerm);
+        })
         .sort(
           (a, b) =>
             new Date(String(b.created_at || 0)).getTime() -
             new Date(String(a.created_at || 0)).getTime()
         ),
-    [query.data?.items]
+    [officeNameById, query.data?.items, searchTerm]
   );
 
   const returnRows = useMemo(
     () =>
       (query.data?.items || [])
         .filter((item): item is ComplianceIssue => item.type === "RETURN_REQUEST")
+        .filter((item) => {
+          if (!searchTerm) return true;
+          const officeName = officeNameById.get(String(item.office_id || "")) || "";
+          return [item.id, item.file_number, officeName, item.status]
+            .join(" ")
+            .toLowerCase()
+            .includes(searchTerm);
+        })
         .sort(
           (a, b) =>
             new Date(String(b.created_at || 0)).getTime() -
             new Date(String(a.created_at || 0)).getTime()
         ),
-    [query.data?.items]
+    [officeNameById, query.data?.items, searchTerm]
   );
 
   if (query.isLoading) {

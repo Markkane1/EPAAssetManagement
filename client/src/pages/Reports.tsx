@@ -30,6 +30,11 @@ import { isHeadOfficeLocation } from "@/lib/locationUtils";
 import { DateRangeFilter } from "@/components/reports/DateRangeFilter";
 import { filterByDateRange, generateReportPDF, getDateRangeText } from "@/lib/reporting";
 import { getOfficeHolderId, isStoreHolder } from "@/lib/assetItemHolder";
+import { usePageSearch } from "@/contexts/PageSearchContext";
+import { ViewModeToggle } from "@/components/shared/ViewModeToggle";
+import { useViewMode } from "@/hooks/useViewMode";
+import { DataTable } from "@/components/shared/DataTable";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface ReportCard {
   id: string;
@@ -106,19 +111,34 @@ const categoryColors: Record<string, string> = {
   Inventory: "bg-accent text-accent-foreground",
 };
 
+const EMPLOYEE_REPORT_IDS = new Set(["assignment-summary", "employee-assets"]);
+
 export default function Reports() {
+  const { role, user } = useAuth();
   const [generatingReport, setGeneratingReport] = useState<string | null>(null);
   const [startDate, setStartDate] = useState<Date | undefined>(undefined);
   const [endDate, setEndDate] = useState<Date | undefined>(undefined);
+  const { mode: viewMode, setMode: setViewMode } = useViewMode("reports");
+  const pageSearch = usePageSearch();
+  const searchTerm = (pageSearch?.term || "").trim().toLowerCase();
+  const isEmployeeRole = role === "employee";
   
   const { data: assets } = useAssets();
   const { data: assetItems } = useAssetItems();
   const { data: locations } = useLocations();
-  const { data: categories } = useCategories();
+  const { data: categories } = useCategories({ assetType: "ASSET" });
   const { data: employees } = useEmployees();
   const { data: assignments } = useAssignments();
   const { data: maintenance } = useMaintenance();
   const { data: directorates } = useDirectorates();
+  const currentEmployee = useMemo(() => {
+    const list = employees || [];
+    const byUserId = list.find((employee) => employee.user_id === user?.id);
+    const byEmail = list.find(
+      (employee) => employee.email?.toLowerCase() === (user?.email || "").toLowerCase()
+    );
+    return byUserId || byEmail || null;
+  }, [employees, user?.id, user?.email]);
 
   const categoryById = useMemo(
     () => new Map((categories || []).map((category) => [category.id, category])),
@@ -172,6 +192,11 @@ export default function Reports() {
   }, [directorateById, employeeById, locationById]);
 
   const handleGenerateReport = async (reportId: string, reportTitle: string, exportType: "csv" | "pdf") => {
+    if (isEmployeeRole && !EMPLOYEE_REPORT_IDS.has(reportId)) {
+      toast.error("You can only generate your own assignment reports.");
+      return;
+    }
+
     setGeneratingReport(`${reportId}-${exportType}`);
     
     try {
@@ -335,13 +360,17 @@ export default function Reports() {
   };
 
   const generateAssignmentSummaryReport = (exportType: "csv" | "pdf") => {
-    const filteredAssignments = filterByDateRange(assignments, "assigned_date", startDate, endDate);
-    if (!filteredAssignments || filteredAssignments.length === 0) {
+    const filteredAssignments = filterByDateRange(assignments, "assigned_date", startDate, endDate) || [];
+    const scopedAssignments = isEmployeeRole
+      ? filteredAssignments.filter((assignment) => assignment.employee_id === currentEmployee?.id)
+      : filteredAssignments;
+
+    if (scopedAssignments.length === 0) {
       toast.error("No assignment data available for selected date range");
       return;
     }
 
-    const reportData = filteredAssignments.map(assignment => {
+    const reportData = scopedAssignments.map(assignment => {
       const employee = employeeById.get(assignment.employee_id || "");
       const assetItem = assetItemsById.get(assignment.asset_item_id || "");
       const asset = assetItem ? assetById.get(assetItem.asset_id) : null;
@@ -726,7 +755,13 @@ export default function Reports() {
       assetTags: string;
     }> = [];
 
-    employees.forEach(employee => {
+    const scopedEmployees = isEmployeeRole ? (currentEmployee ? [currentEmployee] : []) : employees;
+    if (scopedEmployees.length === 0) {
+      toast.error("Your account is not linked to an employee profile.");
+      return;
+    }
+
+    scopedEmployees.forEach(employee => {
       const directorateName = getDirectorateName(employee.id);
       const employeeAssignments = activeAssignmentsByEmployeeId.get(employee.id) || [];
       
@@ -778,12 +813,73 @@ export default function Reports() {
     setStartDate(undefined);
     setEndDate(undefined);
   };
+  const filteredReports = useMemo(
+    () =>
+      reports
+        .filter((report) => (isEmployeeRole ? EMPLOYEE_REPORT_IDS.has(report.id) : true))
+        .filter((report) => {
+        if (!searchTerm) return true;
+        return [report.title, report.description, report.category]
+          .join(" ")
+          .toLowerCase()
+          .includes(searchTerm);
+      }),
+    [isEmployeeRole, searchTerm]
+  );
+
+  const columns = [
+    {
+      key: "title",
+      label: "Report",
+      render: (value: string, row: ReportCard) => (
+        <div>
+          <p className="font-medium">{value}</p>
+          <p className="text-xs text-muted-foreground">{row.description}</p>
+        </div>
+      ),
+    },
+    { key: "category", label: "Category" },
+  ];
+
+  const actions = (row: ReportCard) => {
+    const isGeneratingCSV = generatingReport === `${row.id}-csv`;
+    const isGeneratingPDF = generatingReport === `${row.id}-pdf`;
+    return (
+      <div className="flex gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-2"
+          onClick={() => handleGenerateReport(row.id, row.title, "csv")}
+          disabled={isGeneratingCSV || isGeneratingPDF}
+        >
+          {isGeneratingCSV ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+          CSV
+        </Button>
+        <Button
+          variant="default"
+          size="sm"
+          className="gap-2"
+          onClick={() => handleGenerateReport(row.id, row.title, "pdf")}
+          disabled={isGeneratingCSV || isGeneratingPDF}
+        >
+          {isGeneratingPDF ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
+          PDF
+        </Button>
+      </div>
+    );
+  };
 
   return (
     <MainLayout title="Reports" description="Generate and view reports">
       <PageHeader
         title="Reports"
-        description="Generate detailed reports for assets, assignments, and financials"
+        description={
+          isEmployeeRole
+            ? "Generate reports for your own assignments and asset history"
+            : "Generate detailed reports for assets, assignments, and financials"
+        }
+        extra={<ViewModeToggle mode={viewMode} onModeChange={setViewMode} />}
       />
 
       <DateRangeFilter
@@ -795,62 +891,81 @@ export default function Reports() {
         rangeText={getDateRangeText(startDate, endDate)}
       />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-        {reports.map((report) => {
-          const Icon = report.icon;
-          const isGeneratingCSV = generatingReport === `${report.id}-csv`;
-          const isGeneratingPDF = generatingReport === `${report.id}-pdf`;
-          
-          return (
-            <Card key={report.id} className="group hover:shadow-md transition-all">
-              <CardHeader className="pb-3">
-                <div className="flex items-start justify-between">
-                  <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${categoryColors[report.category]}`}>
-                    <Icon className="h-5 w-5" />
-                  </div>
-                  <span className="text-xs font-medium text-muted-foreground">
-                    {report.category}
-                  </span>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <h3 className="font-semibold mb-1">{report.title}</h3>
-                <p className="text-sm text-muted-foreground mb-4">
-                  {report.description}
-                </p>
-                <div className="flex gap-2">
-                  <Button 
-                    variant="outline" 
-                    className="flex-1 gap-2"
-                    onClick={() => handleGenerateReport(report.id, report.title, "csv")}
-                    disabled={isGeneratingCSV || isGeneratingPDF}
-                  >
-                    {isGeneratingCSV ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Download className="h-4 w-4" />
-                    )}
-                    CSV
-                  </Button>
-                  <Button 
-                    variant="default" 
-                    className="flex-1 gap-2"
-                    onClick={() => handleGenerateReport(report.id, report.title, "pdf")}
-                    disabled={isGeneratingCSV || isGeneratingPDF}
-                  >
-                    {isGeneratingPDF ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <FileDown className="h-4 w-4" />
-                    )}
-                    PDF
-                  </Button>
-                </div>
+      {viewMode === "list" ? (
+        <DataTable
+          columns={columns}
+          data={filteredReports}
+          searchable={false}
+          useGlobalPageSearch={false}
+          actions={actions}
+        />
+      ) : (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {filteredReports.map((report) => {
+              const Icon = report.icon;
+              const isGeneratingCSV = generatingReport === `${report.id}-csv`;
+              const isGeneratingPDF = generatingReport === `${report.id}-pdf`;
+
+              return (
+                <Card key={report.id} className="group hover:shadow-md transition-all">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-start justify-between">
+                      <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${categoryColors[report.category]}`}>
+                        <Icon className="h-5 w-5" />
+                      </div>
+                      <span className="text-xs font-medium text-muted-foreground">
+                        {report.category}
+                      </span>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <h3 className="font-semibold mb-1">{report.title}</h3>
+                    <p className="text-sm text-muted-foreground mb-4">
+                      {report.description}
+                    </p>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        className="flex-1 gap-2"
+                        onClick={() => handleGenerateReport(report.id, report.title, "csv")}
+                        disabled={isGeneratingCSV || isGeneratingPDF}
+                      >
+                        {isGeneratingCSV ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Download className="h-4 w-4" />
+                        )}
+                        CSV
+                      </Button>
+                      <Button
+                        variant="default"
+                        className="flex-1 gap-2"
+                        onClick={() => handleGenerateReport(report.id, report.title, "pdf")}
+                        disabled={isGeneratingCSV || isGeneratingPDF}
+                      >
+                        {isGeneratingPDF ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <FileDown className="h-4 w-4" />
+                        )}
+                        PDF
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+          {filteredReports.length === 0 && (
+            <Card>
+              <CardContent className="py-8 text-sm text-muted-foreground">
+                No reports found.
               </CardContent>
             </Card>
-          );
-        })}
-      </div>
+          )}
+        </>
+      )}
     </MainLayout>
   );
 }

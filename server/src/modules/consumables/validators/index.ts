@@ -1,9 +1,10 @@
 import { z } from 'zod';
 const objectId = z.string().regex(/^[a-f\d]{24}$/i, 'Invalid id');
+const holderId = z.string().min(1).max(64);
 const uomSchema = z.string().min(1).max(32);
 const boolOptional = z.boolean().optional();
 const unitGroupSchema = z.enum(['mass', 'volume', 'count']);
-const holderTypeSchema = z.enum(['OFFICE', 'STORE']);
+const holderTypeSchema = z.enum(['OFFICE', 'STORE', 'EMPLOYEE', 'SUB_LOCATION']);
 const qty2dpSchema = z.coerce
   .number()
   .refine((value) => Number.isFinite(value), 'Quantity must be a valid number')
@@ -43,43 +44,17 @@ export const consumableUnitQuerySchema = z.object({
   group: unitGroupSchema.optional(),
 });
 
-export const consumableSupplierCreateSchema = z.object({
-  name: z.string().min(1).max(120),
-  contactName: z.string().max(120).optional(),
-  email: z.string().email().optional(),
-  phone: z.string().max(64).optional(),
-  address: z.string().max(200).optional(),
-  notes: z.string().max(500).optional(),
-});
-
-export const consumableSupplierUpdateSchema = consumableSupplierCreateSchema.partial();
-
 const lotDocsSchema = z.object({
   sdsUrl: z.string().url().optional(),
   coaUrl: z.string().url().optional(),
   invoiceUrl: z.string().url().optional(),
 }).partial();
 
-export const consumableLotReceiveSchema = z.object({
-  consumable_id: objectId,
-  holder_type: z.enum(['STORE', 'OFFICE']),
-  holder_id: objectId,
-  batch_no: z.string().min(1).max(120),
-  expiry_date: z.string().min(1),
-  qty_received: qty2dpSchema,
-  notes: z.string().max(500).optional(),
-  document_id: objectId.optional(),
-});
-
-export const consumableLotCreateSchema = consumableLotReceiveSchema;
-export const consumableLotUpdateSchema = consumableLotReceiveSchema.partial();
-
 export const consumableLotQuerySchema = z.object({
-  holder_type: z.enum(['STORE', 'OFFICE']).optional(),
-  holder_id: objectId.optional(),
+  holder_type: z.enum(['STORE', 'OFFICE', 'EMPLOYEE', 'SUB_LOCATION']).optional(),
+  holder_id: holderId.optional(),
   consumable_id: objectId.optional(),
   include_zero: z.string().optional(),
-  supplier_id: objectId.optional(),
   batch_no: z.string().max(120).optional(),
   limit: z.string().optional(),
   page: z.string().optional(),
@@ -162,35 +137,45 @@ export const consumableContainerCreateSchema = z.object({
 
 export const consumableContainerUpdateSchema = consumableContainerCreateSchema.partial();
 
-export const consumableLocationCreateSchema = z.object({
-  name: z.string().min(1).max(120),
-  division: z.string().max(120).optional(),
-  district: z.string().max(120).optional(),
-  address: z.string().max(200).optional(),
-  contactNumber: z.string().max(64).optional(),
-  type: z.enum(['DIRECTORATE', 'DISTRICT_OFFICE', 'DISTRICT_LAB']).optional(),
-  parentOfficeId: objectId.optional(),
-  isActive: z.boolean().optional(),
-  capabilities: z.object({
-    moveables: z.boolean().optional(),
-    consumables: z.boolean().optional(),
-    chemicals: z.boolean().optional(),
-  }).optional(),
-});
-
-export const consumableLocationUpdateSchema = consumableLocationCreateSchema.partial();
-
 export const receiveSchema = z.object({
   holderType: holderTypeSchema.optional(),
-  holderId: objectId.optional(),
+  holderId: holderId.optional(),
+  categoryId: objectId,
   itemId: objectId,
   lotId: objectId.optional(),
   lot: z.object({
     lotNumber: z.string().min(1).max(120),
     receivedDate: z.string().min(1),
     expiryDate: z.string().optional(),
-    supplierId: objectId.optional(),
+    source: z.enum(['procurement', 'project']),
+    vendorId: objectId.optional(),
+    projectId: objectId.optional(),
+    schemeId: objectId.optional(),
     docs: lotDocsSchema.optional(),
+  }).superRefine((lot, ctx) => {
+    if (lot.source === 'procurement' && !lot.vendorId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['vendorId'],
+        message: 'vendorId is required for procurement source',
+      });
+    }
+    if (lot.source === 'project') {
+      if (!lot.projectId) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['projectId'],
+          message: 'projectId is required for project source',
+        });
+      }
+      if (!lot.schemeId) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['schemeId'],
+          message: 'schemeId is required for project source',
+        });
+      }
+    }
   }).optional(),
   qty: z.coerce.number().positive(),
   uom: uomSchema,
@@ -206,9 +191,9 @@ export const receiveSchema = z.object({
 
 export const transferSchema = z.object({
   fromHolderType: holderTypeSchema.optional(),
-  fromHolderId: objectId,
+  fromHolderId: holderId,
   toHolderType: holderTypeSchema.optional(),
-  toHolderId: objectId,
+  toHolderId: holderId,
   itemId: objectId,
   lotId: objectId.optional(),
   containerId: objectId.optional(),
@@ -223,14 +208,14 @@ export const transferSchema = z.object({
 
 export const consumeSchema = z.object({
   holderType: holderTypeSchema.optional(),
-  holderId: objectId,
+  holderId: holderId,
   itemId: objectId,
   lotId: objectId.optional(),
   containerId: objectId.optional(),
   qty: z.coerce.number().positive(),
   uom: uomSchema,
   reference: z.string().max(120).optional(),
-  notes: z.string().max(500).optional(),
+  notes: z.string().min(1, 'notes is required').max(500),
   metadata: z.record(z.any()).optional(),
   allowNegative: z.boolean().optional(),
   overrideNote: z.string().max(500).optional(),
@@ -238,7 +223,7 @@ export const consumeSchema = z.object({
 
 export const adjustSchema = z.object({
   holderType: holderTypeSchema.optional(),
-  holderId: objectId,
+  holderId: holderId,
   itemId: objectId,
   lotId: objectId.optional(),
   containerId: objectId.optional(),
@@ -255,7 +240,7 @@ export const adjustSchema = z.object({
 
 export const disposeSchema = z.object({
   holderType: holderTypeSchema.optional(),
-  holderId: objectId,
+  holderId: holderId,
   itemId: objectId,
   lotId: objectId.optional(),
   containerId: objectId.optional(),
@@ -271,9 +256,9 @@ export const disposeSchema = z.object({
 
 export const returnSchema = z.object({
   fromHolderType: holderTypeSchema.optional(),
-  fromHolderId: objectId,
+  fromHolderId: holderId,
   toHolderType: holderTypeSchema.optional(),
-  toHolderId: objectId.optional(),
+  toHolderId: holderId.optional(),
   itemId: objectId,
   lotId: objectId.optional(),
   containerId: objectId.optional(),
@@ -290,7 +275,7 @@ export const openingBalanceSchema = z.object({
   entries: z.array(
     z.object({
       holderType: holderTypeSchema.optional(),
-      holderId: objectId,
+      holderId: holderId,
       itemId: objectId,
       lotId: objectId.optional(),
       qty: z.coerce.number().positive(),
@@ -304,21 +289,21 @@ export const openingBalanceSchema = z.object({
 
 export const balanceQuerySchema = z.object({
   holderType: holderTypeSchema.optional(),
-  holderId: objectId,
+  holderId: holderId,
   itemId: objectId,
   lotId: objectId.optional(),
 });
 
 export const balancesQuerySchema = z.object({
   holderType: holderTypeSchema.optional(),
-  holderId: objectId.optional(),
+  holderId: holderId.optional(),
   itemId: objectId.optional(),
   lotId: objectId.optional(),
 });
 
 export const rollupQuerySchema = z.object({
   holderType: holderTypeSchema.optional(),
-  holderId: objectId.optional(),
+  holderId: holderId.optional(),
   itemId: objectId.optional(),
 });
 
@@ -326,7 +311,7 @@ export const ledgerQuerySchema = z.object({
   from: z.string().optional(),
   to: z.string().optional(),
   holderType: holderTypeSchema.optional(),
-  holderId: objectId.optional(),
+  holderId: holderId.optional(),
   itemId: objectId.optional(),
   lotId: objectId.optional(),
   txType: z.enum(['RECEIPT', 'TRANSFER', 'CONSUME', 'ADJUST', 'DISPOSE', 'RETURN', 'OPENING_BALANCE']).optional(),
@@ -335,7 +320,7 @@ export const ledgerQuerySchema = z.object({
 export const expiryQuerySchema = z.object({
   days: z.coerce.number().min(1).max(365).optional(),
   holderType: holderTypeSchema.optional(),
-  holderId: objectId.optional(),
+  holderId: holderId.optional(),
 });
 
 export const reasonCodeQuerySchema = z.object({

@@ -1,6 +1,14 @@
+import fs from 'fs/promises';
 import { Response, NextFunction, Request } from 'express';
+import type { Express } from 'express';
 import { inventoryService } from '../services/inventory.service';
 import type { AuthRequest } from '../../../middleware/auth';
+import { assertUploadedFileIntegrity } from '../../../utils/uploadValidation';
+import { createHttpError } from '../../../utils/httpError';
+
+type AuthRequestWithFile = AuthRequest & {
+  file?: Express.Multer.File;
+};
 
 function getAuthUser(req: AuthRequest) {
   if (!req.user) {
@@ -14,13 +22,27 @@ function getAuthUser(req: AuthRequest) {
 }
 
 export const consumableInventoryController = {
-  receive: async (req: AuthRequest, res: Response, next: NextFunction) => {
+  receive: async (req: AuthRequestWithFile, res: Response, next: NextFunction) => {
+    const uploadedFile = req.file || null;
     try {
       const user = getAuthUser(req);
       if (!user) return res.status(401).json({ message: 'Unauthorized' });
-      const result = await inventoryService.receive(user, req.body);
+      if (uploadedFile) {
+        await assertUploadedFileIntegrity(uploadedFile, 'handoverDocumentation');
+        if (uploadedFile.mimetype !== 'application/pdf') {
+          throw createHttpError(400, 'handoverDocumentation must be a PDF file');
+        }
+      }
+      const result = await inventoryService.receive(user, req.body, uploadedFile || undefined);
       res.status(201).json(result);
     } catch (error) {
+      if (uploadedFile?.path) {
+        try {
+          await fs.unlink(uploadedFile.path);
+        } catch {
+          // ignore cleanup failures
+        }
+      }
       next(error);
     }
   },

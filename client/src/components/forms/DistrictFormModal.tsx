@@ -25,7 +25,7 @@ import type { District, Division } from "@/types";
 
 const districtSchema = z.object({
   name: z.string().min(1, "Name is required").max(120),
-  divisionId: z.string().optional(),
+  divisionId: z.string().min(1, "Division is required"),
 });
 
 type DistrictFormData = z.infer<typeof districtSchema>;
@@ -45,7 +45,6 @@ export function DistrictFormModal({
   divisions,
   onSubmit,
 }: DistrictFormModalProps) {
-  const NONE_VALUE = '__none__';
   const [isSubmitting, setIsSubmitting] = useState(false);
   const isEditing = !!district;
 
@@ -93,16 +92,15 @@ export function DistrictFormModal({
             )}
           </div>
           <div className="space-y-2">
-            <Label>Division</Label>
+            <Label>Division *</Label>
             <Select
-              value={form.watch("divisionId") || NONE_VALUE}
-              onValueChange={(value) => form.setValue("divisionId", value === NONE_VALUE ? "" : value)}
+              value={form.watch("divisionId") || undefined}
+              onValueChange={(value) => form.setValue("divisionId", value, { shouldValidate: true })}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Select division (optional)" />
+                <SelectValue placeholder="Select division" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={NONE_VALUE}>None</SelectItem>
                 {divisions.map((division) => (
                   <SelectItem key={division.id} value={division.id}>
                     {division.name}
@@ -110,6 +108,9 @@ export function DistrictFormModal({
                 ))}
               </SelectContent>
             </Select>
+            {form.formState.errors.divisionId && (
+              <p className="text-sm text-destructive">{form.formState.errors.divisionId.message}</p>
+            )}
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>

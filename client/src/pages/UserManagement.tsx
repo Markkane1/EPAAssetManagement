@@ -7,6 +7,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import {
   Table,
   TableBody,
@@ -53,11 +61,15 @@ import {
   KeyRound,
   ChevronLeft,
   ChevronRight,
+  ChevronsUpDown,
+  Check,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AppRole } from "@/services/authService";
 import { userService, UserWithDetails } from "@/services/userService";
 import { locationService } from "@/services/locationService";
+import { usePageSearch } from "@/contexts/PageSearchContext";
+import { cn } from "@/lib/utils";
 
 interface Location {
   id: string;
@@ -80,7 +92,8 @@ const roleColors: Record<AppRole, string> = {
 
 export default function UserManagement() {
   const queryClient = useQueryClient();
-  const [searchQuery, setSearchQuery] = useState("");
+  const pageSearch = usePageSearch();
+  const searchQuery = pageSearch?.term || "";
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [editingUser, setEditingUser] = useState<UserWithDetails | null>(null);
@@ -97,8 +110,9 @@ export default function UserManagement() {
   const [newUserPassword, setNewUserPassword] = useState("");
   const [newUserFirstName, setNewUserFirstName] = useState("");
   const [newUserLastName, setNewUserLastName] = useState("");
-  const [newUserRole, setNewUserRole] = useState<AppRole>("employee");
-  const [newUserLocation, setNewUserLocation] = useState<string>("none");
+  const [newUserRole, setNewUserRole] = useState<AppRole | "">("");
+  const [newUserLocation, setNewUserLocation] = useState<string>("");
+  const [newUserLocationPickerOpen, setNewUserLocationPickerOpen] = useState(false);
 
   // Fetch all users with their profiles and roles
   const { data: users = { items: [], page: 1, limit: 50, total: 0, hasMore: false }, isLoading: usersLoading } =
@@ -205,23 +219,32 @@ export default function UserManagement() {
     setNewUserPassword("");
     setNewUserFirstName("");
     setNewUserLastName("");
-    setNewUserRole("employee");
-    setNewUserLocation("none");
+    setNewUserRole("");
+    setNewUserLocation("");
+    setNewUserLocationPickerOpen(false);
   };
 
   const handleCreateUser = async () => {
-    if (!newUserEmail || !newUserPassword) {
-      toast.error("Email and password are required");
+    const errors: string[] = [];
+    if (!newUserFirstName.trim()) errors.push("First name is required");
+    if (!newUserLastName.trim()) errors.push("Last name is required");
+    if (!newUserEmail.trim()) errors.push("Email is required");
+    if (!newUserPassword) errors.push("Password is required");
+    if (!newUserRole) errors.push("Role is required");
+    if (!newUserLocation) errors.push("Location is required");
+
+    if (errors.length > 0) {
+      toast.error(errors.join(" | "));
       return;
     }
     
     await createUserMutation.mutateAsync({
-      email: newUserEmail,
+      email: newUserEmail.trim(),
       password: newUserPassword,
-      firstName: newUserFirstName || undefined,
-      lastName: newUserLastName || undefined,
-      role: newUserRole,
-      locationId: newUserLocation === "none" ? undefined : newUserLocation,
+      firstName: newUserFirstName.trim(),
+      lastName: newUserLastName.trim(),
+      role: newUserRole as AppRole,
+      locationId: newUserLocation,
     });
   };
 
@@ -269,6 +292,10 @@ export default function UserManagement() {
   const visibleUsers = useMemo(() => users.items || [], [users.items]);
   const totalUsers = users.total || 0;
   const totalPages = Math.max(1, Math.ceil(totalUsers / pageSize));
+  const selectedNewUserLocation = useMemo(
+    () => locations.find((location) => location.id === newUserLocation) || null,
+    [locations, newUserLocation]
+  );
 
   const getRoleBadge = (role: AppRole | null) => {
     if (!role) return <Badge variant="outline">No Role</Badge>;
@@ -300,7 +327,7 @@ export default function UserManagement() {
               <Input
                 placeholder="Search users..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => pageSearch?.setTerm(e.target.value)}
                 className="pl-10"
               />
             </div>
@@ -538,21 +565,23 @@ export default function UserManagement() {
           <div className="space-y-4 py-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="firstName">First Name</Label>
+                <Label htmlFor="firstName">First Name *</Label>
                 <Input
                   id="firstName"
                   value={newUserFirstName}
                   onChange={(e) => setNewUserFirstName(e.target.value)}
                   placeholder="John"
+                  required
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="lastName">Last Name</Label>
+                <Label htmlFor="lastName">Last Name *</Label>
                 <Input
                   id="lastName"
                   value={newUserLastName}
                   onChange={(e) => setNewUserLastName(e.target.value)}
                   placeholder="Doe"
+                  required
                 />
               </div>
             </div>
@@ -584,7 +613,7 @@ export default function UserManagement() {
             <div className="space-y-2">
               <Label className="flex items-center gap-2">
                 <Shield className="h-4 w-4" />
-                Role
+                Role *
               </Label>
               <Select value={newUserRole} onValueChange={(v) => setNewUserRole(v as AppRole)}>
                 <SelectTrigger>
@@ -602,21 +631,46 @@ export default function UserManagement() {
             <div className="space-y-2">
               <Label className="flex items-center gap-2">
                 <MapPin className="h-4 w-4" />
-                Location
+                Location *
               </Label>
-              <Select value={newUserLocation} onValueChange={setNewUserLocation}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a location" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No Location (All Access)</SelectItem>
-                  {locations.map((location) => (
-                    <SelectItem key={location.id} value={location.id}>
-                      {location.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Popover open={newUserLocationPickerOpen} onOpenChange={setNewUserLocationPickerOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    className="w-full justify-between font-normal"
+                  >
+                    {selectedNewUserLocation?.name || "Search and select a location"}
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                  <Command>
+                    <CommandInput placeholder="Type location name..." />
+                    <CommandList>
+                      <CommandEmpty>No location found.</CommandEmpty>
+                      {locations.map((location) => (
+                        <CommandItem
+                          key={location.id}
+                          value={location.name}
+                          onSelect={() => {
+                            setNewUserLocation(location.id);
+                            setNewUserLocationPickerOpen(false);
+                          }}
+                        >
+                          <Check
+                            className={cn(
+                              "mr-2 h-4 w-4",
+                              newUserLocation === location.id ? "opacity-100" : "opacity-0"
+                            )}
+                          />
+                          {location.name}
+                        </CommandItem>
+                      ))}
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
             </div>
           </div>
 
@@ -626,7 +680,15 @@ export default function UserManagement() {
             </Button>
             <Button 
               onClick={handleCreateUser}
-              disabled={createUserMutation.isPending || !newUserEmail || !newUserPassword}
+              disabled={
+                createUserMutation.isPending ||
+                !newUserFirstName.trim() ||
+                !newUserLastName.trim() ||
+                !newUserEmail.trim() ||
+                !newUserPassword ||
+                !newUserRole ||
+                !newUserLocation
+              }
             >
               {createUserMutation.isPending && (
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />

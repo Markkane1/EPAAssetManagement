@@ -71,6 +71,7 @@ export enum UserRole {
 }
 
 export type CategoryScope = "GENERAL" | "LAB_ONLY";
+export type CategoryAssetType = "ASSET" | "CONSUMABLE";
 
 // Core Entities - Using snake_case to match Supabase
 export interface Category {
@@ -78,11 +79,12 @@ export interface Category {
   name: string;
   description: string | null;
   scope?: CategoryScope | null;
+  asset_type?: CategoryAssetType | null;
   created_at: string;
   updated_at: string;
 }
 
-export type OfficeType = "DIRECTORATE" | "DISTRICT_OFFICE" | "DISTRICT_LAB";
+export type OfficeType = "HEAD_OFFICE" | "DIRECTORATE" | "DISTRICT_OFFICE" | "DISTRICT_LAB";
 
 export interface Office {
   id: string;
@@ -187,9 +189,19 @@ export interface PurchaseOrder {
   order_date: string;
   expected_delivery_date: string | null;
   delivered_date: string | null;
+  source_type: "procurement" | "project";
+  source_name: string | null;
   total_amount: number;
+  unit_price: number | null;
+  tax_percentage: number | null;
+  tax_amount: number | null;
   vendor_id: string | null;
   project_id: string | null;
+  scheme_id?: string | null;
+  attachment_file_name?: string | null;
+  attachment_mime_type?: string | null;
+  attachment_size_bytes?: number | null;
+  attachment_path?: string | null;
   status: PurchaseOrderStatus | null;
   notes: string | null;
   created_at: string;
@@ -204,6 +216,7 @@ export interface CategoryPartial {
   name: string;
   description: string | null;
   scope?: CategoryScope | null;
+  asset_type?: CategoryAssetType | null;
 }
 
 export interface VendorPartial {
@@ -615,22 +628,17 @@ export interface ConsumableItem {
   categories?: CategoryPartial | null;
 }
 
-export interface ConsumableSupplier {
-  id: string;
-  name: string;
-  contact_name: string | null;
-  email: string | null;
-  phone: string | null;
-  address: string | null;
-  notes: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
 export interface ConsumableLot {
   id: string;
   consumable_id: string;
-  supplier_id: string | null;
+  source_type: 'procurement' | 'project';
+  vendor_id: string | null;
+  project_id: string | null;
+  scheme_id: string | null;
+  handover_file_name?: string | null;
+  handover_mime_type?: string | null;
+  handover_size_bytes?: number | null;
+  handover_path?: string | null;
   batch_no: string;
   received_at: string;
   expiry_date: string | null;
@@ -658,10 +666,11 @@ export interface ConsumableContainer {
 
 export interface ConsumableInventoryBalance {
   id: string;
-  holder_type?: 'OFFICE' | 'STORE' | null;
+  holder_type?: 'OFFICE' | 'STORE' | 'EMPLOYEE' | 'SUB_LOCATION' | null;
   holder_id?: string | null;
   consumable_item_id: string;
   lot_id: string | null;
+  lot_count?: number;
   qty_on_hand_base: number;
   qty_reserved_base: number;
   created_at: string;
@@ -673,9 +682,9 @@ export interface ConsumableInventoryTransaction {
   tx_type: "RECEIPT" | "TRANSFER" | "CONSUME" | "ADJUST" | "DISPOSE" | "RETURN" | "OPENING_BALANCE";
   tx_time: string;
   created_by: string;
-  from_holder_type?: 'OFFICE' | 'STORE' | null;
+  from_holder_type?: 'OFFICE' | 'STORE' | 'EMPLOYEE' | 'SUB_LOCATION' | null;
   from_holder_id?: string | null;
-  to_holder_type?: 'OFFICE' | 'STORE' | null;
+  to_holder_type?: 'OFFICE' | 'STORE' | 'EMPLOYEE' | 'SUB_LOCATION' | null;
   to_holder_id?: string | null;
   consumable_item_id: string;
   lot_id: string | null;
@@ -704,13 +713,13 @@ export interface ConsumableRollupRow {
   itemId: string;
   totalQtyBase: number;
   byLocation: Array<{ locationId: string; qtyOnHandBase: number }>;
-  byHolder?: Array<{ holderType: 'OFFICE' | 'STORE'; holderId: string; qtyOnHandBase: number }>;
+  byHolder?: Array<{ holderType: 'OFFICE' | 'STORE' | 'EMPLOYEE' | 'SUB_LOCATION'; holderId: string; qtyOnHandBase: number }>;
 }
 
 export interface ConsumableExpiryRow {
   lotId: string;
   itemId: string;
-  holderType?: 'OFFICE' | 'STORE' | null;
+  holderType?: 'OFFICE' | 'STORE' | 'EMPLOYEE' | 'SUB_LOCATION' | null;
   holderId?: string | null;
   locationId?: string | null;
   expiryDate: string;

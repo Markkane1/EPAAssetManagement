@@ -5,10 +5,10 @@ const LIST_LIMIT = 1000;
 
 export interface VendorCreateDto {
   name: string;
-  contactInfo?: string;
-  email?: string;
-  phone?: string;
-  address?: string;
+  contactInfo: string;
+  email: string;
+  phone: string;
+  address: string;
 }
 
 export interface VendorUpdateDto {

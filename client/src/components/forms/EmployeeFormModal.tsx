@@ -21,6 +21,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Loader2 } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import { Employee, Directorate, Location } from "@/types";
 import { isHeadOfficeLocation } from "@/lib/locationUtils";
 
@@ -36,6 +44,14 @@ const employeeSchema = z.object({
 });
 
 type EmployeeFormData = z.infer<typeof employeeSchema>;
+type OfficeTypeFilter = "FIELD_OFFICE" | "LAB" | "HEAD_OFFICE";
+
+function resolveOfficeTypeFilter(location: Location | undefined): OfficeTypeFilter {
+  if (!location?.type) return "FIELD_OFFICE";
+  if (location.type === "DISTRICT_LAB") return "LAB";
+  if (location.type === "HEAD_OFFICE" || location.type === "DIRECTORATE") return "HEAD_OFFICE";
+  return "FIELD_OFFICE";
+}
 
 interface EmployeeFormModalProps {
   open: boolean;
@@ -54,11 +70,11 @@ export function EmployeeFormModal({
   employee,
   directorates,
   locations,
-  locationLocked,
   fixedLocationId,
   onSubmit,
 }: EmployeeFormModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [officePickerOpen, setOfficePickerOpen] = useState(false);
   const isEditing = !!employee;
 
   const form = useForm<EmployeeFormData>({
@@ -78,6 +94,14 @@ export function EmployeeFormModal({
   const selectedLocationId = form.watch("locationId");
   const selectedDirectorateId = form.watch("directorateId");
   const selectedLocation = locations.find((loc) => loc.id === selectedLocationId);
+  const [officeTypeFilter, setOfficeTypeFilter] = useState<OfficeTypeFilter>(
+    resolveOfficeTypeFilter(selectedLocation || locations[0])
+  );
+  const filteredLocations = locations.filter((location) => {
+    if (officeTypeFilter === "FIELD_OFFICE") return location.type === "DISTRICT_OFFICE";
+    if (officeTypeFilter === "LAB") return location.type === "DISTRICT_LAB";
+    return location.type === "HEAD_OFFICE" || location.type === "DIRECTORATE";
+  });
   const isHeadOffice = isHeadOfficeLocation(selectedLocation);
 
   useEffect(() => {
@@ -92,6 +116,7 @@ export function EmployeeFormModal({
         directorateId: employee.directorate_id || "",
         locationId: fixedLocationId || employee.location_id || "",
       });
+      setOfficeTypeFilter(resolveOfficeTypeFilter(locations.find((loc) => loc.id === (fixedLocationId || employee.location_id || ""))));
     } else {
       form.reset({
         firstName: "",
@@ -103,8 +128,9 @@ export function EmployeeFormModal({
         directorateId: "",
         locationId: fixedLocationId || "",
       });
+      setOfficeTypeFilter(resolveOfficeTypeFilter(locations.find((loc) => loc.id === (fixedLocationId || "")) || locations[0]));
     }
-  }, [employee, fixedLocationId, form]);
+  }, [employee, fixedLocationId, form, locations]);
 
   useEffect(() => {
     if (!isHeadOffice && selectedDirectorateId) {
@@ -114,6 +140,14 @@ export function EmployeeFormModal({
       form.clearErrors("directorateId");
     }
   }, [isHeadOffice, selectedDirectorateId, form]);
+
+  useEffect(() => {
+    const currentLocationId = form.getValues("locationId");
+    if (!currentLocationId) return;
+    if (!filteredLocations.some((location) => location.id === currentLocationId)) {
+      form.setValue("locationId", "");
+    }
+  }, [filteredLocations, form]);
 
   const handleSubmit = async (data: EmployeeFormData) => {
     setIsSubmitting(true);
@@ -140,7 +174,7 @@ export function EmployeeFormModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="sm:max-w-[560px] max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{isEditing ? "Edit Employee" : "Add Employee"}</DialogTitle>
           <DialogDescription>
@@ -194,8 +228,8 @@ export function EmployeeFormModal({
               <Input id="phone" {...form.register("phone")} placeholder="+92 300 1234567" />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="jobTitle">Job Title</Label>
-              <Input id="jobTitle" {...form.register("jobTitle")} placeholder="Software Engineer" />
+              <Label htmlFor="jobTitle">Designation</Label>
+              <Input id="jobTitle" {...form.register("jobTitle")} placeholder="Designation" />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
@@ -221,23 +255,55 @@ export function EmployeeFormModal({
               )}
             </div>
             <div className="space-y-2">
-              <Label>Office *</Label>
+              <Label>Office Type *</Label>
               <Select
-                value={form.watch("locationId")}
-                onValueChange={(v) => form.setValue("locationId", v)}
-                disabled={locationLocked}
+                value={officeTypeFilter}
+                onValueChange={(value) => setOfficeTypeFilter(value as OfficeTypeFilter)}
               >
-                <SelectTrigger><SelectValue placeholder="Select office" /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="Select office type" /></SelectTrigger>
                 <SelectContent>
-                  {locations.map((l) => (
-                    <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>
-                  ))}
+                  <SelectItem value="FIELD_OFFICE">Field Office</SelectItem>
+                  <SelectItem value="LAB">Lab</SelectItem>
+                  <SelectItem value="HEAD_OFFICE">Head Office</SelectItem>
                 </SelectContent>
               </Select>
-              {form.formState.errors.locationId && (
-                <p className="text-sm text-destructive">{form.formState.errors.locationId.message}</p>
-              )}
             </div>
+          </div>
+          <div className="space-y-2">
+            <Label>Office *</Label>
+            <Popover open={officePickerOpen} onOpenChange={setOfficePickerOpen}>
+              <PopoverTrigger asChild>
+                <Button variant="outline" role="combobox" className="w-full justify-between">
+                  {selectedLocation ? selectedLocation.name : "Search office..."}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                <Command>
+                  <CommandInput placeholder="Type office name..." />
+                  <CommandList>
+                    <CommandEmpty>No offices found.</CommandEmpty>
+                    {filteredLocations.map((office) => (
+                      <CommandItem
+                        key={office.id}
+                        value={`${office.name} ${office.division || ""} ${office.district || ""}`}
+                        onSelect={() => {
+                          form.setValue("locationId", office.id);
+                          setOfficePickerOpen(false);
+                        }}
+                      >
+                        <span className="font-medium">{office.name}</span>
+                        <span className="ml-2 text-xs text-muted-foreground">
+                          {[office.division, office.district].filter(Boolean).join(" - ")}
+                        </span>
+                      </CommandItem>
+                    ))}
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
+            {form.formState.errors.locationId && (
+              <p className="text-sm text-destructive">{form.formState.errors.locationId.message}</p>
+            )}
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>

@@ -52,7 +52,7 @@ export const PAGE_ALLOWED_ROLES: Record<AppPageKey, AppRole[]> = {
   compliance: allRoles,
   requisitions: allRoles,
   "requisitions-new": ["employee", "office_head", "caretaker"],
-  returns: ["org_admin", "office_head", "caretaker"],
+  returns: ["org_admin", "office_head", "caretaker", "employee"],
   "returns-new": ["employee"],
   "returns-detail": ["org_admin", "office_head", "caretaker", "employee"],
   settings: allRoles,
@@ -73,4 +73,3 @@ export function canAccessPage(options: {
   const allowed = PAGE_ALLOWED_ROLES[options.page] || [];
   return allowed.includes(options.role);
 }
-

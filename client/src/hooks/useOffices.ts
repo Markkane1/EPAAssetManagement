@@ -1,16 +1,16 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { officeService } from '@/services/officeService';
-import type { OfficeCreateDto, OfficeUpdateDto } from '@/services/officeService';
+import type { OfficeCreateDto, OfficeFilters, OfficeUpdateDto } from '@/services/officeService';
 import { toast } from 'sonner';
 import { API_CONFIG } from '@/config/api.config';
 import type { Office } from '@/types';
 
 const { queryKeys, messages, query } = API_CONFIG;
 
-export const useOffices = () => {
+export const useOffices = (filters?: OfficeFilters) => {
   return useQuery({
-    queryKey: [...queryKeys.offices, 'all'],
-    queryFn: () => officeService.getAll() as Promise<Office[]>,
+    queryKey: [...queryKeys.offices, 'all', filters || {}],
+    queryFn: () => officeService.getAll(filters) as Promise<Office[]>,
     staleTime: query.staleTime,
   });
 };

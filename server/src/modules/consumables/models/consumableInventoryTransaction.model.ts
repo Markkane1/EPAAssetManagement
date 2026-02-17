@@ -1,7 +1,7 @@
 import mongoose, { Schema } from 'mongoose';
 import { baseSchemaOptions } from '../../../models/base';
 
-const HOLDER_TYPES = ['OFFICE', 'STORE'] as const;
+const HOLDER_TYPES = ['OFFICE', 'STORE', 'EMPLOYEE', 'SUB_LOCATION'] as const;
 
 const ConsumableInventoryTransactionSchema = new Schema<any>(
   {

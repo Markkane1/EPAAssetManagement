@@ -49,14 +49,14 @@ export function DistrictManagementModal({ open, onOpenChange, divisions }: Distr
     setFormOpen(true);
   };
 
-  const handleSubmit = async (data: { name: string; divisionId?: string }) => {
+  const handleSubmit = async (data: { name: string; divisionId: string }) => {
     if (editingDistrict) {
       await updateDistrict.mutateAsync({
         id: editingDistrict.id,
-        data: { name: data.name, divisionId: data.divisionId || null },
+        data: { name: data.name, divisionId: data.divisionId },
       });
     } else {
-      await createDistrict.mutateAsync({ name: data.name, divisionId: data.divisionId || null });
+      await createDistrict.mutateAsync({ name: data.name, divisionId: data.divisionId });
     }
   };
 
@@ -122,6 +122,7 @@ export function DistrictManagementModal({ open, onOpenChange, divisions }: Distr
             columns={columns}
             data={rows}
             searchPlaceholder="Search districts..."
+            useGlobalPageSearch={false}
             actions={actions}
           />
         )}

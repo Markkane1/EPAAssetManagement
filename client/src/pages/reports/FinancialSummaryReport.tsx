@@ -22,7 +22,7 @@ export default function FinancialSummaryReport() {
   const pageSearch = usePageSearch();
 
   const { data: assets } = useAssets();
-  const { data: categories } = useCategories();
+  const { data: categories } = useCategories({ assetType: "ASSET" });
 
   const filteredAssets = useMemo(
     () => filterByDateRange(assets, "acquisition_date", startDate, endDate),

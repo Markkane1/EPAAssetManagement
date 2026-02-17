@@ -18,8 +18,11 @@ import {
 } from "@/lib/exportUtils";
 import { filterByDateRange, generateReportPDF, getDateRangeText } from "@/lib/reporting";
 import { usePageSearch } from "@/contexts/PageSearchContext";
+import { useAuth } from "@/contexts/AuthContext";
 
 export default function EmployeeAssetsReport() {
+  const { role, user } = useAuth();
+  const isEmployeeRole = role === "employee";
   const [startDate, setStartDate] = useState<Date | undefined>(undefined);
   const [endDate, setEndDate] = useState<Date | undefined>(undefined);
   const pageSearch = usePageSearch();
@@ -34,6 +37,14 @@ export default function EmployeeAssetsReport() {
     () => filterByDateRange(assignments, "assigned_date", startDate, endDate),
     [assignments, startDate, endDate]
   );
+  const currentEmployee = useMemo(() => {
+    const list = employees || [];
+    const byUserId = list.find((employee) => employee.user_id === user?.id);
+    const byEmail = list.find(
+      (employee) => employee.email?.toLowerCase() === (user?.email || "").toLowerCase()
+    );
+    return byUserId || byEmail || null;
+  }, [employees, user?.id, user?.email]);
 
   const getDirectorateName = useCallback((employeeId?: string) => {
     const employee = employees?.find((e) => e.id === employeeId);
@@ -45,7 +56,7 @@ export default function EmployeeAssetsReport() {
   }, [employees, locations, directorates]);
 
   const reportRows = useMemo(() => {
-    const employeeList = employees || [];
+    const employeeList = isEmployeeRole ? (currentEmployee ? [currentEmployee] : []) : employees || [];
     const assignmentList = filteredAssignments || [];
     const itemList = assetItems || [];
 
@@ -70,7 +81,7 @@ export default function EmployeeAssetsReport() {
         assetTags: assetTags || "None",
       };
     });
-  }, [employees, filteredAssignments, assetItems, getDirectorateName]);
+  }, [isEmployeeRole, currentEmployee, employees, filteredAssignments, assetItems, getDirectorateName]);
 
   const searchTerm = pageSearch?.term || "";
   const filteredRows = useMemo(
@@ -136,7 +147,9 @@ export default function EmployeeAssetsReport() {
     <MainLayout title="Employee Assets Report" description="Assets assigned to employees">
       <PageHeader
         title="Employee Assets Report"
-        description="Assets assigned to each employee"
+        description={
+          isEmployeeRole ? "Assets currently assigned to you" : "Assets assigned to each employee"
+        }
         extra={
           <div className="flex items-center gap-2">
             <Button variant="outline" className="gap-2" onClick={handleExportCSV}>

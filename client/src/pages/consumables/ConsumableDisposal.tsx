@@ -16,8 +16,9 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Loader2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useConsumableItems } from '@/hooks/useConsumableItems';
-import { useConsumableLocations } from '@/hooks/useConsumableLocations';
+import { useOffices } from '@/hooks/useOffices';
 import { useConsumableLots } from '@/hooks/useConsumableLots';
 import { useConsumableContainers } from '@/hooks/useConsumableContainers';
 import { useConsumableBalances, useDisposeConsumables } from '@/hooks/useConsumableInventory';
@@ -44,11 +45,12 @@ const disposeSchema = z.object({
 type DisposeFormData = z.infer<typeof disposeSchema>;
 
 export default function ConsumableDisposal() {
+  const navigate = useNavigate();
   const ALL_VALUE = '__all__';
   const { mode, setMode } = useConsumableMode();
   const { data: items } = useConsumableItems();
   const { data: units } = useConsumableUnits();
-  const { data: locations } = useConsumableLocations({
+  const { data: locations } = useOffices({
     capability: mode === 'chemicals' ? 'chemicals' : 'consumables',
   });
   const { data: lots } = useConsumableLots();
@@ -73,14 +75,19 @@ export default function ConsumableDisposal() {
   const filteredItems = useMemo(() => filterItemsByMode(items || [], mode), [items, mode]);
   const filteredLocations = useMemo(() => filterLocationsByMode(locations || [], mode), [locations, mode]);
   const unitList = useMemo(() => units || [], [units]);
+  const selectedLocationId = form.watch('locationId');
+  const selectedItemId = form.watch('itemId');
+  const selectedContainerId = form.watch('containerId');
+  const selectedLotId = form.watch('lotId');
+  const selectedUom = form.watch('uom');
   const allowedItemIds = useMemo(
     () => new Set(filteredItems.map((item) => item.id)),
     [filteredItems]
   );
 
   const selectedItem: ConsumableItem | undefined = useMemo(() => {
-    return filteredItems.find((item) => item.id === form.watch('itemId'));
-  }, [filteredItems, form]);
+    return filteredItems.find((item) => item.id === selectedItemId);
+  }, [filteredItems, selectedItemId]);
 
   useEffect(() => {
     const currentItem = form.getValues('itemId');
@@ -91,7 +98,7 @@ export default function ConsumableDisposal() {
     }
   }, [filteredItems, form, ALL_VALUE]);
 
-  const locationFilterId = form.watch('locationId');
+  const locationFilterId = selectedLocationId;
   const containerFilters = useMemo(() => {
     if (!locationFilterId) return undefined;
     return { locationId: locationFilterId, status: 'IN_STOCK' };
@@ -116,7 +123,7 @@ export default function ConsumableDisposal() {
   }, [containers, lots, selectedItem]);
 
   const requiresContainer = Boolean(selectedItem?.requires_container_tracking || selectedItem?.is_controlled);
-  const selectedContainer = containersForItem.find((container) => container.id === form.watch('containerId'));
+  const selectedContainer = containersForItem.find((container) => container.id === selectedContainerId);
 
   useEffect(() => {
     if (selectedItem && !form.getValues('uom')) {
@@ -141,13 +148,13 @@ export default function ConsumableDisposal() {
   }, [selectedContainer, selectedItem, form]);
 
   const balanceFilters = useMemo(() => {
-    if (!form.watch('locationId') || !form.watch('itemId')) return undefined;
+    if (!selectedLocationId || !selectedItemId) return undefined;
     return {
       holderType: 'OFFICE' as const,
-      holderId: form.watch('locationId'),
-      itemId: form.watch('itemId'),
+      holderId: selectedLocationId,
+      itemId: selectedItemId,
     };
-  }, [form]);
+  }, [selectedLocationId, selectedItemId]);
 
   const { data: balances = [] } = useConsumableBalances(balanceFilters);
   const availableQty = balances.reduce((total, balance) => total + (balance.qty_on_hand_base || 0), 0);
@@ -186,7 +193,7 @@ export default function ConsumableDisposal() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Location *</Label>
-                <Select value={form.watch('locationId')} onValueChange={(v) => form.setValue('locationId', v)}>
+                <Select value={selectedLocationId} onValueChange={(v) => form.setValue('locationId', v)}>
                   <SelectTrigger><SelectValue placeholder="Select location" /></SelectTrigger>
                   <SelectContent>
                     {filteredLocations.map((loc) => (
@@ -197,7 +204,7 @@ export default function ConsumableDisposal() {
               </div>
               <div className="space-y-2">
                 <Label>Item *</Label>
-                <Select value={form.watch('itemId')} onValueChange={(v) => form.setValue('itemId', v)}>
+                <Select value={selectedItemId} onValueChange={(v) => form.setValue('itemId', v)}>
                   <SelectTrigger><SelectValue placeholder="Select item" /></SelectTrigger>
                   <SelectContent>
                     {filteredItems.map((item) => (
@@ -212,7 +219,7 @@ export default function ConsumableDisposal() {
               <div className="space-y-2">
                 <Label>Lot (optional)</Label>
                 <Select
-                  value={form.watch('lotId') || ALL_VALUE}
+                  value={selectedLotId || ALL_VALUE}
                   onValueChange={(v) => form.setValue('lotId', v)}
                   disabled={Boolean(selectedContainer)}
                 >
@@ -221,7 +228,7 @@ export default function ConsumableDisposal() {
                     <SelectItem value={ALL_VALUE}>All lots</SelectItem>
                     {(lots || [])
                       .filter((lot) => {
-                        if (form.watch('itemId')) return lot.consumable_id === form.watch('itemId');
+                        if (selectedItemId) return lot.consumable_id === selectedItemId;
                         return allowedItemIds.has(lot.consumable_id);
                       })
                       .map((lot) => (
@@ -252,9 +259,14 @@ export default function ConsumableDisposal() {
             {requiresContainer && (
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Container *</Label>
+                  <div className="flex items-center justify-between">
+                    <Label>Container *</Label>
+                    <Button type="button" variant="link" className="h-auto p-0 text-xs" onClick={() => navigate('/consumables/containers')}>
+                      Manage Containers
+                    </Button>
+                  </div>
                   <Select
-                    value={form.watch('containerId') || ''}
+                    value={selectedContainerId || ''}
                     onValueChange={(v) => form.setValue('containerId', v)}
                   >
                     <SelectTrigger><SelectValue placeholder="Select container" /></SelectTrigger>
@@ -286,7 +298,7 @@ export default function ConsumableDisposal() {
               </div>
               <div className="space-y-2">
                 <Label>UoM *</Label>
-                <Select value={form.watch('uom')} onValueChange={(v) => form.setValue('uom', v)}>
+                <Select value={selectedUom} onValueChange={(v) => form.setValue('uom', v)}>
                   <SelectTrigger><SelectValue placeholder="Select unit" /></SelectTrigger>
                   <SelectContent>
                     {compatibleUnits.map((unit) => (
@@ -318,3 +330,4 @@ export default function ConsumableDisposal() {
     </MainLayout>
   );
 }
+

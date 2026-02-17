@@ -4,6 +4,7 @@ import { Response, NextFunction } from 'express';
 import type { Express } from 'express';
 import { AssetModel } from '../models/asset.model';
 import { AssetItemModel } from '../models/assetItem.model';
+import { CategoryModel } from '../models/category.model';
 import { mapFields } from '../utils/mapFields';
 import { resolveAccessContext } from '../utils/accessControl';
 import { createHttpError } from '../utils/httpError';
@@ -138,6 +139,18 @@ function buildPayload(body: Record<string, unknown>) {
   return payload;
 }
 
+async function ensureAssetCategoryType(categoryId: unknown) {
+  if (!categoryId) return;
+  const category = await CategoryModel.findById(categoryId, { asset_type: 1 }).lean();
+  if (!category) {
+    throw createHttpError(400, 'Selected category does not exist');
+  }
+  const categoryAssetType = String((category as Record<string, unknown>).asset_type || 'ASSET').toUpperCase();
+  if (categoryAssetType !== 'ASSET') {
+    throw createHttpError(400, 'Selected category is not valid for moveable assets');
+  }
+}
+
 export const assetController = {
   list: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
@@ -261,6 +274,7 @@ export const assetController = {
         }
       }
       const payload = buildPayload(req.body);
+      await ensureAssetCategoryType(payload.category_id);
       if (uploadedFile) {
         Object.assign(payload, buildAttachmentPayload(uploadedFile));
       }
@@ -294,6 +308,9 @@ export const assetController = {
         }
       }
       const payload = buildPayload(req.body);
+      if (payload.category_id !== undefined) {
+        await ensureAssetCategoryType(payload.category_id);
+      }
       if (uploadedFile) {
         Object.assign(payload, buildAttachmentPayload(uploadedFile));
       }

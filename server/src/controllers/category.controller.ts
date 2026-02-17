@@ -4,6 +4,7 @@ import { createHttpError } from '../utils/httpError';
 import { escapeRegex, readPagination } from '../utils/requestParsing';
 
 const CATEGORY_SCOPES = new Set(['GENERAL', 'LAB_ONLY']);
+const CATEGORY_ASSET_TYPES = new Set(['ASSET', 'CONSUMABLE']);
 
 function parseScope(value: unknown, fallback: 'GENERAL' | 'LAB_ONLY' = 'GENERAL') {
   if (value === undefined || value === null || value === '') return fallback;
@@ -12,6 +13,15 @@ function parseScope(value: unknown, fallback: 'GENERAL' | 'LAB_ONLY' = 'GENERAL'
     throw createHttpError(400, 'scope must be one of: GENERAL, LAB_ONLY');
   }
   return scope as 'GENERAL' | 'LAB_ONLY';
+}
+
+function parseAssetType(value: unknown, fallback: 'ASSET' | 'CONSUMABLE' = 'ASSET') {
+  if (value === undefined || value === null || value === '') return fallback;
+  const assetType = String(value).trim().toUpperCase();
+  if (!CATEGORY_ASSET_TYPES.has(assetType)) {
+    throw createHttpError(400, 'assetType must be one of: ASSET (Moveable), CONSUMABLE');
+  }
+  return assetType as 'ASSET' | 'CONSUMABLE';
 }
 
 function parseName(value: unknown) {
@@ -37,12 +47,20 @@ export const categoryController = {
       if (query.scope !== undefined) {
         filter.scope = parseScope(query.scope, 'GENERAL');
       }
+      if (query.assetType !== undefined || query.asset_type !== undefined) {
+        const assetType = parseAssetType(query.assetType ?? query.asset_type, 'ASSET');
+        if (assetType === 'ASSET') {
+          filter.$or = [{ asset_type: 'ASSET' }, { asset_type: { $exists: false } }];
+        } else {
+          filter.asset_type = 'CONSUMABLE';
+        }
+      }
       const search = String(query.search || '').trim();
       if (search) {
         filter.name = new RegExp(escapeRegex(search), 'i');
       }
 
-      const categories = await CategoryModel.find(filter, { name: 1, description: 1, scope: 1, created_at: 1 })
+      const categories = await CategoryModel.find(filter, { name: 1, description: 1, scope: 1, asset_type: 1, created_at: 1 })
         .sort({ name: 1 })
         .skip(skip)
         .limit(limit)
@@ -66,6 +84,10 @@ export const categoryController = {
       const payload: Record<string, unknown> = {
         name: parseName((req.body as Record<string, unknown>).name),
         scope: parseScope((req.body as Record<string, unknown>).scope, 'GENERAL'),
+        asset_type: parseAssetType(
+          (req.body as Record<string, unknown>).assetType ?? (req.body as Record<string, unknown>).asset_type,
+          'ASSET'
+        ),
       };
       const description = parseDescription((req.body as Record<string, unknown>).description);
       if (description !== undefined) payload.description = description;
@@ -83,6 +105,9 @@ export const categoryController = {
       if (body.name !== undefined) payload.name = parseName(body.name);
       if (body.description !== undefined) payload.description = parseDescription(body.description);
       if (body.scope !== undefined) payload.scope = parseScope(body.scope);
+      if (body.assetType !== undefined || body.asset_type !== undefined) {
+        payload.asset_type = parseAssetType(body.assetType ?? body.asset_type);
+      }
 
       const category = await CategoryModel.findByIdAndUpdate(req.params.id, payload, {
         new: true,

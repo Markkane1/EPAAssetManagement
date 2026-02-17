@@ -15,24 +15,30 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Loader2 } from 'lucide-react';
 import { useConsumableItems } from '@/hooks/useConsumableItems';
-import { useConsumableLocations } from '@/hooks/useConsumableLocations';
+import { useOffices } from '@/hooks/useOffices';
 import { useConsumableLots } from '@/hooks/useConsumableLots';
 import { useConsumableContainers } from '@/hooks/useConsumableContainers';
 import { useConsumableBalances, useTransferConsumables } from '@/hooks/useConsumableInventory';
 import { useConsumableUnits } from '@/hooks/useConsumableUnits';
 import { getCompatibleUnits } from '@/lib/unitUtils';
 import type { ConsumableItem } from '@/types';
+import type { InventoryHolderType } from '@/services/consumableInventoryService';
 import { useAuth } from '@/contexts/AuthContext';
 import { useConsumableMode } from '@/hooks/useConsumableMode';
 import { filterItemsByMode, filterLocationsByMode } from '@/lib/consumableMode';
 import { ConsumableModeToggle } from '@/components/consumables/ConsumableModeToggle';
 
+const FEFO_VALUE = '__fefo__';
+const STORE_CODE = 'HEAD_OFFICE_STORE';
+
 const transferSchema = z.object({
-  fromLocationId: z.string().min(1, 'From location is required'),
-  toLocationId: z.string().min(1, 'To location is required'),
+  fromHolderKey: z.string().min(1, 'From holder is required'),
+  toHolderKey: z.string().min(1, 'To holder is required'),
   itemId: z.string().min(1, 'Item is required'),
   lotId: z.string().optional(),
   containerId: z.string().optional(),
@@ -46,14 +52,35 @@ const transferSchema = z.object({
 
 type TransferFormData = z.infer<typeof transferSchema>;
 
+type HolderOption = {
+  key: string;
+  id: string;
+  holderType: InventoryHolderType;
+  name: string;
+};
+
+function buildHolderKey(holderType: InventoryHolderType, holderId: string) {
+  return `${holderType}:${holderId}`;
+}
+
+function parseHolderKey(key: string): { holderType: InventoryHolderType; holderId: string } | null {
+  const [rawType, ...rest] = String(key || '').split(':');
+  const holderId = rest.join(':').trim();
+  const holderType = String(rawType || '').trim().toUpperCase();
+  if (!holderId) return null;
+  if (holderType === 'STORE' || holderType === 'OFFICE') {
+    return { holderType, holderId };
+  }
+  return null;
+}
+
 export default function ConsumableTransfers() {
-  const FEFO_VALUE = '__fefo__';
-  const STORE_CODE = 'HEAD_OFFICE_STORE';
   const { role, locationId } = useAuth();
+  const [itemPickerOpen, setItemPickerOpen] = useState(false);
   const { mode, setMode } = useConsumableMode();
   const { data: items } = useConsumableItems();
   const { data: units } = useConsumableUnits();
-  const { data: locations } = useConsumableLocations({
+  const { data: locations } = useOffices({
     capability: mode === 'chemicals' ? 'chemicals' : 'consumables',
   });
   const { data: lots } = useConsumableLots();
@@ -61,12 +88,13 @@ export default function ConsumableTransfers() {
   const transferMutation = useTransferConsumables();
 
   const [showOverride, setShowOverride] = useState(false);
+  const canOverrideNegative = role === 'org_admin' || role === 'caretaker';
 
   const form = useForm<TransferFormData>({
     resolver: zodResolver(transferSchema),
     defaultValues: {
-      fromLocationId: locationId || '',
-      toLocationId: '',
+      fromHolderKey: '',
+      toHolderKey: '',
       itemId: '',
       lotId: FEFO_VALUE,
       containerId: '',
@@ -81,21 +109,55 @@ export default function ConsumableTransfers() {
 
   const filteredItems = useMemo(() => filterItemsByMode(items || [], mode), [items, mode]);
   const filteredLocations = useMemo(() => filterLocationsByMode(locations || [], mode), [locations, mode]);
-  const holderOptions = useMemo(
-    () => [{ id: STORE_CODE, name: 'Head Office Store (System)', holderType: 'STORE' as const }].concat(
-      filteredLocations.map((loc) => ({ id: loc.id, name: loc.name, holderType: 'OFFICE' as const }))
-    ),
-    [filteredLocations, STORE_CODE]
+  const restrictToAssignedLocation = role !== 'org_admin' && Boolean(locationId);
+  const scopedLocations = useMemo(
+    () =>
+      restrictToAssignedLocation
+        ? filteredLocations.filter((office) => office.id === locationId)
+        : filteredLocations,
+    [restrictToAssignedLocation, filteredLocations, locationId]
   );
+  const allowedOfficeIds = useMemo(() => new Set(scopedLocations.map((office) => office.id)), [scopedLocations]);
+
+  const holderOptions = useMemo<HolderOption[]>(() => {
+    const options: HolderOption[] = [
+      {
+        key: buildHolderKey('STORE', STORE_CODE),
+        id: STORE_CODE,
+        holderType: 'STORE',
+        name: 'Head Office Store (System)',
+      },
+      ...scopedLocations.map((office) => ({
+        key: buildHolderKey('OFFICE', office.id),
+        id: office.id,
+        holderType: 'OFFICE' as const,
+        name: `${office.name} (Office)`,
+      })),
+    ];
+    return options;
+  }, [scopedLocations]);
+
   const unitList = useMemo(() => units || [], [units]);
+  const allUnitCodes = useMemo(
+    () => Array.from(new Set(unitList.map((unit) => String(unit.code || '').trim()).filter(Boolean))),
+    [unitList]
+  );
+  const selectedItemId = form.watch('itemId');
+  const selectedContainerId = form.watch('containerId');
+  const selectedLotId = form.watch('lotId');
+  const selectedUom = form.watch('uom');
+  const fromHolderKey = form.watch('fromHolderKey');
+  const toHolderKey = form.watch('toHolderKey');
+  const fromHolder = useMemo(() => parseHolderKey(fromHolderKey), [fromHolderKey]);
+
   const allowedItemIds = useMemo(
     () => new Set(filteredItems.map((item) => item.id)),
     [filteredItems]
   );
 
   const selectedItem: ConsumableItem | undefined = useMemo(() => {
-    return filteredItems.find((item) => item.id === form.watch('itemId'));
-  }, [filteredItems, form]);
+    return filteredItems.find((item) => item.id === selectedItemId);
+  }, [filteredItems, selectedItemId]);
 
   useEffect(() => {
     const currentItem = form.getValues('itemId');
@@ -104,20 +166,24 @@ export default function ConsumableTransfers() {
       form.setValue('lotId', FEFO_VALUE);
       form.setValue('containerId', '');
     }
-  }, [filteredItems, form, FEFO_VALUE]);
+  }, [filteredItems, form]);
 
-  const fromLocationId = form.watch('fromLocationId');
   const containerFilters = useMemo(() => {
-    if (!fromLocationId || fromLocationId === STORE_CODE) return undefined;
-    return { locationId: fromLocationId, status: 'IN_STOCK' };
-  }, [fromLocationId, STORE_CODE]);
+    if (!fromHolder || fromHolder.holderType !== 'OFFICE') return undefined;
+    return { locationId: fromHolder.holderId, status: 'IN_STOCK' as const };
+  }, [fromHolder]);
 
   const { data: containers = [] } = useConsumableContainers(containerFilters);
 
   const compatibleUnits = useMemo(() => {
-    if (!selectedItem) return [] as string[];
-    return getCompatibleUnits(selectedItem.base_uom, unitList);
-  }, [selectedItem, unitList]);
+    if (!selectedItem) return allUnitCodes;
+    const resolved = getCompatibleUnits(selectedItem.base_uom, unitList);
+    const next = resolved.length ? resolved : allUnitCodes;
+    if (!next.includes(selectedItem.base_uom)) {
+      return [selectedItem.base_uom, ...next];
+    }
+    return next;
+  }, [selectedItem, unitList, allUnitCodes]);
 
   const containersForItem = useMemo(() => {
     if (!selectedItem) return [];
@@ -131,7 +197,7 @@ export default function ConsumableTransfers() {
   }, [containers, lots, selectedItem]);
 
   const requiresContainer = Boolean(selectedItem?.requires_container_tracking || selectedItem?.is_controlled);
-  const selectedContainer = containersForItem.find((container) => container.id === form.watch('containerId'));
+  const selectedContainer = containersForItem.find((container) => container.id === selectedContainerId);
 
   useEffect(() => {
     if (selectedItem && !form.getValues('uom')) {
@@ -140,12 +206,34 @@ export default function ConsumableTransfers() {
   }, [selectedItem, form]);
 
   useEffect(() => {
-    if (holderOptions.length === 0) return;
-    const currentFrom = form.getValues('fromLocationId');
-    if (!currentFrom || !holderOptions.some((holder) => holder.id === currentFrom)) {
-      form.setValue('fromLocationId', locationId || STORE_CODE);
+    const currentUom = form.getValues('uom');
+    if (currentUom && compatibleUnits.includes(currentUom)) return;
+    if (selectedItem?.base_uom) {
+      form.setValue('uom', selectedItem.base_uom);
+      return;
     }
-  }, [holderOptions, form, locationId, STORE_CODE]);
+    if (compatibleUnits.length > 0) {
+      form.setValue('uom', compatibleUnits[0]);
+    }
+  }, [compatibleUnits, selectedItem, form]);
+
+  useEffect(() => {
+    if (holderOptions.length === 0) return;
+    const currentFrom = form.getValues('fromHolderKey');
+    if (!currentFrom || !holderOptions.some((holder) => holder.key === currentFrom)) {
+      if (locationId && allowedOfficeIds.has(locationId)) {
+        form.setValue('fromHolderKey', buildHolderKey('OFFICE', locationId));
+      } else {
+        form.setValue('fromHolderKey', holderOptions[0].key);
+      }
+    }
+
+    const currentTo = form.getValues('toHolderKey');
+    if (!currentTo || !holderOptions.some((holder) => holder.key === currentTo)) {
+      const defaultTo = holderOptions.find((holder) => holder.holderType === 'STORE')?.key || holderOptions[0].key;
+      form.setValue('toHolderKey', defaultTo);
+    }
+  }, [holderOptions, form, locationId, allowedOfficeIds]);
 
   useEffect(() => {
     if (!selectedContainer) return;
@@ -157,46 +245,60 @@ export default function ConsumableTransfers() {
   }, [selectedContainer, selectedItem, form]);
 
   const balanceFilters = useMemo(() => {
-    if (!form.watch('itemId')) return undefined;
-    if (form.watch('fromLocationId') === STORE_CODE) {
-      return {
-        holderType: 'STORE' as const,
-        holderId: STORE_CODE,
-        itemId: form.watch('itemId'),
-      };
-    }
-    if (!form.watch('fromLocationId')) return undefined;
+    if (!selectedItemId || !fromHolder) return undefined;
     return {
-      holderType: 'OFFICE' as const,
-      holderId: form.watch('fromLocationId'),
-      itemId: form.watch('itemId'),
+      holderType: fromHolder.holderType,
+      holderId: fromHolder.holderId,
+      itemId: selectedItemId,
     };
-  }, [form]);
+  }, [selectedItemId, fromHolder]);
 
   const { data: balances = [] } = useConsumableBalances(balanceFilters);
 
-  const availableQty = balances
-    .filter((balance) => {
-      const fromId = form.watch('fromLocationId');
-      if (fromId === STORE_CODE) {
-        return balance.holder_type === 'STORE';
-      }
-      return balance.holder_type === 'OFFICE' && balance.holder_id === fromId;
-    })
-    .reduce((total, balance) => total + (balance.qty_on_hand_base || 0), 0);
+  const availableQty = balances.reduce((total, balance) => total + (balance.qty_on_hand_base || 0), 0);
+
+  const fromHolderName = holderOptions.find((holder) => holder.key === fromHolderKey)?.name || '';
+  const toHolderName = holderOptions.find((holder) => holder.key === toHolderKey)?.name || '';
 
   const handleSubmit = async (data: TransferFormData) => {
+    const parsedFrom = parseHolderKey(data.fromHolderKey);
+    const parsedTo = parseHolderKey(data.toHolderKey);
+    if (!parsedFrom || !parsedTo) {
+      if (!parsedFrom) {
+        form.setError('fromHolderKey', { message: 'From holder is required' });
+      }
+      if (!parsedTo) {
+        form.setError('toHolderKey', { message: 'To holder is required' });
+      }
+      return;
+    }
+
+    if (parsedFrom.holderType === parsedTo.holderType && parsedFrom.holderId === parsedTo.holderId) {
+      form.setError('toHolderKey', { message: 'Destination holder must be different from source holder' });
+      return;
+    }
+
+    if (restrictToAssignedLocation && locationId) {
+      const fromIsInvalidOffice = parsedFrom.holderType === 'OFFICE' && parsedFrom.holderId !== locationId;
+      const toIsInvalidOffice = parsedTo.holderType === 'OFFICE' && parsedTo.holderId !== locationId;
+      if (fromIsInvalidOffice || toIsInvalidOffice) {
+        form.setError('toHolderKey', {
+          message: 'You can transfer only for your assigned office and central store',
+        });
+        return;
+      }
+    }
+
     if (requiresContainer && !data.containerId) {
       form.setError('containerId', { message: 'Container is required for this item' });
       return;
     }
-    const fromHolderType = data.fromLocationId === STORE_CODE ? 'STORE' : 'OFFICE';
-    const toHolderType = data.toLocationId === STORE_CODE ? 'STORE' : 'OFFICE';
+
     await transferMutation.mutateAsync({
-      fromHolderType,
-      fromHolderId: data.fromLocationId,
-      toHolderType,
-      toHolderId: data.toLocationId,
+      fromHolderType: parsedFrom.holderType,
+      fromHolderId: parsedFrom.holderId,
+      toHolderType: parsedTo.holderType,
+      toHolderId: parsedTo.holderId,
       itemId: data.itemId,
       lotId: data.lotId && data.lotId !== FEFO_VALUE ? data.lotId : undefined,
       containerId: data.containerId || undefined,
@@ -207,14 +309,28 @@ export default function ConsumableTransfers() {
       allowNegative: data.allowNegative,
       overrideNote: data.overrideNote || undefined,
     });
-    form.reset();
+
+    form.reset({
+      fromHolderKey: data.fromHolderKey,
+      toHolderKey: data.toHolderKey,
+      itemId: '',
+      lotId: FEFO_VALUE,
+      containerId: '',
+      qty: 0,
+      uom: '',
+      reference: '',
+      notes: '',
+      allowNegative: false,
+      overrideNote: '',
+    });
+    setShowOverride(false);
   };
 
   return (
-    <MainLayout title="Consumable Transfers" description="Move stock between locations">
+    <MainLayout title="Consumable Transfers" description="Move stock between offices and central store">
       <PageHeader
         title="Transfers"
-        description="Transfer stock from Central Store or between labs"
+        description="Transfer stock between central store and offices"
         extra={<ConsumableModeToggle mode={mode} onChange={setMode} />}
       />
 
@@ -223,31 +339,33 @@ export default function ConsumableTransfers() {
           <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>From Location *</Label>
-                <Select value={form.watch('fromLocationId')} onValueChange={(v) => form.setValue('fromLocationId', v)}>
-                  <SelectTrigger><SelectValue placeholder="Select source" /></SelectTrigger>
+                <Label>From Holder *</Label>
+                <Select value={fromHolderKey} onValueChange={(v) => form.setValue('fromHolderKey', v)}>
+                  <SelectTrigger><SelectValue placeholder="Select source holder" /></SelectTrigger>
                   <SelectContent>
                     {holderOptions.map((holder) => (
-                      <SelectItem key={holder.id} value={holder.id}>{holder.name}</SelectItem>
+                      <SelectItem key={holder.key} value={holder.key}>{holder.name}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                {form.formState.errors.fromLocationId && (
-                  <p className="text-sm text-destructive">{form.formState.errors.fromLocationId.message}</p>
+                {fromHolderName ? <p className="text-xs text-muted-foreground">{fromHolderName}</p> : null}
+                {form.formState.errors.fromHolderKey && (
+                  <p className="text-sm text-destructive">{form.formState.errors.fromHolderKey.message}</p>
                 )}
               </div>
               <div className="space-y-2">
-                <Label>To Location *</Label>
-                <Select value={form.watch('toLocationId')} onValueChange={(v) => form.setValue('toLocationId', v)}>
-                  <SelectTrigger><SelectValue placeholder="Select destination" /></SelectTrigger>
+                <Label>To Holder *</Label>
+                <Select value={toHolderKey} onValueChange={(v) => form.setValue('toHolderKey', v)}>
+                  <SelectTrigger><SelectValue placeholder="Select destination holder" /></SelectTrigger>
                   <SelectContent>
                     {holderOptions.map((holder) => (
-                      <SelectItem key={holder.id} value={holder.id}>{holder.name}</SelectItem>
+                      <SelectItem key={holder.key} value={holder.key}>{holder.name}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                {form.formState.errors.toLocationId && (
-                  <p className="text-sm text-destructive">{form.formState.errors.toLocationId.message}</p>
+                {toHolderName ? <p className="text-xs text-muted-foreground">{toHolderName}</p> : null}
+                {form.formState.errors.toHolderKey && (
+                  <p className="text-sm text-destructive">{form.formState.errors.toHolderKey.message}</p>
                 )}
               </div>
             </div>
@@ -255,14 +373,33 @@ export default function ConsumableTransfers() {
             <div className="grid grid-cols-3 gap-4">
               <div className="space-y-2">
                 <Label>Item *</Label>
-                <Select value={form.watch('itemId')} onValueChange={(v) => form.setValue('itemId', v)}>
-                  <SelectTrigger><SelectValue placeholder="Select item" /></SelectTrigger>
-                  <SelectContent>
-                    {filteredItems.map((item) => (
-                      <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Popover open={itemPickerOpen} onOpenChange={setItemPickerOpen}>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" role="combobox" className="w-full justify-between">
+                      {selectedItem ? selectedItem.name : 'Search item by name...'}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                    <Command>
+                      <CommandInput placeholder="Type item name..." />
+                      <CommandList>
+                        <CommandEmpty>No item found.</CommandEmpty>
+                        {filteredItems.map((item) => (
+                          <CommandItem
+                            key={item.id}
+                            value={`${item.name} ${item.base_uom}`}
+                            onSelect={() => {
+                              form.setValue('itemId', item.id);
+                              setItemPickerOpen(false);
+                            }}
+                          >
+                            {item.name}
+                          </CommandItem>
+                        ))}
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
                 {form.formState.errors.itemId && (
                   <p className="text-sm text-destructive">{form.formState.errors.itemId.message}</p>
                 )}
@@ -270,7 +407,7 @@ export default function ConsumableTransfers() {
               <div className="space-y-2">
                 <Label>Lot (optional)</Label>
                 <Select
-                  value={form.watch('lotId') || FEFO_VALUE}
+                  value={selectedLotId || FEFO_VALUE}
                   onValueChange={(v) => form.setValue('lotId', v)}
                   disabled={Boolean(selectedContainer)}
                 >
@@ -279,7 +416,7 @@ export default function ConsumableTransfers() {
                     <SelectItem value={FEFO_VALUE}>FEFO default</SelectItem>
                     {(lots || [])
                       .filter((lot) => {
-                        if (form.watch('itemId')) return lot.consumable_id === form.watch('itemId');
+                        if (selectedItemId) return lot.consumable_id === selectedItemId;
                         return allowedItemIds.has(lot.consumable_id);
                       })
                       .map((lot) => (
@@ -301,8 +438,9 @@ export default function ConsumableTransfers() {
                 <div className="space-y-2">
                   <Label>Container *</Label>
                   <Select
-                    value={form.watch('containerId') || ''}
+                    value={selectedContainerId || ''}
                     onValueChange={(v) => form.setValue('containerId', v)}
+                    disabled={fromHolder?.holderType !== 'OFFICE'}
                   >
                     <SelectTrigger><SelectValue placeholder="Select container" /></SelectTrigger>
                     <SelectContent>
@@ -313,6 +451,11 @@ export default function ConsumableTransfers() {
                       ))}
                     </SelectContent>
                   </Select>
+                  {(fromHolder?.holderType !== 'OFFICE') && (
+                    <p className="text-xs text-muted-foreground">
+                      Container selection is available only when source holder is an office.
+                    </p>
+                  )}
                   {form.formState.errors.containerId && (
                     <p className="text-sm text-destructive">{form.formState.errors.containerId.message}</p>
                   )}
@@ -344,7 +487,7 @@ export default function ConsumableTransfers() {
               <div className="space-y-2">
                 <Label>UoM *</Label>
                 <Select
-                  value={form.watch('uom')}
+                  value={selectedUom}
                   onValueChange={(v) => form.setValue('uom', v)}
                   disabled={Boolean(selectedContainer)}
                 >
@@ -355,6 +498,9 @@ export default function ConsumableTransfers() {
                     ))}
                   </SelectContent>
                 </Select>
+                {form.formState.errors.uom && (
+                  <p className="text-sm text-destructive">{form.formState.errors.uom.message}</p>
+                )}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="reference">Reference</Label>
@@ -367,7 +513,7 @@ export default function ConsumableTransfers() {
               <Input id="notes" {...form.register('notes')} />
             </div>
 
-            {(role === 'org_admin' || role === 'org_admin' || role === 'org_admin') && (
+            {canOverrideNegative && (
               <div className="space-y-3">
                 <div className="flex items-center gap-2">
                   <Checkbox

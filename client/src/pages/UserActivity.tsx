@@ -40,6 +40,7 @@ import {
 } from "lucide-react";
 import { activityService } from "@/services/activityService";
 import { formatDistanceToNow } from "date-fns";
+import { usePageSearch } from "@/contexts/PageSearchContext";
 
 const activityIcons: Record<string, React.ElementType> = {
   login: LogIn,
@@ -72,7 +73,8 @@ const activityColors: Record<string, string> = {
 };
 
 export default function UserActivity() {
-  const [searchQuery, setSearchQuery] = useState("");
+  const pageSearch = usePageSearch();
+  const searchQuery = pageSearch?.term || "";
   const [activityFilter, setActivityFilter] = useState<string>("all");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
@@ -199,7 +201,7 @@ export default function UserActivity() {
               <Input
                 placeholder="Search activities..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => pageSearch?.setTerm(e.target.value)}
                 className="pl-10"
               />
             </div>

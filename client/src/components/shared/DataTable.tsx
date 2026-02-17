@@ -18,7 +18,7 @@ import {
 import { ChevronLeft, ChevronRight, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
-import { usePageSearch } from "@/contexts/PageSearchContext";
+import { usePageSearch as usePageSearchContext } from "@/contexts/PageSearchContext";
 
 interface Column<T> {
   key: string;
@@ -32,6 +32,7 @@ interface DataTableProps<T> {
   data: T[];
   searchable?: boolean;
   searchPlaceholder?: string;
+  useGlobalPageSearch?: boolean;
   onRowClick?: (row: T) => void;
   actions?: (row: T) => React.ReactNode;
   virtualized?: boolean;
@@ -39,11 +40,44 @@ interface DataTableProps<T> {
   virtualViewportHeight?: number;
 }
 
-export function DataTable<T extends { id: string }>({
+function appendSearchTokens(value: unknown, tokens: string[], visited: WeakSet<object>) {
+  if (value === null || value === undefined) return;
+
+  if (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean" ||
+    typeof value === "bigint"
+  ) {
+    tokens.push(String(value).toLowerCase());
+    return;
+  }
+
+  if (value instanceof Date) {
+    tokens.push(value.toISOString().toLowerCase());
+    return;
+  }
+
+  if (Array.isArray(value)) {
+    value.forEach((entry) => appendSearchTokens(entry, tokens, visited));
+    return;
+  }
+
+  if (typeof value === "object") {
+    if (visited.has(value)) return;
+    visited.add(value);
+    Object.values(value as Record<string, unknown>).forEach((entry) => {
+      appendSearchTokens(entry, tokens, visited);
+    });
+  }
+}
+
+export function DataTable<T extends { id?: string; _id?: string }>({
   columns,
   data,
   searchable = true,
   searchPlaceholder = "Search...",
+  useGlobalPageSearch = true,
   onRowClick,
   actions,
   virtualized = false,
@@ -51,12 +85,12 @@ export function DataTable<T extends { id: string }>({
   virtualViewportHeight = 560,
 }: DataTableProps<T>) {
   const [search, setSearch] = useState("");
-  const pageSearch = usePageSearch();
+  const pageSearch = usePageSearchContext();
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [virtualScrollTop, setVirtualScrollTop] = useState(0);
 
-  const effectiveSearch = pageSearch ? pageSearch.term : search;
+  const effectiveSearch = useGlobalPageSearch && pageSearch ? pageSearch.term : search;
 
   useEffect(() => {
     setPage(1);
@@ -70,11 +104,11 @@ export function DataTable<T extends { id: string }>({
 
   const filteredData = useMemo(() => {
     if (!normalizedSearch) return data;
-    return data.filter((row) =>
-      Object.values(row).some((value) =>
-        String(value).toLowerCase().includes(normalizedSearch)
-      )
-    );
+    return data.filter((row) => {
+      const tokens: string[] = [];
+      appendSearchTokens(row, tokens, new WeakSet<object>());
+      return tokens.some((token) => token.includes(normalizedSearch));
+    });
   }, [data, normalizedSearch]);
 
   const totalPages = Math.ceil(filteredData.length / pageSize);
@@ -112,11 +146,19 @@ export function DataTable<T extends { id: string }>({
     }, row);
   };
 
+  const getRowKey = (row: T, index: number) => {
+    const candidate = row.id ?? row._id;
+    if (candidate === null || candidate === undefined || candidate === "") {
+      return `row-${index}`;
+    }
+    return String(candidate);
+  };
+
   return (
     <div className="space-y-4">
       {/* Toolbar */}
       <div className="flex items-center justify-between gap-4">
-        {searchable && !pageSearch && (
+        {searchable && !(useGlobalPageSearch && pageSearch) && (
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -187,9 +229,9 @@ export function DataTable<T extends { id: string }>({
                     />
                   </TableRow>
                 )}
-                {(virtualized ? virtualWindow.visibleRows : paginatedData).map((row) => (
+                {(virtualized ? virtualWindow.visibleRows : paginatedData).map((row, index) => (
                 <TableRow
-                  key={row.id}
+                  key={getRowKey(row, index)}
                   className={cn(onRowClick && "cursor-pointer")}
                   onClick={() => onRowClick?.(row)}
                 >

@@ -31,7 +31,7 @@ export default function ConsumableMaster() {
   const { role, isOrgAdmin } = useAuth();
   const { data: items, isLoading } = useConsumableItems();
   const { data: units } = useConsumableUnits();
-  const { data: categories } = useCategories();
+  const { data: categories } = useCategories({ assetType: 'CONSUMABLE' });
   const createItem = useCreateConsumableItem();
   const updateItem = useUpdateConsumableItem();
   const deleteItem = useDeleteConsumableItem();
@@ -136,7 +136,7 @@ export default function ConsumableMaster() {
 
   if (isLoading) {
     return (
-      <MainLayout title="Consumables" description="Manage consumable master data">
+      <MainLayout title="Item Master" description="Manage consumable item master data">
         <div className="flex items-center justify-center h-64">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
@@ -145,9 +145,9 @@ export default function ConsumableMaster() {
   }
 
   return (
-    <MainLayout title="Consumable Master" description="Consumable master register">
+    <MainLayout title="Item Master" description="Consumable item master">
       <PageHeader
-        title="Consumable Master"
+        title="Item Master"
         description={`Create and maintain ${modeLabel} inventory items`}
         extra={<ConsumableModeToggle mode={mode} onChange={setMode} />}
         action={canManage ? { label: 'Add Item', onClick: handleAdd } : undefined}

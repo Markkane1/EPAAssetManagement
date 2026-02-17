@@ -6,18 +6,25 @@ import {
   ConsumableExpiryRow,
 } from '@/types';
 
+export type InventoryHolderType = 'OFFICE' | 'STORE' | 'EMPLOYEE' | 'SUB_LOCATION';
+
 export interface ReceivePayload {
-  holderType?: 'OFFICE' | 'STORE';
+  holderType?: InventoryHolderType;
   holderId?: string;
+  categoryId: string;
   itemId: string;
   lotId?: string;
   lot?: {
     lotNumber: string;
     receivedDate: string;
     expiryDate?: string;
-    supplierId?: string;
+    source: 'procurement' | 'project';
+    vendorId?: string;
+    projectId?: string;
+    schemeId?: string;
     docs?: { sdsUrl?: string; coaUrl?: string; invoiceUrl?: string };
   };
+  handoverDocumentationFile?: File | null;
   qty: number;
   uom: string;
   containers?: { containerCode: string; initialQty: number; openedDate?: string }[];
@@ -27,9 +34,9 @@ export interface ReceivePayload {
 }
 
 export interface TransferPayload {
-  fromHolderType?: 'OFFICE' | 'STORE';
+  fromHolderType?: InventoryHolderType;
   fromHolderId: string;
-  toHolderType?: 'OFFICE' | 'STORE';
+  toHolderType?: InventoryHolderType;
   toHolderId: string;
   itemId: string;
   lotId?: string;
@@ -44,7 +51,7 @@ export interface TransferPayload {
 }
 
 export interface ConsumePayload {
-  holderType?: 'OFFICE' | 'STORE';
+  holderType?: InventoryHolderType;
   holderId: string;
   itemId: string;
   lotId?: string;
@@ -59,7 +66,7 @@ export interface ConsumePayload {
 }
 
 export interface AdjustPayload {
-  holderType?: 'OFFICE' | 'STORE';
+  holderType?: InventoryHolderType;
   holderId: string;
   itemId: string;
   lotId?: string;
@@ -76,7 +83,7 @@ export interface AdjustPayload {
 }
 
 export interface DisposePayload {
-  holderType?: 'OFFICE' | 'STORE';
+  holderType?: InventoryHolderType;
   holderId: string;
   itemId: string;
   lotId?: string;
@@ -92,9 +99,9 @@ export interface DisposePayload {
 }
 
 export interface ReturnPayload {
-  fromHolderType?: 'OFFICE' | 'STORE';
+  fromHolderType?: InventoryHolderType;
   fromHolderId: string;
-  toHolderType?: 'OFFICE' | 'STORE';
+  toHolderType?: InventoryHolderType;
   toHolderId?: string;
   itemId: string;
   lotId?: string;
@@ -110,7 +117,7 @@ export interface ReturnPayload {
 
 export interface OpeningBalancePayload {
   entries: Array<{
-    holderType?: 'OFFICE' | 'STORE';
+    holderType?: InventoryHolderType;
     holderId: string;
     itemId: string;
     lotId?: string;
@@ -123,14 +130,14 @@ export interface OpeningBalancePayload {
 }
 
 export interface BalanceQuery {
-  holderType?: 'OFFICE' | 'STORE';
+  holderType?: InventoryHolderType;
   holderId: string;
   itemId: string;
   lotId?: string;
 }
 
 export interface BalancesQuery {
-  holderType?: 'OFFICE' | 'STORE';
+  holderType?: InventoryHolderType;
   holderId?: string;
   itemId?: string;
   lotId?: string;
@@ -139,16 +146,37 @@ export interface BalancesQuery {
 export interface LedgerQuery {
   from?: string;
   to?: string;
-  holderType?: 'OFFICE' | 'STORE';
+  holderType?: InventoryHolderType;
   holderId?: string;
   itemId?: string;
   lotId?: string;
   txType?: string;
 }
 
+function sanitizeReceivePayload(payload: ReceivePayload) {
+  const {
+    handoverDocumentationFile,
+    ...rest
+  } = payload;
+  return {
+    payload: rest,
+    handoverDocumentationFile,
+  };
+}
+
+function toReceiveFormData(payload: ReceivePayload) {
+  const { payload: jsonPayload, handoverDocumentationFile } = sanitizeReceivePayload(payload);
+  const formData = new FormData();
+  formData.append('payload', JSON.stringify(jsonPayload));
+  if (handoverDocumentationFile) {
+    formData.append('handoverDocumentation', handoverDocumentationFile);
+  }
+  return formData;
+}
+
 export const consumableInventoryService = {
   receive: (payload: ReceivePayload) =>
-    api.post<ConsumableInventoryTransaction>('/consumables/inventory/receive', payload),
+    api.upload<ConsumableInventoryTransaction>('/consumables/inventory/receive', toReceiveFormData(payload)),
   transfer: (payload: TransferPayload) =>
     api.post<ConsumableInventoryTransaction | ConsumableInventoryTransaction[]>(
       '/consumables/inventory/transfer',
@@ -201,7 +229,7 @@ export const consumableInventoryService = {
     const search = params.toString();
     return api.get<ConsumableInventoryTransaction[]>(`/consumables/ledger${search ? `?${search}` : ''}`);
   },
-  getExpiry: (days?: number, holderType?: 'OFFICE' | 'STORE', holderId?: string) => {
+  getExpiry: (days?: number, holderType?: InventoryHolderType, holderId?: string) => {
     const params = new URLSearchParams();
     if (days) params.set('days', String(days));
     if (holderType) params.set('holderType', holderType);

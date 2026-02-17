@@ -4,7 +4,7 @@ import { useCategories } from "@/hooks/useCategories";
 import { useAssets } from "@/hooks/useAssets";
 
 export function AssetsByCategory() {
-  const { data: categories = [] } = useCategories();
+  const { data: categories = [] } = useCategories({ assetType: "ASSET" });
   const { data: assets = [] } = useAssets();
 
   // Calculate asset count per category

@@ -11,8 +11,6 @@ const REFERENCE_ROUTE_PREFIXES = [
   '/api/schemes',
   '/api/consumables/units',
   '/api/consumables/reason-codes',
-  '/api/consumables/suppliers',
-  '/api/consumables/locations',
 ];
 
 const NO_STORE_ROUTE_PREFIXES = [

@@ -5,12 +5,12 @@ const LIST_LIMIT = 2000;
 
 export interface DistrictCreateDto {
   name: string;
-  divisionId?: string | null;
+  divisionId: string;
 }
 
 export interface DistrictUpdateDto {
   name?: string;
-  divisionId?: string | null;
+  divisionId?: string;
   isActive?: boolean;
 }
 
@@ -25,13 +25,13 @@ export const districtService = {
   create: (data: DistrictCreateDto) =>
     api.post<District>('/districts', {
       name: data.name,
-      division_id: data.divisionId || null,
+      division_id: data.divisionId,
     }),
 
   update: (id: string, data: DistrictUpdateDto) =>
     api.put<District>(`/districts/${id}`, {
       ...(data.name !== undefined ? { name: data.name } : {}),
-      ...(data.divisionId !== undefined ? { division_id: data.divisionId || null } : {}),
+      ...(data.divisionId !== undefined ? { division_id: data.divisionId } : {}),
       ...(data.isActive !== undefined ? { is_active: data.isActive } : {}),
     }),
 

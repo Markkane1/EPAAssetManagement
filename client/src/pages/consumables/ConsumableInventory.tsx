@@ -14,34 +14,68 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { useConsumableBalances, useConsumableLedger } from '@/hooks/useConsumableInventory';
 import { useConsumableItems } from '@/hooks/useConsumableItems';
-import { useConsumableLocations } from '@/hooks/useConsumableLocations';
+import { useOffices } from '@/hooks/useOffices';
+import { useEmployees } from '@/hooks/useEmployees';
+import { useOfficeSubLocations } from '@/hooks/useOfficeSubLocations';
 import { useConsumableLots } from '@/hooks/useConsumableLots';
 import { consumableInventoryService } from '@/services/consumableInventoryService';
 import type { ConsumableInventoryBalance } from '@/types';
 import { useConsumableMode } from '@/hooks/useConsumableMode';
 import { filterItemsByMode, filterLocationsByMode } from '@/lib/consumableMode';
 import { ConsumableModeToggle } from '@/components/consumables/ConsumableModeToggle';
+import { useAuth } from '@/contexts/AuthContext';
+
+function asId(value: { id?: string; _id?: string }) {
+  return value.id || value._id || '';
+}
 
 export default function ConsumableInventory() {
   const ALL_VALUE = '__all__';
   const STORE_FILTER = '__store__';
   const STORE_CODE = 'HEAD_OFFICE_STORE';
+  const { role, locationId: assignedLocationId } = useAuth();
   const { mode, setMode } = useConsumableMode();
   const { data: items } = useConsumableItems();
-  const { data: locations } = useConsumableLocations({
+  const { data: locations } = useOffices({
     capability: mode === 'chemicals' ? 'chemicals' : 'consumables',
   });
+  const { data: employees = [] } = useEmployees();
+  const { data: sections = [] } = useOfficeSubLocations();
   const { data: lots } = useConsumableLots();
 
   const [locationId, setLocationId] = useState(ALL_VALUE);
   const [itemId, setItemId] = useState(ALL_VALUE);
   const [lotId, setLotId] = useState(ALL_VALUE);
+  const [holderTypeFilter, setHolderTypeFilter] = useState(ALL_VALUE);
+  const [holderIdFilter, setHolderIdFilter] = useState(ALL_VALUE);
 
   const filteredItems = useMemo(() => filterItemsByMode(items || [], mode), [items, mode]);
   const filteredLocations = useMemo(() => filterLocationsByMode(locations || [], mode), [locations, mode]);
   const allowedItemIds = useMemo(
     () => new Set(filteredItems.map((item) => item.id)),
     [filteredItems]
+  );
+  const employeeNameMap = useMemo(
+    () =>
+      new Map(
+        employees.map((employee) => [
+          asId(employee),
+          `${employee.first_name || ''} ${employee.last_name || ''}`.trim() || employee.email || asId(employee),
+        ])
+      ),
+    [employees]
+  );
+  const employeeOfficeMap = useMemo(
+    () => new Map(employees.map((employee) => [asId(employee), employee.location_id ? String(employee.location_id) : null])),
+    [employees]
+  );
+  const sectionNameMap = useMemo(
+    () => new Map(sections.map((section) => [asId(section), section.name])),
+    [sections]
+  );
+  const sectionOfficeMap = useMemo(
+    () => new Map(sections.map((section) => [asId(section), section.office_id ? String(section.office_id) : null])),
+    [sections]
   );
   
   useEffect(() => {
@@ -52,14 +86,68 @@ export default function ConsumableInventory() {
   }, [itemId, filteredItems, ALL_VALUE]);
 
   useEffect(() => {
+    if (role === 'org_admin') return;
+    if (!assignedLocationId) return;
+    if (locationId !== assignedLocationId) {
+      setLocationId(assignedLocationId);
+    }
+  }, [role, assignedLocationId, locationId]);
+
+  useEffect(() => {
     if (locationId !== ALL_VALUE && locationId !== STORE_FILTER && !filteredLocations.some((loc) => loc.id === locationId)) {
       setLocationId(ALL_VALUE);
     }
   }, [locationId, filteredLocations, ALL_VALUE, STORE_FILTER]);
 
+  useEffect(() => {
+    setHolderIdFilter(ALL_VALUE);
+  }, [holderTypeFilter, ALL_VALUE]);
+
+  const holderOptions = useMemo(() => {
+    if (holderTypeFilter === 'STORE') {
+      return [{ id: STORE_CODE, label: 'Head Office Store' }];
+    }
+    if (holderTypeFilter === 'OFFICE') {
+      const officeOptions =
+        locationId !== ALL_VALUE && locationId !== STORE_FILTER
+          ? filteredLocations.filter((location) => location.id === locationId)
+          : filteredLocations;
+      return officeOptions.map((location) => ({ id: location.id, label: location.name }));
+    }
+    if (holderTypeFilter === 'EMPLOYEE') {
+      return employees
+        .filter((employee) => {
+          if (locationId === ALL_VALUE || locationId === STORE_FILTER) return true;
+          return employee.location_id ? String(employee.location_id) === locationId : false;
+        })
+        .map((employee) => {
+          const employeeId = asId(employee);
+          return {
+            id: employeeId,
+            label: `${employee.first_name || ''} ${employee.last_name || ''}`.trim() || employee.email || employeeId,
+          };
+        })
+        .filter((employee) => employee.id);
+    }
+    if (holderTypeFilter === 'SUB_LOCATION') {
+      return sections
+        .filter((section) => {
+          const officeId = section.office_id ? String(section.office_id) : null;
+          if (locationId === ALL_VALUE || locationId === STORE_FILTER) return true;
+          return officeId === locationId;
+        })
+        .map((section) => ({ id: asId(section), label: section.name }))
+        .filter((section) => section.id);
+    }
+    return [];
+  }, [holderTypeFilter, locationId, filteredLocations, employees, sections, ALL_VALUE, STORE_FILTER, STORE_CODE]);
+
   const balanceFilters = useMemo(() => {
     const filters: any = {};
-    if (locationId === STORE_FILTER) {
+    if (holderTypeFilter !== ALL_VALUE && holderIdFilter !== ALL_VALUE) {
+      filters.holderType = holderTypeFilter;
+      filters.holderId = holderIdFilter;
+    } else if (locationId === STORE_FILTER) {
       filters.holderType = 'STORE';
       filters.holderId = STORE_CODE;
     } else if (locationId !== ALL_VALUE) {
@@ -69,7 +157,7 @@ export default function ConsumableInventory() {
     if (itemId !== ALL_VALUE) filters.itemId = itemId;
     if (lotId !== ALL_VALUE) filters.lotId = lotId;
     return Object.keys(filters).length ? filters : undefined;
-  }, [locationId, itemId, lotId, ALL_VALUE, STORE_FILTER, STORE_CODE]);
+  }, [holderTypeFilter, holderIdFilter, locationId, itemId, lotId, ALL_VALUE, STORE_FILTER, STORE_CODE]);
 
   const { data: balances = [] } = useConsumableBalances(balanceFilters);
 
@@ -85,11 +173,21 @@ export default function ConsumableInventory() {
     () =>
       (balances || []).filter((balance) => {
         if (!filteredItems.some((item) => item.id === balance.consumable_item_id)) return false;
+        if (holderTypeFilter !== ALL_VALUE && holderIdFilter !== ALL_VALUE) {
+          return balance.holder_type === holderTypeFilter && balance.holder_id === holderIdFilter;
+        }
         if (locationId === ALL_VALUE) return true;
         if (locationId === STORE_FILTER) return balance.holder_type === 'STORE';
-        return balance.holder_type === 'OFFICE' && balance.holder_id === locationId;
+        if (balance.holder_type === 'OFFICE') return balance.holder_id === locationId;
+        if (balance.holder_type === 'EMPLOYEE') {
+          return balance.holder_id ? employeeOfficeMap.get(String(balance.holder_id)) === locationId : false;
+        }
+        if (balance.holder_type === 'SUB_LOCATION') {
+          return balance.holder_id ? sectionOfficeMap.get(String(balance.holder_id)) === locationId : false;
+        }
+        return false;
       }),
-    [balances, filteredItems, locationId, ALL_VALUE, STORE_FILTER]
+    [balances, filteredItems, holderTypeFilter, holderIdFilter, locationId, ALL_VALUE, STORE_FILTER, employeeOfficeMap, sectionOfficeMap]
   );
 
   const columns = [
@@ -103,15 +201,26 @@ export default function ConsumableInventory() {
       label: 'Holder',
       render: (_: string, row: ConsumableInventoryBalance) => {
         if (row.holder_type === 'STORE') return 'Head Office Store';
+        if (row.holder_type === 'EMPLOYEE') {
+          return row.holder_id ? `${employeeNameMap.get(String(row.holder_id)) || 'Unknown Employee'} (Employee)` : 'Unknown';
+        }
+        if (row.holder_type === 'SUB_LOCATION') {
+          return row.holder_id ? `${sectionNameMap.get(String(row.holder_id)) || 'Unknown Section'} (Section)` : 'Unknown';
+        }
         const officeId = row.holder_id || '';
-        return filteredLocations.find((loc) => loc.id === officeId)?.name || 'Unknown';
+        return filteredLocations.find((loc) => loc.id === officeId)?.name || 'Unknown Office';
       },
     },
     {
       key: 'lot_id',
       label: 'Lot',
-      render: (value: string | null) => {
-        if (!value) return 'N/A';
+      render: (value: string | null, row: ConsumableInventoryBalance) => {
+        if (!value) {
+          if ((row.lot_count || 0) > 0) {
+            return `Combined (${row.lot_count} lots)`;
+          }
+          return 'N/A';
+        }
         return lots?.find((lot) => lot.id === value)?.batch_no || 'Unknown';
       },
     },
@@ -137,19 +246,25 @@ export default function ConsumableInventory() {
 
       <Card className="mb-6">
         <CardContent className="pt-6">
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
             <div className="space-y-2">
               <label className="text-sm font-medium">Location</label>
-              <Select value={locationId} onValueChange={setLocationId}>
-                <SelectTrigger><SelectValue placeholder="All locations" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ALL_VALUE}>All locations</SelectItem>
-                  <SelectItem value={STORE_FILTER}>Head Office Store</SelectItem>
-                  {filteredLocations.map((loc) => (
-                    <SelectItem key={loc.id} value={loc.id}>{loc.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {role === 'org_admin' ? (
+                <Select value={locationId} onValueChange={setLocationId}>
+                  <SelectTrigger><SelectValue placeholder="All locations" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={ALL_VALUE}>All locations</SelectItem>
+                    <SelectItem value={STORE_FILTER}>Head Office Store</SelectItem>
+                    {filteredLocations.map((loc) => (
+                      <SelectItem key={loc.id} value={loc.id}>{loc.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm">
+                  {filteredLocations.find((loc) => loc.id === locationId)?.name || 'Assigned location'}
+                </div>
+              )}
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Item</label>
@@ -176,7 +291,38 @@ export default function ConsumableInventory() {
                     })
                     .map((lot) => (
                       <SelectItem key={lot.id} value={lot.id}>{lot.batch_no}</SelectItem>
-                    ))}
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Holder Type (optional)</label>
+              <Select value={holderTypeFilter} onValueChange={setHolderTypeFilter}>
+                <SelectTrigger><SelectValue placeholder="All holder types" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL_VALUE}>All holder types</SelectItem>
+                  <SelectItem value="STORE">Store</SelectItem>
+                  <SelectItem value="OFFICE">Office</SelectItem>
+                  <SelectItem value="SUB_LOCATION">Section / Room</SelectItem>
+                  <SelectItem value="EMPLOYEE">Employee</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Holder (optional)</label>
+              <Select
+                value={holderIdFilter}
+                onValueChange={setHolderIdFilter}
+                disabled={holderTypeFilter === ALL_VALUE}
+              >
+                <SelectTrigger><SelectValue placeholder="All holders" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL_VALUE}>All holders</SelectItem>
+                  {holderOptions.map((holder) => (
+                    <SelectItem key={`${holderTypeFilter}-${holder.id}`} value={holder.id}>
+                      {holder.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -203,10 +349,18 @@ export default function ConsumableInventory() {
                 <div className="flex flex-wrap gap-2">
                   {((row.byHolder && row.byHolder.length > 0) ? row.byHolder : row.byLocation).map((loc: any) => (
                     <Badge key={`${loc.holderType || 'OFFICE'}-${loc.holderId || loc.locationId}`} variant="outline">
-                      {(loc.holderType === 'STORE'
-                        ? 'Head Office Store'
-                        : filteredLocations.find((l) => l.id === (loc.locationId || loc.holderId))?.name || 'Unknown')
-                      }: {loc.qtyOnHandBase}
+                      {(() => {
+                        const holderType = loc.holderType || 'OFFICE';
+                        const holderId = loc.holderId || loc.locationId;
+                        if (holderType === 'STORE') return 'Head Office Store';
+                        if (holderType === 'EMPLOYEE') {
+                          return `${employeeNameMap.get(String(holderId)) || 'Unknown Employee'} (Employee)`;
+                        }
+                        if (holderType === 'SUB_LOCATION') {
+                          return `${sectionNameMap.get(String(holderId)) || 'Unknown Section'} (Section)`;
+                        }
+                        return filteredLocations.find((l) => l.id === holderId)?.name || 'Unknown Office';
+                      })()}: {loc.qtyOnHandBase}
                     </Badge>
                   ))}
                 </div>
@@ -240,3 +394,4 @@ export default function ConsumableInventory() {
     </MainLayout>
   );
 }
+

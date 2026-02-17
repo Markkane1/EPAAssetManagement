@@ -1184,6 +1184,29 @@ export const requisitionController = {
                 })),
                 { session }
               );
+
+              for (const assignment of assignmentRows) {
+                const existingIssueRecord = await RecordModel.findOne({
+                  record_type: 'ISSUE',
+                  assignment_id: assignment._id,
+                }).session(session);
+                if (!existingIssueRecord) {
+                  await createRecord(
+                    ctx,
+                    {
+                      recordType: 'ISSUE',
+                      officeId: issuingOfficeId,
+                      status: 'Draft',
+                      assetItemId: String(assignment.asset_item_id || ''),
+                      employeeId: targetType === 'EMPLOYEE' ? String(requisition.target_id || '') : undefined,
+                      assignmentId: String(assignment._id),
+                      notes: `Draft via requisition ${requisition.file_number} line ${line.id}`,
+                    },
+                    session
+                  );
+                }
+              }
+
               createdAssignments.push(...assignmentRows.map((assignment) => assignment.toJSON()));
               createdDraftAssignmentIds.push(...assignmentRows.map((assignment) => String(assignment._id)));
               additionalFulfilled = assignmentRows.length;

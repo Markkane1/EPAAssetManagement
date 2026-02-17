@@ -24,6 +24,7 @@ import { useAssetItems } from "@/hooks/useAssetItems";
 import { useLocations } from "@/hooks/useLocations";
 import { useMemo } from "react";
 import { getOfficeHolderId, isStoreHolder } from "@/lib/assetItemHolder";
+import { usePageSearch } from "@/contexts/PageSearchContext";
 
 function safeId(value: unknown): string | null {
   const normalized = String(value ?? "").trim();
@@ -34,6 +35,8 @@ export default function Dashboard() {
   const { data: dashboardStats, isLoading: statsLoading } = useDashboardStats();
   const { data: assetItems } = useAssetItems();
   const { data: locations } = useLocations();
+  const pageSearch = usePageSearch();
+  const searchTerm = (pageSearch?.term || "").trim().toLowerCase();
 
   const stats = dashboardStats || {
     totalAssets: 0,
@@ -47,7 +50,19 @@ export default function Dashboard() {
   const assetItemList = useMemo(() => assetItems || [], [assetItems]);
   const locationList = useMemo(() => locations || [], [locations]);
 
-  const recentItems = assetItemList.slice(0, 5);
+  const recentItems = useMemo(
+    () =>
+      assetItemList
+        .filter((item) => {
+          if (!searchTerm) return true;
+          return [item.tag, item.serial_number, item.item_status, item.item_condition]
+            .join(" ")
+            .toLowerCase()
+            .includes(searchTerm);
+        })
+        .slice(0, 5),
+    [assetItemList, searchTerm]
+  );
   const locationCounts = useMemo(() => {
     const counts = new Map<string, number>();
     assetItemList.forEach((item) => {
@@ -60,6 +75,18 @@ export default function Dashboard() {
   const storeItemCount = useMemo(
     () => assetItemList.filter((item) => isStoreHolder(item)).length,
     [assetItemList]
+  );
+  const showStoreRow =
+    !searchTerm || "head office store system store".toLowerCase().includes(searchTerm);
+  const visibleLocations = useMemo(
+    () =>
+      locationList
+        .filter((location) => {
+          if (!searchTerm) return true;
+          return [location.name, location.address].join(" ").toLowerCase().includes(searchTerm);
+        })
+        .slice(0, 5),
+    [locationList, searchTerm]
   );
 
   if (statsLoading) {
@@ -200,7 +227,7 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {locationList.slice(0, 5).map((location, index) => {
+              {visibleLocations.map((location, index) => {
                 const locationId = safeId(location.id) || safeId((location as Record<string, unknown>)._id);
                 const locationKey = locationId || `location-${index}-${location.name || "unknown"}`;
                 return (
@@ -223,16 +250,18 @@ export default function Dashboard() {
                   </div>
                 );
               })}
-              <div className="flex items-center justify-between p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors">
-                <div>
-                  <p className="font-medium text-sm">Head Office Store</p>
-                  <p className="text-xs text-muted-foreground truncate max-w-[200px]">System Store</p>
+              {showStoreRow && (
+                <div className="flex items-center justify-between p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors">
+                  <div>
+                    <p className="font-medium text-sm">Head Office Store</p>
+                    <p className="text-xs text-muted-foreground truncate max-w-[200px]">System Store</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-semibold text-sm">{storeItemCount}</p>
+                    <p className="text-xs text-muted-foreground">assets</p>
+                  </div>
                 </div>
-                <div className="text-right">
-                  <p className="font-semibold text-sm">{storeItemCount}</p>
-                  <p className="text-xs text-muted-foreground">assets</p>
-                </div>
-              </div>
+              )}
             </div>
           </CardContent>
         </Card>

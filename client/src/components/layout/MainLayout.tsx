@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { Sidebar } from "./Sidebar";
 import { Header } from "./Header";
-import { PageSearchProvider } from "@/contexts/PageSearchContext";
+import { usePageSearch } from "@/contexts/PageSearchContext";
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -13,15 +13,17 @@ interface MainLayoutProps {
 
 export function MainLayout({ children, title, description, searchPlaceholder }: MainLayoutProps) {
   const location = useLocation();
+  const pageSearch = usePageSearch();
   const mainRef = useRef<HTMLElement>(null);
-  const [searchTerm, setSearchTerm] = useState("");
+  const [fallbackSearchTerm, setFallbackSearchTerm] = useState("");
+  const searchTerm = pageSearch?.term ?? fallbackSearchTerm;
+  const setSearchTerm = pageSearch?.setTerm ?? setFallbackSearchTerm;
 
   // Reset scroll position only when navigating to a new route
   useEffect(() => {
     if (mainRef.current) {
       mainRef.current.scrollTop = 0;
     }
-    setSearchTerm("");
   }, [location.pathname]);
 
   return (
@@ -35,14 +37,12 @@ export function MainLayout({ children, title, description, searchPlaceholder }: 
           onSearchChange={setSearchTerm}
           searchPlaceholder={searchPlaceholder}
         />
-        <PageSearchProvider value={{ term: searchTerm, setTerm: setSearchTerm }}>
-          <main 
-            ref={mainRef}
-            className="flex-1 overflow-y-auto overscroll-contain p-8"
-          >
-            {children}
-          </main>
-        </PageSearchProvider>
+        <main 
+          ref={mainRef}
+          className="flex-1 overflow-y-auto overscroll-contain p-8"
+        >
+          {children}
+        </main>
       </div>
     </div>
   );

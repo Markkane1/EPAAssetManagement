@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import { connectDatabase } from '../src/config/db';
 import { OfficeModel } from '../src/models/office.model';
 
-type NewOfficeType = 'DIRECTORATE' | 'DISTRICT_OFFICE' | 'DISTRICT_LAB';
+type NewOfficeType = 'HEAD_OFFICE' | 'DIRECTORATE' | 'DISTRICT_OFFICE' | 'DISTRICT_LAB';
 
 type OfficeDoc = {
   _id: mongoose.Types.ObjectId;
@@ -14,7 +14,7 @@ type OfficeDoc = {
   parent_location_id?: mongoose.Types.ObjectId | null;
 };
 
-const NEW_TYPES = new Set<NewOfficeType>(['DIRECTORATE', 'DISTRICT_OFFICE', 'DISTRICT_LAB']);
+const NEW_TYPES = new Set<NewOfficeType>(['HEAD_OFFICE', 'DIRECTORATE', 'DISTRICT_OFFICE', 'DISTRICT_LAB']);
 
 function normalizeType(value: unknown) {
   return String(value ?? '')
@@ -41,8 +41,8 @@ function mapType(doc: OfficeDoc): NewOfficeType {
   if (rawType === 'SUBSTORE') {
     return 'DISTRICT_OFFICE';
   }
-  if (rawType === 'CENTRAL') {
-    return 'DIRECTORATE';
+  if (rawType === 'CENTRAL' || rawType === 'HEAD_OFFICE') {
+    return 'HEAD_OFFICE';
   }
   if (hasDirectorateInName(doc.name)) {
     return 'DIRECTORATE';

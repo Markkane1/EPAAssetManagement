@@ -8,6 +8,7 @@ import { AssetItemModel } from '../models/assetItem.model';
 import { EmployeeModel } from '../models/employee.model';
 import { RequisitionModel } from '../models/requisition.model';
 import { RequisitionLineModel } from '../models/requisitionLine.model';
+import { RecordModel } from '../models/record.model';
 import { DocumentVersionModel } from '../models/documentVersion.model';
 import { UserModel } from '../models/user.model';
 import { mapFields } from '../utils/mapFields';
@@ -45,6 +46,27 @@ import {
   resolveGeneratedSlipFile,
 } from './assignment.controller.helpers';
 
+async function resolveRequesterEmployeeId(userId: string) {
+  const employee: any = await EmployeeModel.findOne({ user_id: userId }, { _id: 1 }).lean();
+  if (!employee?._id) {
+    throw createHttpError(403, 'Employee mapping not found for user');
+  }
+  return String(employee._id);
+}
+
+function ensureEmployeeOwnsAssignment(assignment: any, requesterEmployeeId: string) {
+  const employeeId = assignment?.employee_id ? String(assignment.employee_id) : '';
+  const assignedToType = String(assignment?.assigned_to_type || '');
+  const assignedToId = assignment?.assigned_to_id ? String(assignment.assigned_to_id) : '';
+
+  const isOwned =
+    (assignedToType === 'EMPLOYEE' && assignedToId === requesterEmployeeId) ||
+    employeeId === requesterEmployeeId;
+  if (!isOwned) {
+    throw createHttpError(403, 'Employees can only access their own assignments');
+  }
+}
+
 export const assignmentController = {
   list: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
@@ -52,6 +74,21 @@ export const assignmentController = {
       const page = clampInt(req.query.page, 1, 10_000);
       const skip = (page - 1) * limit;
       const access = await resolveAccessContext(req.user);
+
+      if (!access.isOrgAdmin && access.role === 'employee') {
+        const requesterEmployeeId = await resolveRequesterEmployeeId(access.userId);
+        const assignments = await AssignmentModel.find({
+          $or: [
+            { employee_id: requesterEmployeeId },
+            { assigned_to_type: 'EMPLOYEE', assigned_to_id: requesterEmployeeId },
+          ],
+        })
+          .sort({ assigned_date: -1, created_at: -1 })
+          .skip(skip)
+          .limit(limit);
+        return res.json(assignments);
+      }
+
       if (access.isOrgAdmin) {
         const assignments = await AssignmentModel.find()
           .sort({ assigned_date: -1, created_at: -1 })
@@ -81,6 +118,13 @@ export const assignmentController = {
       const assignment = await AssignmentModel.findById(readParam(req, 'id'));
       if (!assignment) return res.status(404).json({ message: 'Not found' });
       const access = await resolveAccessContext(req.user);
+
+      if (!access.isOrgAdmin && access.role === 'employee') {
+        const requesterEmployeeId = await resolveRequesterEmployeeId(access.userId);
+        ensureEmployeeOwnsAssignment(assignment, requesterEmployeeId);
+        return res.json(assignment);
+      }
+
       await ensureAssignmentAssetScope(access, assignment);
       return res.json(assignment);
     } catch (error) {
@@ -93,14 +137,26 @@ export const assignmentController = {
       const limit = clampInt(req.query.limit, 200, 1000);
       const page = clampInt(req.query.page, 1, 10_000);
       const access = await resolveAccessContext(req.user);
-      if (!access.isOrgAdmin) {
-        if (!access.officeId) throw createHttpError(403, 'User is not assigned to an office');
-        const employee = await EmployeeModel.findById(readParam(req, 'employeeId'));
-        if (!employee?.location_id) throw createHttpError(403, 'Employee is not assigned to an office');
-        ensureOfficeScope(access, employee.location_id.toString());
+      const requestedEmployeeId = readParam(req, 'employeeId');
+
+      if (!access.isOrgAdmin && access.role === 'employee') {
+        const requesterEmployeeId = await resolveRequesterEmployeeId(access.userId);
+        if (requestedEmployeeId !== requesterEmployeeId) {
+          throw createHttpError(403, 'Employees can only access their own assignments');
+        }
       }
+
+      if (!access.isOrgAdmin) {
+        if (access.role !== 'employee') {
+          if (!access.officeId) throw createHttpError(403, 'User is not assigned to an office');
+          const employee = await EmployeeModel.findById(requestedEmployeeId);
+          if (!employee?.location_id) throw createHttpError(403, 'Employee is not assigned to an office');
+          ensureOfficeScope(access, employee.location_id.toString());
+        }
+      }
+
       const assignments = await AssignmentModel.find({
-        employee_id: readParam(req, 'employeeId'),
+        employee_id: requestedEmployeeId,
       })
         .sort({ assigned_date: -1, created_at: -1 })
         .skip((page - 1) * limit)
@@ -116,14 +172,31 @@ export const assignmentController = {
       const limit = clampInt(req.query.limit, 200, 1000);
       const page = clampInt(req.query.page, 1, 10_000);
       const access = await resolveAccessContext(req.user);
+      const assetItemId = readParam(req, 'assetItemId');
+
+      if (!access.isOrgAdmin && access.role === 'employee') {
+        const requesterEmployeeId = await resolveRequesterEmployeeId(access.userId);
+        const assignments = await AssignmentModel.find({
+          asset_item_id: assetItemId,
+          $or: [
+            { employee_id: requesterEmployeeId },
+            { assigned_to_type: 'EMPLOYEE', assigned_to_id: requesterEmployeeId },
+          ],
+        })
+          .sort({ assigned_date: -1, created_at: -1 })
+          .skip((page - 1) * limit)
+          .limit(limit);
+        return res.json(assignments);
+      }
+
       if (!access.isOrgAdmin) {
-        const item = await AssetItemModel.findById(readParam(req, 'assetItemId'));
+        const item = await AssetItemModel.findById(assetItemId);
         const officeId = item ? getAssetItemOfficeId(item) : null;
         if (!officeId) throw createHttpError(403, 'Access restricted to assigned office');
         ensureOfficeScope(access, officeId);
       }
       const assignments = await AssignmentModel.find({
-        asset_item_id: readParam(req, 'assetItemId'),
+        asset_item_id: assetItemId,
       })
         .sort({ assigned_date: -1, created_at: -1 })
         .skip((page - 1) * limit)
@@ -381,19 +454,33 @@ export const assignmentController = {
           { session }
         );
 
-        await createRecord(
-          toRequestContext(access),
-          {
-            recordType: 'ISSUE',
-            officeId,
-            status: 'Completed',
-            assetItemId: String(assignment?.asset_item_id),
-            employeeId: assignment?.employee_id ? String(assignment.employee_id) : undefined,
-            assignmentId: String(assignment?._id),
-            notes: asNullableString(assignment?.notes) || undefined,
-          },
-          session
-        );
+        const existingIssueRecord = await RecordModel.findOne({
+          record_type: 'ISSUE',
+          assignment_id: assignment?._id,
+        }).session(session);
+        if (existingIssueRecord) {
+          existingIssueRecord.status = 'Completed';
+          existingIssueRecord.asset_item_id = assignment?.asset_item_id || existingIssueRecord.asset_item_id || null;
+          existingIssueRecord.employee_id = assignment?.employee_id || existingIssueRecord.employee_id || null;
+          if (!existingIssueRecord.notes && assignment?.notes) {
+            existingIssueRecord.notes = assignment.notes;
+          }
+          await existingIssueRecord.save({ session });
+        } else {
+          await createRecord(
+            toRequestContext(access),
+            {
+              recordType: 'ISSUE',
+              officeId,
+              status: 'Completed',
+              assetItemId: String(assignment?.asset_item_id),
+              employeeId: assignment?.employee_id ? String(assignment.employee_id) : undefined,
+              assignmentId: String(assignment?._id),
+              notes: asNullableString(assignment?.notes) || undefined,
+            },
+            session
+          );
+        }
 
         await logAudit({
           ctx: toRequestContext(access),

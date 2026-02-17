@@ -36,7 +36,7 @@ export default function Assets() {
   const navigate = useNavigate();
   
   const { data: assets, isLoading } = useAssets();
-  const { data: categories } = useCategories();
+  const { data: categories } = useCategories({ assetType: "ASSET" });
   const { data: vendors } = useVendors();
   const { data: projects } = useProjects();
   const { data: schemes } = useSchemes();

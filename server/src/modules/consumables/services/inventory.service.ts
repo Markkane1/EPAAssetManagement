@@ -1,9 +1,16 @@
 // @ts-nocheck
 import mongoose, { ClientSession } from 'mongoose';
+import path from 'path';
 import { ActivityLogModel } from '../../../models/activityLog.model';
 import { OfficeModel } from '../../../models/office.model';
 import { StoreModel } from '../../../models/store.model';
 import { UserModel } from '../../../models/user.model';
+import { EmployeeModel } from '../../../models/employee.model';
+import { OfficeSubLocationModel } from '../../../models/officeSubLocation.model';
+import { CategoryModel } from '../../../models/category.model';
+import { VendorModel } from '../../../models/vendor.model';
+import { ProjectModel } from '../../../models/project.model';
+import { SchemeModel } from '../../../models/scheme.model';
 import { ConsumableItemModel } from '../models/consumableItem.model';
 import { ConsumableLotModel } from '../models/consumableLot.model';
 import { ConsumableContainerModel } from '../models/consumableContainer.model';
@@ -18,7 +25,7 @@ import { getUnitLookup } from './consumableUnit.service';
 import { roundQty } from './balance.service';
 
 const HEAD_OFFICE_STORE_CODE = 'HEAD_OFFICE_STORE';
-const HOLDER_TYPES = ['OFFICE', 'STORE'] as const;
+const HOLDER_TYPES = ['OFFICE', 'STORE', 'EMPLOYEE', 'SUB_LOCATION'] as const;
 type HolderType = (typeof HOLDER_TYPES)[number];
 
 type AuthUser = {
@@ -40,9 +47,18 @@ type HolderContext = {
   holderType: HolderType;
   holderId: string;
   name: string;
+  officeId?: string | null;
   office?: unknown;
   store?: any;
+  employee?: any;
+  subLocation?: any;
 };
+
+function resolveHolderOfficeId(holder: HolderContext) {
+  if (holder.holderType === 'OFFICE') return holder.holderId;
+  if (holder.holderType === 'STORE') return null;
+  return holder.officeId || null;
+}
 
 const nowIso = () => new Date().toISOString();
 
@@ -76,6 +92,18 @@ async function getStore(storeId: string, session?: ClientSession) {
   return store;
 }
 
+async function getEmployee(employeeId: string, session?: ClientSession) {
+  const employee = await EmployeeModel.findById(employeeId).session(session || null);
+  if (!employee) throw createHttpError(404, 'Employee not found');
+  return employee;
+}
+
+async function getSubLocation(subLocationId: string, session?: ClientSession) {
+  const subLocation = await OfficeSubLocationModel.findById(subLocationId).session(session || null);
+  if (!subLocation) throw createHttpError(404, 'Section not found');
+  return subLocation;
+}
+
 async function resolveHeadOfficeStore(session?: ClientSession) {
   const store = await StoreModel.findOne({ code: HEAD_OFFICE_STORE_CODE, is_active: { $ne: false } }).session(
     session || null
@@ -86,7 +114,10 @@ async function resolveHeadOfficeStore(session?: ClientSession) {
 
 function normalizeHolderType(value: unknown, fallback: HolderType = 'OFFICE'): HolderType {
   const candidate = String(value || fallback).trim().toUpperCase();
-  return candidate === 'STORE' ? 'STORE' : 'OFFICE';
+  if (candidate === 'STORE') return 'STORE';
+  if (candidate === 'EMPLOYEE') return 'EMPLOYEE';
+  if (candidate === 'SUB_LOCATION') return 'SUB_LOCATION';
+  return 'OFFICE';
 }
 
 function officeHolderFilter(holderId: string) {
@@ -94,10 +125,7 @@ function officeHolderFilter(holderId: string) {
 }
 
 function balanceHolderFilter(holderType: HolderType, holderId: string) {
-  if (holderType === 'OFFICE') {
-    return officeHolderFilter(holderId);
-  }
-  return { holder_type: 'STORE', holder_id: holderId };
+  return { holder_type: holderType, holder_id: holderId };
 }
 
 function txHolderUpdate(holderType: HolderType, holderId: string, direction: 'from' | 'to') {
@@ -147,12 +175,47 @@ async function resolveHolder(
       store,
     };
   }
-  const office = await getLocation(holderId, session);
+  if (!/^[a-f\d]{24}$/i.test(holderId)) {
+    throw createHttpError(400, 'holderId is invalid');
+  }
+
+  if (holderType === 'OFFICE') {
+    const office = await getLocation(holderId, session);
+    return {
+      holderType: 'OFFICE',
+      holderId: office.id,
+      name: String(office.name || 'Location'),
+      officeId: office.id,
+      office,
+    };
+  }
+
+  if (holderType === 'EMPLOYEE') {
+    const employee = await getEmployee(holderId, session);
+    const officeId = employee.location_id ? String(employee.location_id) : '';
+    if (!officeId) throw createHttpError(400, 'Employee is not assigned to an office');
+    const office = await getLocation(officeId, session);
+    return {
+      holderType: 'EMPLOYEE',
+      holderId: employee.id,
+      name: `Employee: ${String(employee.first_name || '')} ${String(employee.last_name || '')}`.trim(),
+      officeId,
+      office,
+      employee,
+    };
+  }
+
+  const subLocation = await getSubLocation(holderId, session);
+  const officeId = subLocation.office_id ? String(subLocation.office_id) : '';
+  if (!officeId) throw createHttpError(400, 'Section is not linked to an office');
+  const office = await getLocation(officeId, session);
   return {
-    holderType: 'OFFICE',
-    holderId: office.id,
-    name: String(office.name || 'Location'),
+    holderType: 'SUB_LOCATION',
+    holderId: subLocation.id,
+    name: `Section: ${String(subLocation.name || 'Unknown')}`,
+    officeId,
     office,
+    subLocation,
   };
 }
 
@@ -184,18 +247,10 @@ function withAnd(base: any, clause: any) {
 }
 
 function txAnySideHolderFilter(holderType: HolderType, holderId: string) {
-  if (holderType === 'STORE') {
-    return {
-      $or: [
-        { from_holder_type: 'STORE', from_holder_id: holderId },
-        { to_holder_type: 'STORE', to_holder_id: holderId },
-      ],
-    };
-  }
   return {
     $or: [
-      { from_holder_type: 'OFFICE', from_holder_id: holderId },
-      { to_holder_type: 'OFFICE', to_holder_id: holderId },
+      { from_holder_type: holderType, from_holder_id: holderId },
+      { to_holder_type: holderType, to_holder_id: holderId },
     ],
   };
 }
@@ -319,6 +374,72 @@ async function resolveAccessibleLocationId(userId: string, role: string, session
   return user.location_id?.toString() || null;
 }
 
+async function resolveCurrentEmployeeForUser(userId: string, session?: ClientSession) {
+  const employee = await EmployeeModel.findOne({ user_id: userId, is_active: { $ne: false } })
+    .sort({ created_at: -1 })
+    .session(session || null);
+  if (!employee) {
+    return null;
+  }
+  return employee;
+}
+
+async function resolveOfficeScopedHolderIds(locationId: string, session?: ClientSession) {
+  const [subLocations, employees] = await Promise.all([
+    OfficeSubLocationModel.find({ office_id: locationId, is_active: { $ne: false } }, { _id: 1 })
+      .session(session || null)
+      .lean(),
+    EmployeeModel.find({ location_id: locationId, is_active: { $ne: false } }, { _id: 1 })
+      .session(session || null)
+      .lean(),
+  ]);
+
+  return {
+    officeId: locationId,
+    subLocationIds: subLocations.map((row) => String(row._id)),
+    employeeIds: employees.map((row) => String(row._id)),
+  };
+}
+
+function buildOfficeScopedBalanceFilter(scope: { officeId: string; subLocationIds: string[]; employeeIds: string[] }) {
+  const filters: any[] = [{ holder_type: 'OFFICE', holder_id: scope.officeId }];
+  if (scope.subLocationIds.length) {
+    filters.push({ holder_type: 'SUB_LOCATION', holder_id: { $in: scope.subLocationIds } });
+  }
+  if (scope.employeeIds.length) {
+    filters.push({ holder_type: 'EMPLOYEE', holder_id: { $in: scope.employeeIds } });
+  }
+  return { $or: filters };
+}
+
+function buildOfficeScopedLedgerFilter(scope: { officeId: string; subLocationIds: string[]; employeeIds: string[] }) {
+  const filters: any[] = [
+    { from_holder_type: 'OFFICE', from_holder_id: scope.officeId },
+    { to_holder_type: 'OFFICE', to_holder_id: scope.officeId },
+  ];
+  if (scope.subLocationIds.length) {
+    filters.push({ from_holder_type: 'SUB_LOCATION', from_holder_id: { $in: scope.subLocationIds } });
+    filters.push({ to_holder_type: 'SUB_LOCATION', to_holder_id: { $in: scope.subLocationIds } });
+  }
+  if (scope.employeeIds.length) {
+    filters.push({ from_holder_type: 'EMPLOYEE', from_holder_id: { $in: scope.employeeIds } });
+    filters.push({ to_holder_type: 'EMPLOYEE', to_holder_id: { $in: scope.employeeIds } });
+  }
+  return { $or: filters };
+}
+
+function isHolderInOfficeScope(
+  holderType: HolderType,
+  holderId: string,
+  scope: { officeId: string; subLocationIds: string[]; employeeIds: string[] }
+) {
+  if (holderType === 'STORE') return false;
+  if (holderType === 'OFFICE') return holderId === scope.officeId;
+  if (holderType === 'SUB_LOCATION') return scope.subLocationIds.includes(holderId);
+  if (holderType === 'EMPLOYEE') return scope.employeeIds.includes(holderId);
+  return false;
+}
+
 async function pickLotsByFefo(
   holderType: HolderType,
   holderId: string,
@@ -411,8 +532,12 @@ function clampInt(value: unknown, fallback: number, max: number) {
 }
 
 async function ensureOfficeHolderAccess(user: AuthUser, holder: HolderContext, session?: ClientSession) {
-  if (holder.holderType !== 'OFFICE') return;
-  await ensureLocationAccess(user, holder.holderId, session);
+  if (holder.holderType === 'STORE') return;
+  const officeId = resolveHolderOfficeId(holder);
+  if (!officeId) {
+    throw createHttpError(400, 'Holder office is missing');
+  }
+  await ensureLocationAccess(user, officeId, session);
 }
 
 async function getCentralStoreHolder(session: ClientSession) {
@@ -425,8 +550,86 @@ async function getCentralStoreHolder(session: ClientSession) {
   };
 }
 
+function buildHandoverAttachmentPayload(file?: { originalname: string; mimetype: string; size: number; path: string } | null) {
+  if (!file) {
+    return {
+      handover_file_name: null,
+      handover_mime_type: null,
+      handover_size_bytes: null,
+      handover_path: null,
+    };
+  }
+
+  const relativePath = path.join('uploads', 'documents', path.basename(file.path)).replace(/\\/g, '/');
+  return {
+    handover_file_name: file.originalname,
+    handover_mime_type: file.mimetype,
+    handover_size_bytes: file.size,
+    handover_path: relativePath,
+  };
+}
+
+async function ensureReceiveCategory(item: any, categoryId: string, session: ClientSession) {
+  if (!categoryId) throw createHttpError(400, 'categoryId is required');
+  const category = await CategoryModel.findById(categoryId, { asset_type: 1 }).session(session);
+  if (!category) throw createHttpError(400, 'Selected category does not exist');
+  const categoryAssetType = String(category.asset_type || 'ASSET').toUpperCase();
+  if (categoryAssetType !== 'CONSUMABLE') {
+    throw createHttpError(400, 'Selected category is not valid for consumables');
+  }
+  const itemCategoryId = item.category_id ? String(item.category_id) : '';
+  if (!itemCategoryId || itemCategoryId !== categoryId) {
+    throw createHttpError(400, 'Selected item does not belong to the selected category');
+  }
+}
+
+async function resolveReceiveSource(
+  lotPayload: any,
+  session: ClientSession
+): Promise<{ sourceType: 'procurement' | 'project'; vendorId: string | null; projectId: string | null; schemeId: string | null }> {
+  const sourceType = String(lotPayload?.source || '').trim().toLowerCase();
+  if (sourceType !== 'procurement' && sourceType !== 'project') {
+    throw createHttpError(400, 'Lot source must be procurement or project');
+  }
+
+  if (sourceType === 'procurement') {
+    const vendorId = String(lotPayload?.vendorId || '').trim();
+    if (!vendorId) throw createHttpError(400, 'vendorId is required for procurement source');
+    const vendor = await VendorModel.findById(vendorId).session(session);
+    if (!vendor) throw createHttpError(400, 'Selected vendor does not exist');
+    return {
+      sourceType: 'procurement',
+      vendorId: vendor.id,
+      projectId: null,
+      schemeId: null,
+    };
+  }
+
+  const projectId = String(lotPayload?.projectId || '').trim();
+  const schemeId = String(lotPayload?.schemeId || '').trim();
+  if (!projectId) throw createHttpError(400, 'projectId is required for project source');
+  if (!schemeId) throw createHttpError(400, 'schemeId is required for project source');
+
+  const [project, scheme] = await Promise.all([
+    ProjectModel.findById(projectId).session(session),
+    SchemeModel.findById(schemeId).session(session),
+  ]);
+  if (!project) throw createHttpError(400, 'Selected project does not exist');
+  if (!scheme) throw createHttpError(400, 'Selected scheme does not exist');
+  if (String(scheme.project_id || '') !== project.id) {
+    throw createHttpError(400, 'Selected scheme does not belong to selected project');
+  }
+
+  return {
+    sourceType: 'project',
+    vendorId: null,
+    projectId: project.id,
+    schemeId: scheme.id,
+  };
+}
+
 export const inventoryService = {
-  async receive(user: AuthUser, payload: any) {
+  async receive(user: AuthUser, payload: any, handoverDocumentation?: { originalname: string; mimetype: string; size: number; path: string }) {
     const session = await mongoose.startSession();
     let result: any;
     try {
@@ -435,6 +638,8 @@ export const inventoryService = {
         ensureAllowed(permissions.canReceiveCentral, 'Not permitted to receive into Central Store');
 
         const item = await getItem(payload.itemId, session);
+        const categoryId = String(payload.categoryId || '').trim();
+        await ensureReceiveCategory(item, categoryId, session);
         const storeHolder = await getCentralStoreHolder(session);
         const unitLookup = await getUnitLookup({ session });
         ensureChemicalsHolder(item, storeHolder, 'Receiving holder');
@@ -444,6 +649,9 @@ export const inventoryService = {
 
         let lotId: string | null = payload.lotId || null;
         if (lotId) {
+          if (handoverDocumentation) {
+            throw createHttpError(400, 'Handover documentation is only accepted when creating a new lot');
+          }
           await ensureLotMatchesItem(lotId, item.id, session);
         } else if (item.requires_lot_tracking !== false) {
           if (!payload.lot) throw createHttpError(400, 'Lot details are required for this item');
@@ -452,6 +660,8 @@ export const inventoryService = {
           if (Number.isNaN(expiryDate.getTime())) {
             throw createHttpError(400, 'Lot expiry date is invalid');
           }
+          const sourceMeta = await resolveReceiveSource(payload.lot, session);
+          const attachment = buildHandoverAttachmentPayload(handoverDocumentation || null);
           const receivedQty = roundQty(qtyBase);
           const newLot = await ConsumableLotModel.create(
             [
@@ -460,13 +670,17 @@ export const inventoryService = {
                 holder_type: storeHolder.holderType,
                 holder_id: storeHolder.holderId,
                 batch_no: payload.lot.lotNumber,
-                supplier_id: payload.lot.supplierId || null,
+                source_type: sourceMeta.sourceType,
+                vendor_id: sourceMeta.vendorId,
+                project_id: sourceMeta.projectId,
+                scheme_id: sourceMeta.schemeId,
                 received_at: new Date(payload.lot.receivedDate || nowIso()),
                 expiry_date: expiryDate,
                 qty_received: receivedQty,
                 qty_available: receivedQty,
                 received_by_user_id: user.userId,
                 notes: payload.notes || null,
+                ...attachment,
                 docs: {
                   sds_url: payload.lot.docs?.sdsUrl || null,
                   coa_url: payload.lot.docs?.coaUrl || null,
@@ -477,6 +691,9 @@ export const inventoryService = {
             { session }
           );
           lotId = newLot[0].id.toString();
+        }
+        if (handoverDocumentation && !lotId) {
+          throw createHttpError(400, 'Handover documentation requires lot-tracked receiving');
         }
 
         const tx = await ConsumableInventoryTransactionModel.create(
@@ -595,6 +812,15 @@ export const inventoryService = {
         const needsContainer = requiresContainer(item);
         if (needsContainer && !payload.containerId) {
           throw createHttpError(400, 'Container is required for this item');
+        }
+        if (
+          payload.containerId &&
+          (fromHolder.holderType === 'EMPLOYEE' ||
+            fromHolder.holderType === 'SUB_LOCATION' ||
+            toHolder.holderType === 'EMPLOYEE' ||
+            toHolder.holderType === 'SUB_LOCATION')
+        ) {
+          throw createHttpError(400, 'Container movements are only supported between Office/Store holders');
         }
 
         if (payload.containerId) {
@@ -774,6 +1000,12 @@ export const inventoryService = {
         const unitLookup = await getUnitLookup({ session });
         ensureChemicalsHolder(item, holder, 'Consumption holder');
         await ensureOfficeHolderAccess(user, holder, session);
+        if (user.role === 'employee' && holder.holderType === 'EMPLOYEE') {
+          const selfEmployee = await resolveCurrentEmployeeForUser(user.userId, session);
+          if (!selfEmployee || String(selfEmployee._id) !== holder.holderId) {
+            throw createHttpError(403, 'Employees can only consume from their own holder');
+          }
+        }
 
         const qtyBase = convertToBaseQty(payload.qty, payload.uom, item.base_uom, unitLookup);
         if (qtyBase <= 0) throw createHttpError(400, 'Quantity must be greater than zero');
@@ -786,6 +1018,9 @@ export const inventoryService = {
         const needsContainer = requiresContainer(item);
         if (needsContainer && !payload.containerId) {
           throw createHttpError(400, 'Container is required for this item');
+        }
+        if (payload.containerId && (holder.holderType === 'EMPLOYEE' || holder.holderType === 'SUB_LOCATION')) {
+          throw createHttpError(400, 'Container consumption is only supported for Office/Store holders');
         }
 
         if (payload.containerId) {
@@ -848,7 +1083,7 @@ export const inventoryService = {
               itemId: item.id,
               holderType: holder.holderType,
               holderId: holder.holderId,
-              locationId: holder.holderType === 'OFFICE' ? holder.holderId : null,
+              locationId: resolveHolderOfficeId(holder),
               lotId: container.lot_id,
             },
             session
@@ -914,7 +1149,7 @@ export const inventoryService = {
             itemId: item.id,
             holderType: holder.holderType,
             holderId: holder.holderId,
-            locationId: holder.holderType === 'OFFICE' ? holder.holderId : null,
+            locationId: resolveHolderOfficeId(holder),
           },
           session
         );
@@ -1017,7 +1252,7 @@ export const inventoryService = {
             itemId: item.id,
             holderType: holder.holderType,
             holderId: holder.holderId,
-            locationId: holder.holderType === 'OFFICE' ? holder.holderId : null,
+            locationId: resolveHolderOfficeId(holder),
             lotId,
             direction,
           },
@@ -1062,6 +1297,9 @@ export const inventoryService = {
         const needsContainer = requiresContainer(item);
         if (needsContainer && !payload.containerId) {
           throw createHttpError(400, 'Container is required for this item');
+        }
+        if (payload.containerId && (holder.holderType === 'EMPLOYEE' || holder.holderType === 'SUB_LOCATION')) {
+          throw createHttpError(400, 'Container disposal is only supported for Office/Store holders');
         }
 
         let lotId: string | null = payload.lotId || null;
@@ -1124,7 +1362,7 @@ export const inventoryService = {
             itemId: item.id,
             holderType: holder.holderType,
             holderId: holder.holderId,
-            locationId: holder.holderType === 'OFFICE' ? holder.holderId : null,
+            locationId: resolveHolderOfficeId(holder),
             lotId,
           },
           session
@@ -1434,10 +1672,15 @@ export const inventoryService = {
       holderIdKey: 'holderId',
       holderTypeKey: 'holderType',
     });
-    if (holderArgs.holderType === 'OFFICE') {
-      await ensureLocationAccess(user, holderArgs.holderId);
-    } else if (!isGlobalConsumableRole(user.role)) {
-      throw createHttpError(403, 'User does not have access to store balances');
+    const allowedLocationId = await resolveAccessibleLocationId(user.userId, user.role);
+    if (allowedLocationId) {
+      const scope = await resolveOfficeScopedHolderIds(allowedLocationId);
+      if (holderArgs.holderType === 'STORE') {
+        throw createHttpError(403, 'User does not have access to this store');
+      }
+      if (!isHolderInOfficeScope(holderArgs.holderType, holderArgs.holderId, scope)) {
+        throw createHttpError(403, 'User does not have access to this holder');
+      }
     }
 
     return ConsumableInventoryBalanceModel.findOne({
@@ -1466,27 +1709,97 @@ export const inventoryService = {
     if (query.lotId) filter.lot_id = query.lotId;
 
     if (allowedLocationId) {
-      const allowedOfficeFilter = officeHolderFilter(allowedLocationId);
-      if (query.holderId && normalizeHolderType(query.holderType || 'OFFICE') === 'STORE') {
-        throw createHttpError(403, 'User does not have access to this store');
+      const scope = await resolveOfficeScopedHolderIds(allowedLocationId);
+      if (query.holderId) {
+        const requestedType = normalizeHolderType(query.holderType || 'OFFICE');
+        if (requestedType === 'STORE') {
+          throw createHttpError(403, 'User does not have access to this store');
+        }
+        if (!isHolderInOfficeScope(requestedType, String(query.holderId), scope)) {
+          throw createHttpError(403, 'User does not have access to this holder');
+        }
       }
-      if (
-        query.holderId &&
-        normalizeHolderType(query.holderType || 'OFFICE') === 'OFFICE' &&
-        query.holderId !== allowedLocationId
-      ) {
-        throw createHttpError(403, 'User does not have access to this location');
-      }
-      filter = withAnd(filter, allowedOfficeFilter);
+      filter = withAnd(filter, buildOfficeScopedBalanceFilter(scope));
     }
 
     const limit = clampInt(query.limit, 500, 2000);
     const page = clampInt(query.page, 1, 10_000);
 
-    return ConsumableInventoryBalanceModel.find(filter)
-      .sort({ updated_at: -1 })
-      .skip((page - 1) * limit)
-      .limit(limit);
+    if (query.lotId) {
+      // Explicit lot filter => return lot-level rows for detailed traceability.
+      return ConsumableInventoryBalanceModel.find(filter)
+        .sort({ updated_at: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit);
+    }
+
+    // Default behavior => unified inventory view by holder + item, still traceable via lot_count and ledger/lot filters.
+    const lotLevelRows = await ConsumableInventoryBalanceModel.find(filter).sort({ updated_at: -1 });
+    const grouped = new Map<
+      string,
+      {
+        id: string;
+        holder_type: HolderType | null;
+        holder_id: string | null;
+        consumable_item_id: string;
+        lot_id: null;
+        qty_on_hand_base: number;
+        qty_reserved_base: number;
+        created_at: Date | string;
+        updated_at: Date | string;
+        lot_count: number;
+      }
+    >();
+    const lotCountMap = new Map<string, Set<string>>();
+
+    for (const row of lotLevelRows) {
+      const holderType = (row.holder_type || 'OFFICE') as HolderType;
+      const holderId = row.holder_id ? String(row.holder_id) : null;
+      const itemId = String(row.consumable_item_id);
+      if (!holderId || !itemId) continue;
+
+      const key = `${holderType}:${holderId}:${itemId}`;
+      const existing = grouped.get(key);
+      if (!existing) {
+        grouped.set(key, {
+          id: key,
+          holder_type: holderType,
+          holder_id: holderId,
+          consumable_item_id: itemId,
+          lot_id: null,
+          qty_on_hand_base: roundQty(Number(row.qty_on_hand_base || 0)),
+          qty_reserved_base: roundQty(Number(row.qty_reserved_base || 0)),
+          created_at: row.created_at,
+          updated_at: row.updated_at,
+          lot_count: 0,
+        });
+      } else {
+        existing.qty_on_hand_base = roundQty(existing.qty_on_hand_base + Number(row.qty_on_hand_base || 0));
+        existing.qty_reserved_base = roundQty(existing.qty_reserved_base + Number(row.qty_reserved_base || 0));
+        if (new Date(row.updated_at || 0).getTime() > new Date(existing.updated_at || 0).getTime()) {
+          existing.updated_at = row.updated_at;
+        }
+        if (new Date(row.created_at || 0).getTime() < new Date(existing.created_at || 0).getTime()) {
+          existing.created_at = row.created_at;
+        }
+      }
+
+      if (row.lot_id) {
+        const set = lotCountMap.get(key) || new Set<string>();
+        set.add(String(row.lot_id));
+        lotCountMap.set(key, set);
+      }
+    }
+
+    const unifiedRows = Array.from(grouped.values())
+      .map((entry) => ({
+        ...entry,
+        lot_count: lotCountMap.get(entry.id)?.size || 0,
+      }))
+      .sort((a, b) => new Date(b.updated_at || 0).getTime() - new Date(a.updated_at || 0).getTime());
+
+    const start = (page - 1) * limit;
+    return unifiedRows.slice(start, start + limit);
   },
   async getRollup(user: AuthUser, query: any) {
     const permissions = resolveConsumablePermissions(user.role);
@@ -1504,17 +1817,17 @@ export const inventoryService = {
 
     const allowedLocationId = await resolveAccessibleLocationId(user.userId, user.role);
     if (allowedLocationId) {
-      if (query.holderId && normalizeHolderType(query.holderType || 'OFFICE') === 'STORE') {
-        throw createHttpError(403, 'User does not have access to this store');
+      const scope = await resolveOfficeScopedHolderIds(allowedLocationId);
+      if (query.holderId) {
+        const requestedType = normalizeHolderType(query.holderType || 'OFFICE');
+        if (requestedType === 'STORE') {
+          throw createHttpError(403, 'User does not have access to this store');
+        }
+        if (!isHolderInOfficeScope(requestedType, String(query.holderId), scope)) {
+          throw createHttpError(403, 'User does not have access to this holder');
+        }
       }
-      if (
-        query.holderId &&
-        normalizeHolderType(query.holderType || 'OFFICE') === 'OFFICE' &&
-        query.holderId !== allowedLocationId
-      ) {
-        throw createHttpError(403, 'User does not have access to this location');
-      }
-      match = withAnd(match, officeHolderFilter(allowedLocationId));
+      match = withAnd(match, buildOfficeScopedBalanceFilter(scope));
     }
 
     const pipeline = [
@@ -1536,7 +1849,9 @@ export const inventoryService = {
 
     for (const row of grouped) {
       const itemId = row._id.itemId.toString();
-      const holderType = row._id.holderType === 'STORE' ? 'STORE' : 'OFFICE';
+      const holderType = ['STORE', 'EMPLOYEE', 'SUB_LOCATION'].includes(String(row._id.holderType))
+        ? row._id.holderType
+        : 'OFFICE';
       const holderId = row._id.holderId?.toString();
       if (!holderId) continue;
       const entry = rollupMap.get(itemId) || { itemId, totalQtyBase: 0, byLocation: [], byHolder: [] };
@@ -1575,17 +1890,17 @@ export const inventoryService = {
 
     const allowedLocationId = await resolveAccessibleLocationId(user.userId, user.role);
     if (allowedLocationId) {
-      if (query.holderId && normalizeHolderType(query.holderType || 'OFFICE') === 'STORE') {
-        throw createHttpError(403, 'User does not have access to this store');
+      const scope = await resolveOfficeScopedHolderIds(allowedLocationId);
+      if (query.holderId) {
+        const requestedType = normalizeHolderType(query.holderType || 'OFFICE');
+        if (requestedType === 'STORE') {
+          throw createHttpError(403, 'User does not have access to this store');
+        }
+        if (!isHolderInOfficeScope(requestedType, String(query.holderId), scope)) {
+          throw createHttpError(403, 'User does not have access to this holder');
+        }
       }
-      if (
-        query.holderId &&
-        normalizeHolderType(query.holderType || 'OFFICE') === 'OFFICE' &&
-        query.holderId !== allowedLocationId
-      ) {
-        throw createHttpError(403, 'User does not have access to this location');
-      }
-      filter = withAnd(filter, txAnySideHolderFilter('OFFICE', allowedLocationId));
+      filter = withAnd(filter, buildOfficeScopedLedgerFilter(scope));
     }
 
     const limit = clampInt(query.limit, 200, 1000);
@@ -1615,17 +1930,17 @@ export const inventoryService = {
     }
     const allowedLocationId = await resolveAccessibleLocationId(user.userId, user.role);
     if (allowedLocationId) {
-      if (query.holderId && normalizeHolderType(query.holderType || 'OFFICE') === 'STORE') {
-        throw createHttpError(403, 'User does not have access to this store');
+      const scope = await resolveOfficeScopedHolderIds(allowedLocationId);
+      if (query.holderId) {
+        const requestedType = normalizeHolderType(query.holderType || 'OFFICE');
+        if (requestedType === 'STORE') {
+          throw createHttpError(403, 'User does not have access to this store');
+        }
+        if (!isHolderInOfficeScope(requestedType, String(query.holderId), scope)) {
+          throw createHttpError(403, 'User does not have access to this holder');
+        }
       }
-      if (
-        query.holderId &&
-        normalizeHolderType(query.holderType || 'OFFICE') === 'OFFICE' &&
-        query.holderId !== allowedLocationId
-      ) {
-        throw createHttpError(403, 'User does not have access to this location');
-      }
-      balanceFilter = withAnd(balanceFilter, officeHolderFilter(allowedLocationId));
+      balanceFilter = withAnd(balanceFilter, buildOfficeScopedBalanceFilter(scope));
     }
 
     const balanceLimit = clampInt(query.limit, 1000, 5000);
@@ -1634,8 +1949,29 @@ export const inventoryService = {
       .map((balance) => balance.lot_id?.toString())
       .filter((id): id is string => Boolean(id));
 
-    const lots = await ConsumableLotModel.find({ _id: { $in: lotIds } });
+    const subLocationIds = balances
+      .filter((balance) => balance.holder_type === 'SUB_LOCATION' && balance.holder_id)
+      .map((balance) => String(balance.holder_id));
+    const employeeIds = balances
+      .filter((balance) => balance.holder_type === 'EMPLOYEE' && balance.holder_id)
+      .map((balance) => String(balance.holder_id));
+
+    const [lots, subLocations, employees] = await Promise.all([
+      ConsumableLotModel.find({ _id: { $in: lotIds } }),
+      subLocationIds.length
+        ? OfficeSubLocationModel.find({ _id: { $in: subLocationIds } }, { _id: 1, office_id: 1 }).lean()
+        : Promise.resolve([]),
+      employeeIds.length
+        ? EmployeeModel.find({ _id: { $in: employeeIds } }, { _id: 1, location_id: 1 }).lean()
+        : Promise.resolve([]),
+    ]);
     const lotMap = new Map(lots.map((lot) => [lot.id.toString(), lot]));
+    const subLocationOfficeMap = new Map(
+      subLocations.map((row: any) => [String(row._id), row.office_id ? String(row.office_id) : null])
+    );
+    const employeeOfficeMap = new Map(
+      employees.map((row: any) => [String(row._id), row.location_id ? String(row.location_id) : null])
+    );
 
     const expiring: any[] = [];
     for (const balance of balances) {
@@ -1646,12 +1982,20 @@ export const inventoryService = {
       if (expiryDate <= cutoff) {
         const holderType = balance.holder_type || null;
         const holderId = balance.holder_id || null;
+        const locationId =
+          holderType === 'OFFICE'
+            ? holderId
+            : holderType === 'SUB_LOCATION' && holderId
+              ? subLocationOfficeMap.get(String(holderId)) || null
+              : holderType === 'EMPLOYEE' && holderId
+                ? employeeOfficeMap.get(String(holderId)) || null
+                : null;
         expiring.push({
           lotId: lot.id,
           itemId: String(lot.consumable_id),
           holderType,
           holderId,
-          locationId: holderType === 'OFFICE' ? holderId : null,
+          locationId,
           expiryDate: lot.expiry_date,
           qtyOnHandBase: balance.qty_on_hand_base,
         });

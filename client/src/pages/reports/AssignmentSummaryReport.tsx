@@ -20,8 +20,11 @@ import {
 } from "@/lib/exportUtils";
 import { filterByDateRange, generateReportPDF, getDateRangeText } from "@/lib/reporting";
 import { usePageSearch } from "@/contexts/PageSearchContext";
+import { useAuth } from "@/contexts/AuthContext";
 
 export default function AssignmentSummaryReport() {
+  const { role, user } = useAuth();
+  const isEmployeeRole = role === "employee";
   const [startDate, setStartDate] = useState<Date | undefined>(undefined);
   const [endDate, setEndDate] = useState<Date | undefined>(undefined);
   const pageSearch = usePageSearch();
@@ -37,6 +40,14 @@ export default function AssignmentSummaryReport() {
     () => filterByDateRange(assignments, "assigned_date", startDate, endDate),
     [assignments, startDate, endDate]
   );
+  const currentEmployee = useMemo(() => {
+    const list = employees || [];
+    const byUserId = list.find((employee) => employee.user_id === user?.id);
+    const byEmail = list.find(
+      (employee) => employee.email?.toLowerCase() === (user?.email || "").toLowerCase()
+    );
+    return byUserId || byEmail || null;
+  }, [employees, user?.id, user?.email]);
 
   const getDirectorateName = useCallback((employeeId?: string) => {
     const employee = employees?.find((e) => e.id === employeeId);
@@ -51,8 +62,11 @@ export default function AssignmentSummaryReport() {
     const employeeList = employees || [];
     const assetItemList = assetItems || [];
     const assetList = assets || [];
+    const scopedAssignments = isEmployeeRole
+      ? (filteredAssignments || []).filter((assignment) => assignment.employee_id === currentEmployee?.id)
+      : filteredAssignments || [];
 
-    return filteredAssignments.map((assignment) => {
+    return scopedAssignments.map((assignment) => {
       const employee = employeeList.find((e) => e.id === assignment.employee_id);
       const assetItem = assetItemList.find((i) => i.id === assignment.asset_item_id);
       const asset = assetItem ? assetList.find((a) => a.id === assetItem.asset_id) : undefined;
@@ -69,7 +83,7 @@ export default function AssignmentSummaryReport() {
         status: assignment.is_active ? "Active" : "Returned",
       };
     });
-  }, [filteredAssignments, employees, assetItems, assets, getDirectorateName]);
+  }, [isEmployeeRole, filteredAssignments, currentEmployee?.id, employees, assetItems, assets, getDirectorateName]);
 
   const searchTerm = pageSearch?.term || "";
   const filteredRows = useMemo(
@@ -152,7 +166,11 @@ export default function AssignmentSummaryReport() {
     <MainLayout title="Assignment Summary" description="Assignments by employee and directorate">
       <PageHeader
         title="Assignment Summary"
-        description="Assignments by employee, directorate, and asset item"
+        description={
+          isEmployeeRole
+            ? "Your complete assignment history, including returned assets"
+            : "Assignments by employee, directorate, and asset item"
+        }
         extra={
           <div className="flex items-center gap-2">
             <Button variant="outline" className="gap-2" onClick={handleExportCSV}>

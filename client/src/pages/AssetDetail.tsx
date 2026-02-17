@@ -34,7 +34,7 @@ export default function AssetDetail() {
 
   const { data: assets, isLoading: assetsLoading } = useAssets();
   const { data: assetItems } = useAssetItems();
-  const { data: categories } = useCategories();
+  const { data: categories } = useCategories({ assetType: "ASSET" });
   const { data: vendors } = useVendors();
   const { data: locations } = useLocations();
   const { data: assignments } = useAssignments();

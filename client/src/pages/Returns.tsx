@@ -13,6 +13,7 @@ import { Loader2 } from "lucide-react";
 import { returnRequestService } from "@/services/returnRequestService";
 import { useEmployees } from "@/hooks/useEmployees";
 import { useLocations } from "@/hooks/useLocations";
+import { useAuth } from "@/contexts/AuthContext";
 import { ReturnRequestStatus } from "@/types";
 
 const STATUS_OPTIONS = [
@@ -38,8 +39,10 @@ function asId<T extends { id?: string; _id?: string }>(row: T): string {
 
 export default function Returns() {
   const navigate = useNavigate();
+  const { role, user } = useAuth();
   const { data: employees } = useEmployees();
   const { data: locations } = useLocations();
+  const isEmployeeRole = role === "employee";
 
   const [status, setStatus] = useState<string>("ALL");
   const [employeeId, setEmployeeId] = useState<string>("ALL");
@@ -52,19 +55,33 @@ export default function Returns() {
     toDate: "",
   });
 
+  const currentEmployee = useMemo(() => {
+    const list = employees || [];
+    const byUserId = list.find((employee) => employee.user_id === user?.id);
+    const byEmail = list.find(
+      (employee) => employee.email?.toLowerCase() === (user?.email || "").toLowerCase()
+    );
+    return byUserId || byEmail || null;
+  }, [employees, user?.id, user?.email]);
+
   const query = useQuery({
     queryKey: [
       "return-requests",
       appliedFilters.status,
-      appliedFilters.employeeId,
+      isEmployeeRole ? currentEmployee?.id || "SELF" : appliedFilters.employeeId,
       appliedFilters.fromDate,
       appliedFilters.toDate,
     ],
+    enabled: !isEmployeeRole || Boolean(currentEmployee?.id),
     queryFn: () =>
       returnRequestService.list({
         limit: 200,
         status: appliedFilters.status !== "ALL" ? appliedFilters.status : undefined,
-        employeeId: appliedFilters.employeeId !== "ALL" ? appliedFilters.employeeId : undefined,
+        employeeId: isEmployeeRole
+          ? currentEmployee?.id || undefined
+          : appliedFilters.employeeId !== "ALL"
+            ? appliedFilters.employeeId
+            : undefined,
         from: appliedFilters.fromDate || undefined,
         to: appliedFilters.toDate || undefined,
       }),
@@ -167,18 +184,29 @@ export default function Returns() {
 
             <div className="space-y-2">
               <Label>Employee</Label>
-              <select
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                value={employeeId}
-                onChange={(event) => setEmployeeId(event.target.value)}
-              >
-                <option value="ALL">ALL</option>
-                {(employees || []).map((employee) => (
-                  <option key={employee.id} value={employee.id}>
-                    {`${employee.first_name} ${employee.last_name}`.trim() || employee.email}
-                  </option>
-                ))}
-              </select>
+              {isEmployeeRole ? (
+                <Input
+                  value={
+                    currentEmployee
+                      ? `${currentEmployee.first_name} ${currentEmployee.last_name}`.trim() || currentEmployee.email
+                      : "Employee mapping missing"
+                  }
+                  readOnly
+                />
+              ) : (
+                <select
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  value={employeeId}
+                  onChange={(event) => setEmployeeId(event.target.value)}
+                >
+                  <option value="ALL">ALL</option>
+                  {(employees || []).map((employee) => (
+                    <option key={employee.id} value={employee.id}>
+                      {`${employee.first_name} ${employee.last_name}`.trim() || employee.email}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -198,11 +226,12 @@ export default function Returns() {
               onClick={() =>
                 setAppliedFilters({
                   status,
-                  employeeId,
+                  employeeId: isEmployeeRole ? currentEmployee?.id || "ALL" : employeeId,
                   fromDate,
                   toDate,
                 })
               }
+              disabled={isEmployeeRole && !currentEmployee}
             >
               Apply Filters
             </Button>
@@ -211,12 +240,12 @@ export default function Returns() {
               variant="outline"
               onClick={() => {
                 setStatus("ALL");
-                setEmployeeId("ALL");
+                setEmployeeId(isEmployeeRole ? currentEmployee?.id || "ALL" : "ALL");
                 setFromDate("");
                 setToDate("");
                 setAppliedFilters({
                   status: "ALL",
-                  employeeId: "ALL",
+                  employeeId: isEmployeeRole ? currentEmployee?.id || "ALL" : "ALL",
                   fromDate: "",
                   toDate: "",
                 });

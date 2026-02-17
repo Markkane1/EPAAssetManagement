@@ -25,7 +25,7 @@ export default function AssetSummaryReport() {
 
   const { data: assets } = useAssets();
   const { data: assetItems } = useAssetItems();
-  const { data: categories } = useCategories();
+  const { data: categories } = useCategories({ assetType: "ASSET" });
 
   const filteredAssets = useMemo(
     () => filterByDateRange(assets, "acquisition_date", startDate, endDate),

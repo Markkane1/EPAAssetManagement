@@ -3,6 +3,7 @@ import mongoose, { Schema } from 'mongoose';
 import { baseSchemaOptions } from '../../../models/base';
 
 const HOLDER_TYPES = ['STORE', 'OFFICE'] as const;
+const LOT_SOURCES = ['procurement', 'project'] as const;
 const QTY_FACTOR = 100;
 const QTY_EPSILON = 1e-8;
 
@@ -61,7 +62,14 @@ const ConsumableLotSchema = new Schema<any>(
     received_by_user_id: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     notes: { type: String, default: null },
     document_id: { type: Schema.Types.ObjectId, ref: 'Document', default: null },
-    supplier_id: { type: Schema.Types.ObjectId, ref: 'ConsumableSupplier', default: null },
+    source_type: { type: String, enum: LOT_SOURCES, required: true, default: 'procurement' },
+    vendor_id: { type: Schema.Types.ObjectId, ref: 'Vendor', default: null },
+    project_id: { type: Schema.Types.ObjectId, ref: 'Project', default: null },
+    scheme_id: { type: Schema.Types.ObjectId, ref: 'Scheme', default: null },
+    handover_file_name: { type: String, default: null },
+    handover_mime_type: { type: String, default: null },
+    handover_size_bytes: { type: Number, default: null },
+    handover_path: { type: String, default: null },
     docs: { type: LotDocsSchema, default: () => ({}) },
   },
   baseSchemaOptions
@@ -99,7 +107,9 @@ ConsumableLotSchema.index({ holder_type: 1, holder_id: 1 });
 ConsumableLotSchema.index({ consumable_id: 1 });
 ConsumableLotSchema.index({ expiry_date: 1 });
 ConsumableLotSchema.index({ batch_no: 1 });
-ConsumableLotSchema.index({ supplier_id: 1, expiry_date: 1, received_at: -1 });
+ConsumableLotSchema.index({ source_type: 1, expiry_date: 1, received_at: -1 });
+ConsumableLotSchema.index({ vendor_id: 1, expiry_date: 1, received_at: -1 });
+ConsumableLotSchema.index({ project_id: 1, scheme_id: 1, expiry_date: 1, received_at: -1 });
 ConsumableLotSchema.index({ expiry_date: 1, received_at: -1 });
 
 export const ConsumableLotModel = mongoose.model('ConsumableLot', ConsumableLotSchema);

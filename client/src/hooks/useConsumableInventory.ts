@@ -11,6 +11,7 @@ import type {
   OpeningBalancePayload,
   BalancesQuery,
   LedgerQuery,
+  InventoryHolderType,
 } from '@/services/consumableInventoryService';
 import { API_CONFIG } from '@/config/api.config';
 
@@ -32,7 +33,7 @@ export const useConsumableLedger = (filters?: LedgerQuery) =>
 
 export const useConsumableExpiry = (
   days?: number,
-  holderType?: 'OFFICE' | 'STORE',
+  holderType?: InventoryHolderType,
   holderId?: string
 ) =>
   useQuery({

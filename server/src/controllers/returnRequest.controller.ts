@@ -39,11 +39,21 @@ import {
   getSignedReturnFile,
 } from './returnRequest.controller.helpers';
 
+async function resolveRequesterEmployeeId(userId: string) {
+  const requesterEmployee: any = await EmployeeModel.findOne({ user_id: userId }, { _id: 1 }).lean();
+  if (!requesterEmployee?._id) {
+    throw createHttpError(403, 'Employee mapping not found for user');
+  }
+  return String(requesterEmployee._id);
+}
+
 export const returnRequestController = {
   list: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const ctx = await getRequestContext(req);
       const canViewAll = ctx.role === 'org_admin' || ctx.isOrgAdmin;
+      const isOfficeScopedViewer = !canViewAll && isOfficeManager(ctx.role);
+      const isEmployeeScopedViewer = !canViewAll && !isOfficeManager(ctx.role);
       const page = parsePositiveInt(req.query.page, 1, 100_000);
       const limit = parsePositiveInt(req.query.limit, 50, 200);
       const skip = (page - 1) * limit;
@@ -64,18 +74,32 @@ export const returnRequestController = {
       }
 
       const filter: Record<string, unknown> = {};
-      if (!canViewAll) {
+      if (isOfficeScopedViewer) {
         if (!ctx.locationId) throw createHttpError(403, 'User is not assigned to an office');
         if (officeId && officeId !== ctx.locationId) {
           throw createHttpError(403, 'Access restricted to assigned office');
         }
         filter.office_id = ctx.locationId;
+      } else if (isEmployeeScopedViewer) {
+        const requesterEmployeeId = await resolveRequesterEmployeeId(ctx.userId);
+        if (employeeId && employeeId !== requesterEmployeeId) {
+          throw createHttpError(403, 'Employees can only access their own return requests');
+        }
+        filter.employee_id = requesterEmployeeId;
+        if (ctx.locationId) {
+          if (officeId && officeId !== ctx.locationId) {
+            throw createHttpError(403, 'Access restricted to assigned office');
+          }
+          filter.office_id = ctx.locationId;
+        } else if (officeId) {
+          filter.office_id = officeId;
+        }
       } else if (officeId) {
         filter.office_id = officeId;
       }
 
       if (status) filter.status = status;
-      if (employeeId) filter.employee_id = employeeId;
+      if (employeeId && !isEmployeeScopedViewer) filter.employee_id = employeeId;
       if (from || to) {
         const createdAt: Record<string, Date> = {};
         if (from) createdAt.$gte = from;
@@ -102,6 +126,8 @@ export const returnRequestController = {
     try {
       const ctx = await getRequestContext(req);
       const canViewAll = ctx.role === 'org_admin' || ctx.isOrgAdmin;
+      const isOfficeScopedViewer = !canViewAll && isOfficeManager(ctx.role);
+      const isEmployeeScopedViewer = !canViewAll && !isOfficeManager(ctx.role);
       const returnRequest: any = await ReturnRequestModel.findById(readParam(req, 'id')).lean();
       if (!returnRequest) {
         throw createHttpError(404, 'Return request not found');
@@ -109,10 +135,15 @@ export const returnRequestController = {
 
       const officeId = returnRequest.office_id ? String(returnRequest.office_id) : null;
       if (!officeId) throw createHttpError(400, 'Return request office is missing');
-      if (!canViewAll) {
+      if (isOfficeScopedViewer) {
         if (!ctx.locationId) throw createHttpError(403, 'User is not assigned to an office');
         if (ctx.locationId !== officeId) {
           throw createHttpError(403, 'Access restricted to assigned office');
+        }
+      } else if (isEmployeeScopedViewer) {
+        const requesterEmployeeId = await resolveRequesterEmployeeId(ctx.userId);
+        if (String(returnRequest.employee_id || '') !== requesterEmployeeId) {
+          throw createHttpError(403, 'Employees can only access their own return requests');
         }
       }
 

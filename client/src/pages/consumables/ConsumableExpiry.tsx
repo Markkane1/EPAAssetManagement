@@ -12,7 +12,9 @@ import {
 } from '@/components/ui/select';
 import { useConsumableExpiry } from '@/hooks/useConsumableInventory';
 import { useConsumableItems } from '@/hooks/useConsumableItems';
-import { useConsumableLocations } from '@/hooks/useConsumableLocations';
+import { useOffices } from '@/hooks/useOffices';
+import { useEmployees } from '@/hooks/useEmployees';
+import { useOfficeSubLocations } from '@/hooks/useOfficeSubLocations';
 import { useConsumableLots } from '@/hooks/useConsumableLots';
 import type { ConsumableExpiryRow } from '@/types';
 import { useConsumableMode } from '@/hooks/useConsumableMode';
@@ -26,23 +28,28 @@ export default function ConsumableExpiry() {
 
   const { mode, setMode } = useConsumableMode();
   const { data: items } = useConsumableItems();
-  const { data: locations } = useConsumableLocations({
+  const { data: locations } = useOffices({
     capability: mode === 'chemicals' ? 'chemicals' : 'consumables',
   });
+  const { data: employees = [] } = useEmployees();
+  const { data: sections = [] } = useOfficeSubLocations();
   const { data: lots } = useConsumableLots();
-  const selectedHolderType = locationId !== ALL_VALUE ? 'OFFICE' : undefined;
-  const selectedHolderId = locationId !== ALL_VALUE ? locationId : undefined;
-  const { data: expiry = [] } = useConsumableExpiry(
-    days,
-    selectedHolderType,
-    selectedHolderId
-  );
+  const { data: expiry = [] } = useConsumableExpiry(days);
 
   const filteredItems = filterItemsByMode(items || [], mode);
   const filteredLocations = filterLocationsByMode(locations || [], mode);
-  const visibleExpiry = expiry.filter((row) =>
-    filteredItems.some((item) => item.id === row.itemId)
+  const employeeNameMap = new Map(
+    employees.map((employee) => [
+      employee.id,
+      `${employee.first_name || ''} ${employee.last_name || ''}`.trim() || employee.email || employee.id,
+    ])
   );
+  const sectionNameMap = new Map(sections.map((section) => [section.id, section.name]));
+  const visibleExpiry = expiry.filter((row) => {
+    if (!filteredItems.some((item) => item.id === row.itemId)) return false;
+    if (locationId === ALL_VALUE) return true;
+    return row.locationId === locationId;
+  });
 
   useEffect(() => {
     if (locationId !== ALL_VALUE && !filteredLocations.some((loc) => loc.id === locationId)) {
@@ -66,8 +73,14 @@ export default function ConsumableExpiry() {
       label: 'Holder',
       render: (_value: string, row: ConsumableExpiryRow) => {
         if (row.holderType === 'STORE') return 'Head Office Store';
+        if (row.holderType === 'EMPLOYEE') {
+          return row.holderId ? `${employeeNameMap.get(row.holderId) || 'Unknown Employee'} (Employee)` : 'Unknown';
+        }
+        if (row.holderType === 'SUB_LOCATION') {
+          return row.holderId ? `${sectionNameMap.get(row.holderId) || 'Unknown Section'} (Section)` : 'Unknown';
+        }
         const officeId = row.holderId || '';
-        return filteredLocations.find((loc) => loc.id === officeId)?.name || 'Unknown';
+        return filteredLocations.find((loc) => loc.id === officeId)?.name || 'Unknown Office';
       },
     },
     {
@@ -131,3 +144,4 @@ export default function ConsumableExpiry() {
     </MainLayout>
   );
 }
+

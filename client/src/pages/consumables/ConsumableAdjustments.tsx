@@ -17,7 +17,7 @@ import {
 } from '@/components/ui/select';
 import { Loader2 } from 'lucide-react';
 import { useConsumableItems } from '@/hooks/useConsumableItems';
-import { useConsumableLocations } from '@/hooks/useConsumableLocations';
+import { useOffices } from '@/hooks/useOffices';
 import { useConsumableLots } from '@/hooks/useConsumableLots';
 import { useConsumableContainers } from '@/hooks/useConsumableContainers';
 import { useConsumableBalances, useAdjustConsumables } from '@/hooks/useConsumableInventory';
@@ -48,7 +48,7 @@ export default function ConsumableAdjustments() {
   const { mode, setMode } = useConsumableMode();
   const { data: items } = useConsumableItems();
   const { data: units } = useConsumableUnits();
-  const { data: locations } = useConsumableLocations({
+  const { data: locations } = useOffices({
     capability: mode === 'chemicals' ? 'chemicals' : 'consumables',
   });
   const { data: lots } = useConsumableLots();
@@ -73,14 +73,20 @@ export default function ConsumableAdjustments() {
   const filteredItems = useMemo(() => filterItemsByMode(items || [], mode), [items, mode]);
   const filteredLocations = useMemo(() => filterLocationsByMode(locations || [], mode), [locations, mode]);
   const unitList = useMemo(() => units || [], [units]);
+  const selectedLocationId = form.watch('locationId');
+  const selectedItemId = form.watch('itemId');
+  const selectedContainerId = form.watch('containerId');
+  const selectedLotId = form.watch('lotId');
+  const selectedUom = form.watch('uom');
+  const selectedActualQty = form.watch('actualQty');
   const allowedItemIds = useMemo(
     () => new Set(filteredItems.map((item) => item.id)),
     [filteredItems]
   );
 
   const selectedItem: ConsumableItem | undefined = useMemo(() => {
-    return filteredItems.find((item) => item.id === form.watch('itemId'));
-  }, [filteredItems, form]);
+    return filteredItems.find((item) => item.id === selectedItemId);
+  }, [filteredItems, selectedItemId]);
 
   useEffect(() => {
     const currentItem = form.getValues('itemId');
@@ -91,7 +97,7 @@ export default function ConsumableAdjustments() {
     }
   }, [filteredItems, form, ALL_VALUE]);
 
-  const locationFilterId = form.watch('locationId');
+  const locationFilterId = selectedLocationId;
   const containerFilters = useMemo(() => {
     if (!locationFilterId) return undefined;
     return { locationId: locationFilterId, status: 'IN_STOCK' };
@@ -116,7 +122,7 @@ export default function ConsumableAdjustments() {
   }, [containers, lots, selectedItem]);
 
   const requiresContainer = Boolean(selectedItem?.requires_container_tracking || selectedItem?.is_controlled);
-  const selectedContainer = containersForItem.find((container) => container.id === form.watch('containerId'));
+  const selectedContainer = containersForItem.find((container) => container.id === selectedContainerId);
 
   useEffect(() => {
     if (selectedItem && !form.getValues('uom')) {
@@ -141,25 +147,25 @@ export default function ConsumableAdjustments() {
   }, [selectedContainer, selectedItem, form]);
 
   const balanceFilters = useMemo(() => {
-    if (!form.watch('locationId') || !form.watch('itemId')) return undefined;
+    if (!selectedLocationId || !selectedItemId) return undefined;
     return {
       holderType: 'OFFICE' as const,
-      holderId: form.watch('locationId'),
-      itemId: form.watch('itemId'),
-      lotId: form.watch('lotId') && form.watch('lotId') !== ALL_VALUE ? form.watch('lotId') : undefined,
+      holderId: selectedLocationId,
+      itemId: selectedItemId,
+      lotId: selectedLotId && selectedLotId !== ALL_VALUE ? selectedLotId : undefined,
     };
-  }, [form, ALL_VALUE]);
+  }, [selectedLocationId, selectedItemId, selectedLotId, ALL_VALUE]);
 
   const { data: balances = [] } = useConsumableBalances(balanceFilters);
   const systemQtyBase = balances.reduce((total, balance) => total + (balance.qty_on_hand_base || 0), 0);
 
   const systemQtyInSelectedUom = useMemo(() => {
-    if (!selectedItem || !form.watch('uom')) return systemQtyBase;
-    const converted = convertQuantity(systemQtyBase, selectedItem.base_uom, form.watch('uom'), unitList);
+    if (!selectedItem || !selectedUom) return systemQtyBase;
+    const converted = convertQuantity(systemQtyBase, selectedItem.base_uom, selectedUom, unitList);
     return converted === null ? systemQtyBase : converted;
-  }, [systemQtyBase, selectedItem, form, unitList]);
+  }, [systemQtyBase, selectedItem, selectedUom, unitList]);
 
-  const variance = form.watch('actualQty') - systemQtyInSelectedUom;
+  const variance = selectedActualQty - systemQtyInSelectedUom;
 
   const handleSubmit = async (data: AdjustFormData) => {
     if (requiresContainer && !data.containerId) {
@@ -200,7 +206,7 @@ export default function ConsumableAdjustments() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Location *</Label>
-                <Select value={form.watch('locationId')} onValueChange={(v) => form.setValue('locationId', v)}>
+                <Select value={selectedLocationId} onValueChange={(v) => form.setValue('locationId', v)}>
                   <SelectTrigger><SelectValue placeholder="Select location" /></SelectTrigger>
                   <SelectContent>
                     {filteredLocations.map((loc) => (
@@ -211,7 +217,7 @@ export default function ConsumableAdjustments() {
               </div>
               <div className="space-y-2">
                 <Label>Item *</Label>
-                <Select value={form.watch('itemId')} onValueChange={(v) => form.setValue('itemId', v)}>
+                <Select value={selectedItemId} onValueChange={(v) => form.setValue('itemId', v)}>
                   <SelectTrigger><SelectValue placeholder="Select item" /></SelectTrigger>
                   <SelectContent>
                     {filteredItems.map((item) => (
@@ -226,7 +232,7 @@ export default function ConsumableAdjustments() {
               <div className="space-y-2">
                 <Label>Lot (optional)</Label>
                 <Select
-                  value={form.watch('lotId') || ALL_VALUE}
+                  value={selectedLotId || ALL_VALUE}
                   onValueChange={(v) => form.setValue('lotId', v)}
                   disabled={Boolean(selectedContainer)}
                 >
@@ -235,7 +241,7 @@ export default function ConsumableAdjustments() {
                     <SelectItem value={ALL_VALUE}>All lots</SelectItem>
                     {(lots || [])
                       .filter((lot) => {
-                        if (form.watch('itemId')) return lot.consumable_id === form.watch('itemId');
+                        if (selectedItemId) return lot.consumable_id === selectedItemId;
                         return allowedItemIds.has(lot.consumable_id);
                       })
                       .map((lot) => (
@@ -247,12 +253,12 @@ export default function ConsumableAdjustments() {
               <div className="space-y-2">
                 <Label>System Qty</Label>
                 <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm">
-                  {systemQtyInSelectedUom.toFixed(2)} {form.watch('uom') || selectedItem?.base_uom || ''}
+                  {systemQtyInSelectedUom.toFixed(2)} {selectedUom || selectedItem?.base_uom || ''}
                 </div>
               </div>
               <div className="space-y-2">
                 <Label>Unit *</Label>
-                <Select value={form.watch('uom')} onValueChange={(v) => form.setValue('uom', v)}>
+                <Select value={selectedUom} onValueChange={(v) => form.setValue('uom', v)}>
                   <SelectTrigger><SelectValue placeholder="Select unit" /></SelectTrigger>
                   <SelectContent>
                     {compatibleUnits.map((unit) => (
@@ -268,7 +274,7 @@ export default function ConsumableAdjustments() {
                 <div className="space-y-2">
                   <Label>Container *</Label>
                   <Select
-                    value={form.watch('containerId') || ''}
+                    value={selectedContainerId || ''}
                     onValueChange={(v) => form.setValue('containerId', v)}
                   >
                     <SelectTrigger><SelectValue placeholder="Select container" /></SelectTrigger>
@@ -301,7 +307,7 @@ export default function ConsumableAdjustments() {
               <div className="space-y-2">
                 <Label>Variance</Label>
                 <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm">
-                  {variance.toFixed(2)} {form.watch('uom') || selectedItem?.base_uom || ''}
+                  {variance.toFixed(2)} {selectedUom || selectedItem?.base_uom || ''}
                 </div>
               </div>
               <div className="space-y-2">
@@ -340,3 +346,4 @@ export default function ConsumableAdjustments() {
     </MainLayout>
   );
 }
+

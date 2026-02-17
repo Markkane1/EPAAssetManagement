@@ -107,6 +107,7 @@ export function DivisionManagementModal({ open, onOpenChange }: DivisionManageme
             columns={columns}
             data={divisions}
             searchPlaceholder="Search divisions..."
+            useGlobalPageSearch={false}
             actions={actions}
           />
         )}

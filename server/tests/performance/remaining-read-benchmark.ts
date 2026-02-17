@@ -37,7 +37,6 @@ type BenchmarkOutput = {
     divisions: number;
     districts: number;
     consumableItems: number;
-    suppliers: number;
     lots: number;
     containers: number;
     reasonCodes: number;
@@ -64,7 +63,6 @@ const SEED = {
   divisions: 800,
   districts: 3500,
   consumableItems: 2000,
-  suppliers: 2500,
   lots: 8000,
   containers: 12000,
   reasonCodes: 300,
@@ -77,8 +75,7 @@ const CASES: BenchCase[] = [
   { name: 'consumable_inventory_balances', path: '/api/consumables/inventory/balances' },
   { name: 'divisions_list', path: '/api/divisions' },
   { name: 'districts_list', path: '/api/districts' },
-  { name: 'suppliers_list', path: '/api/consumables/suppliers' },
-  { name: 'locations_capability_chemicals', path: '/api/consumables/locations?capability=chemicals' },
+  { name: 'offices_capability_chemicals', path: '/api/offices?capability=chemicals' },
   { name: 'lots_list', path: '/api/consumables/lots' },
   { name: 'containers_list', path: '/api/consumables/containers' },
 ];
@@ -176,7 +173,6 @@ async function seedData() {
   const { DivisionModel } = await import('../../src/models/division.model');
   const { DistrictModel } = await import('../../src/models/district.model');
   const { ConsumableItemModel } = await import('../../src/modules/consumables/models/consumableItem.model');
-  const { ConsumableSupplierModel } = await import('../../src/modules/consumables/models/consumableSupplier.model');
   const { ConsumableLotModel } = await import('../../src/modules/consumables/models/consumableLot.model');
   const { ConsumableContainerModel } = await import('../../src/modules/consumables/models/consumableContainer.model');
   const { ConsumableReasonCodeModel } = await import('../../src/modules/consumables/models/consumableReasonCode.model');
@@ -185,7 +181,7 @@ async function seedData() {
     '../../src/modules/consumables/models/consumableInventoryBalance.model'
   );
 
-  const officeTypes = ['DIRECTORATE', 'DISTRICT_OFFICE', 'DISTRICT_LAB'] as const;
+  const officeTypes = ['HEAD_OFFICE', 'DIRECTORATE', 'DISTRICT_OFFICE', 'DISTRICT_LAB'] as const;
   const offices = await OfficeModel.insertMany(
     Array.from({ length: SEED.offices }, (_, i) => ({
       name: i === 0 ? 'Head Office' : `Office ${i + 1}`,
@@ -347,15 +343,6 @@ async function seedData() {
     { ordered: false }
   );
 
-  const suppliers = await ConsumableSupplierModel.insertMany(
-    Array.from({ length: SEED.suppliers }, (_, i) => ({
-      name: `Supplier ${i + 1}`,
-      email: `supplier-${i + 1}@example.com`,
-      phone: `+100000${String(i).padStart(6, '0')}`,
-    })),
-    { ordered: false }
-  );
-
   const lots = await ConsumableLotModel.insertMany(
     Array.from({ length: SEED.lots }, (_, i) => ({
       consumable_id: consumables[i % consumables.length]._id,
@@ -367,7 +354,7 @@ async function seedData() {
       received_at: new Date(Date.now() - (i % 120) * 86400000),
       received_by_user_id: adminUser._id,
       consumable_item_id: consumableItems[i % consumableItems.length]._id,
-      supplier_id: suppliers[i % suppliers.length]._id,
+      source_type: 'procurement',
       lot_number: `LOT-${i + 1}`,
       received_date: new Date(Date.now() - (i % 120) * 86400000).toISOString(),
       expiry_date: new Date(Date.now() + (i % 365) * 86400000),

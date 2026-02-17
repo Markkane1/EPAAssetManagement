@@ -4,7 +4,7 @@ import { baseSchemaOptions } from './base';
 const DistrictSchema = new Schema<any>(
   {
     name: { type: String, required: true, trim: true },
-    division_id: { type: Schema.Types.ObjectId, ref: 'Division', default: null },
+    division_id: { type: Schema.Types.ObjectId, ref: 'Division', required: true },
     is_active: { type: Boolean, default: true },
   },
   baseSchemaOptions

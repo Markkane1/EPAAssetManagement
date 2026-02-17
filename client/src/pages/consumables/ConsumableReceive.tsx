@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ChangeEvent } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -15,50 +15,128 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { useConsumableItems } from '@/hooks/useConsumableItems';
-import { useConsumableSuppliers } from '@/hooks/useConsumableSuppliers';
 import { useReceiveConsumables } from '@/hooks/useConsumableInventory';
 import { useConsumableUnits } from '@/hooks/useConsumableUnits';
+import { useCategories } from '@/hooks/useCategories';
+import { useProjects } from '@/hooks/useProjects';
+import { useSchemes } from '@/hooks/useSchemes';
+import { useVendors } from '@/hooks/useVendors';
 import { getCompatibleUnits } from '@/lib/unitUtils';
-import type { ConsumableItem } from '@/types';
+import type { Category, ConsumableItem, Project, Scheme, Vendor } from '@/types';
 import { useConsumableMode } from '@/hooks/useConsumableMode';
 import { filterItemsByMode } from '@/lib/consumableMode';
 import { ConsumableModeToggle } from '@/components/consumables/ConsumableModeToggle';
 
 const receiveSchema = z.object({
+  categoryId: z.string().min(1, 'Category is required'),
   itemId: z.string().min(1, 'Item is required'),
+  source: z.enum(['procurement', 'project']),
+  vendorId: z.string().optional(),
+  projectId: z.string().optional(),
+  schemeId: z.string().optional(),
   lotNumber: z.string().min(1, 'Lot number is required'),
   receivedDate: z.string().min(1, 'Received date is required'),
-  expiryDate: z.string().optional(),
-  supplierId: z.string().optional(),
+  expiryDate: z.string().min(1, 'Expiry date is required'),
   qty: z.coerce.number().positive('Quantity must be greater than zero'),
   uom: z.string().min(1, 'Unit is required'),
   reference: z.string().optional(),
   notes: z.string().optional(),
+}).superRefine((data, ctx) => {
+  if (data.source === 'procurement' && !data.vendorId) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['vendorId'],
+      message: 'Vendor is required for procurement',
+    });
+  }
+
+  if (data.source === 'project') {
+    if (!data.projectId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['projectId'],
+        message: 'Project is required for project handover',
+      });
+    }
+    if (!data.schemeId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['schemeId'],
+        message: 'Scheme is required for project handover',
+      });
+    }
+  }
 });
 
 type ReceiveFormData = z.infer<typeof receiveSchema>;
 
 type ContainerInput = { containerCode: string; initialQty: string };
 
+function buildAutoLotNumber(itemName?: string) {
+  const token = (itemName || 'LOT')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '')
+    .slice(0, 4) || 'LOT';
+  const stamp = new Date().toISOString().replace(/[^\d]/g, '').slice(0, 14);
+  const random = Math.floor(Math.random() * 9000 + 1000);
+  return `${token}-${stamp}-${random}`;
+}
+
+function getEntityId(value: unknown): string {
+  if (!value) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'object') {
+    const record = value as { id?: unknown; _id?: unknown; toString?: () => string };
+    if (typeof record.id === 'string') return record.id;
+    if (typeof record._id === 'string') return record._id;
+    if (record._id && typeof record._id === 'object' && 'toString' in (record._id as object)) {
+      const parsed = String(record._id);
+      if (parsed && parsed !== '[object Object]') return parsed;
+    }
+    if (typeof record.toString === 'function') {
+      const parsed = record.toString();
+      if (parsed && parsed !== '[object Object]') return parsed;
+    }
+  }
+  return '';
+}
+
+function isPdfAttachment(file: File) {
+  if (file.type === 'application/pdf') return true;
+  return /\.pdf$/i.test(file.name);
+}
+
 export default function ConsumableReceive() {
+  const [itemPickerOpen, setItemPickerOpen] = useState(false);
   const { data: items } = useConsumableItems();
-  const { data: suppliers } = useConsumableSuppliers();
+  const { data: categories } = useCategories({ assetType: 'CONSUMABLE' });
+  const { data: vendors } = useVendors();
+  const { data: projects } = useProjects();
+  const { data: schemes } = useSchemes();
   const { data: units } = useConsumableUnits();
   const { mode, setMode } = useConsumableMode();
   const receiveMutation = useReceiveConsumables();
 
   const [containers, setContainers] = useState<ContainerInput[]>([]);
+  const [handoverDocumentationFile, setHandoverDocumentationFile] = useState<File | null>(null);
+  const [handoverDocumentationError, setHandoverDocumentationError] = useState<string | null>(null);
 
   const form = useForm<ReceiveFormData>({
     resolver: zodResolver(receiveSchema),
     defaultValues: {
+      categoryId: '',
       itemId: '',
+      source: 'procurement',
+      vendorId: '',
+      projectId: '',
+      schemeId: '',
       lotNumber: '',
       receivedDate: new Date().toISOString().split('T')[0],
       expiryDate: '',
-      supplierId: '',
       qty: 0,
       uom: '',
       reference: '',
@@ -66,31 +144,84 @@ export default function ConsumableReceive() {
     },
   });
 
-  const filteredItems = useMemo(() => filterItemsByMode(items || [], mode), [items, mode]);
+  const filteredCategories = useMemo(() => categories || [], [categories]);
+  const modeFilteredItems = useMemo(() => filterItemsByMode(items || [], mode), [items, mode]);
+  const selectedCategoryId = form.watch('categoryId');
+  const selectedSource = form.watch('source');
+  const selectedProjectId = form.watch('projectId');
+  const filteredItems = useMemo(
+    () => modeFilteredItems.filter((item) => item.category_id === selectedCategoryId),
+    [modeFilteredItems, selectedCategoryId]
+  );
   const unitList = useMemo(() => units || [], [units]);
+  const allUnitCodes = useMemo(
+    () => Array.from(new Set(unitList.map((unit) => String(unit.code || '').trim()).filter(Boolean))),
+    [unitList]
+  );
+  const selectedItemId = form.watch('itemId');
+  const selectedUom = form.watch('uom');
+  const attachmentLabel = selectedSource === 'project' ? 'Project Handover Documentation' : 'Invoice';
+  const filteredSchemes = useMemo(
+    () => (schemes || []).filter((scheme) => getEntityId(scheme.project_id) === selectedProjectId),
+    [schemes, selectedProjectId]
+  );
 
   const selectedItem: ConsumableItem | undefined = useMemo(() => {
-    return filteredItems.find((item) => item.id === form.watch('itemId'));
-  }, [filteredItems, form]);
+    return filteredItems.find((item) => item.id === selectedItemId);
+  }, [filteredItems, selectedItemId]);
 
   useEffect(() => {
     const currentItem = form.getValues('itemId');
     if (currentItem && !filteredItems.some((item) => item.id === currentItem)) {
       form.setValue('itemId', '');
+      form.setValue('uom', '');
       setContainers([]);
     }
   }, [filteredItems, form]);
 
+  useEffect(() => {
+    const currentCategory = form.getValues('categoryId');
+    if (currentCategory && !filteredCategories.some((category) => getEntityId(category) === currentCategory)) {
+      form.setValue('categoryId', '');
+      form.setValue('itemId', '');
+      form.setValue('uom', '');
+      setContainers([]);
+    }
+  }, [filteredCategories, form]);
+
   const compatibleUnits = useMemo(() => {
-    if (!selectedItem) return [] as string[];
-    return getCompatibleUnits(selectedItem.base_uom, unitList);
-  }, [selectedItem, unitList]);
+    if (!selectedItem) return allUnitCodes;
+    const resolved = getCompatibleUnits(selectedItem.base_uom, unitList);
+    const next = resolved.length ? resolved : allUnitCodes;
+    if (!next.includes(selectedItem.base_uom)) {
+      return [selectedItem.base_uom, ...next];
+    }
+    return next;
+  }, [selectedItem, unitList, allUnitCodes]);
 
   useEffect(() => {
-    if (selectedItem && !form.watch('uom')) {
+    if (selectedItem && !form.getValues('uom')) {
       form.setValue('uom', selectedItem.base_uom);
     }
   }, [selectedItem, form]);
+
+  useEffect(() => {
+    const currentUom = form.getValues('uom');
+    if (currentUom && compatibleUnits.includes(currentUom)) return;
+    if (selectedItem?.base_uom) {
+      form.setValue('uom', selectedItem.base_uom);
+      return;
+    }
+    if (compatibleUnits.length > 0) {
+      form.setValue('uom', compatibleUnits[0]);
+    }
+  }, [compatibleUnits, selectedItem, form]);
+
+  useEffect(() => {
+    const currentLotNumber = form.getValues('lotNumber');
+    if (currentLotNumber) return;
+    form.setValue('lotNumber', buildAutoLotNumber(selectedItem?.name));
+  }, [selectedItem?.name, form]);
 
   const addContainer = () => {
     setContainers((prev) => [...prev, { containerCode: '', initialQty: '' }]);
@@ -104,6 +235,25 @@ export default function ConsumableReceive() {
     setContainers((prev) => prev.map((item, idx) => (idx === index ? { ...item, [key]: value } : item)));
   };
 
+  const handleHandoverDocumentationChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const selected = event.target.files?.[0] || null;
+    if (!selected) {
+      setHandoverDocumentationFile(null);
+      setHandoverDocumentationError(null);
+      return;
+    }
+
+    if (!isPdfAttachment(selected)) {
+      setHandoverDocumentationFile(null);
+      setHandoverDocumentationError('Attachment must be a PDF file.');
+      event.target.value = '';
+      return;
+    }
+
+    setHandoverDocumentationFile(selected);
+    setHandoverDocumentationError(null);
+  };
+
   const handleSubmit = async (data: ReceiveFormData) => {
     const requiresContainer = Boolean(selectedItem?.requires_container_tracking || selectedItem?.is_controlled);
     if (requiresContainer && containers.length === 0) {
@@ -114,13 +264,18 @@ export default function ConsumableReceive() {
     const payload: any = {
       holderType: 'STORE',
       holderId: 'HEAD_OFFICE_STORE',
+      categoryId: data.categoryId,
       itemId: data.itemId,
-      lot: {
-        lotNumber: data.lotNumber,
-        receivedDate: data.receivedDate,
-        expiryDate: data.expiryDate || undefined,
-        supplierId: data.supplierId || undefined,
+        lot: {
+          lotNumber: data.lotNumber,
+          receivedDate: data.receivedDate,
+          expiryDate: data.expiryDate,
+        source: data.source,
+        vendorId: data.source === 'procurement' ? data.vendorId || undefined : undefined,
+        projectId: data.source === 'project' ? data.projectId || undefined : undefined,
+        schemeId: data.source === 'project' ? data.schemeId || undefined : undefined,
       },
+      handoverDocumentationFile,
       qty: data.qty,
       uom: data.uom,
       reference: data.reference || undefined,
@@ -135,8 +290,24 @@ export default function ConsumableReceive() {
     }
 
     await receiveMutation.mutateAsync(payload);
-    form.reset();
+    form.reset({
+      categoryId: '',
+      itemId: '',
+      source: 'procurement',
+      vendorId: '',
+      projectId: '',
+      schemeId: '',
+      lotNumber: buildAutoLotNumber(),
+      receivedDate: new Date().toISOString().split('T')[0],
+      expiryDate: '',
+      qty: 0,
+      uom: '',
+      reference: '',
+      notes: '',
+    });
     setContainers([]);
+    setHandoverDocumentationFile(null);
+    setHandoverDocumentationError(null);
   };
 
   return (
@@ -153,53 +324,204 @@ export default function ConsumableReceive() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Receiving Holder</Label>
-                <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm">Head Office Store (System)</div>
+                <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm">Central Storage</div>
               </div>
               <div className="space-y-2">
-                <Label>Item *</Label>
-                <Select value={form.watch('itemId')} onValueChange={(v) => form.setValue('itemId', v)}>
-                  <SelectTrigger><SelectValue placeholder="Select item" /></SelectTrigger>
+                <Label>Category *</Label>
+                <Select value={selectedCategoryId} onValueChange={(v) => form.setValue('categoryId', v)}>
+                  <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
                   <SelectContent>
-                    {filteredItems.map((item) => (
-                      <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>
-                    ))}
+                    {filteredCategories.map((category: Category) => {
+                      const id = getEntityId(category);
+                      if (!id) return null;
+                      return <SelectItem key={id} value={id}>{category.name}</SelectItem>;
+                    })}
                   </SelectContent>
                 </Select>
-                {form.formState.errors.itemId && (
-                  <p className="text-sm text-destructive">{form.formState.errors.itemId.message}</p>
+                {form.formState.errors.categoryId && (
+                  <p className="text-sm text-destructive">{form.formState.errors.categoryId.message}</p>
                 )}
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="lotNumber">Lot Number *</Label>
-                <Input id="lotNumber" {...form.register('lotNumber')} />
-                {form.formState.errors.lotNumber && (
-                  <p className="text-sm text-destructive">{form.formState.errors.lotNumber.message}</p>
+                <Label>Item *</Label>
+                <Popover open={itemPickerOpen} onOpenChange={setItemPickerOpen}>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" role="combobox" className="w-full justify-between">
+                      {selectedItem ? selectedItem.name : 'Search item by name...'}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                    <Command>
+                      <CommandInput placeholder="Type item name..." />
+                      <CommandList>
+                        <CommandEmpty>No item found.</CommandEmpty>
+                        {filteredItems.map((item) => (
+                          <CommandItem
+                            key={item.id}
+                            value={`${item.name} ${item.base_uom}`}
+                            onSelect={() => {
+                              form.setValue('itemId', item.id);
+                              setItemPickerOpen(false);
+                            }}
+                          >
+                            {item.name}
+                          </CommandItem>
+                        ))}
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+                {form.formState.errors.itemId && (
+                  <p className="text-sm text-destructive">{form.formState.errors.itemId.message}</p>
                 )}
               </div>
               <div className="space-y-2">
-                <Label>Supplier</Label>
-                <Select value={form.watch('supplierId') || ''} onValueChange={(v) => form.setValue('supplierId', v)}>
-                  <SelectTrigger><SelectValue placeholder="Select supplier" /></SelectTrigger>
+                <Label>Source *</Label>
+                <Select
+                  value={selectedSource}
+                  onValueChange={(v) => {
+                    const source = v as 'procurement' | 'project';
+                    form.setValue('source', source);
+                    if (source === 'procurement') {
+                      form.setValue('projectId', '');
+                      form.setValue('schemeId', '');
+                    } else {
+                      form.setValue('vendorId', '');
+                    }
+                  }}
+                >
+                  <SelectTrigger><SelectValue placeholder="Select source" /></SelectTrigger>
                   <SelectContent>
-                    {(suppliers || []).map((supplier) => (
-                      <SelectItem key={supplier.id} value={supplier.id}>{supplier.name}</SelectItem>
-                    ))}
+                    <SelectItem value="procurement">Procurement</SelectItem>
+                    <SelectItem value="project">Project Handover</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 gap-4">
+              {selectedSource === 'procurement' ? (
+                <>
+                  <div className="space-y-2">
+                    <Label>Vendor *</Label>
+                    <Select value={form.watch('vendorId') || ''} onValueChange={(v) => form.setValue('vendorId', v)}>
+                      <SelectTrigger><SelectValue placeholder="Select vendor" /></SelectTrigger>
+                      <SelectContent>
+                        {(vendors || []).map((vendor: Vendor) => {
+                          const id = getEntityId(vendor);
+                          if (!id) return null;
+                          return <SelectItem key={id} value={id}>{vendor.name}</SelectItem>;
+                        })}
+                      </SelectContent>
+                    </Select>
+                    {form.formState.errors.vendorId && (
+                      <p className="text-sm text-destructive">{form.formState.errors.vendorId.message}</p>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="handoverDocumentation">{attachmentLabel}</Label>
+                    <Input
+                      id="handoverDocumentation"
+                      type="file"
+                      accept="application/pdf,.pdf"
+                      className="h-10 file:mr-3 file:h-10 file:border-0 file:bg-transparent file:text-sm file:font-medium"
+                      onChange={handleHandoverDocumentationChange}
+                    />
+                    {handoverDocumentationFile ? (
+                      <p className="text-xs text-muted-foreground">Selected file: {handoverDocumentationFile.name}</p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">Upload a PDF file (optional).</p>
+                    )}
+                    {handoverDocumentationError && <p className="text-sm text-destructive">{handoverDocumentationError}</p>}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="space-y-2">
+                    <Label>Project *</Label>
+                    <Select
+                      value={selectedProjectId || ''}
+                      onValueChange={(v) => {
+                        form.setValue('projectId', v);
+                        form.setValue('schemeId', '');
+                      }}
+                    >
+                      <SelectTrigger><SelectValue placeholder="Select project" /></SelectTrigger>
+                      <SelectContent>
+                        {(projects || []).map((project: Project) => {
+                          const id = getEntityId(project);
+                          if (!id) return null;
+                          return <SelectItem key={id} value={id}>{project.name}</SelectItem>;
+                        })}
+                      </SelectContent>
+                    </Select>
+                    {form.formState.errors.projectId && (
+                      <p className="text-sm text-destructive">{form.formState.errors.projectId.message}</p>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Scheme *</Label>
+                    <Select
+                      value={form.watch('schemeId') || ''}
+                      onValueChange={(v) => form.setValue('schemeId', v)}
+                      disabled={!selectedProjectId}
+                    >
+                      <SelectTrigger><SelectValue placeholder={selectedProjectId ? 'Select scheme' : 'Select project first'} /></SelectTrigger>
+                      <SelectContent>
+                        {filteredSchemes.map((scheme: Scheme) => {
+                          const id = getEntityId(scheme);
+                          if (!id) return null;
+                          return <SelectItem key={id} value={id}>{scheme.name}</SelectItem>;
+                        })}
+                      </SelectContent>
+                    </Select>
+                    {form.formState.errors.schemeId && (
+                      <p className="text-sm text-destructive">{form.formState.errors.schemeId.message}</p>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+            {selectedSource === 'project' && (
+              <div className="space-y-2">
+                <Label htmlFor="handoverDocumentation">{attachmentLabel}</Label>
+                <Input
+                  id="handoverDocumentation"
+                  type="file"
+                  accept="application/pdf,.pdf"
+                  className="h-10 file:mr-3 file:h-10 file:border-0 file:bg-transparent file:text-sm file:font-medium"
+                  onChange={handleHandoverDocumentationChange}
+                />
+                {handoverDocumentationFile ? (
+                  <p className="text-xs text-muted-foreground">Selected file: {handoverDocumentationFile.name}</p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">Upload a PDF file (optional).</p>
+                )}
+                {handoverDocumentationError && <p className="text-sm text-destructive">{handoverDocumentationError}</p>}
+              </div>
+            )}
+
+            <div className="grid grid-cols-4 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="lotNumber">Lot Number *</Label>
+                <Input id="lotNumber" {...form.register('lotNumber')} placeholder="Auto-generated (editable)" />
+                {form.formState.errors.lotNumber && (
+                  <p className="text-sm text-destructive">{form.formState.errors.lotNumber.message}</p>
+                )}
+              </div>
               <div className="space-y-2">
                 <Label htmlFor="receivedDate">Received Date *</Label>
                 <Input id="receivedDate" type="date" {...form.register('receivedDate')} />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="expiryDate">Expiry Date</Label>
+                <Label htmlFor="expiryDate">Expiry Date *</Label>
                 <Input id="expiryDate" type="date" {...form.register('expiryDate')} />
+                {form.formState.errors.expiryDate && (
+                  <p className="text-sm text-destructive">{form.formState.errors.expiryDate.message}</p>
+                )}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="reference">Reference</Label>
@@ -217,7 +539,7 @@ export default function ConsumableReceive() {
               </div>
               <div className="space-y-2">
                 <Label>UoM *</Label>
-                <Select value={form.watch('uom')} onValueChange={(v) => form.setValue('uom', v)}>
+                <Select value={selectedUom} onValueChange={(v) => form.setValue('uom', v)}>
                   <SelectTrigger><SelectValue placeholder="Select unit" /></SelectTrigger>
                   <SelectContent>
                     {compatibleUnits.map((unit) => (

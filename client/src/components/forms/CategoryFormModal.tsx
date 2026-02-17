@@ -16,12 +16,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Loader2 } from "lucide-react";
-import { Category } from "@/types";
+import { Category, CategoryAssetType } from "@/types";
 
 const categorySchema = z.object({
   name: z.string().min(1, "Name is required").max(100),
   description: z.string().max(500).optional(),
   scope: z.enum(["GENERAL", "LAB_ONLY"]),
+  assetType: z.enum(["ASSET", "CONSUMABLE"]),
 });
 
 type CategoryFormData = z.infer<typeof categorySchema>;
@@ -43,6 +44,7 @@ export function CategoryFormModal({ open, onOpenChange, category, onSubmit }: Ca
       name: category?.name || "",
       description: category?.description || "",
       scope: category?.scope === "LAB_ONLY" ? "LAB_ONLY" : "GENERAL",
+      assetType: category?.asset_type === "CONSUMABLE" ? "CONSUMABLE" : "ASSET",
     },
   });
 
@@ -51,6 +53,7 @@ export function CategoryFormModal({ open, onOpenChange, category, onSubmit }: Ca
       name: category?.name || "",
       description: category?.description || "",
       scope: category?.scope === "LAB_ONLY" ? "LAB_ONLY" : "GENERAL",
+      assetType: category?.asset_type === "CONSUMABLE" ? "CONSUMABLE" : "ASSET",
     });
   }, [category, form, open]);
 
@@ -67,11 +70,11 @@ export function CategoryFormModal({ open, onOpenChange, category, onSubmit }: Ca
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-[425px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{isEditing ? "Edit Category" : "Add Category"}</DialogTitle>
           <DialogDescription>
-            {isEditing ? "Update category details below." : "Create a new asset category."}
+            {isEditing ? "Update category details below." : "Create a new category."}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
@@ -85,6 +88,32 @@ export function CategoryFormModal({ open, onOpenChange, category, onSubmit }: Ca
           <div className="space-y-2">
             <Label htmlFor="description">Description</Label>
             <Textarea id="description" {...form.register("description")} placeholder="Optional description..." rows={3} />
+          </div>
+          <div className="space-y-2">
+            <Label>Category Type *</Label>
+            <RadioGroup
+              value={form.watch("assetType")}
+              onValueChange={(value) => form.setValue("assetType", value as CategoryAssetType)}
+              className="gap-3"
+            >
+              <div className="flex items-start gap-2">
+                <RadioGroupItem id="asset-type-asset" value="ASSET" />
+                <div>
+                  <Label htmlFor="asset-type-asset" className="font-medium">Moveable</Label>
+                  <p className="text-xs text-muted-foreground">Visible in fixed/moveable asset screens.</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-2">
+                <RadioGroupItem id="asset-type-consumable" value="CONSUMABLE" />
+                <div>
+                  <Label htmlFor="asset-type-consumable" className="font-medium">Consumable</Label>
+                  <p className="text-xs text-muted-foreground">Visible only in consumable module screens.</p>
+                </div>
+              </div>
+            </RadioGroup>
+            {form.formState.errors.assetType && (
+              <p className="text-sm text-destructive">{form.formState.errors.assetType.message}</p>
+            )}
           </div>
           <div className="space-y-2">
             <Label>Scope *</Label>

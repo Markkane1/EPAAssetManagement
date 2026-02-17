@@ -1,15 +1,15 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { categoryService } from '@/services/categoryService';
-import type { CategoryCreateDto, CategoryUpdateDto } from '@/services/categoryService';
+import type { CategoryCreateDto, CategoryListParams, CategoryUpdateDto } from '@/services/categoryService';
 import { toast } from 'sonner';
 import { API_CONFIG } from '@/config/api.config';
 
 const { queryKeys, messages, query } = API_CONFIG;
 
-export const useCategories = () => {
+export const useCategories = (params?: CategoryListParams) => {
   return useQuery({
-    queryKey: queryKeys.categories,
-    queryFn: categoryService.getAll,
+    queryKey: [...queryKeys.categories, params?.scope || 'ALL_SCOPE', params?.assetType || 'ALL_TYPE', params?.search || ''],
+    queryFn: () => categoryService.getAll(params),
     staleTime: query.staleTime,
   });
 };
