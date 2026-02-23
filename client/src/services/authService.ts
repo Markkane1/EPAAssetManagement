@@ -8,7 +8,8 @@ export type AppRole =
   | (string & {});
 
 export const normalizeRole = (role?: string | null): AppRole => {
-  switch (role) {
+  const normalized = String(role || '').trim().toLowerCase();
+  switch (normalized) {
     case 'org_admin':
       return 'org_admin';
     case 'office_head':
@@ -18,7 +19,7 @@ export const normalizeRole = (role?: string | null): AppRole => {
     case 'employee':
       return 'employee';
     default:
-      return 'employee';
+      return (normalized || 'employee') as AppRole;
   }
 };
 

@@ -14,8 +14,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Loader2 } from "lucide-react";
-import { Vendor } from "@/types";
+import { Location, Vendor } from "@/types";
 
 const vendorSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(100),
@@ -23,6 +30,7 @@ const vendorSchema = z.object({
   email: z.string().trim().min(1, "Email is required").email("Invalid email"),
   phone: z.string().trim().min(1, "Phone is required").max(20),
   address: z.string().trim().min(1, "Address is required").max(500),
+  officeId: z.string().trim().optional(),
 });
 
 type VendorFormData = z.infer<typeof vendorSchema>;
@@ -31,10 +39,21 @@ interface VendorFormModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   vendor?: Vendor | null;
+  isOrgAdmin?: boolean;
+  locations?: Location[];
+  defaultOfficeId?: string | null;
   onSubmit: (data: VendorFormData) => Promise<void>;
 }
 
-export function VendorFormModal({ open, onOpenChange, vendor, onSubmit }: VendorFormModalProps) {
+export function VendorFormModal({
+  open,
+  onOpenChange,
+  vendor,
+  isOrgAdmin = false,
+  locations = [],
+  defaultOfficeId = null,
+  onSubmit,
+}: VendorFormModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const isEditing = !!vendor;
 
@@ -47,6 +66,7 @@ export function VendorFormModal({ open, onOpenChange, vendor, onSubmit }: Vendor
       email: vendor?.email || "",
       phone: vendor?.phone || "",
       address: vendor?.address || "",
+      officeId: vendor?.office_id || defaultOfficeId || "",
     },
   });
 
@@ -58,6 +78,7 @@ export function VendorFormModal({ open, onOpenChange, vendor, onSubmit }: Vendor
         email: vendor.email || "",
         phone: vendor.phone || "",
         address: vendor.address || "",
+        officeId: vendor.office_id || defaultOfficeId || "",
       });
     } else {
       form.reset({
@@ -66,11 +87,16 @@ export function VendorFormModal({ open, onOpenChange, vendor, onSubmit }: Vendor
         email: "",
         phone: "",
         address: "",
+        officeId: defaultOfficeId || "",
       });
     }
-  }, [vendor, form]);
+  }, [vendor, defaultOfficeId, form]);
 
   const handleSubmit = async (data: VendorFormData) => {
+    if (isOrgAdmin && !String(data.officeId || "").trim()) {
+      form.setError("officeId", { message: "Office is required" });
+      return;
+    }
     setIsSubmitting(true);
     try {
       await onSubmit(data);
@@ -91,6 +117,26 @@ export function VendorFormModal({ open, onOpenChange, vendor, onSubmit }: Vendor
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+          {isOrgAdmin && (
+            <div className="space-y-2">
+              <Label htmlFor="officeId">Office *</Label>
+              <Select value={form.watch("officeId") || ""} onValueChange={(value) => form.setValue("officeId", value)}>
+                <SelectTrigger id="officeId">
+                  <SelectValue placeholder="Select office" />
+                </SelectTrigger>
+                <SelectContent>
+                  {locations.map((location) => (
+                    <SelectItem key={location.id} value={location.id}>
+                      {location.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {form.formState.errors.officeId && (
+                <p className="text-sm text-destructive">{form.formState.errors.officeId.message}</p>
+              )}
+            </div>
+          )}
           <div className="space-y-2">
             <Label htmlFor="name">Name *</Label>
             <Input id="name" {...form.register("name")} placeholder="e.g., Dell Technologies" required />

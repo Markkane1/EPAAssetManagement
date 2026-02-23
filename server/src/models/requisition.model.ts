@@ -32,6 +32,8 @@ const RequisitionSchema = new Schema(
         return this.target_type === 'SUB_LOCATION' ? 'OfficeSubLocation' : 'Employee';
       },
     },
+    // Optional direct room/section linkage for operational context.
+    linked_sub_location_id: { type: Schema.Types.ObjectId, ref: 'OfficeSubLocation', default: null },
     // User who submitted/created the requisition.
     submitted_by_user_id: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     // User who completed fulfillment.

@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { env } from '../config/env';
 import { UserModel } from '../models/user.model';
-import { isKnownRole, normalizeRole } from '../utils/roles';
+import { normalizeRole } from '../utils/roles';
 
 export interface AuthPayload {
   userId: string;
@@ -52,10 +52,6 @@ async function attachUserContext(req: AuthRequest) {
     req.user = undefined;
     return;
   }
-  if (!isKnownRole(userDoc.role)) {
-    req.user = undefined;
-    return;
-  }
   if (userDoc.is_active === false) {
     req.user = undefined;
     return;
@@ -68,7 +64,13 @@ async function attachUserContext(req: AuthRequest) {
     return;
   }
 
-  const normalizedRole = normalizeRole(userDoc.role);
+  let normalizedRole: string;
+  try {
+    normalizedRole = normalizeRole(userDoc.role);
+  } catch {
+    req.user = undefined;
+    return;
+  }
   const locationId = userDoc.location_id ? userDoc.location_id.toString() : null;
   const isOrgAdmin = normalizedRole === 'org_admin';
 
@@ -94,7 +96,10 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
     if (isTokenInvalidatedByCutoff(payload)) {
       return res.status(401).json({ message: 'Unauthorized' });
     }
-    if (!isKnownRole(payload.role)) {
+    let normalizedRole: string;
+    try {
+      normalizedRole = normalizeRole(payload.role);
+    } catch {
       return res.status(401).json({ message: 'Unauthorized' });
     }
     const tokenVersion = Number(payload.tokenVersion);
@@ -103,9 +108,9 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
     }
     req.user = {
       ...payload,
-      role: normalizeRole(payload.role),
+      role: normalizedRole,
       locationId: payload.locationId ?? null,
-      isOrgAdmin: payload.isOrgAdmin ?? normalizeRole(payload.role) === 'org_admin',
+      isOrgAdmin: payload.isOrgAdmin ?? normalizedRole === 'org_admin',
       tokenVersion,
     };
     await attachUserContext(req);
@@ -130,7 +135,10 @@ export async function optionalAuth(req: AuthRequest, _res: Response, next: NextF
       req.user = undefined;
       return next();
     }
-    if (!isKnownRole(payload.role)) {
+    let normalizedRole: string;
+    try {
+      normalizedRole = normalizeRole(payload.role);
+    } catch {
       req.user = undefined;
       return next();
     }
@@ -141,9 +149,9 @@ export async function optionalAuth(req: AuthRequest, _res: Response, next: NextF
     }
     req.user = {
       ...payload,
-      role: normalizeRole(payload.role),
+      role: normalizedRole,
       locationId: payload.locationId ?? null,
-      isOrgAdmin: payload.isOrgAdmin ?? normalizeRole(payload.role) === 'org_admin',
+      isOrgAdmin: payload.isOrgAdmin ?? normalizedRole === 'org_admin',
       tokenVersion,
     };
     await attachUserContext(req);

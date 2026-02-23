@@ -16,6 +16,7 @@ import { useNavigate } from "react-router-dom";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { activityService, ActivityLogWithUser } from "@/services/activityService";
+import { canAccessPage } from "@/config/pagePermissions";
 
 interface HeaderProps {
   title: string;
@@ -34,12 +35,17 @@ export function Header({
   onSearchChange,
   searchPlaceholder,
 }: HeaderProps) {
-  const { user, role, logout } = useAuth();
+  const { user, role, isOrgAdmin, logout } = useAuth();
   const navigate = useNavigate();
   const [lastSeenAt, setLastSeenAt] = useState(() => localStorage.getItem(LAST_SEEN_KEY));
-  const canAccessSettings = role !== "employee";
-  const roleLabel = (() => {
-    switch (role) {
+  const canAccessSettings = canAccessPage({
+    page: "settings",
+    role,
+    isOrgAdmin,
+  });
+  const formatRoleLabel = (value?: string | null) => {
+    const normalized = String(value || "").trim().toLowerCase();
+    switch (normalized) {
       case "org_admin":
         return "Administrator";
       case "office_head":
@@ -49,9 +55,16 @@ export function Header({
       case "employee":
         return "Employee";
       default:
-        return "User";
+        return normalized
+          ? normalized
+              .split(/[_-\s]+/)
+              .filter(Boolean)
+              .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+              .join(" ")
+          : "User";
     }
-  })();
+  };
+  const roleLabel = formatRoleLabel(role);
 
   const handleLogout = () => {
     logout();

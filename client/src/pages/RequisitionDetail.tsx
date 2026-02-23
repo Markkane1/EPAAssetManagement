@@ -21,6 +21,7 @@ import { assetService } from "@/services/assetService";
 import { consumableItemService } from "@/services/consumableItemService";
 import { assetItemService } from "@/services/assetItemService";
 import { useLocations } from "@/hooks/useLocations";
+import { useOfficeSubLocations } from "@/hooks/useOfficeSubLocations";
 import { useAuth } from "@/contexts/AuthContext";
 import type { AssetItem, Assignment, Asset, ConsumableItem, Office, RequisitionLine } from "@/types";
 
@@ -93,6 +94,7 @@ type FulfillDraft = Record<
 type LineMapDraft = Record<
   string,
   {
+    mapType: "MOVEABLE" | "CONSUMABLE";
     search: string;
     selectedId: string;
   }
@@ -127,6 +129,16 @@ export default function RequisitionDetail() {
   const officeId = String(requisition?.office_id || "");
   const officeName =
     locationList.find((entry) => entry.id === officeId)?.name || officeId || "N/A";
+  const { data: officeSubLocations = [] } = useOfficeSubLocations({
+    officeId: officeId || undefined,
+    includeInactive: true,
+  });
+  const linkedSubLocationName = useMemo(() => {
+    const linkedId = String(requisition?.linked_sub_location_id || "");
+    if (!linkedId) return "None";
+    const room = officeSubLocations.find((entry) => String(entry.id || entry._id || "") === linkedId);
+    return room?.name || linkedId;
+  }, [officeSubLocations, requisition?.linked_sub_location_id]);
 
   const canIssuerAct = useMemo(() => {
     const hqDirectorate = isHqDirectorateOffice(officeId, locationList);
@@ -404,19 +416,34 @@ export default function RequisitionDetail() {
   };
 
   const setMapSearch = (lineId: string, search: string) => {
+    const fallbackType = lineById.get(lineId)?.line_type || "MOVEABLE";
     setLineMapDraft((previous) => ({
       ...previous,
       [lineId]: {
+        mapType: previous[lineId]?.mapType || fallbackType,
         search,
         selectedId: previous[lineId]?.selectedId || "",
       },
     }));
   };
 
-  const setMapSelection = (lineId: string, selectedId: string) => {
+  const setMapType = (lineId: string, mapType: "MOVEABLE" | "CONSUMABLE") => {
     setLineMapDraft((previous) => ({
       ...previous,
       [lineId]: {
+        mapType,
+        search: previous[lineId]?.search || "",
+        selectedId: "",
+      },
+    }));
+  };
+
+  const setMapSelection = (lineId: string, selectedId: string) => {
+    const fallbackType = lineById.get(lineId)?.line_type || "MOVEABLE";
+    setLineMapDraft((previous) => ({
+      ...previous,
+      [lineId]: {
+        mapType: previous[lineId]?.mapType || fallbackType,
         search: previous[lineId]?.search || "",
         selectedId,
       },
@@ -468,7 +495,7 @@ export default function RequisitionDetail() {
           <CardHeader>
             <CardTitle>Header</CardTitle>
           </CardHeader>
-          <CardContent className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <CardContent className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
             <div>
               <p className="text-xs text-muted-foreground">File Number</p>
               <p className="font-medium">{requisition.file_number}</p>
@@ -486,6 +513,10 @@ export default function RequisitionDetail() {
             <div>
               <p className="text-xs text-muted-foreground">Office</p>
               <p className="font-medium">{officeName}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Room / Section</p>
+              <p className="font-medium">{linkedSubLocationName}</p>
             </div>
           </CardContent>
         </Card>
@@ -525,9 +556,9 @@ export default function RequisitionDetail() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b">
-                    <th className="px-2 py-2 text-left font-medium">Requested Name</th>
+                    <th className="px-2 py-2 text-left font-medium">Item Name</th>
                     <th className="px-2 py-2 text-left font-medium">Line Type</th>
-                    <th className="px-2 py-2 text-right font-medium">Requested Qty</th>
+                    <th className="px-2 py-2 text-right font-medium">Item Quantity</th>
                     <th className="px-2 py-2 text-right font-medium">Fulfilled Qty</th>
                     <th className="px-2 py-2 text-left font-medium">Status</th>
                   </tr>
@@ -631,7 +662,12 @@ export default function RequisitionDetail() {
                     assignedAssetItemIds: [],
                     issuedQuantity: "",
                   };
-                  const mapDraft = lineMapDraft[lineId] || { search: "", selectedId: "" };
+                  const mapDraft = lineMapDraft[lineId] || {
+                    mapType: line.line_type,
+                    search: "",
+                    selectedId: "",
+                  };
+                  const selectedMapType = mapDraft.mapType || line.line_type;
                   const isMapped =
                     line.line_type === "MOVEABLE"
                       ? Boolean(line.asset_id)
@@ -647,7 +683,7 @@ export default function RequisitionDetail() {
                   const lineAssignments = assignmentsByLineId.get(lineId) || [];
 
                   const filteredMapOptions =
-                    line.line_type === "MOVEABLE"
+                    selectedMapType === "MOVEABLE"
                       ? assetList.filter((asset) =>
                           asset.name.toLowerCase().includes(mapDraft.search.trim().toLowerCase())
                         )
@@ -659,7 +695,7 @@ export default function RequisitionDetail() {
                     <div key={`fulfill-${lineId}`} className="rounded border p-3 space-y-3">
                       <div className="flex items-center justify-between">
                         <div>
-                          <p className="text-xs text-muted-foreground">Requested Name</p>
+                          <p className="text-xs text-muted-foreground">Item Name</p>
                           <p className="font-semibold text-base">{line.requested_name}</p>
                         </div>
                         <Badge variant="outline">{line.line_type}</Badge>
@@ -668,14 +704,27 @@ export default function RequisitionDetail() {
                       <div className="rounded-md border bg-muted/20 p-3 space-y-2">
                         <p className="text-sm font-medium">Map Line</p>
                         <div className="space-y-2">
+                          <Label>Map Type</Label>
+                          <Select
+                            value={selectedMapType}
+                            onValueChange={(value) => setMapType(lineId, value as "MOVEABLE" | "CONSUMABLE")}
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="MOVEABLE">MOVEABLE</SelectItem>
+                              <SelectItem value="CONSUMABLE">CONSUMABLE</SelectItem>
+                            </SelectContent>
+                          </Select>
                           <Label>
-                            {line.line_type === "MOVEABLE" ? "Search Asset" : "Search Consumable Item"}
+                            {selectedMapType === "MOVEABLE" ? "Search Asset" : "Search Consumable Item"}
                           </Label>
                           <Input
                             value={mapDraft.search}
                             onChange={(event) => setMapSearch(lineId, event.target.value)}
                             placeholder={
-                              line.line_type === "MOVEABLE"
+                              selectedMapType === "MOVEABLE"
                                 ? "Type asset name"
                                 : "Type consumable item name"
                             }
@@ -687,7 +736,7 @@ export default function RequisitionDetail() {
                             <SelectTrigger>
                               <SelectValue
                                 placeholder={
-                                  line.line_type === "MOVEABLE"
+                                  selectedMapType === "MOVEABLE"
                                     ? "Select asset to map"
                                     : "Select consumable to map"
                                 }
@@ -714,7 +763,7 @@ export default function RequisitionDetail() {
                               }
                               mapLineMutation.mutate({
                                 lineId,
-                                mapType: line.line_type,
+                                mapType: selectedMapType,
                                 mappedId: mapDraft.selectedId,
                               });
                             }}
@@ -726,7 +775,7 @@ export default function RequisitionDetail() {
                             {mapLineMutation.isPending && (
                               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                             )}
-                            {line.line_type === "MOVEABLE"
+                            {selectedMapType === "MOVEABLE"
                               ? "Map to this Asset"
                               : "Map to this Consumable"}
                           </Button>

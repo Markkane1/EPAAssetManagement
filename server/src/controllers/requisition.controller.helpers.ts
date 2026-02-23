@@ -37,15 +37,15 @@ import {
   escapeRegex,
 } from '../utils/requestParsing';
 
-const ALLOWED_SUBMITTER_ROLES = new Set(['employee', 'office_head', 'caretaker']);
+const ALLOWED_SUBMITTER_ROLES = new Set(['employee']);
 const DISTRICT_LAB_VERIFIER_ROLES = new Set(['office_head']);
 const HQ_DIRECTORATE_VERIFIER_ROLES = new Set(['office_head', 'caretaker']);
-const DISTRICT_LAB_FULFILLER_ROLES = new Set(['office_head']);
+const DISTRICT_LAB_FULFILLER_ROLES = new Set(['office_head', 'caretaker']);
 const HQ_DIRECTORATE_FULFILLER_ROLES = new Set(['office_head', 'caretaker']);
 const LINE_TYPES = new Set(['MOVEABLE', 'CONSUMABLE']);
 const TARGET_TYPES = new Set(['EMPLOYEE', 'SUB_LOCATION']);
 const VERIFY_DECISIONS = new Set(['VERIFY', 'REJECT']);
-const FULFILL_ALLOWED_STATUSES = new Set(['VERIFIED_APPROVED', 'IN_FULFILLMENT']);
+const FULFILL_ALLOWED_STATUSES = new Set(['VERIFIED_APPROVED', 'IN_FULFILLMENT', 'PARTIALLY_FULFILLED']);
 const ADJUST_ALLOWED_STATUSES = new Set(['FULFILLED', 'FULFILLED_PENDING_SIGNATURE']);
 const OPEN_ASSIGNMENT_STATUSES = new Set(['DRAFT', 'ISSUED', 'RETURN_REQUESTED']);
 

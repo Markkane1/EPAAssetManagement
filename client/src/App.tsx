@@ -33,6 +33,7 @@ const Maintenance = lazy(() => import("./pages/Maintenance"));
 const Transfers = lazy(() => import("./pages/Transfers"));
 const PurchaseOrders = lazy(() => import("./pages/PurchaseOrders"));
 const Offices = lazy(() => import("./pages/Offices"));
+const RoomsSections = lazy(() => import("./pages/RoomsSections"));
 const Categories = lazy(() => import("./pages/Categories"));
 const Vendors = lazy(() => import("./pages/Vendors"));
 const Projects = lazy(() => import("./pages/Projects"));
@@ -63,6 +64,10 @@ const UserPermissions = lazy(() => import("./pages/UserPermissions"));
 const UserManagement = lazy(() => import("./pages/UserManagement"));
 const UserActivity = lazy(() => import("./pages/UserActivity"));
 const NotFound = lazy(() => import("./pages/NotFound"));
+
+const OfficeAssets = lazy(() => import("./pages/office/OfficeAssets"));
+const OfficeAssetItems = lazy(() => import("./pages/office/OfficeAssetItems"));
+const OfficeConsumableReceive = lazy(() => import("./pages/office/OfficeConsumableReceive"));
 
 const RouteFallback = () => (
   <div className="flex min-h-screen items-center justify-center text-sm text-muted-foreground">
@@ -102,6 +107,11 @@ const App = () => {
                   <Route path="/assets" element={<ProtectedRoute page="assets"><Assets /></ProtectedRoute>} />
                   <Route path="/assets/:id" element={<ProtectedRoute page="assets"><AssetDetail /></ProtectedRoute>} />
                   <Route path="/asset-items" element={<ProtectedRoute page="asset-items"><AssetItems /></ProtectedRoute>} />
+                  
+                  {/* Office Specific Routes */}
+                  <Route path="/office/assets" element={<ProtectedRoute page="office-assets"><OfficeAssets /></ProtectedRoute>} />
+                  <Route path="/office/asset-items" element={<ProtectedRoute page="office-asset-items"><OfficeAssetItems /></ProtectedRoute>} />
+                  <Route path="/office/consumables/receive" element={<ProtectedRoute page="office-consumables"><OfficeConsumableReceive /></ProtectedRoute>} />
                   <Route path="/consumables" element={<ProtectedRoute page="consumables"><ConsumableMaster /></ProtectedRoute>} />
                   <Route path="/consumables/receive" element={<ProtectedRoute page="consumables"><ConsumableReceive /></ProtectedRoute>} />
                   <Route path="/consumables/containers" element={<ProtectedRoute page="consumables"><ConsumableContainers /></ProtectedRoute>} />
@@ -122,6 +132,7 @@ const App = () => {
                   <Route path="/maintenance" element={<ProtectedRoute page="maintenance"><Maintenance /></ProtectedRoute>} />
                   <Route path="/purchase-orders" element={<ProtectedRoute page="purchase-orders"><PurchaseOrders /></ProtectedRoute>} />
                   <Route path="/offices" element={<ProtectedRoute page="offices"><Offices /></ProtectedRoute>} />
+                  <Route path="/rooms-sections" element={<ProtectedRoute page="rooms-sections"><RoomsSections /></ProtectedRoute>} />
                   <Route path="/categories" element={<ProtectedRoute page="categories"><Categories /></ProtectedRoute>} />
                   <Route path="/vendors" element={<ProtectedRoute page="vendors"><Vendors /></ProtectedRoute>} />
                   <Route path="/projects" element={<ProtectedRoute page="projects"><Projects /></ProtectedRoute>} />

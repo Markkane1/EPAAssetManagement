@@ -585,7 +585,10 @@ async function ensureReceiveCategory(item: any, categoryId: string, session: Cli
 
 async function resolveReceiveSource(
   lotPayload: any,
-  session: ClientSession
+  session: ClientSession,
+  options?: {
+    officeScopeId?: string | null;
+  }
 ): Promise<{ sourceType: 'procurement' | 'project'; vendorId: string | null; projectId: string | null; schemeId: string | null }> {
   const sourceType = String(lotPayload?.source || '').trim().toLowerCase();
   if (sourceType !== 'procurement' && sourceType !== 'project') {
@@ -595,8 +598,15 @@ async function resolveReceiveSource(
   if (sourceType === 'procurement') {
     const vendorId = String(lotPayload?.vendorId || '').trim();
     if (!vendorId) throw createHttpError(400, 'vendorId is required for procurement source');
-    const vendor = await VendorModel.findById(vendorId).session(session);
+    const vendor: any = await VendorModel.findById(vendorId, { office_id: 1 }).session(session);
     if (!vendor) throw createHttpError(400, 'Selected vendor does not exist');
+    const officeScopeId = options?.officeScopeId ? String(options.officeScopeId) : null;
+    if (officeScopeId) {
+      const vendorOfficeId = vendor.office_id ? String(vendor.office_id) : null;
+      if (!vendorOfficeId || vendorOfficeId !== officeScopeId) {
+        throw createHttpError(400, 'Selected vendor is not available for your office');
+      }
+    }
     return {
       sourceType: 'procurement',
       vendorId: vendor.id,
@@ -761,6 +771,178 @@ export const inventoryService = {
             holderType: storeHolder.holderType,
             holderId: storeHolder.holderId,
             locationId: null,
+            lotId,
+            qtyBase,
+          },
+          session
+        );
+
+        result = tx[0];
+      });
+    } finally {
+      session.endSession();
+    }
+    return result;
+  },
+
+  async receiveOffice(user: AuthUser, payload: any, handoverDocumentation?: { originalname: string; mimetype: string; size: number; path: string }) {
+    const session = await mongoose.startSession();
+    let result: any;
+    try {
+      await session.withTransaction(async () => {
+        const permissions = resolveConsumablePermissions(user.role);
+        ensureAllowed(permissions.canReceiveOffice, 'Not permitted to receive into Office');
+
+        // Resolve the user's assigned office
+        const userContext = await getUserContext(user.userId, session);
+        const userLocationId = userContext.location_id?.toString();
+        if (!userLocationId) {
+          throw createHttpError(403, 'User is not assigned to an office');
+        }
+
+        // Validate that holderId matches the user's assigned office
+        const requestedHolderId = String(payload.holderId || '').trim();
+        const requestedHolderType = normalizeHolderType(payload.holderType, 'OFFICE');
+
+        if (requestedHolderType !== 'OFFICE') {
+          throw createHttpError(400, 'Office receiving must target an OFFICE holder');
+        }
+
+        if (requestedHolderId && requestedHolderId !== userLocationId) {
+          throw createHttpError(403, 'You can only receive stock into your own office');
+        }
+
+        const officeHolder = await resolveHolder(userLocationId, 'OFFICE', session);
+
+        const item = await getItem(payload.itemId, session);
+        const categoryId = String(payload.categoryId || '').trim();
+        await ensureReceiveCategory(item, categoryId, session);
+        const unitLookup = await getUnitLookup({ session });
+        ensureChemicalsHolder(item, officeHolder, 'Receiving holder');
+
+        const qtyBase = convertToBaseQty(payload.qty, payload.uom, item.base_uom, unitLookup);
+        if (qtyBase <= 0) throw createHttpError(400, 'Quantity must be greater than zero');
+
+        // Office receiving is procurement-only
+        const lotPayload = payload.lot || {};
+        if (lotPayload.source && lotPayload.source !== 'procurement') {
+          throw createHttpError(400, 'Office receiving is restricted to procurement source only');
+        }
+        lotPayload.source = 'procurement';
+
+        let lotId: string | null = payload.lotId || null;
+        if (lotId) {
+          if (handoverDocumentation) {
+            throw createHttpError(400, 'Handover documentation is only accepted when creating a new lot');
+          }
+          await ensureLotMatchesItem(lotId, item.id, session);
+        } else if (item.requires_lot_tracking !== false) {
+          if (!lotPayload.expiryDate) throw createHttpError(400, 'Lot expiry date is required');
+          const expiryDate = new Date(lotPayload.expiryDate);
+          if (Number.isNaN(expiryDate.getTime())) {
+            throw createHttpError(400, 'Lot expiry date is invalid');
+          }
+          const sourceMeta = await resolveReceiveSource(lotPayload, session, { officeScopeId: userLocationId });
+          const attachment = buildHandoverAttachmentPayload(handoverDocumentation || null);
+          const receivedQty = roundQty(qtyBase);
+          const newLot = await ConsumableLotModel.create(
+            [
+              {
+                consumable_id: item.id,
+                holder_type: officeHolder.holderType,
+                holder_id: officeHolder.holderId,
+                batch_no: lotPayload.lotNumber,
+                source_type: sourceMeta.sourceType,
+                vendor_id: sourceMeta.vendorId,
+                project_id: null,
+                scheme_id: null,
+                received_at: new Date(lotPayload.receivedDate || nowIso()),
+                expiry_date: expiryDate,
+                qty_received: receivedQty,
+                qty_available: receivedQty,
+                received_by_user_id: user.userId,
+                notes: payload.notes || null,
+                ...attachment,
+                docs: {
+                  sds_url: lotPayload.docs?.sdsUrl || null,
+                  coa_url: lotPayload.docs?.coaUrl || null,
+                  invoice_url: lotPayload.docs?.invoiceUrl || null,
+                },
+              },
+            ],
+            { session }
+          );
+          lotId = newLot[0].id.toString();
+        }
+        if (handoverDocumentation && !lotId) {
+          throw createHttpError(400, 'Handover documentation requires lot-tracked receiving');
+        }
+
+        const tx = await ConsumableInventoryTransactionModel.create(
+          [
+            {
+              tx_type: 'RECEIPT',
+              tx_time: nowIso(),
+              created_by: user.userId,
+              ...txHolderUpdate(officeHolder.holderType, officeHolder.holderId, 'to'),
+              consumable_item_id: item.id,
+              lot_id: lotId,
+              container_id: null,
+              qty_base: qtyBase,
+              entered_qty: payload.qty,
+              entered_uom: formatUom(payload.uom, unitLookup),
+              reason_code_id: null,
+              reference: payload.reference || null,
+              notes: payload.notes || null,
+              metadata: buildMetadata(payload, false),
+            },
+          ],
+          { session }
+        );
+
+        await updateBalance(
+          {
+            holderType: officeHolder.holderType,
+            holderId: officeHolder.holderId,
+            itemId: item.id,
+            lotId,
+          },
+          qtyBase,
+          true,
+          session
+        );
+
+        if (Array.isArray(payload.containers) && payload.containers.length > 0) {
+          const sumContainers = payload.containers.reduce((total: number, container: any) => {
+            return total + convertToBaseQty(container.initialQty, payload.uom, item.base_uom, unitLookup);
+          }, 0);
+          const diff = Math.abs(sumContainers - qtyBase);
+          if (diff > 0.0001) {
+            throw createHttpError(400, 'Container quantities must sum to total received quantity');
+          }
+          await ConsumableContainerModel.insertMany(
+            payload.containers.map((container: any) => ({
+              lot_id: lotId,
+              container_code: container.containerCode,
+              initial_qty_base: convertToBaseQty(container.initialQty, payload.uom, item.base_uom, unitLookup),
+              current_qty_base: convertToBaseQty(container.initialQty, payload.uom, item.base_uom, unitLookup),
+              current_location_id: officeHolder.holderId,
+              status: 'IN_STOCK',
+              opened_date: container.openedDate || null,
+            })),
+            { session }
+          );
+        }
+
+        await createAuditLog(
+          user.userId,
+          'consumables.receive_office',
+          `Received ${payload.qty} ${payload.uom} of ${item.name} into ${officeHolder.name}`,
+          {
+            itemId: item.id,
+            holderType: officeHolder.holderType,
+            holderId: officeHolder.holderId,
+            locationId: userLocationId,
             lotId,
             qtyBase,
           },
@@ -2005,5 +2187,4 @@ export const inventoryService = {
     return expiring.sort((a, b) => new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime());
   },
 };
-
 

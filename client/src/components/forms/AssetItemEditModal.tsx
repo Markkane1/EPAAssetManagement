@@ -22,7 +22,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Loader2 } from "lucide-react";
-import { Asset, AssetItem, Location } from "@/types";
 import { getOfficeHolderId } from "@/lib/assetItemHolder";
 
 const assetItemEditSchema = z.object({
@@ -69,6 +68,7 @@ export function AssetItemEditModal({
   onSubmit,
 }: AssetItemEditModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const { user } = useAuth();
 
   const form = useForm<AssetItemEditFormData>({
     resolver: zodResolver(assetItemEditSchema),
@@ -155,7 +155,10 @@ export function AssetItemEditModal({
             </div>
             <div className="space-y-2">
               <Label>Location *</Label>
-              <Select value={form.watch("locationId")} onValueChange={(v) => form.setValue("locationId", v)}>
+              <Select
+                value={form.watch("locationId")}
+                onValueChange={(v) => form.setValue("locationId", v)}
+              >
                 <SelectTrigger><SelectValue placeholder="Select location" /></SelectTrigger>
                 <SelectContent>
                   {locations.map((loc) => (

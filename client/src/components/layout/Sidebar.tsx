@@ -55,6 +55,7 @@ const mainNavItems: NavItem[] = [
 const managementNavItems: NavItem[] = [
   { label: "Employees", href: "/employees", icon: Users, page: "employees" },
   { label: "Offices", href: "/offices", icon: MapPin, page: "offices" },
+  { label: "Rooms & Sections", href: "/rooms-sections", icon: Building2, page: "rooms-sections" },
   { label: "Categories", href: "/categories", icon: FolderTree, page: "categories" },
   { label: "Vendors", href: "/vendors", icon: Truck, page: "vendors" },
   { label: "Projects", href: "/projects", icon: FolderKanban, page: "projects" },
@@ -86,6 +87,8 @@ const movableAssetsRootItem: NavItem = { label: "Movable Assets", href: "/assets
 const movableAssetsNavItems: NavItem[] = [
   { label: "Assets", href: "/assets", icon: Package, page: "assets" },
   { label: "Asset Items", href: "/asset-items", icon: PackageOpen, page: "asset-items" },
+  { label: "Office Assets", href: "/office/assets", icon: Package, page: "office-assets" },
+  { label: "Office Asset Items", href: "/office/asset-items", icon: PackageOpen, page: "office-asset-items" },
   { label: "Transfers", href: "/transfers", icon: ArrowRightLeft, page: "transfers" },
   { label: "Maintenance", href: "/maintenance", icon: Wrench, page: "maintenance" },
 ];
@@ -109,6 +112,7 @@ const consumablesRootItem: NavItem = { label: "Consumables", href: "/consumables
 const consumableNavItems: NavItem[] = [
   { label: "Item Master", href: "/consumables", icon: Layers, page: "consumables" },
   { label: "Lot Receiving", href: "/consumables/receive", icon: PackageOpen, page: "consumables" },
+  { label: "Office Lot Receiving", href: "/office/consumables/receive", icon: PackageOpen, page: "office-consumables" },
   { label: "Containers", href: "/consumables/containers", icon: PackageOpen, page: "consumables" },
   { label: "Units", href: "/consumables/units", icon: Ruler, page: "consumables" },
   { label: "Inventory", href: "/consumables/inventory", icon: Package, page: "consumables" },
@@ -142,14 +146,18 @@ export function Sidebar({ className }: SidebarProps) {
     location.pathname.startsWith("/assets") ||
       location.pathname.startsWith("/asset-items") ||
       location.pathname.startsWith("/transfers") ||
-      location.pathname.startsWith("/maintenance")
+      location.pathname.startsWith("/maintenance") ||
+      location.pathname.startsWith("/office/assets") ||
+      location.pathname.startsWith("/office/asset-items")
   );
   const [employeeServicesOpen, setEmployeeServicesOpen] = useState(
     location.pathname.startsWith("/assignments") ||
       location.pathname.startsWith("/requisitions") ||
       location.pathname.startsWith("/returns")
   );
-  const [consumablesOpen, setConsumablesOpen] = useState(location.pathname.startsWith("/consumables"));
+  const [consumablesOpen, setConsumablesOpen] = useState(
+    location.pathname.startsWith("/consumables") || location.pathname.startsWith("/office/consumables")
+  );
   const [reportsOpen, setReportsOpen] = useState(
     location.pathname.startsWith("/reports")
   );
@@ -157,6 +165,7 @@ export function Sidebar({ className }: SidebarProps) {
   const [managementOpen, setManagementOpen] = useState(
     location.pathname.startsWith("/employees") ||
       location.pathname.startsWith("/offices") ||
+      location.pathname.startsWith("/rooms-sections") ||
       location.pathname.startsWith("/categories") ||
       location.pathname.startsWith("/vendors") ||
       location.pathname.startsWith("/projects") ||
@@ -199,6 +208,7 @@ export function Sidebar({ className }: SidebarProps) {
     if (
       location.pathname.startsWith("/employees") ||
       location.pathname.startsWith("/offices") ||
+      location.pathname.startsWith("/rooms-sections") ||
       location.pathname.startsWith("/categories") ||
       location.pathname.startsWith("/vendors") ||
       location.pathname.startsWith("/projects") ||
@@ -214,7 +224,9 @@ export function Sidebar({ className }: SidebarProps) {
       location.pathname.startsWith("/assets") ||
       location.pathname.startsWith("/asset-items") ||
       location.pathname.startsWith("/transfers") ||
-      location.pathname.startsWith("/maintenance")
+      location.pathname.startsWith("/maintenance") ||
+      location.pathname.startsWith("/office/assets") ||
+      location.pathname.startsWith("/office/asset-items")
   ) {
       setMovableOpen(true);
     }
@@ -226,7 +238,7 @@ export function Sidebar({ className }: SidebarProps) {
       setEmployeeServicesOpen(true);
     }
     if (
-      location.pathname.startsWith("/consumables")
+      location.pathname.startsWith("/consumables") || location.pathname.startsWith("/office/consumables")
     ) {
       setConsumablesOpen(true);
     }
@@ -260,7 +272,15 @@ export function Sidebar({ className }: SidebarProps) {
       case 'office_head': return "Office Head";
       case 'caretaker': return "Caretaker";
       case 'employee': return "Employee";
-      default: return "User";
+      default: {
+        const normalized = String(role || "").trim().toLowerCase();
+        if (!normalized) return "User";
+        return normalized
+          .split(/[_-\s]+/)
+          .filter(Boolean)
+          .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+          .join(" ");
+      }
     }
   };
 
@@ -366,13 +386,15 @@ export function Sidebar({ className }: SidebarProps) {
               location.pathname.startsWith("/assets") ||
               location.pathname.startsWith("/asset-items") ||
               location.pathname.startsWith("/transfers") ||
-              location.pathname.startsWith("/maintenance");
+              location.pathname.startsWith("/maintenance") ||
+              location.pathname.startsWith("/office/assets") ||
+              location.pathname.startsWith("/office/asset-items");
             const isEmployeeServicesActive =
               location.pathname.startsWith("/assignments") ||
               location.pathname.startsWith("/requisitions") ||
               location.pathname.startsWith("/returns");
             const isConsumablesActive =
-      location.pathname.startsWith("/consumables");
+      location.pathname.startsWith("/consumables") || location.pathname.startsWith("/office/consumables");
             if (items.length === 0 && !showMovable && !showEmployeeServices && !showConsumables) return null;
             const dashboardItem = items.find((item) => item.href === "/");
             const remainingItems = items.filter((item) => item.href !== "/");
@@ -471,6 +493,7 @@ export function Sidebar({ className }: SidebarProps) {
             const isManagementActive =
               location.pathname.startsWith("/employees") ||
               location.pathname.startsWith("/offices") ||
+              location.pathname.startsWith("/rooms-sections") ||
               location.pathname.startsWith("/categories") ||
               location.pathname.startsWith("/vendors") ||
               location.pathname.startsWith("/projects") ||

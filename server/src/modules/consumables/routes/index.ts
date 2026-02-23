@@ -109,6 +109,14 @@ router.post(
   validateBody(receiveSchema),
   consumableInventoryController.receive
 );
+router.post(
+  '/inventory/receive-office',
+  requireAuth,
+  upload.single('handoverDocumentation'),
+  parseInventoryReceivePayload,
+  validateBody(receiveSchema),
+  consumableInventoryController.receiveOffice
+);
 router.post('/inventory/transfer', requireAuth, validateBody(transferSchema), consumableInventoryController.transfer);
 router.post('/inventory/consume', requireAuth, validateBody(consumeSchema), consumableInventoryController.consume);
 router.post('/inventory/adjust', requireAuth, validateBody(adjustSchema), consumableInventoryController.adjust);

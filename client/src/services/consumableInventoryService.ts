@@ -177,6 +177,8 @@ function toReceiveFormData(payload: ReceivePayload) {
 export const consumableInventoryService = {
   receive: (payload: ReceivePayload) =>
     api.upload<ConsumableInventoryTransaction>('/consumables/inventory/receive', toReceiveFormData(payload)),
+  receiveOffice: (payload: ReceivePayload) =>
+    api.upload<ConsumableInventoryTransaction>('/consumables/inventory/receive-office', toReceiveFormData(payload)),
   transfer: (payload: TransferPayload) =>
     api.post<ConsumableInventoryTransaction | ConsumableInventoryTransaction[]>(
       '/consumables/inventory/transfer',

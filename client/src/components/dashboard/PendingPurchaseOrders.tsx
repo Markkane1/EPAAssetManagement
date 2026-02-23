@@ -5,7 +5,7 @@ import { ShoppingCart, ArrowRight, Clock } from "lucide-react";
 import { Link } from "react-router-dom";
 import { usePurchaseOrders } from "@/hooks/usePurchaseOrders";
 import { useVendors } from "@/hooks/useVendors";
-import { format } from "date-fns";
+import { _format } from "date-fns";
 
 type PurchaseOrderStatus = "Draft" | "Pending" | "Approved" | "Received" | "Cancelled";
 

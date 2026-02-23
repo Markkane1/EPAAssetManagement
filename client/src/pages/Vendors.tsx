@@ -3,6 +3,13 @@ import { MainLayout } from "@/components/layout/MainLayout";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTable } from "@/components/shared/DataTable";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { MoreHorizontal, Eye, Pencil, Trash2, Mail, Phone, Loader2 } from "lucide-react";
 import {
   DropdownMenu,
@@ -15,9 +22,16 @@ import { Vendor } from "@/types";
 import { toast } from "sonner";
 import { useVendors, useCreateVendor, useUpdateVendor, useDeleteVendor } from "@/hooks/useVendors";
 import { VendorFormModal } from "@/components/forms/VendorFormModal";
+import { useAuth } from "@/contexts/AuthContext";
+import { useLocations } from "@/hooks/useLocations";
 
 export default function Vendors() {
-  const { data: vendors, isLoading } = useVendors();
+  const { role, locationId } = useAuth();
+  const isOrgAdmin = role === "org_admin";
+  const [officeFilter, setOfficeFilter] = useState<string>("all");
+  const { data: locations = [] } = useLocations();
+  const selectedOfficeId = isOrgAdmin && officeFilter !== "all" ? officeFilter : undefined;
+  const { data: vendors, isLoading } = useVendors(selectedOfficeId);
   const createVendor = useCreateVendor();
   const updateVendor = useUpdateVendor();
   const deleteVendor = useDeleteVendor();
@@ -27,6 +41,11 @@ export default function Vendors() {
 
   const vendorList = vendors || [];
 
+  const locationNameById = locations.reduce<Record<string, string>>((acc, office) => {
+    acc[office.id] = office.name;
+    return acc;
+  }, {});
+
   const columns = [
     { key: "name", label: "Vendor Name", render: (value: string, row: Vendor) => (
       <div><p className="font-medium">{value}</p><p className="text-xs text-muted-foreground">{row.contact_info}</p></div>
@@ -34,6 +53,16 @@ export default function Vendors() {
     { key: "email", label: "Email", render: (value: string) => <a href={`mailto:${value}`} className="text-primary hover:underline">{value}</a> },
     { key: "phone", label: "Phone", render: (value: string) => <span className="text-muted-foreground">{value}</span> },
     { key: "address", label: "Address", render: (value: string) => <span className="text-sm text-muted-foreground truncate max-w-[200px] block">{value}</span> },
+    ...(isOrgAdmin
+      ? [
+          {
+            key: "office_id",
+            label: "Office",
+            render: (value: string | null) =>
+              value ? locationNameById[value] || "Unknown Office" : "Unassigned",
+          },
+        ]
+      : []),
   ];
 
   const handleAddVendor = () => {
@@ -47,10 +76,16 @@ export default function Vendors() {
   };
 
   const handleSubmit = async (data: any) => {
+    const payload = {
+      ...data,
+      officeId: isOrgAdmin
+        ? String(data.officeId || selectedOfficeId || "").trim() || undefined
+        : undefined,
+    };
     if (editingVendor) {
-      await updateVendor.mutateAsync({ id: editingVendor.id, data });
+      await updateVendor.mutateAsync({ id: editingVendor.id, data: payload });
     } else {
-      await createVendor.mutateAsync(data);
+      await createVendor.mutateAsync(payload);
     }
   };
 
@@ -105,12 +140,33 @@ export default function Vendors() {
         action={{ label: "Add Vendor", onClick: handleAddVendor }}
       />
 
+      {isOrgAdmin && (
+        <div className="mb-4 w-full max-w-sm">
+          <Select value={officeFilter} onValueChange={setOfficeFilter}>
+            <SelectTrigger>
+              <SelectValue placeholder="Filter by office" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Offices</SelectItem>
+              {locations.map((office) => (
+                <SelectItem key={office.id} value={office.id}>
+                  {office.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
       <DataTable columns={columns} data={vendorList} searchPlaceholder="Search vendors..." actions={actions} />
 
       <VendorFormModal
         open={isModalOpen}
         onOpenChange={setIsModalOpen}
         vendor={editingVendor}
+        isOrgAdmin={isOrgAdmin}
+        locations={locations}
+        defaultOfficeId={isOrgAdmin ? selectedOfficeId || locationId || null : locationId}
         onSubmit={handleSubmit}
       />
     </MainLayout>

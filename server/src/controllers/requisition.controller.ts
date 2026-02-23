@@ -29,6 +29,13 @@ import { generateAndStoreIssuanceReport } from '../services/requisitionIssuanceR
 import { createBulkNotifications } from '../services/notification.service';
 import { isAssetItemHeldByOffice } from '../utils/assetHolder';
 import { assertUploadedFileIntegrity } from '../utils/uploadValidation';
+import {
+  hasPermissionAction,
+  loadStoredRolePermissionsContext,
+  resolveStoredRolePageActions,
+  resolveStoredRolePermissionEntry,
+  type PermissionAction,
+} from '../utils/rolePermissions';
 
 import {
   ALLOWED_SUBMITTER_ROLES,
@@ -62,17 +69,51 @@ import {
   escapeRegex,
   getRemainingQuantity,
   toObjectIdString,
-  normalizeLineType,
   enrichLinesWithMappingMetadata,
   buildRequisitionMappingSummary,
   dispatchDraftAssignmentNotifications,
 } from './requisition.controller.helpers';
 
+const LEGACY_REQUISITION_VIEWER_ROLES = new Set(['org_admin', 'office_head', 'caretaker', 'employee']);
+const LEGACY_REQUISITION_MANAGER_ROLES = new Set(['office_head', 'caretaker']);
+
+function hasMutatingPermission(actions: PermissionAction[]) {
+  return (
+    hasPermissionAction(actions, 'create') ||
+    hasPermissionAction(actions, 'edit') ||
+    hasPermissionAction(actions, 'delete')
+  );
+}
+
+async function resolveRequisitionPermissionFlags(role: string) {
+  const permissionContext = await loadStoredRolePermissionsContext();
+  const roleEntry = resolveStoredRolePermissionEntry(permissionContext, role);
+  const requisitionsActions = resolveStoredRolePageActions(permissionContext, role, 'requisitions');
+  const requisitionsNewActions = resolveStoredRolePageActions(permissionContext, role, 'requisitions-new');
+
+  return {
+    hasStoredRoleEntry: Boolean(roleEntry),
+    canViewRequisitions: hasPermissionAction(requisitionsActions, 'view'),
+    canManageRequisitions: hasMutatingPermission(requisitionsActions),
+    canSubmitRequisitions: hasMutatingPermission(requisitionsNewActions),
+  };
+}
+
 export const requisitionController = {
   list: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const ctx = await getRequestContext(req);
-      const canViewAll = ctx.role === 'org_admin' || ctx.isOrgAdmin;
+      const permissionFlags = await resolveRequisitionPermissionFlags(ctx.role);
+      if (!ctx.isOrgAdmin) {
+        if (permissionFlags.hasStoredRoleEntry) {
+          if (!permissionFlags.canViewRequisitions) {
+            throw createHttpError(403, 'Not permitted to view requisitions');
+          }
+        } else if (!LEGACY_REQUISITION_VIEWER_ROLES.has(ctx.role)) {
+          throw createHttpError(403, 'Not permitted to view requisitions');
+        }
+      }
+      const canViewAll = ctx.isOrgAdmin;
       const page = parsePositiveInt(req.query.page, 1, 100_000);
       const limit = parsePositiveInt(req.query.limit, 50, 200);
       const skip = (page - 1) * limit;
@@ -96,6 +137,9 @@ export const requisitionController = {
           throw createHttpError(403, 'Access restricted to assigned office');
         }
         filter.office_id = ctx.locationId;
+        if (ctx.role === 'employee') {
+          filter.submitted_by_user_id = ctx.userId;
+        }
       } else if (officeId) {
         filter.office_id = officeId;
       }
@@ -159,7 +203,17 @@ export const requisitionController = {
   getById: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const ctx = await getRequestContext(req);
-      const canViewAll = ctx.role === 'org_admin' || ctx.isOrgAdmin;
+      const permissionFlags = await resolveRequisitionPermissionFlags(ctx.role);
+      if (!ctx.isOrgAdmin) {
+        if (permissionFlags.hasStoredRoleEntry) {
+          if (!permissionFlags.canViewRequisitions) {
+            throw createHttpError(403, 'Not permitted to view requisitions');
+          }
+        } else if (!LEGACY_REQUISITION_VIEWER_ROLES.has(ctx.role)) {
+          throw createHttpError(403, 'Not permitted to view requisitions');
+        }
+      }
+      const canViewAll = ctx.isOrgAdmin;
 
       const requisition: any = await RequisitionModel.findById(readParam(req, 'id')).lean();
       if (!requisition) {
@@ -174,6 +228,14 @@ export const requisitionController = {
         if (!ctx.locationId) throw createHttpError(403, 'User is not assigned to an office');
         if (ctx.locationId !== officeId) {
           throw createHttpError(403, 'Access restricted to assigned office');
+        }
+        if (ctx.role === 'employee') {
+          const submittedByUserId = requisition.submitted_by_user_id
+            ? String(requisition.submitted_by_user_id)
+            : null;
+          if (!submittedByUserId || submittedByUserId !== ctx.userId) {
+            throw createHttpError(403, 'Access restricted to your own requisitions');
+          }
         }
       }
 
@@ -262,8 +324,13 @@ export const requisitionController = {
   mapLine: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const ctx = await getRequestContext(req);
-      if (!ctx.isOrgAdmin && !['office_head', 'caretaker'].includes(ctx.role)) {
-        throw createHttpError(403, 'Not permitted to map requisition lines');
+      const permissionFlags = await resolveRequisitionPermissionFlags(ctx.role);
+      if (!ctx.isOrgAdmin) {
+        const hasLegacyAccess = LEGACY_REQUISITION_MANAGER_ROLES.has(ctx.role);
+        const hasDynamicAccess = permissionFlags.hasStoredRoleEntry && permissionFlags.canManageRequisitions;
+        if (!hasLegacyAccess && !hasDynamicAccess) {
+          throw createHttpError(403, 'Not permitted to map requisition lines');
+        }
       }
       if (!Types.ObjectId.isValid(readParam(req, 'id'))) {
         throw createHttpError(400, 'Requisition id is invalid');
@@ -300,11 +367,7 @@ export const requisitionController = {
       if (!LINE_TYPES.has(mapType)) {
         throw createHttpError(400, "map_type must be 'MOVEABLE' or 'CONSUMABLE'");
       }
-
-      const lineType = normalizeLineType(line.line_type);
-      if (lineType !== mapType) {
-        throw createHttpError(400, `Line type ${lineType} cannot be mapped as ${mapType}`);
-      }
+      line.line_type = mapType as 'MOVEABLE' | 'CONSUMABLE';
 
       if (mapType === 'MOVEABLE') {
         const assetId = asNonEmptyString(req.body?.asset_id, 'asset_id');
@@ -361,7 +424,9 @@ export const requisitionController = {
     let documentLinkId: string | null = null;
     try {
       const ctx = await getRequestContext(req);
-      if (!ALLOWED_SUBMITTER_ROLES.has(ctx.role)) {
+      const permissionFlags = await resolveRequisitionPermissionFlags(ctx.role);
+      const hasDynamicSubmitAccess = permissionFlags.hasStoredRoleEntry && permissionFlags.canSubmitRequisitions;
+      if (!ALLOWED_SUBMITTER_ROLES.has(ctx.role) && !hasDynamicSubmitAccess) {
         throw createHttpError(403, 'Not permitted to submit requisitions');
       }
       if (!ctx.locationId) {
@@ -380,6 +445,7 @@ export const requisitionController = {
       }
       const targetType = targetTypeInput as 'EMPLOYEE' | 'SUB_LOCATION';
       const targetId = asNonEmptyString(req.body.target_id, 'target_id');
+      const linkedSubLocationId = asNullableString(req.body.linked_sub_location_id);
       const remarks = asNullableString(req.body.remarks);
       const lines = parseLinesInput(req.body.lines);
 
@@ -388,6 +454,9 @@ export const requisitionController = {
       }
       if (!Types.ObjectId.isValid(targetId)) {
         throw createHttpError(400, 'target_id is invalid');
+      }
+      if (linkedSubLocationId && !Types.ObjectId.isValid(linkedSubLocationId)) {
+        throw createHttpError(400, 'linked_sub_location_id is invalid');
       }
 
       if (officeId !== ctx.locationId) {
@@ -399,33 +468,68 @@ export const requisitionController = {
         throw createHttpError(404, 'Office not found');
       }
 
-      let requestedByEmployeeId: string | null = null;
-      if (targetType === 'EMPLOYEE') {
-        const requester: any = await EmployeeModel.findById(targetId, {
+      if (targetType !== 'EMPLOYEE') {
+        throw createHttpError(400, 'Employees can only submit requisitions for themselves');
+      }
+      let requester: any = await EmployeeModel.findOne(
+        {
+          user_id: ctx.userId,
+          is_active: { $ne: false },
+        },
+        {
           location_id: 1,
           directorate_id: 1,
           office_id: 1,
+        }
+      ).lean();
+      if (!requester && req.user?.email) {
+        requester = await EmployeeModel.findOne(
+          {
+            email: { $regex: `^${escapeRegex(req.user.email)}$`, $options: 'i' },
+            is_active: { $ne: false },
+          },
+          {
+            location_id: 1,
+            directorate_id: 1,
+            office_id: 1,
+          }
+        ).lean();
+      }
+      if (!requester) {
+        throw createHttpError(403, 'No active employee profile is linked to this user');
+      }
+      const requesterId = String(requester._id || '');
+      if (!requesterId) {
+        throw createHttpError(403, 'No active employee profile is linked to this user');
+      }
+      if (targetId !== requesterId) {
+        throw createHttpError(403, 'Employees can only submit requisitions for themselves');
+      }
+
+      const requesterLocation = requester.location_id ? String(requester.location_id) : null;
+      const requesterDirectorate = requester.directorate_id ? String(requester.directorate_id) : null;
+      const requesterOffice = (requester as { office_id?: unknown }).office_id
+        ? String((requester as { office_id?: unknown }).office_id)
+        : null;
+      if (requesterLocation !== officeId && requesterDirectorate !== officeId && requesterOffice !== officeId) {
+        throw createHttpError(400, 'Target employee must belong to the selected office');
+      }
+
+      const requestedByEmployeeId = requesterId;
+
+      let linkedSubLocationObjectId: Types.ObjectId | null = null;
+      if (linkedSubLocationId) {
+        const linkedSubLocation: any = await OfficeSubLocationModel.findById(linkedSubLocationId, {
+          office_id: 1,
+          is_active: 1,
         }).lean();
-        if (!requester) {
-          throw createHttpError(404, 'Target employee not found');
+        if (!linkedSubLocation) {
+          throw createHttpError(404, 'Linked room/section not found');
         }
-        const requesterLocation = requester.location_id ? String(requester.location_id) : null;
-        const requesterDirectorate = requester.directorate_id ? String(requester.directorate_id) : null;
-        const requesterOffice = (requester as { office_id?: unknown }).office_id
-          ? String((requester as { office_id?: unknown }).office_id)
-          : null;
-        if (requesterLocation !== officeId && requesterDirectorate !== officeId && requesterOffice !== officeId) {
-          throw createHttpError(400, 'Target employee must belong to the selected office');
+        if (String(linkedSubLocation.office_id || '') !== officeId) {
+          throw createHttpError(400, 'Linked room/section must belong to the selected office');
         }
-        requestedByEmployeeId = targetId;
-      } else {
-        const subLocation: any = await OfficeSubLocationModel.findById(targetId, { office_id: 1 }).lean();
-        if (!subLocation) {
-          throw createHttpError(404, 'Target sub-location not found');
-        }
-        if (String(subLocation.office_id || '') !== officeId) {
-          throw createHttpError(400, 'Target sub-location must belong to the selected office');
-        }
+        linkedSubLocationObjectId = new Types.ObjectId(linkedSubLocationId);
       }
 
       const existing: any = await RequisitionModel.findOne({ file_number: fileNumber }, { _id: 1 }).lean();
@@ -510,6 +614,7 @@ export const requisitionController = {
         issuing_office_id: officeId,
         target_type: targetType,
         target_id: targetId,
+        linked_sub_location_id: linkedSubLocationObjectId,
         requested_by_employee_id: requestedByEmployeeId,
         submitted_by_user_id: ctx.userId,
         fulfilled_by_user_id: null,
@@ -622,6 +727,7 @@ export const requisitionController = {
   verify: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const ctx = await getRequestContext(req);
+      const permissionFlags = await resolveRequisitionPermissionFlags(ctx.role);
       const decision = parseVerifyDecision(req.body?.decision);
       const remarks = asNullableString(req.body?.remarks);
 
@@ -637,7 +743,9 @@ export const requisitionController = {
 
       const hqDirectorate = await isHqDirectorateOffice(officeId);
       const allowedRoles = hqDirectorate ? HQ_DIRECTORATE_VERIFIER_ROLES : DISTRICT_LAB_VERIFIER_ROLES;
-      if (!allowedRoles.has(ctx.role)) {
+      const hasLegacyVerifyAccess = allowedRoles.has(ctx.role);
+      const hasDynamicVerifyAccess = permissionFlags.hasStoredRoleEntry && permissionFlags.canManageRequisitions;
+      if (!hasLegacyVerifyAccess && !hasDynamicVerifyAccess) {
         throw createHttpError(403, 'Not permitted to verify requisition for this office type');
       }
 
@@ -675,6 +783,7 @@ export const requisitionController = {
     const session = await mongoose.startSession();
     try {
       const ctx = await getRequestContext(req);
+      const permissionFlags = await resolveRequisitionPermissionFlags(ctx.role);
       const { reason, adjustments } = parseAdjustRequest(req.body);
       const adjustmentsNote = summarizeAdjustmentsForNotes(adjustments);
 
@@ -702,7 +811,9 @@ export const requisitionController = {
 
         const hqDirectorate = await isHqDirectorateOffice(issuingOfficeId);
         const allowedRoles = hqDirectorate ? HQ_DIRECTORATE_FULFILLER_ROLES : DISTRICT_LAB_FULFILLER_ROLES;
-        if (!allowedRoles.has(ctx.role)) {
+        const hasLegacyAdjustAccess = allowedRoles.has(ctx.role);
+        const hasDynamicAdjustAccess = permissionFlags.hasStoredRoleEntry && permissionFlags.canManageRequisitions;
+        if (!hasLegacyAdjustAccess && !hasDynamicAdjustAccess) {
           throw createHttpError(403, 'Not permitted to adjust requisition for this office type');
         }
         if (!ctx.isOrgAdmin && ctx.locationId !== issuingOfficeId) {
@@ -826,6 +937,7 @@ export const requisitionController = {
       await assertUploadedFileIntegrity(uploadedFile, 'signedIssuanceFile');
 
       const ctx = await getRequestContext(req);
+      const permissionFlags = await resolveRequisitionPermissionFlags(ctx.role);
       let responsePayload: {
         requisition: unknown;
         record: unknown;
@@ -850,7 +962,9 @@ export const requisitionController = {
 
         const hqDirectorate = await isHqDirectorateOffice(issuingOfficeId);
         const allowedRoles = hqDirectorate ? HQ_DIRECTORATE_FULFILLER_ROLES : DISTRICT_LAB_FULFILLER_ROLES;
-        if (!allowedRoles.has(ctx.role)) {
+        const hasLegacyFinalizeAccess = allowedRoles.has(ctx.role);
+        const hasDynamicFinalizeAccess = permissionFlags.hasStoredRoleEntry && permissionFlags.canManageRequisitions;
+        if (!hasLegacyFinalizeAccess && !hasDynamicFinalizeAccess) {
           throw createHttpError(403, 'Not permitted to finalize requisition for this office type');
         }
         if (!ctx.isOrgAdmin && ctx.locationId !== issuingOfficeId) {
@@ -1032,6 +1146,7 @@ export const requisitionController = {
     const session = await mongoose.startSession();
     try {
       const ctx = await getRequestContext(req);
+      const permissionFlags = await resolveRequisitionPermissionFlags(ctx.role);
       const payloadLines = parseFulfillLinesInput(req.body);
 
       const requisition = await RequisitionModel.findById(readParam(req, 'id')).session(session);
@@ -1050,7 +1165,9 @@ export const requisitionController = {
 
       const hqDirectorate = await isHqDirectorateOffice(issuingOfficeId);
       const allowedRoles = hqDirectorate ? HQ_DIRECTORATE_FULFILLER_ROLES : DISTRICT_LAB_FULFILLER_ROLES;
-      if (!allowedRoles.has(ctx.role)) {
+      const hasLegacyFulfillAccess = allowedRoles.has(ctx.role);
+      const hasDynamicFulfillAccess = permissionFlags.hasStoredRoleEntry && permissionFlags.canManageRequisitions;
+      if (!hasLegacyFulfillAccess && !hasDynamicFulfillAccess) {
         throw createHttpError(403, 'Not permitted to fulfill requisition for this office type');
       }
 

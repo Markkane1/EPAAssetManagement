@@ -68,6 +68,7 @@ import { toast } from "sonner";
 import { AppRole } from "@/services/authService";
 import { userService, UserWithDetails } from "@/services/userService";
 import { locationService } from "@/services/locationService";
+import { userPermissionService } from "@/services/userPermissionService";
 import { usePageSearch } from "@/contexts/PageSearchContext";
 import { cn } from "@/lib/utils";
 
@@ -76,19 +77,32 @@ interface Location {
   name: string;
 }
 
-const roleLabels: Record<AppRole, string> = {
-  org_admin: "Org Admin",
-  office_head: "Office Head",
-  caretaker: "Caretaker",
-  employee: "Employee",
-};
+const CORE_ROLE_OPTIONS: Array<{ id: string; label: string }> = [
+  { id: "org_admin", label: "Org Admin" },
+  { id: "office_head", label: "Office Head" },
+  { id: "caretaker", label: "Caretaker" },
+  { id: "employee", label: "Employee" },
+];
 
-const roleColors: Record<AppRole, string> = {
+const CORE_ROLE_COLORS: Record<string, string> = {
   org_admin: "bg-yellow-500 text-yellow-950",
   office_head: "bg-sky-500 text-white",
   caretaker: "bg-teal-600 text-white",
   employee: "bg-emerald-500 text-white",
 };
+
+function toRoleLabel(role?: string | null, roleNameMap?: Map<string, string>) {
+  const normalized = String(role || "").trim().toLowerCase();
+  if (!normalized) return "No Role";
+  if (roleNameMap?.has(normalized)) return String(roleNameMap.get(normalized));
+  const core = CORE_ROLE_OPTIONS.find((entry) => entry.id === normalized);
+  if (core) return core.label;
+  return normalized
+    .split(/[_-\s]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
 
 export default function UserManagement() {
   const queryClient = useQueryClient();
@@ -129,6 +143,11 @@ export default function UserManagement() {
   const { data: locations = [] } = useQuery({
     queryKey: ["locations-management"],
     queryFn: () => locationService.getAll() as Promise<Location[]>,
+  });
+
+  const { data: rolePermissionsCatalog } = useQuery({
+    queryKey: ["settings", "page-permissions", "catalog"],
+    queryFn: () => userPermissionService.getRolePermissions(),
   });
 
   // Update user role mutation
@@ -284,7 +303,7 @@ export default function UserManagement() {
       }
 
       setEditingUser(null);
-    } catch (error) {
+    } catch {
       // Error handled by mutations
     }
   };
@@ -296,13 +315,44 @@ export default function UserManagement() {
     () => locations.find((location) => location.id === newUserLocation) || null,
     [locations, newUserLocation]
   );
+  const roleNameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    CORE_ROLE_OPTIONS.forEach((entry) => map.set(entry.id, entry.label));
+    (rolePermissionsCatalog?.roles || []).forEach((role) => {
+      const roleId = String(role.id || "").trim().toLowerCase();
+      const roleName = String(role.name || "").trim();
+      if (roleId && roleName) {
+        map.set(roleId, roleName);
+      }
+    });
+    return map;
+  }, [rolePermissionsCatalog?.roles]);
+  const roleOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    CORE_ROLE_OPTIONS.forEach((entry) => map.set(entry.id, entry.label));
+    (rolePermissionsCatalog?.roles || []).forEach((role) => {
+      const roleId = String(role.id || "").trim().toLowerCase();
+      const roleName = String(role.name || "").trim();
+      if (roleId) {
+        map.set(roleId, roleName || toRoleLabel(roleId));
+      }
+    });
+    visibleUsers.forEach((user) => {
+      const roleId = String(user.role || "").trim().toLowerCase();
+      if (roleId && !map.has(roleId)) {
+        map.set(roleId, toRoleLabel(roleId, roleNameMap));
+      }
+    });
+    return Array.from(map.entries()).map(([id, label]) => ({ id, label }));
+  }, [rolePermissionsCatalog?.roles, roleNameMap, visibleUsers]);
 
   const getRoleBadge = (role: AppRole | null) => {
     if (!role) return <Badge variant="outline">No Role</Badge>;
+    const normalizedRole = String(role).trim().toLowerCase();
     return (
-      <Badge className={roleColors[role]}>
-        {role === "org_admin" && <Crown className="h-3 w-3 mr-1" />}
-        {roleLabels[role]}
+      <Badge className={CORE_ROLE_COLORS[normalizedRole] || "bg-muted text-foreground"}>
+        {normalizedRole === "org_admin" && <Crown className="h-3 w-3 mr-1" />}
+        {toRoleLabel(normalizedRole, roleNameMap)}
       </Badge>
     );
   };
@@ -489,10 +539,11 @@ export default function UserManagement() {
                   <SelectValue placeholder="Select a role" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="org_admin">Org Admin</SelectItem>
-                  <SelectItem value="office_head">Office Head</SelectItem>
-                  <SelectItem value="caretaker">Caretaker</SelectItem>
-                  <SelectItem value="employee">Employee</SelectItem>
+                  {roleOptions.map((roleOption) => (
+                    <SelectItem key={roleOption.id} value={roleOption.id}>
+                      {roleOption.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
@@ -500,6 +551,9 @@ export default function UserManagement() {
                 {selectedRole === "office_head" && "Office-scoped management access."}
                 {selectedRole === "caretaker" && "Office-scoped custody and workflow operations."}
                 {selectedRole === "employee" && "Basic office-scoped access."}
+                {selectedRole &&
+                  !["org_admin", "office_head", "caretaker", "employee"].includes(selectedRole) &&
+                  "Access is controlled by dynamic role permissions."}
               </p>
             </div>
 
@@ -620,10 +674,11 @@ export default function UserManagement() {
                   <SelectValue placeholder="Select a role" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="org_admin">Org Admin</SelectItem>
-                  <SelectItem value="office_head">Office Head</SelectItem>
-                  <SelectItem value="caretaker">Caretaker</SelectItem>
-                  <SelectItem value="employee">Employee</SelectItem>
+                  {roleOptions.map((roleOption) => (
+                    <SelectItem key={roleOption.id} value={roleOption.id}>
+                      {roleOption.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

@@ -1,40 +1,213 @@
-import { Request, Response, NextFunction } from 'express';
-import { createCrudController } from './crudController';
-import { vendorRepository } from '../repositories/vendor.repository';
+import { Response, NextFunction } from 'express';
+import { Types } from 'mongoose';
+import type { AuthRequest } from '../middleware/auth';
 import { VendorModel } from '../models/vendor.model';
+import { OfficeModel } from '../models/office.model';
+import { createHttpError } from '../utils/httpError';
+import { getRequestContext } from '../utils/scope';
+import { isOfficeManager } from '../utils/accessControl';
 import { escapeRegex, readPagination } from '../utils/requestParsing';
 
-const baseController = createCrudController({
-  repository: vendorRepository,
-  createMap: {
-    contactInfo: 'contact_info',
-  },
-  updateMap: {
-    contactInfo: 'contact_info',
-  },
-});
+function readOfficeIdFromBody(body: Record<string, unknown>) {
+  const raw = body.officeId ?? body.office_id;
+  const parsed = String(raw || '').trim();
+  return parsed || null;
+}
+
+function normalizeWritePayload(body: Record<string, unknown>) {
+  const payload: Record<string, unknown> = { ...body };
+  if (body.contactInfo !== undefined) {
+    payload.contact_info = body.contactInfo;
+    delete payload.contactInfo;
+  }
+  delete payload.officeId;
+  return payload;
+}
+
+async function ensureOfficeExists(officeId: string) {
+  if (!Types.ObjectId.isValid(officeId)) {
+    throw createHttpError(400, 'officeId is invalid');
+  }
+  const exists = await OfficeModel.exists({ _id: officeId });
+  if (!exists) {
+    throw createHttpError(400, 'Selected office does not exist');
+  }
+}
+
+function ensureCanManageVendors(role: string, isOrgAdmin: boolean) {
+  if (isOrgAdmin) return;
+  if (isOfficeManager(role)) return;
+  throw createHttpError(403, 'Not permitted to manage vendors');
+}
+
+function ensureVendorOfficeScope(options: {
+  isOrgAdmin: boolean;
+  requesterOfficeId: string | null;
+  vendorOfficeId: string | null;
+}) {
+  if (options.isOrgAdmin) return;
+  if (!options.requesterOfficeId) {
+    throw createHttpError(403, 'User is not assigned to an office');
+  }
+  if (!options.vendorOfficeId || options.vendorOfficeId !== options.requesterOfficeId) {
+    throw createHttpError(403, 'Access restricted to assigned office');
+  }
+}
 
 export const vendorController = {
-  ...baseController,
-  list: async (req: Request, res: Response, next: NextFunction) => {
+  list: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
+      const ctx = await getRequestContext(req);
       const { limit, skip } = readPagination(req.query as Record<string, unknown>, { defaultLimit: 200, maxLimit: 1000 });
       const search = String((req.query as Record<string, unknown>).search || '').trim();
+      const queryOfficeId = String((req.query as Record<string, unknown>).officeId || '').trim();
+
       const filter: Record<string, unknown> = {};
       if (search) {
         const regex = new RegExp(escapeRegex(search), 'i');
         filter.$or = [{ name: regex }, { email: regex }, { phone: regex }];
       }
 
+      if (ctx.isOrgAdmin) {
+        if (queryOfficeId) {
+          if (!Types.ObjectId.isValid(queryOfficeId)) {
+            throw createHttpError(400, 'officeId is invalid');
+          }
+          filter.office_id = queryOfficeId;
+        }
+      } else {
+        if (!ctx.locationId) {
+          throw createHttpError(403, 'User is not assigned to an office');
+        }
+        if (queryOfficeId && queryOfficeId !== ctx.locationId) {
+          throw createHttpError(403, 'Access restricted to assigned office');
+        }
+        filter.office_id = ctx.locationId;
+      }
+
       const vendors = await VendorModel.find(
         filter,
-        { name: 1, contact_info: 1, email: 1, phone: 1, address: 1, created_at: 1 }
+        { name: 1, contact_info: 1, email: 1, phone: 1, address: 1, office_id: 1, created_at: 1 }
       )
         .sort({ created_at: -1 })
         .skip(skip)
         .limit(limit)
         .lean();
       res.json(vendors);
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  getById: async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const vendor: any = await VendorModel.findById(req.params?.id).lean();
+      if (!vendor) {
+        return res.status(404).json({ message: 'Not found' });
+      }
+      ensureVendorOfficeScope({
+        isOrgAdmin: ctx.isOrgAdmin,
+        requesterOfficeId: ctx.locationId,
+        vendorOfficeId: vendor.office_id ? String(vendor.office_id) : null,
+      });
+      return res.json(vendor);
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  create: async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const ctx = await getRequestContext(req);
+      ensureCanManageVendors(ctx.role, ctx.isOrgAdmin);
+
+      const body = (req.body || {}) as Record<string, unknown>;
+      const requestedOfficeId = readOfficeIdFromBody(body);
+
+      let targetOfficeId: string | null = null;
+      if (ctx.isOrgAdmin) {
+        targetOfficeId = requestedOfficeId || ctx.locationId || null;
+      } else {
+        targetOfficeId = ctx.locationId;
+        if (requestedOfficeId && requestedOfficeId !== targetOfficeId) {
+          throw createHttpError(403, 'Access restricted to assigned office');
+        }
+      }
+
+      if (!targetOfficeId) {
+        throw createHttpError(400, 'officeId is required');
+      }
+      await ensureOfficeExists(targetOfficeId);
+
+      const payload = normalizeWritePayload(body);
+      payload.office_id = targetOfficeId;
+
+      const vendor = await VendorModel.create(payload);
+      return res.status(201).json(vendor);
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  update: async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const ctx = await getRequestContext(req);
+      ensureCanManageVendors(ctx.role, ctx.isOrgAdmin);
+
+      const existing: any = await VendorModel.findById(req.params?.id);
+      if (!existing) {
+        return res.status(404).json({ message: 'Not found' });
+      }
+      const existingOfficeId = existing.office_id ? String(existing.office_id) : null;
+      ensureVendorOfficeScope({
+        isOrgAdmin: ctx.isOrgAdmin,
+        requesterOfficeId: ctx.locationId,
+        vendorOfficeId: existingOfficeId,
+      });
+
+      const body = (req.body || {}) as Record<string, unknown>;
+      const requestedOfficeId = readOfficeIdFromBody(body);
+      if (!ctx.isOrgAdmin && requestedOfficeId && requestedOfficeId !== existingOfficeId) {
+        throw createHttpError(403, 'Access restricted to assigned office');
+      }
+
+      const payload = normalizeWritePayload(body);
+      if (ctx.isOrgAdmin && requestedOfficeId && requestedOfficeId !== existingOfficeId) {
+        await ensureOfficeExists(requestedOfficeId);
+        payload.office_id = requestedOfficeId;
+      }
+
+      const updated = await VendorModel.findByIdAndUpdate(req.params?.id, payload, {
+        new: true,
+        runValidators: true,
+      });
+      if (!updated) {
+        return res.status(404).json({ message: 'Not found' });
+      }
+      return res.json(updated);
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  remove: async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const ctx = await getRequestContext(req);
+      ensureCanManageVendors(ctx.role, ctx.isOrgAdmin);
+
+      const vendor: any = await VendorModel.findById(req.params?.id).lean();
+      if (!vendor) {
+        return res.status(404).json({ message: 'Not found' });
+      }
+      ensureVendorOfficeScope({
+        isOrgAdmin: ctx.isOrgAdmin,
+        requesterOfficeId: ctx.locationId,
+        vendorOfficeId: vendor.office_id ? String(vendor.office_id) : null,
+      });
+
+      await VendorModel.findByIdAndDelete(req.params?.id);
+      return res.status(204).send();
     } catch (error) {
       next(error);
     }

@@ -6,10 +6,11 @@ import { API_CONFIG } from '@/config/api.config';
 
 const { queryKeys, messages, query } = API_CONFIG;
 
-export const useVendors = () => {
+export const useVendors = (officeId?: string) => {
+  const normalizedOfficeId = String(officeId || '').trim();
   return useQuery({
-    queryKey: queryKeys.vendors,
-    queryFn: vendorService.getAll,
+    queryKey: [...queryKeys.vendors, normalizedOfficeId || 'all-offices'],
+    queryFn: () => vendorService.getAll({ officeId: normalizedOfficeId || undefined }),
     staleTime: query.staleTime,
   });
 };

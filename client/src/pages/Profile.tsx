@@ -42,8 +42,12 @@ export default function Profile() {
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
-    } catch (error: any) {
-      toast.error(error?.message || "Failed to update password");
+    } catch (error: unknown) {
+      if (error instanceof Error) {
+        toast.error(error.message || "Failed to update password");
+      } else {
+        toast.error("Failed to update password");
+      }
     } finally {
       setIsUpdatingPassword(false);
     }
@@ -63,7 +67,8 @@ export default function Profile() {
     ? user.email.substring(0, 2).toUpperCase()
     : "U";
   const roleLabel = (() => {
-    switch (user.role) {
+    const normalized = String(user.role || "").trim().toLowerCase();
+    switch (normalized) {
       case "org_admin":
         return "Administrator";
       case "office_head":
@@ -73,7 +78,13 @@ export default function Profile() {
       case "employee":
         return "Employee";
       default:
-        return "User";
+        return normalized
+          ? normalized
+              .split(/[_-\s]+/)
+              .filter(Boolean)
+              .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+              .join(" ")
+          : "User";
     }
   })();
 

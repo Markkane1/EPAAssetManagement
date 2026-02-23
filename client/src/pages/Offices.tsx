@@ -19,7 +19,6 @@ import { useDistricts } from "@/hooks/useDistricts";
 import { OfficeFormModal } from "@/components/forms/OfficeFormModal";
 import { DivisionManagementModal } from "@/components/shared/DivisionManagementModal";
 import { DistrictManagementModal } from "@/components/shared/DistrictManagementModal";
-import { OfficeSectionManagementModal } from "@/components/shared/OfficeSectionManagementModal";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePageSearch } from "@/contexts/PageSearchContext";
 import { DataTable } from "@/components/shared/DataTable";
@@ -60,7 +59,6 @@ export default function Offices() {
   const [editingOffice, setEditingOffice] = useState<Office | null>(null);
   const [divisionModalOpen, setDivisionModalOpen] = useState(false);
   const [districtModalOpen, setDistrictModalOpen] = useState(false);
-  const [sectionModalOpen, setSectionModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<OfficeType>("HEAD_OFFICE");
   const { mode: viewMode, setMode: setViewMode } = useViewMode("offices");
   const pageSearch = usePageSearch();
@@ -189,9 +187,6 @@ export default function Offices() {
                 <Button variant="outline" onClick={() => setDistrictModalOpen(true)}>
                   Manage Districts
                 </Button>
-                <Button variant="outline" onClick={() => setSectionModalOpen(true)}>
-                  Manage Rooms/Sections
-                </Button>
               </>
             ) : null}
           </div>
@@ -284,11 +279,6 @@ export default function Offices() {
             open={districtModalOpen}
             onOpenChange={setDistrictModalOpen}
             divisions={divisions}
-          />
-          <OfficeSectionManagementModal
-            open={sectionModalOpen}
-            onOpenChange={setSectionModalOpen}
-            offices={offices || []}
           />
         </>
       )}

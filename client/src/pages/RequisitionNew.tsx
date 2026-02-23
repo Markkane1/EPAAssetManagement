@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,29 +9,27 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Plus, Trash2, Loader2, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import { requisitionService } from "@/services/requisitionService";
 import type { RequisitionCreateLineInput } from "@/services/requisitionService";
-import { officeSubLocationService } from "@/services/officeSubLocationService";
 import { useEmployees } from "@/hooks/useEmployees";
 import { useLocations } from "@/hooks/useLocations";
+import { useOfficeSubLocations } from "@/hooks/useOfficeSubLocations";
 import { useAuth } from "@/contexts/AuthContext";
 
 type DraftLine = {
-  line_type: "MOVEABLE" | "CONSUMABLE";
   requested_name: string;
   requested_quantity: number;
   notes: string;
 };
 
 const DEFAULT_LINE: DraftLine = {
-  line_type: "MOVEABLE",
   requested_name: "",
   requested_quantity: 1,
   notes: "",
 };
+const NONE_ROOM_OPTION = "__none__";
 
 const ALLOWED_FILE_TYPES = new Set(["application/pdf", "image/jpeg", "image/png"]);
 const ALLOWED_EXTENSIONS = [".pdf", ".jpg", ".jpeg", ".png"];
@@ -45,26 +42,20 @@ function isAllowedAttachment(file: File) {
 
 export default function RequisitionNew() {
   const navigate = useNavigate();
-  const { user, role, locationId } = useAuth();
-  const { data: employees, isLoading: employeesLoading } = useEmployees();
+  const { user, locationId } = useAuth();
+  const { data: employees } = useEmployees();
   const { data: locations } = useLocations();
-  const roomsQuery = useQuery({
-    queryKey: ["office-sub-locations", locationId],
-    queryFn: () => officeSubLocationService.list({ officeId: locationId || undefined }),
-    enabled: Boolean(locationId),
+  const { data: roomSections = [] } = useOfficeSubLocations({
+    officeId: locationId || undefined,
   });
 
   const [fileNumber, setFileNumber] = useState("");
-  const [targetType, setTargetType] = useState<"EMPLOYEE" | "SUB_LOCATION">("EMPLOYEE");
   const [targetEmployeeId, setTargetEmployeeId] = useState("");
-  const [targetSubLocationId, setTargetSubLocationId] = useState("");
-  const [employeeSearch, setEmployeeSearch] = useState("");
-  const [roomSearch, setRoomSearch] = useState("");
+  const [linkedSubLocationId, setLinkedSubLocationId] = useState<string>(NONE_ROOM_OPTION);
   const [lines, setLines] = useState<DraftLine[]>([{ ...DEFAULT_LINE }]);
   const [attachment, setAttachment] = useState<File | null>(null);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [employeeDefaultResolved, setEmployeeDefaultResolved] = useState(false);
 
   const employeeList = useMemo(() => employees || [], [employees]);
   const locationList = useMemo(() => locations || [], [locations]);
@@ -77,35 +68,17 @@ export default function RequisitionNew() {
     if (!locationId) return [];
     return employeeList.filter((employee) => employee.location_id === locationId);
   }, [employeeList, locationId]);
-  const roomList = useMemo(() => roomsQuery.data || [], [roomsQuery.data]);
-
-  const filteredOfficeEmployees = useMemo(() => {
-    const token = employeeSearch.trim().toLowerCase();
-    if (!token) return officeEmployees;
-    return officeEmployees.filter((employee) =>
-      `${employee.first_name} ${employee.last_name} ${employee.email}`.toLowerCase().includes(token)
-    );
-  }, [officeEmployees, employeeSearch]);
-
-  const filteredRooms = useMemo(() => {
-    const token = roomSearch.trim().toLowerCase();
-    if (!token) return roomList;
-    return roomList.filter((room) => room.name.toLowerCase().includes(token));
-  }, [roomList, roomSearch]);
-
-  useEffect(() => {
-    if (employeeDefaultResolved || role !== "employee") return;
+  const currentEmployee = useMemo(() => {
     const currentUserId = user?.id || "";
     const currentUserEmail = (user?.email || "").toLowerCase();
     const byUserId = officeEmployees.find((employee) => employee.user_id === currentUserId);
     const byEmail = officeEmployees.find((employee) => employee.email?.toLowerCase() === currentUserEmail);
-    const mapped = byUserId || byEmail;
-    if (mapped?.id) {
-      setTargetType("EMPLOYEE");
-      setTargetEmployeeId(mapped.id);
-    }
-    setEmployeeDefaultResolved(true);
-  }, [employeeDefaultResolved, role, user?.id, user?.email, officeEmployees]);
+    return byUserId || byEmail || null;
+  }, [officeEmployees, user?.id, user?.email]);
+
+  useEffect(() => {
+    setTargetEmployeeId(currentEmployee?.id || "");
+  }, [currentEmployee]);
 
   const addLine = () => {
     setLines((previous) => [...previous, { ...DEFAULT_LINE }]);
@@ -139,25 +112,25 @@ export default function RequisitionNew() {
     }
     lines.forEach((line, index) => {
       if (!line.requested_name.trim()) {
-        errors.push(`Line ${index + 1}: requested name is required.`);
+        errors.push(`Line ${index + 1}: Item Name is required.`);
       }
       const quantity = Number(line.requested_quantity);
       if (!Number.isFinite(quantity) || quantity <= 0) {
-        errors.push(`Line ${index + 1}: requested quantity must be greater than 0.`);
+        errors.push(`Line ${index + 1}: Item Quantity must be greater than 0.`);
       }
     });
-    if (targetType === "EMPLOYEE") {
-      if (!targetEmployeeId) {
-        errors.push("Select target employee.");
-      } else if (!officeEmployees.some((employee) => employee.id === targetEmployeeId)) {
-        errors.push("Selected target employee is not valid for your office.");
-      }
-    } else {
-      if (!targetSubLocationId) {
-        errors.push("Select target room.");
-      } else if (!roomList.some((room) => (room.id || room._id) === targetSubLocationId)) {
-        errors.push("Selected target room is not valid for your office.");
-      }
+    if (!targetEmployeeId) {
+      errors.push("Your employee profile is not linked to this login for the selected office.");
+    } else if (currentEmployee && targetEmployeeId !== currentEmployee.id) {
+      errors.push("Employees can only submit requisitions for themselves.");
+    } else if (!officeEmployees.some((employee) => employee.id === targetEmployeeId)) {
+      errors.push("Your employee profile is not valid for this office.");
+    }
+    if (
+      linkedSubLocationId !== NONE_ROOM_OPTION &&
+      !roomSections.some((room) => (room.id || room._id) === linkedSubLocationId)
+    ) {
+      errors.push("Selected Room/Section is not valid for your office.");
     }
     setValidationErrors(errors);
     return errors.length === 0;
@@ -165,11 +138,10 @@ export default function RequisitionNew() {
 
   const handleSubmit = async () => {
     if (!validate() || !locationId || !attachment) return;
-    const targetId = targetType === "EMPLOYEE" ? targetEmployeeId : targetSubLocationId;
-    if (!targetId) return;
+    if (!targetEmployeeId) return;
 
     const payloadLines: RequisitionCreateLineInput[] = lines.map((line) => ({
-      line_type: line.line_type,
+      line_type: "MOVEABLE",
       requested_name: line.requested_name.trim(),
       requested_quantity: Number(line.requested_quantity || 1),
       notes: line.notes.trim() || undefined,
@@ -180,8 +152,10 @@ export default function RequisitionNew() {
       const created = await requisitionService.create({
         file_number: fileNumber.trim(),
         office_id: locationId,
-        target_type: targetType,
-        target_id: targetId,
+        target_type: "EMPLOYEE",
+        target_id: targetEmployeeId,
+        linked_sub_location_id:
+          linkedSubLocationId !== NONE_ROOM_OPTION ? linkedSubLocationId : undefined,
         lines: payloadLines,
         requisition_file: attachment,
       });
@@ -248,79 +222,45 @@ export default function RequisitionNew() {
 
             <div className="space-y-3 rounded-md border p-3">
               <Label>Requisition Target *</Label>
-              <RadioGroup
-                value={targetType}
-                onValueChange={(value) => setTargetType(value as "EMPLOYEE" | "SUB_LOCATION")}
-                className="grid gap-2 md:grid-cols-2"
-              >
-                <label className="flex items-center gap-2 rounded border p-2">
-                  <RadioGroupItem id="target-employee" value="EMPLOYEE" />
-                  <span className="text-sm font-medium">Employee</span>
-                </label>
-                <label className="flex items-center gap-2 rounded border p-2">
-                  <RadioGroupItem id="target-room" value="SUB_LOCATION" />
-                  <span className="text-sm font-medium">Room</span>
-                </label>
-              </RadioGroup>
+              <div className="space-y-2">
+                <Label htmlFor="targetEmployee">Employee</Label>
+                <Input
+                  id="targetEmployee"
+                  value={
+                    currentEmployee
+                      ? `${currentEmployee.first_name} ${currentEmployee.last_name} (${currentEmployee.email})`
+                      : "Employee profile not linked"
+                  }
+                  disabled
+                  readOnly
+                />
+                <p className="text-xs text-muted-foreground">
+                  Target is fixed to the logged-in employee and cannot be changed.
+                </p>
+              </div>
+            </div>
 
-              {targetType === "EMPLOYEE" ? (
-                <div className="space-y-2">
-                  <Label htmlFor="employeeSearch">Employee Search</Label>
-                  <Input
-                    id="employeeSearch"
-                    value={employeeSearch}
-                    onChange={(event) => setEmployeeSearch(event.target.value)}
-                    placeholder="Type employee name or email"
-                  />
-                  <Select
-                    value={targetEmployeeId || undefined}
-                    onValueChange={(value) => setTargetEmployeeId(value)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue
-                        placeholder={employeesLoading ? "Loading employees..." : "Select target employee"}
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {filteredOfficeEmployees.map((employee) => (
-                        <SelectItem key={employee.id} value={employee.id}>
-                          {employee.first_name} {employee.last_name} ({employee.email})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <Label htmlFor="roomSearch">Room Search</Label>
-                  <Input
-                    id="roomSearch"
-                    value={roomSearch}
-                    onChange={(event) => setRoomSearch(event.target.value)}
-                    placeholder="Type room name"
-                  />
-                  <Select
-                    value={targetSubLocationId || undefined}
-                    onValueChange={(value) => setTargetSubLocationId(value)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue
-                        placeholder={roomsQuery.isLoading ? "Loading rooms..." : "Select target room"}
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {filteredRooms.map((room) => {
-                        const roomId = room.id || room._id || "";
-                        return (
-                          <SelectItem key={roomId} value={roomId}>
-                            {room.name}
-                          </SelectItem>
-                        );
-                      })}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
+            <div className="space-y-2">
+              <Label>Room / Section</Label>
+              <Select value={linkedSubLocationId} onValueChange={setLinkedSubLocationId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select room / section (optional)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NONE_ROOM_OPTION}>None</SelectItem>
+                  {roomSections.map((room) => {
+                    const roomId = room.id || room._id || "";
+                    return (
+                      <SelectItem key={roomId} value={roomId}>
+                        {room.name}
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Optional direct link to room/section for this requisition.
+              </p>
             </div>
 
             <div className="space-y-2">
@@ -357,27 +297,9 @@ export default function RequisitionNew() {
                   </Button>
                 </div>
 
-                <div className="grid gap-3 md:grid-cols-4">
-                  <div className="space-y-2">
-                    <Label>Line Type</Label>
-                    <Select
-                      value={line.line_type}
-                      onValueChange={(value) =>
-                        updateLine(index, "line_type", value as "MOVEABLE" | "CONSUMABLE")
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="MOVEABLE">MOVEABLE</SelectItem>
-                        <SelectItem value="CONSUMABLE">CONSUMABLE</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
+                <div className="grid gap-3 md:grid-cols-3">
                   <div className="space-y-2 md:col-span-2">
-                    <Label>Requested Name *</Label>
+                    <Label>Item Name *</Label>
                     <Input
                       value={line.requested_name}
                       onChange={(event) => updateLine(index, "requested_name", event.target.value)}
@@ -386,7 +308,7 @@ export default function RequisitionNew() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label>Requested Quantity *</Label>
+                    <Label>Item Quantity *</Label>
                     <Input
                       type="number"
                       min={1}

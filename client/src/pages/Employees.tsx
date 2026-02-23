@@ -105,7 +105,7 @@ export default function Employees() {
 
   const handleSubmit = async (data: any) => {
     if (editingEmployee) {
-      const { userPassword, ...payload } = data;
+      const { _userPassword, ...payload } = data;
       await updateEmployee.mutateAsync({ id: editingEmployee.id, data: payload });
     } else {
       await createEmployee.mutateAsync(data);

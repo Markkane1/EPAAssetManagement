@@ -3,6 +3,8 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import authService, { AppRole, User, normalizeRole } from '@/services/authService';
 import { activityService } from '@/services/activityService';
 import api from '@/lib/api';
+import { userPermissionService } from '@/services/userPermissionService';
+import { setRuntimeRolePermissions } from '@/config/pagePermissions';
 
 interface AuthContextType {
   user: User | null;
@@ -60,12 +62,26 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setRole(normalizedRole);
       setIsOrgAdmin(normalizedRole === 'org_admin');
       setLocationId(me.locationId || null);
+
+      try {
+        const runtime = await userPermissionService.getEffectiveRolePermissions();
+        setRuntimeRolePermissions([
+          {
+            id: String(runtime.role || normalizedRole),
+            sourceRoles: [String(runtime.role || normalizedRole)],
+            permissions: runtime.permissions || {},
+          },
+        ]);
+      } catch {
+        setRuntimeRolePermissions(null);
+      }
     } catch {
       authService.logout();
       setUser(null);
       setRole(null);
       setIsOrgAdmin(false);
       setLocationId(null);
+      setRuntimeRolePermissions(null);
     }
     setIsLoading(false);
   };
@@ -101,6 +117,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     setRole(null);
     setIsOrgAdmin(false);
     setLocationId(null);
+    setRuntimeRolePermissions(null);
   };
 
   return (

@@ -45,6 +45,7 @@ export interface RequisitionCreateFormInput {
   office_id: string;
   target_type: 'EMPLOYEE' | 'SUB_LOCATION';
   target_id: string;
+  linked_sub_location_id?: string;
   remarks?: string;
   lines: RequisitionCreateLineInput[];
   requisition_file: File;
@@ -109,6 +110,9 @@ export const requisitionService = {
     form.append('officeId', input.office_id);
     form.append('target_type', input.target_type);
     form.append('target_id', input.target_id);
+    if (input.linked_sub_location_id) {
+      form.append('linked_sub_location_id', input.linked_sub_location_id);
+    }
     if (input.remarks) form.append('remarks', input.remarks);
     form.append('lines', JSON.stringify(input.lines));
     form.append('requisitionFile', input.requisition_file);

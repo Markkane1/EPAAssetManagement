@@ -222,8 +222,8 @@ export const assetItemController = {
   create: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const access = await resolveAccessContext(req.user);
-      if (!access.isOrgAdmin) {
-        throw createHttpError(403, 'Only org_admin can create asset items');
+      if (!access.isOrgAdmin && !isOfficeManager(access.role)) {
+        throw createHttpError(403, 'Not permitted to create asset items');
       }
       const payload = buildPayload(req.body);
       if (payload.assignment_status === undefined) payload.assignment_status = 'Unassigned';
@@ -244,6 +244,12 @@ export const assetItemController = {
       }
 
       const holder = await resolveRequestedHolder(payload);
+      if (!access.isOrgAdmin) {
+        if (holder.holder_type !== 'OFFICE') {
+          throw createHttpError(403, 'Users can only create items for their assigned office');
+        }
+        ensureOfficeScope(access, holder.holder_id);
+      }
       await validateHolderAndCategory(String(payload.asset_id), holder);
       payload.holder_type = holder.holder_type;
       payload.holder_id = holder.holder_id;
@@ -262,8 +268,8 @@ export const assetItemController = {
   createBatch: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const access = await resolveAccessContext(req.user);
-      if (!access.isOrgAdmin) {
-        throw createHttpError(403, 'Only org_admin can create asset items');
+      if (!access.isOrgAdmin && !isOfficeManager(access.role)) {
+        throw createHttpError(403, 'Not permitted to create asset items');
       }
       const {
         assetId,
@@ -308,6 +314,12 @@ export const assetItemController = {
       if (holderType) holderPayload.holder_type = holderType;
       if (holderId) holderPayload.holder_id = holderId;
       const holder = await resolveRequestedHolder(holderPayload);
+      if (!access.isOrgAdmin) {
+        if (holder.holder_type !== 'OFFICE') {
+          throw createHttpError(403, 'Users can only create items for their assigned office');
+        }
+        ensureOfficeScope(access, holder.holder_id);
+      }
       await validateHolderAndCategory(assetId, holder);
 
       const docs = items.map((item, index) => ({

@@ -6,7 +6,7 @@ import { AssetModel } from '../models/asset.model';
 import { AssetItemModel } from '../models/assetItem.model';
 import { CategoryModel } from '../models/category.model';
 import { mapFields } from '../utils/mapFields';
-import { resolveAccessContext } from '../utils/accessControl';
+import { resolveAccessContext, isOfficeManager } from '../utils/accessControl';
 import { createHttpError } from '../utils/httpError';
 import type { AuthRequest } from '../middleware/auth';
 import { officeAssetItemFilter } from '../utils/assetHolder';
@@ -98,9 +98,9 @@ function parseDimensions(body: Record<string, unknown>) {
 
   const unitCandidate = String(
     nested.unit
-      ?? body.dimensionUnit
-      ?? body.dimensions_unit
-      ?? 'cm'
+    ?? body.dimensionUnit
+    ?? body.dimensions_unit
+    ?? 'cm'
   ).toLowerCase();
   const unit = DIMENSION_UNITS.has(unitCandidate) ? unitCandidate : 'cm';
 
@@ -264,8 +264,8 @@ export const assetController = {
     const uploadedFile = req.file || null;
     try {
       const access = await resolveAccessContext(req.user);
-      if (!access.isOrgAdmin) {
-        throw createHttpError(403, 'Only org_admin can create asset definitions');
+      if (!access.isOrgAdmin && !isOfficeManager(access.role)) {
+        throw createHttpError(403, 'Not permitted to create asset definitions');
       }
       if (uploadedFile) {
         await assertUploadedFileIntegrity(uploadedFile, 'assetAttachment');
@@ -298,8 +298,8 @@ export const assetController = {
     let oldAttachmentPath: string | null = null;
     try {
       const access = await resolveAccessContext(req.user);
-      if (!access.isOrgAdmin) {
-        throw createHttpError(403, 'Only org_admin can update asset definitions');
+      if (!access.isOrgAdmin && !isOfficeManager(access.role)) {
+        throw createHttpError(403, 'Not permitted to update asset definitions');
       }
       if (uploadedFile) {
         await assertUploadedFileIntegrity(uploadedFile, 'assetAttachment');

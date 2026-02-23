@@ -1,5 +1,5 @@
-import { Fragment, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { Fragment, useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,13 +15,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -45,34 +38,61 @@ import {
 import { toast } from "sonner";
 import { userService } from "@/services/userService";
 import { normalizeRole } from "@/services/authService";
+import {
+  PAGE_ALLOWED_ROLES,
+  setRuntimeRolePermissions,
+  type AppPageKey,
+} from "@/config/pagePermissions";
 import { usePageSearch } from "@/contexts/PageSearchContext";
+import {
+  userPermissionService,
+  type RolePermission,
+} from "@/services/userPermissionService";
 
-// Define app pages/modules
-const appPages = [
+type PermissionType = "view" | "create" | "edit" | "delete";
+type CoreRole = "org_admin" | "office_head" | "caretaker" | "employee";
+type PageCategory = "Main" | "Inventory" | "Management" | "System";
+
+interface PermissionPage {
+  id: AppPageKey;
+  name: string;
+  category: PageCategory;
+}
+
+const appPages: PermissionPage[] = [
   { id: "dashboard", name: "Dashboard", category: "Main" },
-  { id: "assets", name: "Assets", category: "Main" },
-  { id: "consumables", name: "Consumables", category: "Main" },
-  { id: "consumable-transfers", name: "Consumable Transfers", category: "Main" },
-  { id: "asset-items", name: "Asset Items", category: "Main" },
-  { id: "assignments", name: "Assignments", category: "Main" },
-  { id: "transfers", name: "Transfers", category: "Main" },
-  { id: "maintenance", name: "Maintenance", category: "Main" },
+  { id: "profile", name: "Profile", category: "Main" },
+  { id: "inventory", name: "Inventory Hub", category: "Main" },
+  { id: "requisitions", name: "Requisitions", category: "Main" },
+  { id: "requisitions-new", name: "New Requisition", category: "Main" },
+  { id: "returns", name: "Returns", category: "Main" },
+  { id: "returns-new", name: "New Return Request", category: "Main" },
+  { id: "returns-detail", name: "Return Detail", category: "Main" },
+  { id: "assets", name: "Assets", category: "Inventory" },
+  { id: "asset-items", name: "Asset Items", category: "Inventory" },
+  { id: "consumables", name: "Consumables", category: "Inventory" },
+  { id: "office-assets", name: "Office Assets", category: "Inventory" },
+  { id: "office-asset-items", name: "Office Asset Items", category: "Inventory" },
+  { id: "office-consumables", name: "Office Consumables", category: "Inventory" },
+  { id: "assignments", name: "Assignments", category: "Inventory" },
+  { id: "transfers", name: "Transfers", category: "Inventory" },
+  { id: "maintenance", name: "Maintenance", category: "Inventory" },
+  { id: "purchase-orders", name: "Purchase Orders", category: "Inventory" },
   { id: "employees", name: "Employees", category: "Management" },
-  { id: "locations", name: "Locations", category: "Management" },
+  { id: "offices", name: "Offices", category: "Management" },
+  { id: "rooms-sections", name: "Rooms & Sections", category: "Management" },
   { id: "categories", name: "Categories", category: "Management" },
-  { id: "directorates", name: "Directorates", category: "Management" },
   { id: "vendors", name: "Vendors", category: "Management" },
   { id: "projects", name: "Projects", category: "Management" },
   { id: "schemes", name: "Schemes", category: "Management" },
-  { id: "purchase-orders", name: "Purchase Orders", category: "Management" },
   { id: "reports", name: "Reports", category: "System" },
-  { id: "audit-logs", name: "Audit Logs", category: "System" },
+  { id: "compliance", name: "Compliance", category: "System" },
   { id: "settings", name: "Settings", category: "System" },
+  { id: "audit-logs", name: "Audit Logs", category: "System" },
   { id: "user-permissions", name: "User Permissions", category: "System" },
+  { id: "user-management", name: "User Management", category: "System" },
+  { id: "user-activity", name: "User Activity", category: "System" },
 ];
-
-// Permission types
-type PermissionType = "view" | "create" | "edit" | "delete";
 
 interface UserRole {
   id: string;
@@ -83,150 +103,189 @@ interface UserRole {
   sourceRoles?: string[];
 }
 
-// Mock roles data
+const ALL_ACTIONS: PermissionType[] = ["view", "create", "edit", "delete"];
+const CORE_ROLE_SET = new Set<CoreRole>([
+  "org_admin",
+  "office_head",
+  "caretaker",
+  "employee",
+]);
+const APP_PAGE_SET = new Set<string>(appPages.map((page) => page.id));
+
+const ROLE_ACTION_OVERRIDES: Record<
+  CoreRole,
+  Partial<Record<AppPageKey, PermissionType[]>>
+> = {
+  org_admin: {},
+  office_head: {
+    "rooms-sections": ["view", "create", "edit", "delete"],
+    "office-assets": ["view", "create", "edit", "delete"],
+    "office-asset-items": ["view", "create", "edit", "delete"],
+    "office-consumables": ["view", "create", "edit", "delete"],
+    requisitions: ["view", "edit"],
+    returns: ["view", "edit"],
+    "returns-detail": ["view", "edit"],
+  },
+  caretaker: {
+    "rooms-sections": ["view", "create", "edit", "delete"],
+    requisitions: ["view", "edit"],
+    returns: ["view", "edit"],
+    "returns-detail": ["view", "edit"],
+  },
+  employee: {
+    "requisitions-new": ["view", "create"],
+    "returns-new": ["view", "create"],
+    profile: ["view", "edit"],
+  },
+};
+
+function normalizePermissionList(actions: PermissionType[]) {
+  const unique = new Set(actions);
+  const hasMutatingAction =
+    unique.has("create") || unique.has("edit") || unique.has("delete");
+  if (hasMutatingAction) {
+    unique.add("view");
+  }
+  return Array.from(unique);
+}
+
+function createEmptyPermissionMap() {
+  return appPages.reduce((acc, page) => {
+    acc[page.id] = [];
+    return acc;
+  }, {} as Record<string, PermissionType[]>);
+}
+
+function sanitizePermissionActions(actions: unknown): PermissionType[] {
+  if (!Array.isArray(actions)) return [];
+  const normalized = actions
+    .map((entry) => String(entry || "").toLowerCase().trim())
+    .filter((entry): entry is PermissionType =>
+      ALL_ACTIONS.includes(entry as PermissionType)
+    );
+  return normalizePermissionList(Array.from(new Set(normalized)));
+}
+
+function sanitizePermissionMap(
+  permissions: unknown
+): Record<string, PermissionType[]> {
+  const base = createEmptyPermissionMap();
+  if (!permissions || typeof permissions !== "object") {
+    return base;
+  }
+  Object.entries(permissions as Record<string, unknown>).forEach(
+    ([pageId, actions]) => {
+      if (!APP_PAGE_SET.has(pageId)) return;
+      base[pageId] = sanitizePermissionActions(actions);
+    }
+  );
+  return base;
+}
+
+function sanitizeSourceRoles(sourceRoles: unknown): string[] {
+  if (!Array.isArray(sourceRoles)) return [];
+  return Array.from(
+    new Set(
+      sourceRoles
+        .map((entry) => String(entry || "").trim())
+        .filter((entry): entry is CoreRole =>
+          CORE_ROLE_SET.has(entry as CoreRole)
+        )
+    )
+  );
+}
+
+function normalizeStoredRoles(rows: unknown): UserRole[] {
+  if (!Array.isArray(rows)) return [];
+  return rows
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") return null;
+      const record = entry as Record<string, unknown>;
+      const id = String(record.id || "").trim();
+      const name = String(record.name || "").trim();
+      if (!id || !name) return null;
+      const description = String(record.description || "").trim();
+      return {
+        id,
+        name,
+        description,
+        usersCount: 0,
+        sourceRoles: sanitizeSourceRoles(record.sourceRoles),
+        permissions: sanitizePermissionMap(record.permissions),
+      } as UserRole;
+    })
+    .filter((role): role is UserRole => Boolean(role));
+}
+
+function serializeRolesForSave(roles: UserRole[]): RolePermission[] {
+  return roles.map((role) => ({
+    id: String(role.id || "").trim(),
+    name: String(role.name || "").trim(),
+    description: String(role.description || "").trim(),
+    sourceRoles: sanitizeSourceRoles(role.sourceRoles),
+    permissions: sanitizePermissionMap(role.permissions),
+  }));
+}
+
+function buildDefaultPermissions(role: CoreRole) {
+  const permissions: Record<string, PermissionType[]> = {};
+  appPages.forEach((page) => {
+    if (role === "org_admin") {
+      permissions[page.id] = [...ALL_ACTIONS];
+      return;
+    }
+    const allowedRoles = PAGE_ALLOWED_ROLES[page.id] || [];
+    permissions[page.id] = allowedRoles.includes(role) ? ["view"] : [];
+  });
+
+  const overrides = ROLE_ACTION_OVERRIDES[role] || {};
+  Object.entries(overrides).forEach(([pageId, actions]) => {
+    permissions[pageId] = normalizePermissionList(actions || []);
+  });
+
+  return permissions;
+}
+
 const initialRoles: UserRole[] = [
   {
-    id: "super_administrator",
-    name: "Super Administrator",
-    description: "Full access to all locations and features",
+    id: "org_admin",
+    name: "Organization Admin",
+    description: "Full platform administration across all offices.",
     usersCount: 0,
     sourceRoles: ["org_admin"],
-    permissions: appPages.reduce((acc, page) => {
-      acc[page.id] = ["view", "create", "edit", "delete"];
-      return acc;
-    }, {} as Record<string, PermissionType[]>),
+    permissions: buildDefaultPermissions("org_admin"),
   },
   {
-    id: "administrator",
-    name: "Administrator",
-    description: "Full access to all locations and features",
-    usersCount: 0,
-    sourceRoles: ["org_admin"],
-    permissions: appPages.reduce((acc, page) => {
-      acc[page.id] = ["view", "create", "edit", "delete"];
-      return acc;
-    }, {} as Record<string, PermissionType[]>),
-  },
-  {
-    id: "location_head",
-    name: "Location Admin",
-    description: "Access to assets and consumables for a single location",
+    id: "office_head",
+    name: "Office Head",
+    description: "Office-scoped operations, requisition actions, and room/section management.",
     usersCount: 0,
     sourceRoles: ["office_head"],
-    permissions: {
-      dashboard: ["view"],
-      assets: [],
-      consumables: [],
-      "consumable-transfers": [],
-      "asset-items": [],
-      assignments: [],
-      transfers: [],
-      maintenance: [],
-      employees: [],
-      locations: [],
-      categories: [],
-      directorates: [],
-      vendors: [],
-      projects: [],
-      schemes: [],
-      "purchase-orders": [],
-      reports: [],
-      "audit-logs": [],
-      settings: [],
-      "user-permissions": [],
-    },
+    permissions: buildDefaultPermissions("office_head"),
   },
   {
-    id: "standard_user",
-    name: "Standard User",
-    description: "Basic view access with limited modifications",
+    id: "caretaker",
+    name: "Caretaker",
+    description: "Office-scoped requisition/return operations and room/section management.",
     usersCount: 0,
-    sourceRoles: ["employee"],
-    permissions: {
-      dashboard: ["view"],
-      assets: ["view"],
-      consumables: ["view"],
-      "consumable-transfers": ["view"],
-      "asset-items": ["view"],
-      assignments: ["view"],
-      transfers: ["view"],
-      maintenance: ["view"],
-      employees: ["view"],
-      locations: ["view"],
-      categories: ["view"],
-      directorates: ["view"],
-      vendors: ["view"],
-      projects: ["view"],
-      "purchase-orders": ["view"],
-      reports: [],
-      "audit-logs": [],
-      settings: [],
-      "user-permissions": [],
-    },
+    sourceRoles: ["caretaker"],
+    permissions: buildDefaultPermissions("caretaker"),
   },
   {
     id: "employee",
     name: "Employee",
-    description: "View assigned assets and assignment history only",
+    description: "Submit and track own requisitions/returns and view assigned workflows.",
     usersCount: 0,
     sourceRoles: ["employee"],
-    permissions: {
-      dashboard: [],
-      assets: [],
-      consumables: [],
-      "consumable-transfers": [],
-      "asset-items": [],
-      assignments: ["view"],
-      transfers: [],
-      maintenance: [],
-      employees: [],
-      locations: [],
-      categories: [],
-      directorates: [],
-      vendors: [],
-      projects: [],
-      schemes: [],
-      "purchase-orders": [],
-      reports: [],
-      "audit-logs": [],
-      settings: [],
-      "user-permissions": [],
-    },
-  },
-  {
-    id: "directorate_head",
-    name: "Directorate Head",
-    description: "View assignments for the entire directorate",
-    usersCount: 0,
-    sourceRoles: ["office_head"],
-    permissions: {
-      dashboard: [],
-      assets: [],
-      consumables: [],
-      "consumable-transfers": [],
-      "asset-items": [],
-      assignments: ["view"],
-      transfers: [],
-      maintenance: [],
-      employees: [],
-      locations: [],
-      categories: [],
-      directorates: [],
-      vendors: [],
-      projects: [],
-      schemes: [],
-      "purchase-orders": [],
-      reports: [],
-      "audit-logs": [],
-      settings: [],
-      "user-permissions": [],
-    },
+    permissions: buildDefaultPermissions("employee"),
   },
 ];
 
 export default function UserPermissions() {
+  const queryClient = useQueryClient();
   const [roles, setRoles] = useState<UserRole[]>(initialRoles);
-  const [selectedRole, setSelectedRole] = useState<string>("super_administrator");
+  const [selectedRole, setSelectedRole] = useState<string>("org_admin");
+  const [hasHydratedFromServer, setHasHydratedFromServer] = useState(false);
   const pageSearch = usePageSearch();
   const searchQuery = pageSearch?.term || "";
   const [isAddRoleOpen, setIsAddRoleOpen] = useState(false);
@@ -237,6 +296,57 @@ export default function UserPermissions() {
     queryKey: ["users-management"],
     queryFn: () => userService.getAll(),
   });
+  const rolePermissionsQuery = useQuery({
+    queryKey: ["settings", "page-permissions"],
+    queryFn: () => userPermissionService.getRolePermissions(),
+  });
+
+  const savePermissionsMutation = useMutation({
+    mutationFn: () =>
+      userPermissionService.updateRolePermissions({
+        roles: serializeRolesForSave(roles),
+      }),
+    onSuccess: (response) => {
+      const hydratedRoles = normalizeStoredRoles(response.roles);
+      if (hydratedRoles.length > 0) {
+        setRoles(hydratedRoles);
+        setRuntimeRolePermissions(response.roles);
+        if (!hydratedRoles.some((role) => role.id === selectedRole)) {
+          setSelectedRole(hydratedRoles[0].id);
+        }
+      }
+      queryClient.setQueryData(["settings", "page-permissions"], response);
+      toast.success("Permissions saved successfully");
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || "Failed to save permissions");
+    },
+  });
+
+  useEffect(() => {
+    if (hasHydratedFromServer) return;
+    if (rolePermissionsQuery.isLoading) return;
+    if (rolePermissionsQuery.isError) {
+      setHasHydratedFromServer(true);
+      toast.error("Failed to load saved permissions. Showing current defaults.");
+      return;
+    }
+
+    const hydratedRoles = normalizeStoredRoles(rolePermissionsQuery.data?.roles);
+    if (hydratedRoles.length > 0) {
+      setRoles(hydratedRoles);
+      if (!hydratedRoles.some((role) => role.id === selectedRole)) {
+        setSelectedRole(hydratedRoles[0].id);
+      }
+    }
+    setHasHydratedFromServer(true);
+  }, [
+    hasHydratedFromServer,
+    rolePermissionsQuery.data?.roles,
+    rolePermissionsQuery.isError,
+    rolePermissionsQuery.isLoading,
+    selectedRole,
+  ]);
 
   const roleCounts = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -302,8 +412,7 @@ export default function UserPermissions() {
   };
 
   const handleSavePermissions = () => {
-    // In production, this would save to the backend
-    toast.success("Permissions saved successfully");
+    savePermissionsMutation.mutate();
   };
 
   const handleAddRole = () => {
@@ -317,10 +426,7 @@ export default function UserPermissions() {
       name: newRoleName,
       description: newRoleDescription,
       usersCount: 0,
-      permissions: appPages.reduce((acc, page) => {
-        acc[page.id] = [];
-        return acc;
-      }, {} as Record<string, PermissionType[]>),
+      permissions: createEmptyPermissionMap(),
     };
 
     setRoles([...roles, newRole]);
@@ -367,9 +473,12 @@ export default function UserPermissions() {
         title="User Permissions"
         description="Configure page-wise access permissions for user roles"
         extra={
-          <Button onClick={handleSavePermissions}>
+          <Button
+            onClick={handleSavePermissions}
+            disabled={savePermissionsMutation.isPending || rolePermissionsQuery.isLoading}
+          >
             <Save className="h-4 w-4 mr-2" />
-            Save Changes
+            {savePermissionsMutation.isPending ? "Saving..." : "Save Changes"}
           </Button>
         }
       />

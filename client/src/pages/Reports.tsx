@@ -234,7 +234,7 @@ export default function Reports() {
       toast.success(`${reportTitle} generated!`, {
         description: `Your ${exportType.toUpperCase()} report has been downloaded.`,
       });
-    } catch (error) {
+    } catch (_error) {
       toast.error("Failed to generate report");
     } finally {
       setGeneratingReport(null);

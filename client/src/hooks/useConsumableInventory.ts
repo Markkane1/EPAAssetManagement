@@ -57,6 +57,21 @@ export const useReceiveConsumables = () => {
   });
 };
 
+export const useReceiveConsumablesOffice = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: ReceivePayload) => consumableInventoryService.receiveOffice(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.consumableBalances });
+      queryClient.invalidateQueries({ queryKey: queryKeys.consumableLedger });
+      toast.success('Stock received into your office successfully');
+    },
+    onError: (error: Error) => {
+      toast.error(`Failed to receive stock: ${error.message}`);
+    },
+  });
+};
+
 export const useTransferConsumables = () => {
   const queryClient = useQueryClient();
   return useMutation({

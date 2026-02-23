@@ -151,13 +151,6 @@ export const authController = {
       if (existing) return res.status(409).json({ message: 'Email already in use' });
 
       const passwordHash = await bcrypt.hash(password, 10);
-      const requestedRoleRaw = String(role || '')
-        .trim()
-        .toLowerCase();
-      const allowedRoles = ['org_admin', 'office_head', 'caretaker', 'employee'];
-      if (requestedRoleRaw && !allowedRoles.includes(requestedRoleRaw)) {
-        return res.status(400).json({ message: 'Invalid role' });
-      }
       const normalizedRole = normalizeRole(role || 'employee');
       if (normalizedRole === 'org_admin' && req.user.role !== 'org_admin') {
         return res.status(403).json({ message: 'Forbidden' });

@@ -180,7 +180,10 @@ export function AssetItemFormModal({ open, onOpenChange, assets, locations, onSu
             </div>
             <div className="space-y-2">
               <Label>Location *</Label>
-              <Select value={form.watch("locationId")} onValueChange={(v) => form.setValue("locationId", v)}>
+              <Select
+                value={form.watch("locationId")}
+                onValueChange={(v) => form.setValue("locationId", v)}
+              >
                 <SelectTrigger><SelectValue placeholder="Select location" /></SelectTrigger>
                 <SelectContent>
                   {locations.map((l) => (

@@ -63,7 +63,7 @@ export default function Settings() {
         security: formState.security,
       });
       toast.success("Settings saved successfully");
-    } catch (error) {
+    } catch (_error) {
       toast.error("Failed to save settings");
     }
   };
@@ -72,7 +72,7 @@ export default function Settings() {
     try {
       const result = await backupData.mutateAsync();
       toast.success(result.message || "Backup completed");
-    } catch (error) {
+    } catch (_error) {
       toast.error("Backup failed");
     }
   };
@@ -81,7 +81,7 @@ export default function Settings() {
     try {
       const result = await testEmail.mutateAsync();
       toast.success(result.message || "Test email sent");
-    } catch (error) {
+    } catch (_error) {
       toast.error("Test email failed");
     }
   };

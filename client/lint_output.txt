@@ -1,0 +1,200 @@
+
+> client@0.0.0 lint
+> eslint .
+
+
+D:\web temps\AMS\AMS With Backend\client\src\components\dashboard\PendingPurchaseOrders.tsx
+  8:10  warning  'format' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+D:\web temps\AMS\AMS With Backend\client\src\components\forms\AssetFormModal.tsx
+  221:6  warning  React Hook useEffect has a missing dependency: 'form'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+D:\web temps\AMS\AMS With Backend\client\src\components\forms\AssetItemEditModal.tsx
+  104:6  warning  React Hook useEffect has missing dependencies: 'user?.isOrgAdmin' and 'user.locationId'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+D:\web temps\AMS\AMS With Backend\client\src\components\forms\AssetItemFormModal.tsx
+  96:6  warning  React Hook useEffect has missing dependencies: 'user?.isOrgAdmin' and 'user.locationId'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+D:\web temps\AMS\AMS With Backend\client\src\components\shared\ExportButton.tsx
+  28:14  warning  'error' is defined but never used  @typescript-eslint/no-unused-vars
+  38:16  warning  'error' is defined but never used  @typescript-eslint/no-unused-vars
+
+D:\web temps\AMS\AMS With Backend\client\src\hooks\use-toast.ts
+  15:7  warning  'actionTypes' is assigned a value but only used as a type. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+D:\web temps\AMS\AMS With Backend\client\src\pages\AssetItems.tsx
+   54:73  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   62:75  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   66:65  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  112:70  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  160:47  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  164:25  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  202:30  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  203:36  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  211:30  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  212:36  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  278:38  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  279:36  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  280:30  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+D:\web temps\AMS\AMS With Backend\client\src\pages\Assets.tsx
+   90:48   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  104:37   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  143:25   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  160:42   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  183:95   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  183:128  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  183:158  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  183:190  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  183:220  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+D:\web temps\AMS\AMS With Backend\client\src\pages\Assignments.tsx
+   45:79  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  113:36  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  162:37  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  257:42  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  258:40  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  259:34  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  266:44  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  267:42  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  268:40  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  269:34  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  276:44  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  277:42  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  278:40  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  279:34  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+D:\web temps\AMS\AMS With Backend\client\src\pages\Employees.tsx
+   79:72  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+  106:37  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+  108:15  warning  'userPassword' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+D:\web temps\AMS\AMS With Backend\client\src\pages\ForgotPassword.tsx
+  21:21  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+D:\web temps\AMS\AMS With Backend\client\src\pages\InventoryHub.tsx
+  100:42  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  122:21  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  176:54  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+D:\web temps\AMS\AMS With Backend\client\src\pages\Login.tsx
+  83:19  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+D:\web temps\AMS\AMS With Backend\client\src\pages\Maintenance.tsx
+  143:37  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  295:44  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  296:38  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  297:30  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+D:\web temps\AMS\AMS With Backend\client\src\pages\Profile.tsx
+  45:21  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+D:\web temps\AMS\AMS With Backend\client\src\pages\Projects.tsx
+  57:37  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+D:\web temps\AMS\AMS With Backend\client\src\pages\PurchaseOrders.tsx
+  117:48  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  131:37  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  181:35  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  198:42  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  231:29  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+D:\web temps\AMS\AMS With Backend\client\src\pages\Reports.tsx
+  163:33  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  237:14  warning  'error' is defined but never used         @typescript-eslint/no-unused-vars
+  747:24  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+D:\web temps\AMS\AMS With Backend\client\src\pages\Schemes.tsx
+  49:37  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+D:\web temps\AMS\AMS With Backend\client\src\pages\Settings.tsx
+  66:14  warning  'error' is defined but never used  @typescript-eslint/no-unused-vars
+  75:14  warning  'error' is defined but never used  @typescript-eslint/no-unused-vars
+  84:14  warning  'error' is defined but never used  @typescript-eslint/no-unused-vars
+
+D:\web temps\AMS\AMS With Backend\client\src\pages\UserManagement.tsx
+  287:14  warning  'error' is defined but never used  @typescript-eslint/no-unused-vars
+
+D:\web temps\AMS\AMS With Backend\client\src\pages\UserPermissions.tsx
+  19:3  warning  'Select' is defined but never used. Allowed unused vars must match /^_/u         @typescript-eslint/no-unused-vars
+  20:3  warning  'SelectContent' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+  21:3  warning  'SelectItem' is defined but never used. Allowed unused vars must match /^_/u     @typescript-eslint/no-unused-vars
+  22:3  warning  'SelectTrigger' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+  23:3  warning  'SelectValue' is defined but never used. Allowed unused vars must match /^_/u    @typescript-eslint/no-unused-vars
+
+D:\web temps\AMS\AMS With Backend\client\src\pages\Vendors.tsx
+  49:37  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+D:\web temps\AMS\AMS With Backend\client\src\pages\consumables\ConsumableAssignments.tsx
+  487:40  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+D:\web temps\AMS\AMS With Backend\client\src\pages\consumables\ConsumableContainers.tsx
+  367:31  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+D:\web temps\AMS\AMS With Backend\client\src\pages\consumables\ConsumableExpiry.tsx
+  141:32  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+D:\web temps\AMS\AMS With Backend\client\src\pages\consumables\ConsumableInventory.tsx
+  146:20   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  335:34   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  343:31   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  350:106  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+D:\web temps\AMS\AMS With Backend\client\src\pages\consumables\ConsumableLedger.tsx
+   33:22  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   65:20  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  398:68  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+D:\web temps\AMS\AMS With Backend\client\src\pages\consumables\ConsumableMaster.tsx
+  104:37  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  158:27  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+D:\web temps\AMS\AMS With Backend\client\src\pages\consumables\ConsumableReceive.tsx
+  264:20  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+D:\web temps\AMS\AMS With Backend\client\src\pages\consumables\ConsumableUnits.tsx
+   47:37  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  124:32  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+D:\web temps\AMS\AMS With Backend\client\src\pages\reports\AssetItemsInventoryReport.tsx
+   62:44  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   97:23  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  168:56  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+D:\web temps\AMS\AMS With Backend\client\src\pages\reports\AssetSummaryReport.tsx
+   61:44  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   99:23  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  169:56  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+D:\web temps\AMS\AMS With Backend\client\src\pages\reports\AssignmentSummaryReport.tsx
+  127:23  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  200:56  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+D:\web temps\AMS\AMS With Backend\client\src\pages\reports\EmployeeAssetsReport.tsx
+  111:23  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  179:56  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+D:\web temps\AMS\AMS With Backend\client\src\pages\reports\FinancialSummaryReport.tsx
+   71:44  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   89:36  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   96:36  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  111:23  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  171:56  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+D:\web temps\AMS\AMS With Backend\client\src\pages\reports\LocationInventoryReport.tsx
+  103:44  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  133:23  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  203:56  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+D:\web temps\AMS\AMS With Backend\client\src\pages\reports\MaintenanceReport.tsx
+   59:44  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   96:23  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  165:56  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+D:\web temps\AMS\AMS With Backend\client\src\pages\reports\StatusDistributionReport.tsx
+   81:44  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  102:23  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  159:56  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+✖ 115 problems (0 errors, 115 warnings)
+

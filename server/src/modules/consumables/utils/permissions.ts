@@ -6,6 +6,7 @@ export type ConsumablePermissions = {
   canManageLots: boolean;
   canManageContainers: boolean;
   canReceiveCentral: boolean;
+  canReceiveOffice: boolean;
   canTransferCentral: boolean;
   canTransferLab: boolean;
   canConsume: boolean;
@@ -23,6 +24,7 @@ const basePermissions: ConsumablePermissions = {
   canManageLots: false,
   canManageContainers: false,
   canReceiveCentral: false,
+  canReceiveOffice: false,
   canTransferCentral: false,
   canTransferLab: false,
   canConsume: false,
@@ -44,6 +46,7 @@ export function resolveConsumablePermissions(role?: string | null): ConsumablePe
       canManageLots: true,
       canManageContainers: true,
       canReceiveCentral: true,
+      canReceiveOffice: true,
       canTransferCentral: true,
       canTransferLab: true,
       canConsume: true,
@@ -63,6 +66,7 @@ export function resolveConsumablePermissions(role?: string | null): ConsumablePe
       canManageLots: true,
       canManageContainers: true,
       canReceiveCentral: true,
+      canReceiveOffice: true,
       canTransferCentral: true,
       canTransferLab: true,
       canConsume: true,
@@ -76,6 +80,7 @@ export function resolveConsumablePermissions(role?: string | null): ConsumablePe
   if (role === 'office_head') {
     return {
       ...basePermissions,
+      canReceiveOffice: true,
       canTransferLab: true,
       canConsume: true,
       canAdjust: true,

@@ -9,6 +9,7 @@ export interface VendorCreateDto {
   email: string;
   phone: string;
   address: string;
+  officeId?: string;
 }
 
 export interface VendorUpdateDto {
@@ -17,10 +18,17 @@ export interface VendorUpdateDto {
   email?: string;
   phone?: string;
   address?: string;
+  officeId?: string;
 }
 
 export const vendorService = {
-  getAll: () => api.get<Vendor[]>(`/vendors?limit=${LIST_LIMIT}`),
+  getAll: (options?: { officeId?: string }) => {
+    const officeId = String(options?.officeId || '').trim();
+    const query = officeId
+      ? `/vendors?limit=${LIST_LIMIT}&officeId=${encodeURIComponent(officeId)}`
+      : `/vendors?limit=${LIST_LIMIT}`;
+    return api.get<Vendor[]>(query);
+  },
   
   getById: (id: string) => api.get<Vendor>(`/vendors/${id}`),
   

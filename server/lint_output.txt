@@ -1,0 +1,4 @@
+
+> ams-server@1.0.0 lint
+> tsc -p tsconfig.json --noEmit
+

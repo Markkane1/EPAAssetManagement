@@ -133,6 +133,7 @@ export interface Vendor {
   email: string | null;
   phone: string | null;
   address: string | null;
+  office_id?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -390,6 +391,7 @@ export interface Requisition {
   issuing_office_id: string;
   target_type?: "EMPLOYEE" | "SUB_LOCATION";
   target_id?: string;
+  linked_sub_location_id?: string | null;
   requested_by_employee_id: string | null;
   submitted_by_user_id: string;
   fulfilled_by_user_id: string | null;

@@ -350,14 +350,14 @@ export default function Transfers() {
                   <Label htmlFor="fromOffice">From Office *</Label>
                   <select
                     id="fromOffice"
-                    className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                    className="w-full rounded-md border bg-background px-3 py-2 text-sm disabled:opacity-50"
                     value={fromOfficeId}
                     onChange={(event) => {
                       setFromOfficeId(event.target.value);
                       setSelectedAssetItemIds([]);
                       if (toOfficeId === event.target.value) setToOfficeId("");
                     }}
-                    disabled={!isOrgAdmin && Boolean(locationId)}
+                    disabled={!isOrgAdmin}
                   >
                     <option value="">Select office</option>
                     {locations.map((office) => (

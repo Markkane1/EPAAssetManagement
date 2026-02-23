@@ -14,12 +14,13 @@ const ROLE_SET = new Set<string>(USER_ROLE_VALUES);
 function normalizeCanonicalRole(role?: string | null) {
   if (role === undefined || role === null) return null;
   const value = String(role).trim().toLowerCase();
-  if (!value) return null;
-  return ROLE_SET.has(value) ? (value as UserRoleValue) : null;
+  return value || null;
 }
 
 export function isKnownRole(role?: string | null) {
-  return normalizeCanonicalRole(role) !== null;
+  const canonical = normalizeCanonicalRole(role);
+  if (!canonical) return false;
+  return ROLE_SET.has(canonical);
 }
 
 export function normalizeRole(role?: string | null) {
@@ -32,8 +33,8 @@ export function normalizeRole(role?: string | null) {
 
 export function assertKnownRole(role?: string | null) {
   const canonical = normalizeCanonicalRole(role);
-  if (!canonical) {
+  if (!canonical || !ROLE_SET.has(canonical)) {
     throw createHttpError(400, `Invalid role: ${role}`);
   }
-  return canonical;
+  return canonical as UserRoleValue;
 }

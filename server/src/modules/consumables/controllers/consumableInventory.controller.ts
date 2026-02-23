@@ -46,6 +46,30 @@ export const consumableInventoryController = {
       next(error);
     }
   },
+  receiveOffice: async (req: AuthRequestWithFile, res: Response, next: NextFunction) => {
+    const uploadedFile = req.file || null;
+    try {
+      const user = getAuthUser(req);
+      if (!user) return res.status(401).json({ message: 'Unauthorized' });
+      if (uploadedFile) {
+        await assertUploadedFileIntegrity(uploadedFile, 'handoverDocumentation');
+        if (uploadedFile.mimetype !== 'application/pdf') {
+          throw createHttpError(400, 'handoverDocumentation must be a PDF file');
+        }
+      }
+      const result = await inventoryService.receiveOffice(user, req.body, uploadedFile || undefined);
+      res.status(201).json(result);
+    } catch (error) {
+      if (uploadedFile?.path) {
+        try {
+          await fs.unlink(uploadedFile.path);
+        } catch {
+          // ignore cleanup failures
+        }
+      }
+      next(error);
+    }
+  },
   transfer: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const user = getAuthUser(req);
