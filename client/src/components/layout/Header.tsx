@@ -13,10 +13,9 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
-import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { activityService, ActivityLogWithUser } from "@/services/activityService";
+import { useMemo } from "react";
 import { canAccessPage } from "@/config/pagePermissions";
+import { useMarkAllNotificationsRead, useNotifications } from "@/hooks/useNotifications";
 
 interface HeaderProps {
   title: string;
@@ -26,8 +25,6 @@ interface HeaderProps {
   searchPlaceholder?: string;
   onMenuClick?: () => void;
 }
-
-const LAST_SEEN_KEY = "ams.notifications.lastSeenAt";
 
 export function Header({
   title,
@@ -39,7 +36,6 @@ export function Header({
 }: HeaderProps) {
   const { user, role, isOrgAdmin, logout } = useAuth();
   const navigate = useNavigate();
-  const [lastSeenAt, setLastSeenAt] = useState(() => localStorage.getItem(LAST_SEEN_KEY));
   const canAccessSettings = canAccessPage({
     page: "settings",
     role,
@@ -77,28 +73,22 @@ export function Header({
     ? user.email.substring(0, 2).toUpperCase()
     : "U";
 
-  const { data: notifications = [], isLoading: notificationsLoading } = useQuery({
-    queryKey: ["notifications", user?.id],
-    queryFn: () => activityService.getUserActivities(user?.id || "", 20),
-    enabled: !!user?.id,
+  const { data: notificationResponse, isLoading: notificationsLoading } = useNotifications({
+    page: 1,
+    limit: 20,
+    scopeKey: user?.id || "anon",
+    enabled: Boolean(user?.id),
   });
+  const notifications = notificationResponse?.data || [];
+  const markAllNotificationsRead = useMarkAllNotificationsRead();
 
   const unreadCount = useMemo(() => {
-    if (!lastSeenAt) return notifications.length;
-    const lastSeenDate = new Date(lastSeenAt);
-    return notifications.filter((activity) => new Date(activity.created_at) > lastSeenDate).length;
-  }, [notifications, lastSeenAt]);
+    return notifications.filter((notification) => !notification.is_read).length;
+  }, [notifications]);
 
   const markAllRead = () => {
-    const now = new Date().toISOString();
-    localStorage.setItem(LAST_SEEN_KEY, now);
-    setLastSeenAt(now);
-  };
-
-  const formatNotificationTitle = (activity: ActivityLogWithUser) => {
-    if (activity.description) return activity.description;
-    const type = activity.activity_type.replace(/_/g, " ");
-    return `${activity.user_name || activity.user_email || "User"} ${type}`;
+    if (unreadCount <= 0 || markAllNotificationsRead.isPending) return;
+    markAllNotificationsRead.mutate();
   };
 
   return (
@@ -179,21 +169,25 @@ export function Header({
                   </DropdownMenuItem>
                 )}
                 {!notificationsLoading &&
-                  notifications.map((activity) => (
-                    <DropdownMenuItem key={activity.id} className="flex flex-col items-start gap-1 py-3">
-                      <span className="font-medium">{formatNotificationTitle(activity)}</span>
-                      <span className="text-sm text-muted-foreground">
-                        {activity.user_name || activity.user_email || "System"}
+                  notifications.map((notification) => (
+                    <DropdownMenuItem
+                      key={notification.id}
+                      className="flex flex-col items-start gap-1 py-3"
+                      onClick={() => navigate("/settings/notifications")}
+                    >
+                      <span className="font-medium">{notification.title}</span>
+                      <span className="text-sm text-muted-foreground line-clamp-2">
+                        {notification.message}
                       </span>
                       <span className="text-xs text-muted-foreground">
-                        {new Date(activity.created_at).toLocaleString()}
+                        {new Date(notification.created_at).toLocaleString()}
                       </span>
                     </DropdownMenuItem>
                   ))}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   className="text-center justify-center text-primary font-medium"
-                  onClick={() => navigate("/user-activity")}
+                  onClick={() => navigate("/settings/notifications")}
                 >
                   View all notifications
                 </DropdownMenuItem>

@@ -149,6 +149,7 @@ export const API_CONFIG = {
     maintenance: ['maintenance'] as const,
     dashboard: ['dashboard'] as const,
     settings: ['settings'] as const,
+    notifications: ['notifications'] as const,
     consumableItems: ['consumableItems'] as const,
     consumableLots: ['consumableLots'] as const,
     consumableUnits: ['consumableUnits'] as const,

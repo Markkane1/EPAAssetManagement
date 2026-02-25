@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import {
   Dialog,
@@ -22,18 +23,25 @@ import {
   Mail,
   Globe,
   Save,
-  Loader2
+  Loader2,
+  ArrowRight
 } from "lucide-react";
 import { toast } from "sonner";
 import { useBackupData, useSystemSettings, useTestEmail, useUpdateSystemSettings } from "@/hooks/useSettings";
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { SystemSettings } from "@/types";
+import {
+  NOTIFICATION_AREA_DEFINITIONS,
+  NOTIFICATION_TOGGLE_LABELS,
+} from "@/config/notificationAreas";
 
 export default function Settings() {
   const { data, isLoading } = useSystemSettings();
   const updateSettings = useUpdateSystemSettings();
   const backupData = useBackupData();
   const testEmail = useTestEmail();
+  const navigate = useNavigate();
   const [formState, setFormState] = useState<SystemSettings | null>(null);
   const [isApiDialogOpen, setIsApiDialogOpen] = useState(false);
 
@@ -199,9 +207,20 @@ export default function Settings() {
           {/* Notifications */}
           <Card>
             <CardHeader>
-              <div className="flex items-center gap-2">
-                <Bell className="h-5 w-5 text-muted-foreground" />
-                <CardTitle className="text-lg">Notifications</CardTitle>
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Bell className="h-5 w-5 text-muted-foreground" />
+                  <CardTitle className="text-lg">Notifications</CardTitle>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                  onClick={() => navigate("/settings/notifications")}
+                >
+                  View Details
+                  <ArrowRight className="h-4 w-4" />
+                </Button>
               </div>
               <CardDescription>
                 Configure notification preferences
@@ -282,6 +301,40 @@ export default function Settings() {
                     )
                   }
                 />
+              </div>
+
+              <Separator />
+              <div className="space-y-3">
+                <div>
+                  <Label>Notification Areas</Label>
+                  <p className="text-sm text-muted-foreground">
+                    Coverage of where notifications are needed across the system.
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  {NOTIFICATION_AREA_DEFINITIONS.map((area) => {
+                    const isEnabled = formState.notifications[area.toggle];
+                    return (
+                      <div
+                        key={area.id}
+                        className="rounded-md border p-3 sm:p-4"
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="font-medium">{area.area}</p>
+                          <Badge variant={area.status === "Live" ? "default" : "secondary"}>
+                            {area.status}
+                          </Badge>
+                          <Badge variant={isEnabled ? "outline" : "secondary"}>
+                            {NOTIFICATION_TOGGLE_LABELS[area.toggle]}: {isEnabled ? "ON" : "OFF"}
+                          </Badge>
+                        </div>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          {area.events}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </CardContent>
           </Card>

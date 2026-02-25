@@ -57,6 +57,7 @@ const LocationInventoryReport = lazy(() => import("./pages/reports/LocationInven
 const FinancialSummaryReport = lazy(() => import("./pages/reports/FinancialSummaryReport"));
 const EmployeeAssetsReport = lazy(() => import("./pages/reports/EmployeeAssetsReport"));
 const Settings = lazy(() => import("./pages/Settings"));
+const NotificationDetails = lazy(() => import("./pages/NotificationDetails"));
 const Profile = lazy(() => import("./pages/Profile"));
 const Login = lazy(() => import("./pages/Login"));
 const ForgotPassword = lazy(() => import("./pages/ForgotPassword"));
@@ -199,6 +200,7 @@ const App = () => {
                   />
                   <Route path="/reports/employee-assets" element={<ProtectedRoute page="reports"><EmployeeAssetsReport /></ProtectedRoute>} />
                   <Route path="/settings" element={<ProtectedRoute page="settings"><Settings /></ProtectedRoute>} />
+                  <Route path="/settings/notifications" element={<ProtectedRoute page="settings"><NotificationDetails /></ProtectedRoute>} />
                   <Route path="/audit-logs" element={<ProtectedRoute page="audit-logs"><AuditLogs /></ProtectedRoute>} />
                   <Route path="/user-permissions" element={<ProtectedRoute page="user-permissions"><UserPermissions /></ProtectedRoute>} />
                   <Route path="/user-management" element={<ProtectedRoute page="user-management"><UserManagement /></ProtectedRoute>} />

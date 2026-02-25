@@ -8,9 +8,30 @@ const NOTIFICATION_TYPES = [
   'RETURN_REQUESTED',
   'RETURN_SLIP_READY',
   'ASSIGNMENT_RETURNED',
+  'TRANSFER_REQUESTED',
+  'TRANSFER_APPROVED',
+  'TRANSFER_REJECTED',
+  'TRANSFER_DISPATCHED',
+  'TRANSFER_RECEIVED',
+  'MAINTENANCE_SCHEDULED',
+  'MAINTENANCE_DUE',
+  'MAINTENANCE_OVERDUE',
+  'MAINTENANCE_COMPLETED',
+  'LOW_STOCK_ALERT',
+  'WARRANTY_EXPIRY_ALERT',
+  'REQUISITION_SUBMITTED',
+  'REQUISITION_VERIFIED',
+  'REQUISITION_REJECTED',
 ] as const;
 
-const NOTIFICATION_ENTITY_TYPES = ['Assignment', 'Requisition'] as const;
+const NOTIFICATION_ENTITY_TYPES = [
+  'Assignment',
+  'Requisition',
+  'Transfer',
+  'MaintenanceRecord',
+  'AssetItem',
+  'ConsumableItem',
+] as const;
 
 const NotificationSchema = new Schema<any>(
   {
