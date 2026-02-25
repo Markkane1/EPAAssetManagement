@@ -17,6 +17,7 @@ import { useMaintenance, useCreateMaintenance, useCompleteMaintenance, useUpdate
 import { useAssetItems } from "@/hooks/useAssetItems";
 import { useAssets } from "@/hooks/useAssets";
 import { MaintenanceFormModal } from "@/components/forms/MaintenanceFormModal";
+import type { MaintenanceFormSubmitData } from "@/components/forms/MaintenanceFormModal";
 import {
   Dialog,
   DialogContent,
@@ -59,9 +60,15 @@ export default function Maintenance() {
   const [docFile, setDocFile] = useState<File | null>(null);
   const [docError, setDocError] = useState<string | null>(null);
   const [docSubmitting, setDocSubmitting] = useState(false);
-  const [recordModal, setRecordModal] = useState<{ open: boolean; record: MaintenanceRecord | null }>({
+  const [recordModal, setRecordModal] = useState<{
+    open: boolean;
+    record: MaintenanceRecord | null;
+    title: string;
+    highlightDocType?: DocumentType;
+  }>({
     open: false,
     record: null,
+    title: "Maintenance File",
   });
 
   const maintenanceList = maintenanceRecords || [];
@@ -110,7 +117,7 @@ export default function Maintenance() {
       key: "scheduled_date",
       label: "Scheduled",
       render: (value: string | undefined) => {
-        if (!value) return <span className="text-muted-foreground">—</span>;
+        if (!value) return <span className="text-muted-foreground">-</span>;
         return new Date(value).toLocaleDateString();
       },
     },
@@ -125,8 +132,34 @@ export default function Maintenance() {
       key: "performed_by",
       label: "Performed By",
       render: (value: string) => (
-        <span className="text-muted-foreground">{value || "—"}</span>
+        <span className="text-muted-foreground">{value || "-"}</span>
       ),
+    },
+    {
+      key: "estimate_document_id",
+      label: "Estimate",
+      render: (value: unknown, row: MaintenanceRecord & { assetName: string; itemTag: string }) => {
+        const estimateDocumentId = typeof value === "string" ? value : "";
+        if (!estimateDocumentId) {
+          return <span className="text-xs text-destructive">Missing</span>;
+        }
+
+        return (
+          <Button
+            variant="link"
+            className="h-auto p-0 text-xs"
+            onClick={(event) => {
+              event.stopPropagation();
+              openRecordModal(row, {
+                title: `Estimate File - ${getAssetLabel(row)}`,
+                highlightDocType: "MaintenanceEstimate",
+              });
+            }}
+          >
+            View
+          </Button>
+        );
+      },
     },
   ];
 
@@ -140,12 +173,63 @@ export default function Maintenance() {
     setIsModalOpen(true);
   };
 
-  const handleSubmit = async (data: any) => {
-    if (editingMaintenance) {
-      await updateMaintenance.mutateAsync({ id: editingMaintenance.id, data });
-    } else {
-      await createMaintenance.mutateAsync(data);
+  const getAssetItemLabel = (assetItemId: string) => {
+    const item = assetItemList.find((entry) => entry.id === assetItemId);
+    const asset = item ? assetList.find((entry) => entry.id === item.asset_id) : null;
+    const tag = item?.tag || item?.serial_number || "Asset Item";
+    return asset ? `${asset.name} (${tag})` : tag;
+  };
+
+  const handleSubmit = async (data: MaintenanceFormSubmitData) => {
+    const item = assetItemList.find((entry) => entry.id === data.assetItemId);
+    const officeId = item ? getOfficeHolderId(item) || undefined : undefined;
+    if (!officeId) {
+      toast.error("Maintenance is allowed only for office-held asset items.");
+      return;
     }
+
+    if (editingMaintenance) {
+      await updateMaintenance.mutateAsync({
+        id: editingMaintenance.id,
+        data: {
+          assetItemId: data.assetItemId,
+          type: data.type,
+          status: data.status,
+          description: data.description,
+          scheduledDate: data.scheduledDate,
+          cost: data.cost,
+          performedBy: data.performedBy,
+          performedByVendorId: data.performedByVendorId,
+          notes: data.notes,
+        },
+      });
+      return;
+    }
+
+    if (!data.estimateFile) {
+      toast.error("Estimate PDF is required.");
+      return;
+    }
+
+    const estimateDocument = await documentService.create({
+      title: `Maintenance Estimate - ${getAssetItemLabel(data.assetItemId)}`,
+      docType: "MaintenanceEstimate",
+      status: "Final",
+      officeId,
+    });
+    await documentService.upload(estimateDocument.id, data.estimateFile);
+
+    await createMaintenance.mutateAsync({
+      assetItemId: data.assetItemId,
+      type: data.type,
+      description: data.description,
+      scheduledDate: data.scheduledDate,
+      cost: data.cost,
+      performedBy: data.performedBy,
+      performedByVendorId: data.performedByVendorId,
+      estimateDocumentId: estimateDocument.id,
+      notes: data.notes,
+    });
   };
 
   const handleComplete = (id: string) => {
@@ -167,8 +251,16 @@ export default function Maintenance() {
     setDocModal({ open: true, record });
   };
 
-  const openRecordModal = (record: MaintenanceRecord) => {
-    setRecordModal({ open: true, record });
+  const openRecordModal = (
+    record: MaintenanceRecord,
+    options?: { title?: string; highlightDocType?: DocumentType }
+  ) => {
+    setRecordModal({
+      open: true,
+      record,
+      title: options?.title || `Maintenance File - ${getAssetLabel(record)}`,
+      highlightDocType: options?.highlightDocType,
+    });
   };
 
   const closeDocModal = () => {
@@ -181,7 +273,7 @@ export default function Maintenance() {
   };
 
   const closeRecordModal = () => {
-    setRecordModal({ open: false, record: null });
+    setRecordModal({ open: false, record: null, title: "Maintenance File", highlightDocType: undefined });
   };
 
   const getAssetLabel = (record: MaintenanceRecord) => {
@@ -292,9 +384,9 @@ export default function Maintenance() {
       <MaintenanceFormModal
         open={isModalOpen}
         onOpenChange={setIsModalOpen}
-        maintenance={editingMaintenance as any}
-        assetItems={assetItemList as any}
-        assets={assetList as any}
+        maintenance={editingMaintenance}
+        assetItems={assetItemList}
+        assets={assetList}
         onSubmit={handleSubmit}
       />
 
@@ -372,11 +464,8 @@ export default function Maintenance() {
           recordType: "MAINTENANCE",
           maintenanceRecordId: recordModal.record?.id,
         }}
-        title={
-          recordModal.record
-            ? `Maintenance File - ${getAssetLabel(recordModal.record)}`
-            : "Maintenance File"
-        }
+        title={recordModal.title}
+        highlightDocType={recordModal.highlightDocType}
       />
     </MainLayout>
   );

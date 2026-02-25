@@ -56,6 +56,28 @@ export function exportToCSV<T extends Record<string, unknown>>(
   downloadFile(csv, `${filename}.csv`, "text/csv");
 }
 
+export async function exportToExcel<T extends Record<string, unknown>>(
+  data: T[],
+  columns: { key: keyof T; header: string; formatter?: (value: unknown) => string }[],
+  filename: string
+) {
+  if (data.length === 0) return;
+
+  const rows = data.map((item) =>
+    columns.reduce<Record<string, string>>((acc, column) => {
+      const value = item[column.key];
+      acc[column.header] = column.formatter ? column.formatter(value) : String(value ?? "");
+      return acc;
+    }, {})
+  );
+
+  const xlsx = await import("xlsx");
+  const worksheet = xlsx.utils.json_to_sheet(rows);
+  const workbook = xlsx.utils.book_new();
+  xlsx.utils.book_append_sheet(workbook, worksheet, "Data");
+  xlsx.writeFile(workbook, `${filename}.xlsx`);
+}
+
 // Date formatter for exports
 export function formatDateForExport(date: Date | string | undefined | null): string {
   if (!date) return "";

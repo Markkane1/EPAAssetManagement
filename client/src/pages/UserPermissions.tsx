@@ -25,6 +25,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { 
+  Download,
   Shield, 
   Search, 
   UserPlus, 
@@ -36,6 +37,7 @@ import {
   Plus
 } from "lucide-react";
 import { toast } from "sonner";
+import { format } from "date-fns";
 import { userService } from "@/services/userService";
 import { normalizeRole } from "@/services/authService";
 import {
@@ -48,6 +50,8 @@ import {
   userPermissionService,
   type RolePermission,
 } from "@/services/userPermissionService";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { exportToCSV, exportToExcel } from "@/lib/exportUtils";
 
 type PermissionType = "view" | "create" | "edit" | "delete";
 type CoreRole = "org_admin" | "office_head" | "caretaker" | "employee";
@@ -283,11 +287,13 @@ const initialRoles: UserRole[] = [
 
 export default function UserPermissions() {
   const queryClient = useQueryClient();
+  const isMobile = useIsMobile();
   const [roles, setRoles] = useState<UserRole[]>(initialRoles);
   const [selectedRole, setSelectedRole] = useState<string>("org_admin");
   const [hasHydratedFromServer, setHasHydratedFromServer] = useState(false);
   const pageSearch = usePageSearch();
   const searchQuery = pageSearch?.term || "";
+  const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [isAddRoleOpen, setIsAddRoleOpen] = useState(false);
   const [newRoleName, setNewRoleName] = useState("");
   const [newRoleDescription, setNewRoleDescription] = useState("");
@@ -368,9 +374,11 @@ export default function UserPermissions() {
 
   const currentRole = rolesWithCounts.find((r) => r.id === selectedRole);
 
-  const filteredPages = appPages.filter((page) =>
-    page.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredPages = appPages.filter((page) => {
+    const matchesSearch = page.name.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesCategory = categoryFilter === "all" || page.category === categoryFilter;
+    return matchesSearch && matchesCategory;
+  });
 
   const groupedPages = filteredPages.reduce((acc, page) => {
     if (!acc[page.category]) {
@@ -413,6 +421,56 @@ export default function UserPermissions() {
 
   const handleSavePermissions = () => {
     savePermissionsMutation.mutate();
+  };
+
+  const handleExportCSV = () => {
+    if (!currentRole) return;
+    exportToCSV(
+      filteredPages.map((page) => ({
+        role: currentRole.name,
+        page: page.name,
+        category: page.category,
+        view: hasPermission(page.id, "view") ? "Yes" : "No",
+        create: hasPermission(page.id, "create") ? "Yes" : "No",
+        edit: hasPermission(page.id, "edit") ? "Yes" : "No",
+        delete: hasPermission(page.id, "delete") ? "Yes" : "No",
+      })),
+      [
+        { key: "role", header: "Role" },
+        { key: "page", header: "Page" },
+        { key: "category", header: "Category" },
+        { key: "view", header: "View" },
+        { key: "create", header: "Create" },
+        { key: "edit", header: "Edit" },
+        { key: "delete", header: "Delete" },
+      ],
+      `permissions-${currentRole.id}-${format(new Date(), "yyyy-MM-dd")}`
+    );
+  };
+
+  const handleExportExcel = async () => {
+    if (!currentRole) return;
+    await exportToExcel(
+      filteredPages.map((page) => ({
+        role: currentRole.name,
+        page: page.name,
+        category: page.category,
+        view: hasPermission(page.id, "view") ? "Yes" : "No",
+        create: hasPermission(page.id, "create") ? "Yes" : "No",
+        edit: hasPermission(page.id, "edit") ? "Yes" : "No",
+        delete: hasPermission(page.id, "delete") ? "Yes" : "No",
+      })),
+      [
+        { key: "role", header: "Role" },
+        { key: "page", header: "Page" },
+        { key: "category", header: "Category" },
+        { key: "view", header: "View" },
+        { key: "create", header: "Create" },
+        { key: "edit", header: "Edit" },
+        { key: "delete", header: "Delete" },
+      ],
+      `permissions-${currentRole.id}-${format(new Date(), "yyyy-MM-dd")}`
+    );
   };
 
   const handleAddRole = () => {
@@ -473,13 +531,23 @@ export default function UserPermissions() {
         title="User Permissions"
         description="Configure page-wise access permissions for user roles"
         extra={
-          <Button
-            onClick={handleSavePermissions}
-            disabled={savePermissionsMutation.isPending || rolePermissionsQuery.isLoading}
-          >
-            <Save className="h-4 w-4 mr-2" />
-            {savePermissionsMutation.isPending ? "Saving..." : "Save Changes"}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => void handleExportExcel()} disabled={!currentRole}>
+              <Download className="h-4 w-4 mr-2" />
+              Excel
+            </Button>
+            <Button variant="outline" onClick={handleExportCSV} disabled={!currentRole}>
+              <Download className="h-4 w-4 mr-2" />
+              CSV
+            </Button>
+            <Button
+              onClick={handleSavePermissions}
+              disabled={savePermissionsMutation.isPending || rolePermissionsQuery.isLoading}
+            >
+              <Save className="h-4 w-4 mr-2" />
+              {savePermissionsMutation.isPending ? "Saving..." : "Save Changes"}
+            </Button>
+          </div>
         }
       />
 
@@ -488,7 +556,7 @@ export default function UserPermissions() {
         <div className="lg:col-span-1">
           <Card>
             <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <CardTitle className="text-lg">Roles</CardTitle>
                 <Dialog open={isAddRoleOpen} onOpenChange={setIsAddRoleOpen}>
                   <DialogTrigger asChild>
@@ -545,7 +613,7 @@ export default function UserPermissions() {
                       : "hover:bg-muted"
                   }`}
                 >
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-2">
                     <span className="font-medium">{role.name}</span>
                     <Badge variant="secondary" className={selectedRole === role.id ? "bg-primary-foreground/20 text-primary-foreground" : ""}>
                       <Users className="h-3 w-3 mr-1" />
@@ -565,8 +633,8 @@ export default function UserPermissions() {
         <div className="lg:col-span-3">
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-start gap-3">
                   <Shield className="h-5 w-5 text-primary" />
                   <div>
                     <CardTitle className="text-lg">
@@ -575,7 +643,7 @@ export default function UserPermissions() {
                     <CardDescription>{currentRole?.description}</CardDescription>
                   </div>
                 </div>
-                <div className="relative w-64">
+                <div className="relative w-full sm:w-64">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
                     placeholder="Search pages..."
@@ -584,106 +652,190 @@ export default function UserPermissions() {
                     className="pl-10"
                   />
                 </div>
+                <div className="w-full sm:w-52">
+                  <select
+                    value={categoryFilter}
+                    onChange={(event) => setCategoryFilter(event.target.value)}
+                    className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                  >
+                    <option value="all">All Categories</option>
+                    <option value="Main">Main</option>
+                    <option value="Inventory">Inventory</option>
+                    <option value="Management">Management</option>
+                    <option value="System">System</option>
+                  </select>
+                </div>
               </div>
             </CardHeader>
             <CardContent>
-              <div className="rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-[200px]">Page / Module</TableHead>
-                      <TableHead className="text-center w-[100px]">
-                        <div className="flex items-center justify-center gap-1">
-                          <Eye className="h-4 w-4" />
-                          View
-                        </div>
-                      </TableHead>
-                      <TableHead className="text-center w-[100px]">
-                        <div className="flex items-center justify-center gap-1">
-                          <Plus className="h-4 w-4" />
-                          Create
-                        </div>
-                      </TableHead>
-                      <TableHead className="text-center w-[100px]">
-                        <div className="flex items-center justify-center gap-1">
-                          <Pencil className="h-4 w-4" />
-                          Edit
-                        </div>
-                      </TableHead>
-                      <TableHead className="text-center w-[100px]">
-                        <div className="flex items-center justify-center gap-1">
-                          <Trash2 className="h-4 w-4" />
-                          Delete
-                        </div>
-                      </TableHead>
-                      <TableHead className="w-[120px]">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {Object.entries(groupedPages).map(([category, pages]) => (
-                      <Fragment key={category}>
-                        <TableRow className="bg-muted/50">
-                          <TableCell colSpan={6} className="font-semibold text-sm">
-                            {category}
-                          </TableCell>
-                        </TableRow>
-                        {pages.map((page) => (
-                          <TableRow key={page.id}>
-                            <TableCell className="font-medium">{page.name}</TableCell>
-                            <TableCell className="text-center">
+              {isMobile ? (
+                <div className="space-y-4">
+                  {Object.entries(groupedPages).map(([category, pages]) => (
+                    <div key={category} className="space-y-2">
+                      <div className="rounded-md bg-muted/50 px-3 py-2 text-sm font-semibold">
+                        {category}
+                      </div>
+                      {pages.map((page) => (
+                        <div key={page.id} className="rounded-md border p-3">
+                          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                            <p className="font-medium">{page.name}</p>
+                            <div className="flex gap-1">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => selectAllForPage(page.id)}
+                                className="text-xs h-7 px-2"
+                              >
+                                All
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => clearAllForPage(page.id)}
+                                className="text-xs h-7 px-2"
+                              >
+                                None
+                              </Button>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <label className="flex items-center gap-2 text-sm">
                               <Checkbox
                                 checked={hasPermission(page.id, "view")}
                                 onCheckedChange={() => togglePermission(page.id, "view")}
                               />
-                            </TableCell>
-                            <TableCell className="text-center">
+                              <Eye className="h-4 w-4 text-muted-foreground" />
+                              View
+                            </label>
+                            <label className="flex items-center gap-2 text-sm">
                               <Checkbox
                                 checked={hasPermission(page.id, "create")}
                                 onCheckedChange={() => togglePermission(page.id, "create")}
                               />
-                            </TableCell>
-                            <TableCell className="text-center">
+                              <Plus className="h-4 w-4 text-muted-foreground" />
+                              Create
+                            </label>
+                            <label className="flex items-center gap-2 text-sm">
                               <Checkbox
                                 checked={hasPermission(page.id, "edit")}
                                 onCheckedChange={() => togglePermission(page.id, "edit")}
                               />
-                            </TableCell>
-                            <TableCell className="text-center">
+                              <Pencil className="h-4 w-4 text-muted-foreground" />
+                              Edit
+                            </label>
+                            <label className="flex items-center gap-2 text-sm">
                               <Checkbox
                                 checked={hasPermission(page.id, "delete")}
                                 onCheckedChange={() => togglePermission(page.id, "delete")}
                               />
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex gap-1">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => selectAllForPage(page.id)}
-                                  className="text-xs h-7 px-2"
-                                >
-                                  All
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => clearAllForPage(page.id)}
-                                  className="text-xs h-7 px-2"
-                                >
-                                  None
-                                </Button>
-                              </div>
+                              <Trash2 className="h-4 w-4 text-muted-foreground" />
+                              Delete
+                            </label>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-[200px]">Page / Module</TableHead>
+                        <TableHead className="text-center w-[100px]">
+                          <div className="flex items-center justify-center gap-1">
+                            <Eye className="h-4 w-4" />
+                            View
+                          </div>
+                        </TableHead>
+                        <TableHead className="text-center w-[100px]">
+                          <div className="flex items-center justify-center gap-1">
+                            <Plus className="h-4 w-4" />
+                            Create
+                          </div>
+                        </TableHead>
+                        <TableHead className="text-center w-[100px]">
+                          <div className="flex items-center justify-center gap-1">
+                            <Pencil className="h-4 w-4" />
+                            Edit
+                          </div>
+                        </TableHead>
+                        <TableHead className="text-center w-[100px]">
+                          <div className="flex items-center justify-center gap-1">
+                            <Trash2 className="h-4 w-4" />
+                            Delete
+                          </div>
+                        </TableHead>
+                        <TableHead className="w-[120px]">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {Object.entries(groupedPages).map(([category, pages]) => (
+                        <Fragment key={category}>
+                          <TableRow className="bg-muted/50">
+                            <TableCell colSpan={6} className="font-semibold text-sm">
+                              {category}
                             </TableCell>
                           </TableRow>
-                        ))}
-                      </Fragment>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+                          {pages.map((page) => (
+                            <TableRow key={page.id}>
+                              <TableCell className="font-medium">{page.name}</TableCell>
+                              <TableCell className="text-center">
+                                <Checkbox
+                                  checked={hasPermission(page.id, "view")}
+                                  onCheckedChange={() => togglePermission(page.id, "view")}
+                                />
+                              </TableCell>
+                              <TableCell className="text-center">
+                                <Checkbox
+                                  checked={hasPermission(page.id, "create")}
+                                  onCheckedChange={() => togglePermission(page.id, "create")}
+                                />
+                              </TableCell>
+                              <TableCell className="text-center">
+                                <Checkbox
+                                  checked={hasPermission(page.id, "edit")}
+                                  onCheckedChange={() => togglePermission(page.id, "edit")}
+                                />
+                              </TableCell>
+                              <TableCell className="text-center">
+                                <Checkbox
+                                  checked={hasPermission(page.id, "delete")}
+                                  onCheckedChange={() => togglePermission(page.id, "delete")}
+                                />
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex gap-1">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => selectAllForPage(page.id)}
+                                    className="text-xs h-7 px-2"
+                                  >
+                                    All
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => clearAllForPage(page.id)}
+                                    className="text-xs h-7 px-2"
+                                  >
+                                    None
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </Fragment>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
 
               {/* Legend */}
-              <div className="mt-4 flex items-center gap-6 text-sm text-muted-foreground">
+              <div className="mt-4 flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
                 <div className="flex items-center gap-2">
                   <Eye className="h-4 w-4" />
                   <span>View - Can see the page and data</span>

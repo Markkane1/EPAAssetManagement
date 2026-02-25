@@ -2,6 +2,7 @@ import { Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
 import { MaintenanceRecordModel } from '../models/maintenanceRecord.model';
 import { AssetItemModel } from '../models/assetItem.model';
+import { VendorModel } from '../models/vendor.model';
 import { mapFields } from '../utils/mapFields';
 import type { AuthRequest } from '../middleware/auth';
 import { resolveAccessContext, ensureOfficeScope, isOfficeManager } from '../utils/accessControl';
@@ -52,9 +53,18 @@ const fieldMap = {
   maintenanceType: 'maintenance_type',
   maintenanceStatus: 'maintenance_status',
   performedBy: 'performed_by',
+  performedByVendorId: 'performed_by_vendor_id',
+  estimateDocumentId: 'estimate_document_id',
   scheduledDate: 'scheduled_date',
   completedDate: 'completed_date',
 };
+
+function normalizeNullableString(value: unknown) {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  const normalized = String(value).trim();
+  return normalized || null;
+}
 
 function buildPayload(body: Record<string, unknown>) {
   const payload = mapFields(body, fieldMap);
@@ -66,6 +76,12 @@ function buildPayload(body: Record<string, unknown>) {
   if (body.description !== undefined) payload.description = body.description;
   if (body.cost !== undefined) payload.cost = body.cost;
   if (body.notes !== undefined) payload.notes = body.notes;
+  if (payload.performed_by_vendor_id !== undefined) {
+    payload.performed_by_vendor_id = normalizeNullableString(payload.performed_by_vendor_id);
+  }
+  if (payload.estimate_document_id !== undefined) {
+    payload.estimate_document_id = normalizeNullableString(payload.estimate_document_id);
+  }
   if (payload.scheduled_date) payload.scheduled_date = new Date(String(payload.scheduled_date));
   if (payload.completed_date) payload.completed_date = new Date(String(payload.completed_date));
   return payload;
@@ -92,6 +108,77 @@ async function ensureMaintenanceScope(
     ensureOfficeScope(access, officeId);
   }
   return officeId;
+}
+
+async function resolveMaintenanceVendor(params: {
+  vendorId: unknown;
+  officeId: string;
+}) {
+  const vendorId = normalizeNullableString(params.vendorId);
+  if (!vendorId) {
+    throw createHttpError(400, 'Performed by vendor is required');
+  }
+
+  if (!mongoose.Types.ObjectId.isValid(vendorId)) {
+    throw createHttpError(400, 'Performed by vendor is invalid');
+  }
+
+  const vendor: any = await VendorModel.findById(vendorId, { _id: 1, office_id: 1, name: 1 }).lean();
+  if (!vendor) {
+    throw createHttpError(400, 'Selected vendor does not exist');
+  }
+
+  const vendorOfficeId = vendor.office_id ? String(vendor.office_id) : null;
+  if (!vendorOfficeId || vendorOfficeId !== params.officeId) {
+    throw createHttpError(400, 'Performed by vendor must belong to the same office as the asset item');
+  }
+
+  return { id: String(vendor._id), name: String(vendor.name || '') };
+}
+
+async function validateEstimateDocument(params: {
+  documentId: unknown;
+  officeId: string;
+  session?: mongoose.ClientSession;
+}) {
+  const documentId = normalizeNullableString(params.documentId);
+  if (!documentId) {
+    throw createHttpError(400, 'Estimate document is required');
+  }
+  if (!mongoose.Types.ObjectId.isValid(documentId)) {
+    throw createHttpError(400, 'Estimate document is invalid');
+  }
+
+  let documentQuery = DocumentModel.findById(documentId, { _id: 1, office_id: 1, doc_type: 1 }).lean();
+  if (params.session) {
+    documentQuery = documentQuery.session(params.session);
+  }
+  const document: any = await documentQuery;
+  if (!document) {
+    throw createHttpError(400, 'Estimate document not found');
+  }
+
+  const officeId = document.office_id ? String(document.office_id) : null;
+  if (!officeId || officeId !== params.officeId) {
+    throw createHttpError(400, 'Estimate document must belong to the same office as the asset item');
+  }
+  if (String(document.doc_type || '') !== 'MaintenanceEstimate') {
+    throw createHttpError(400, 'Estimate document type must be MaintenanceEstimate');
+  }
+
+  let versionQuery = DocumentVersionModel.exists({
+    document_id: documentId,
+    mime_type: 'application/pdf',
+  });
+  if (params.session) {
+    versionQuery = versionQuery.session(params.session);
+  }
+  const hasPdfVersion = await versionQuery;
+  if (!hasPdfVersion) {
+    throw createHttpError(400, 'Estimate document must have an uploaded PDF version');
+  }
+
+  return { id: String(document._id) };
 }
 
 export const maintenanceController = {
@@ -210,9 +297,32 @@ export const maintenanceController = {
       if (!access.isOrgAdmin) {
         ensureOfficeScope(access, assetItemOfficeId);
       }
+      const vendor = await resolveMaintenanceVendor({
+        vendorId: payload.performed_by_vendor_id,
+        officeId: assetItemOfficeId,
+      });
+      payload.performed_by_vendor_id = vendor.id;
+      payload.performed_by = vendor.name;
 
       await session.withTransaction(async () => {
+        const estimateDocument = await validateEstimateDocument({
+          documentId: payload.estimate_document_id,
+          officeId: assetItemOfficeId,
+          session,
+        });
+        payload.estimate_document_id = estimateDocument.id;
+
         const record = await MaintenanceRecordModel.create([payload], { session });
+        await DocumentLinkModel.create(
+          [
+            {
+              document_id: estimateDocument.id,
+              entity_type: 'MaintenanceRecord',
+              entity_id: record[0].id,
+            },
+          ],
+          { session }
+        );
         await AssetItemModel.findByIdAndUpdate(
           payload.asset_item_id,
           { item_status: 'Maintenance' },
@@ -271,17 +381,67 @@ export const maintenanceController = {
       await ensureMaintenanceScope(access, current);
 
       const payload = buildPayload(req.body);
+      let targetOfficeId: string | null = null;
       if (payload.asset_item_id) {
         const targetItem = await AssetItemModel.findById(payload.asset_item_id);
         if (!targetItem) throw createHttpError(404, 'Target asset item not found');
-        const targetOfficeId = requireAssetItemOfficeId(targetItem, 'Maintenance is allowed only for office-held assets');
+        targetOfficeId = requireAssetItemOfficeId(targetItem, 'Maintenance is allowed only for office-held assets');
         if (!access.isOrgAdmin) {
           ensureOfficeScope(access, targetOfficeId);
+        }
+      } else {
+        const currentItem = await AssetItemModel.findById(current.asset_item_id);
+        targetOfficeId = currentItem
+          ? requireAssetItemOfficeId(currentItem, 'Maintenance is allowed only for office-held assets')
+          : null;
+      }
+
+      if (!targetOfficeId) {
+        throw createHttpError(400, 'Unable to resolve office for maintenance record');
+      }
+
+      if (payload.performed_by_vendor_id !== undefined || payload.asset_item_id) {
+        const candidateVendorId = payload.performed_by_vendor_id ?? current.performed_by_vendor_id;
+        if (candidateVendorId) {
+          const vendor = await resolveMaintenanceVendor({
+            vendorId: candidateVendorId,
+            officeId: targetOfficeId,
+          });
+          payload.performed_by_vendor_id = vendor.id;
+          payload.performed_by = vendor.name;
+        }
+      }
+
+      if (payload.estimate_document_id !== undefined || payload.asset_item_id) {
+        const candidateDocumentId = payload.estimate_document_id ?? current.estimate_document_id;
+        if (candidateDocumentId) {
+          const estimateDocument = await validateEstimateDocument({
+            documentId: candidateDocumentId,
+            officeId: targetOfficeId,
+          });
+          payload.estimate_document_id = estimateDocument.id;
         }
       }
 
       Object.assign(current, payload);
       await current.save();
+      if (payload.estimate_document_id) {
+        await DocumentLinkModel.updateOne(
+          {
+            document_id: payload.estimate_document_id,
+            entity_type: 'MaintenanceRecord',
+            entity_id: current.id,
+          },
+          {
+            $setOnInsert: {
+              document_id: payload.estimate_document_id,
+              entity_type: 'MaintenanceRecord',
+              entity_id: current.id,
+            },
+          },
+          { upsert: true }
+        );
+      }
       return res.json(current);
     } catch (error) {
       next(error);

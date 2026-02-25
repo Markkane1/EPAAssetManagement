@@ -15,6 +15,7 @@ const statusStyles: Record<string, string> = {
   Maintenance: "status-maintenance",
   Damaged: "status-damaged",
   Retired: "status-retired",
+  Transferred: "bg-info/10 text-info",
   
   // Assignment Status
   Unassigned: "bg-muted text-muted-foreground",

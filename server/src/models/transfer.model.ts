@@ -37,6 +37,7 @@ const TransferSchema = new Schema<any>(
     // Optional requisition link
     requisition_id: { type: Schema.Types.ObjectId, ref: 'Requisition', default: null },
     // Required signed reports for each leg
+    approval_order_document_id: { type: Schema.Types.ObjectId, ref: 'Document', default: null },
     handover_document_id: { type: Schema.Types.ObjectId, ref: 'Document', default: null },
     takeover_document_id: { type: Schema.Types.ObjectId, ref: 'Document', default: null },
     // Workflow actors

@@ -12,20 +12,20 @@ export function ViewModeToggle({ mode, onModeChange }: ViewModeToggleProps) {
     <ToggleGroup
       type="single"
       value={mode}
+      className="w-full justify-start sm:w-auto"
       onValueChange={(value) => {
         if (!value) return;
         onModeChange(value as ViewMode);
       }}
     >
-      <ToggleGroupItem value="grid" aria-label="Grid view">
+      <ToggleGroupItem value="grid" aria-label="Grid view" className="flex-1 sm:flex-none">
         <LayoutGrid className="h-4 w-4 mr-2" />
         Grid
       </ToggleGroupItem>
-      <ToggleGroupItem value="list" aria-label="List view">
+      <ToggleGroupItem value="list" aria-label="List view" className="flex-1 sm:flex-none">
         <List className="h-4 w-4 mr-2" />
         List
       </ToggleGroupItem>
     </ToggleGroup>
   );
 }
-

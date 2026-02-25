@@ -56,7 +56,7 @@ interface OfficeAssetItemEditModalProps {
     }) => Promise<void>;
 }
 
-const statusOptions = ["Available", "Assigned", "Maintenance", "Damaged", "Retired"];
+const statusOptions = ["Available", "Assigned", "Maintenance", "Damaged", "Retired", "Transferred"];
 const conditionOptions = ["New", "Good", "Fair", "Poor", "Damaged"];
 const functionalOptions = ["Functional", "Need Repairs", "Dead"];
 

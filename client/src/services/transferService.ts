@@ -19,6 +19,7 @@ export interface TransferLineCreateDto {
 export interface TransferCreateDto {
   fromOfficeId: string;
   toOfficeId: string;
+  approvalOrderDocumentId: string;
   lines: TransferLineCreateDto[];
   notes?: string;
   requisitionId?: string;
@@ -28,6 +29,7 @@ const LIST_LIMIT = 1000;
 
 export const transferService = {
   getAll: () => api.get<Transfer[]>(`/transfers?limit=${LIST_LIMIT}`),
+  getById: (id: string) => api.get<Transfer>(`/transfers/${id}`),
   getByAssetItem: (assetItemId: string) =>
     api.get<Transfer[]>(`/transfers/asset-item/${assetItemId}?limit=${LIST_LIMIT}`),
   getByOffice: (officeId: string) =>

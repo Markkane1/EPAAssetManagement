@@ -14,6 +14,7 @@ export enum AssetStatus {
   Maintenance = "Maintenance",
   Damaged = "Damaged",
   Retired = "Retired",
+  Transferred = "Transferred",
   InTransit = "InTransit",
 }
 
@@ -300,6 +301,12 @@ export interface Assignment {
   return_slip_document_id?: string | null;
   return_slip_generated_version_id?: string | null;
   return_slip_signed_version_id?: string | null;
+  issued_by_user_id?: string | null;
+  issued_at?: string | null;
+  return_requested_by_user_id?: string | null;
+  return_requested_at?: string | null;
+  returned_by_user_id?: string | null;
+  returned_at?: string | null;
   assigned_date: string;
   expected_return_date: string | null;
   returned_date: string | null;
@@ -319,6 +326,8 @@ export interface MaintenanceRecord {
   description: string | null;
   cost: number | null;
   performed_by: string | null;
+  performed_by_vendor_id?: string | null;
+  estimate_document_id?: string | null;
   scheduled_date: string | null;
   completed_date: string | null;
   notes: string | null;
@@ -348,8 +357,25 @@ export interface Transfer {
   from_office_id: string;
   to_office_id: string;
   store_id?: string | null;
+  approval_order_document_id?: string | null;
   handover_document_id?: string | null;
   takeover_document_id?: string | null;
+  requested_by_user_id?: string | null;
+  approved_by_user_id?: string | null;
+  dispatched_to_store_by_user_id?: string | null;
+  received_at_store_by_user_id?: string | null;
+  dispatched_to_dest_by_user_id?: string | null;
+  received_at_dest_by_user_id?: string | null;
+  rejected_by_user_id?: string | null;
+  cancelled_by_user_id?: string | null;
+  requested_at?: string | null;
+  approved_at?: string | null;
+  dispatched_to_store_at?: string | null;
+  received_at_store_at?: string | null;
+  dispatched_to_dest_at?: string | null;
+  received_at_dest_at?: string | null;
+  rejected_at?: string | null;
+  cancelled_at?: string | null;
   transfer_date: string;
   handled_by: string | null;
   status: TransferStatus;
@@ -474,6 +500,7 @@ export type DocumentType =
   | "IssueSlip"
   | "ReturnSlip"
   | "TransferChallan"
+  | "MaintenanceEstimate"
   | "MaintenanceJobCard"
   | "Warranty"
   | "Invoice"

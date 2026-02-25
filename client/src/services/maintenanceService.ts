@@ -8,6 +8,8 @@ export interface MaintenanceCreateDto {
   scheduledDate: string;
   cost?: number;
   performedBy?: string;
+  performedByVendorId: string;
+  estimateDocumentId: string;
   notes?: string;
 }
 
@@ -20,6 +22,8 @@ export interface MaintenanceUpdateDto {
   completedDate?: string;
   cost?: number;
   performedBy?: string;
+  performedByVendorId?: string;
+  estimateDocumentId?: string;
   notes?: string;
 }
 
@@ -40,6 +44,8 @@ export const maintenanceService = {
       ...data,
       maintenanceType: data.type,
       performedBy: data.performedBy,
+      performedByVendorId: data.performedByVendorId,
+      estimateDocumentId: data.estimateDocumentId,
       scheduledDate: data.scheduledDate,
     }),
   
@@ -49,6 +55,8 @@ export const maintenanceService = {
       maintenanceType: data.type,
       maintenanceStatus: data.status,
       performedBy: data.performedBy,
+      performedByVendorId: data.performedByVendorId,
+      estimateDocumentId: data.estimateDocumentId,
       scheduledDate: data.scheduledDate,
       completedDate: data.completedDate,
     }),

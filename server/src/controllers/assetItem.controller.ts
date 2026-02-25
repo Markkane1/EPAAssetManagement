@@ -31,6 +31,7 @@ const fieldMap = {
 };
 
 const MANAGER_ALLOWED_UPDATE_FIELDS = new Set(['item_status', 'item_condition', 'notes']);
+const HEAD_OFFICE_STORE_CODE = 'HEAD_OFFICE_STORE';
 
 function clampInt(value: unknown, fallback: number, max: number) {
   const parsed = Number(value);
@@ -62,7 +63,7 @@ function generateAssetTag(assetId: string, index: number) {
 
 async function resolveDefaultHolder() {
   const systemStore = await StoreModel.findOne({
-    code: 'HEAD_OFFICE_STORE',
+    code: HEAD_OFFICE_STORE_CODE,
     is_active: { $ne: false },
   });
   if (systemStore) {
@@ -83,6 +84,13 @@ async function resolveRequestedHolder(
   }
 
   if (requestedLocationId) {
+    if (requestedLocationId === HEAD_OFFICE_STORE_CODE) {
+      const fallback = await resolveDefaultHolder();
+      if (!fallback) {
+        throw createHttpError(400, 'Head Office Store must be configured before creating items');
+      }
+      return fallback;
+    }
     return {
       holder_type: 'OFFICE' as const,
       holder_id: requestedLocationId,
@@ -95,6 +103,13 @@ async function resolveRequestedHolder(
     }
     if (requestedHolderType !== 'OFFICE' && requestedHolderType !== 'STORE') {
       throw createHttpError(400, 'holder_type must be OFFICE or STORE');
+    }
+    if (requestedHolderType === 'STORE' && requestedHolderId === HEAD_OFFICE_STORE_CODE) {
+      const fallback = await resolveDefaultHolder();
+      if (!fallback) {
+        throw createHttpError(400, 'Head Office Store must be configured before creating items');
+      }
+      return fallback;
     }
     return {
       holder_type: requestedHolderType as 'OFFICE' | 'STORE',
@@ -400,4 +415,3 @@ export const assetItemController = {
     }
   },
 };
-

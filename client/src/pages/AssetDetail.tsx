@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,15 +12,18 @@ import { useCategories } from "@/hooks/useCategories";
 import { useVendors } from "@/hooks/useVendors";
 import { useLocations } from "@/hooks/useLocations";
 import { useAssignments } from "@/hooks/useAssignments";
+import { useTransfers } from "@/hooks/useTransfers";
 import { useEmployees } from "@/hooks/useEmployees";
+import { useOfficeSubLocations } from "@/hooks/useOfficeSubLocations";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { AssignmentHistoryModal } from "@/components/shared/AssignmentHistoryModal";
 import type { AssetItem } from "@/types";
 import { getOfficeHolderId, isStoreHolder } from "@/lib/assetItemHolder";
+import { userService } from "@/services/userService";
 
 function formatDimensions(length?: number | null, width?: number | null, height?: number | null, unit?: string | null) {
   if (length == null && width == null && height == null) return "N/A";
-  return `${length ?? "-"} × ${width ?? "-"} × ${height ?? "-"} ${unit || "cm"}`;
+  return `${length ?? "-"} x ${width ?? "-"} x ${height ?? "-"} ${unit || "cm"}`;
 }
 
 
@@ -38,7 +42,20 @@ export default function AssetDetail() {
   const { data: vendors } = useVendors();
   const { data: locations } = useLocations();
   const { data: assignments } = useAssignments();
+  const { data: transfers } = useTransfers();
   const { data: employees } = useEmployees();
+  const { data: officeSubLocations } = useOfficeSubLocations({ includeInactive: true });
+  const { data: users = [] } = useQuery({
+    queryKey: ["users", "history-lookup"],
+    queryFn: async () => {
+      try {
+        return await userService.getAll({ limit: 1000 });
+      } catch {
+        return [];
+      }
+    },
+    staleTime: 60_000,
+  });
 
   const assetList = assets || [];
   const assetItemList = assetItems || [];
@@ -46,7 +63,9 @@ export default function AssetDetail() {
   const vendorList = vendors || [];
   const locationList = locations || [];
   const assignmentList = assignments || [];
+  const transferList = transfers || [];
   const employeeList = employees || [];
+  const subLocationList = officeSubLocations || [];
 
   const asset = assetList.find((a) => a.id === id);
   const relatedItems = assetItemList.filter((item) => item.asset_id === id);
@@ -183,6 +202,12 @@ export default function AssetDetail() {
                   {relatedItems.filter((i) => i.item_status === "Damaged").length}
                 </Badge>
               </div>
+              <div className="flex justify-between items-center">
+                <span className="text-muted-foreground">Transferred</span>
+                <Badge variant="outline" className="text-primary border-primary">
+                  {relatedItems.filter((i) => i.item_status === "Transferred").length}
+                </Badge>
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -225,7 +250,7 @@ export default function AssetDetail() {
                               <span className={new Date(item.warranty_expiry) < new Date() ? "text-destructive" : ""}>
                                 {new Date(item.warranty_expiry).toLocaleDateString()}
                               </span>
-                            ) : "—"}
+                            ) : "-"}
                           </td>
                           <td className="py-3 px-4">
                             <Button
@@ -257,11 +282,16 @@ export default function AssetDetail() {
           targetId={historyModal.item.id}
           targetName={historyModal.item.tag || historyModal.item.serial_number || "Asset Item"}
           assignments={assignmentList}
+          transfers={transferList}
           assetItems={assetItemList}
           employees={employeeList}
           assets={assetList}
+          locations={locationList}
+          users={users}
+          officeSubLocations={subLocationList}
         />
       )}
     </MainLayout>
   );
 }
+

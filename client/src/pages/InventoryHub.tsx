@@ -2,7 +2,6 @@ import { useMemo, useState } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTable } from "@/components/shared/DataTable";
-import { ExportButton } from "@/components/shared/ExportButton";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAssets } from "@/hooks/useAssets";
@@ -10,8 +9,7 @@ import { useAssetItems } from "@/hooks/useAssetItems";
 import { useAssignments } from "@/hooks/useAssignments";
 import { useEmployees } from "@/hooks/useEmployees";
 import { useLocations } from "@/hooks/useLocations";
-import { exportToCSV, filterRowsBySearch, formatDateForExport } from "@/lib/exportUtils";
-import { usePageSearch } from "@/contexts/PageSearchContext";
+import { formatDateForExport } from "@/lib/exportUtils";
 import { getOfficeHolderId, isStoreHolder } from "@/lib/assetItemHolder";
 
 type UnifiedRow = {
@@ -28,7 +26,6 @@ type UnifiedRow = {
 };
 
 export default function InventoryHub() {
-  const pageSearch = usePageSearch();
   const [typeFilter, setTypeFilter] = useState("all");
   const [assignmentFilter, setAssignmentFilter] = useState("all");
 
@@ -95,12 +92,6 @@ export default function InventoryHub() {
     });
   }, [assetRows, typeFilter, assignmentFilter]);
 
-  const searchTerm = pageSearch?.term || "";
-  const exportRows = useMemo(
-    () => filterRowsBySearch(baseRows as any, searchTerm),
-    [baseRows, searchTerm]
-  );
-
   const columns = [
     { key: "itemType", label: "Type" },
     { key: "itemName", label: "Item" },
@@ -117,30 +108,11 @@ export default function InventoryHub() {
     { key: "quantity", label: "Qty" },
   ];
 
-  const handleExportCSV = () => {
-    exportToCSV(
-      exportRows as any,
-      [
-        { key: "itemType", header: "Type" },
-        { key: "itemName", header: "Item" },
-        { key: "identifier", header: "Identifier" },
-        { key: "status", header: "Status" },
-        { key: "assignedTo", header: "Assigned To" },
-        { key: "assignmentType", header: "Assign Type" },
-        { key: "location", header: "Location" },
-        { key: "assignedOn", header: "Assigned On", formatter: (v) => formatDateForExport(v as string) },
-        { key: "quantity", header: "Qty" },
-      ],
-      "inventory-assignments"
-    );
-  };
-
   return (
     <MainLayout title="Inventory & Assignments" description="Unified view of assets, consumables, and assignments">
       <PageHeader
         title="Inventory & Assignments"
         description="One view for asset items and consumable assignments"
-        extra={<ExportButton onExportCSV={handleExportCSV} />}
       />
 
       <Card className="mb-6">

@@ -31,6 +31,7 @@ const EmployeeDetail = lazy(() => import("./pages/EmployeeDetail"));
 const Assignments = lazy(() => import("./pages/Assignments"));
 const Maintenance = lazy(() => import("./pages/Maintenance"));
 const Transfers = lazy(() => import("./pages/Transfers"));
+const TransferDetail = lazy(() => import("./pages/TransferDetail"));
 const PurchaseOrders = lazy(() => import("./pages/PurchaseOrders"));
 const Offices = lazy(() => import("./pages/Offices"));
 const RoomsSections = lazy(() => import("./pages/RoomsSections"));
@@ -129,6 +130,7 @@ const App = () => {
                   <Route path="/employees/:id" element={<ProtectedRoute page="employees"><EmployeeDetail /></ProtectedRoute>} />
                   <Route path="/assignments" element={<ProtectedRoute page="assignments"><Assignments /></ProtectedRoute>} />
                   <Route path="/transfers" element={<ProtectedRoute page="transfers"><Transfers /></ProtectedRoute>} />
+                  <Route path="/transfers/:id" element={<ProtectedRoute page="transfers"><TransferDetail /></ProtectedRoute>} />
                   <Route path="/maintenance" element={<ProtectedRoute page="maintenance"><Maintenance /></ProtectedRoute>} />
                   <Route path="/purchase-orders" element={<ProtectedRoute page="purchase-orders"><PurchaseOrders /></ProtectedRoute>} />
                   <Route path="/offices" element={<ProtectedRoute page="offices"><Offices /></ProtectedRoute>} />

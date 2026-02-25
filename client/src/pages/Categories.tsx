@@ -12,6 +12,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useCategories, useCreateCategory, useUpdateCategory, useDeleteCategory } from "@/hooks/useCategories";
+import { useAssets } from "@/hooks/useAssets";
+import { useConsumableItems } from "@/hooks/useConsumableItems";
 import { CategoryFormModal } from "@/components/forms/CategoryFormModal";
 import { Category } from "@/types";
 import { usePageSearch } from "@/contexts/PageSearchContext";
@@ -22,6 +24,8 @@ import { DataTable } from "@/components/shared/DataTable";
 
 export default function Categories() {
   const { data: categories, isLoading } = useCategories();
+  const { data: assets, isLoading: assetsLoading } = useAssets();
+  const { data: consumableItems, isLoading: consumableItemsLoading } = useConsumableItems();
   const createCategory = useCreateCategory();
   const updateCategory = useUpdateCategory();
   const deleteCategory = useDeleteCategory();
@@ -43,6 +47,29 @@ export default function Categories() {
       }),
     [categories, searchTerm]
   );
+  const assetCountByCategoryId = useMemo(() => {
+    const counts = new Map<string, number>();
+    (assets || []).forEach((asset) => {
+      if (!asset.category_id || asset.is_active === false) return;
+      counts.set(asset.category_id, (counts.get(asset.category_id) || 0) + 1);
+    });
+    return counts;
+  }, [assets]);
+  const consumableCountByCategoryId = useMemo(() => {
+    const counts = new Map<string, number>();
+    (consumableItems || []).forEach((item) => {
+      if (!item.category_id) return;
+      counts.set(item.category_id, (counts.get(item.category_id) || 0) + 1);
+    });
+    return counts;
+  }, [consumableItems]);
+
+  const getCategoryItemCount = (category: Category) => {
+    if (category.asset_type === "CONSUMABLE") {
+      return consumableCountByCategoryId.get(category.id) || 0;
+    }
+    return assetCountByCategoryId.get(category.id) || 0;
+  };
 
   const handleAddCategory = () => {
     setEditingCategory(null);
@@ -97,6 +124,20 @@ export default function Categories() {
         </Badge>
       ),
     },
+    {
+      key: "id",
+      label: "Items",
+      render: (_value: string, row: Category) => {
+        const count = getCategoryItemCount(row);
+        const noun = row.asset_type === "CONSUMABLE" ? "consumables" : "assets";
+        return (
+          <span className="text-sm">
+            <span className="font-semibold">{count}</span>
+            <span className="text-muted-foreground ml-1">{noun}</span>
+          </span>
+        );
+      },
+    },
   ];
 
   const actions = (category: Category) => (
@@ -117,7 +158,7 @@ export default function Categories() {
     </DropdownMenu>
   );
 
-  if (isLoading) {
+  if (isLoading || assetsLoading || consumableItemsLoading) {
     return (
       <MainLayout title="Categories" description="Organize categories by module">
         <div className="flex items-center justify-center h-64">
@@ -185,8 +226,10 @@ export default function Categories() {
                   <div className="flex items-center gap-2 pt-4 border-t">
                     <Package className="h-4 w-4 text-muted-foreground" />
                     <span className="text-sm">
-                      <span className="font-semibold">0</span>
-                      <span className="text-muted-foreground ml-1">assets</span>
+                      <span className="font-semibold">{getCategoryItemCount(category)}</span>
+                      <span className="text-muted-foreground ml-1">
+                        {category.asset_type === "CONSUMABLE" ? "consumables" : "assets"}
+                      </span>
                     </span>
                   </div>
                 </CardContent>

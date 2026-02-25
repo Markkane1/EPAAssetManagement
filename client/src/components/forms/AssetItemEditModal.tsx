@@ -55,7 +55,7 @@ interface AssetItemEditModalProps {
   }) => Promise<void>;
 }
 
-const statusOptions = ["Available", "Assigned", "Maintenance", "Damaged", "Retired"];
+const statusOptions = ["Available", "Assigned", "Maintenance", "Damaged", "Retired", "Transferred"];
 const conditionOptions = ["New", "Good", "Fair", "Poor", "Damaged"];
 const functionalOptions = ["Functional", "Need Repairs", "Dead"];
 
@@ -68,7 +68,6 @@ export function AssetItemEditModal({
   onSubmit,
 }: AssetItemEditModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const { user } = useAuth();
 
   const form = useForm<AssetItemEditFormData>({
     resolver: zodResolver(assetItemEditSchema),

@@ -18,6 +18,10 @@ const MaintenanceRecordSchema = new Schema<any>(
     cost: { type: Number, default: null },
     // Person/vendor who performed the work
     performed_by: { type: String, default: null },
+    // Vendor selected for the maintenance activity
+    performed_by_vendor_id: { type: Schema.Types.ObjectId, ref: 'Vendor', default: null },
+    // Required estimate document uploaded at scheduling time
+    estimate_document_id: { type: Schema.Types.ObjectId, ref: 'Document', default: null },
     // Scheduled date for maintenance
     scheduled_date: { type: Date, default: null },
     // Completion date for maintenance
@@ -32,6 +36,8 @@ const MaintenanceRecordSchema = new Schema<any>(
 
 MaintenanceRecordSchema.index({ asset_item_id: 1, created_at: -1 });
 MaintenanceRecordSchema.index({ maintenance_status: 1, created_at: -1 });
+MaintenanceRecordSchema.index({ performed_by_vendor_id: 1, created_at: -1 });
+MaintenanceRecordSchema.index({ estimate_document_id: 1, created_at: -1 });
 MaintenanceRecordSchema.index({ is_active: 1, created_at: -1 });
 
 export const MaintenanceRecordModel = mongoose.model<any>('MaintenanceRecord', MaintenanceRecordSchema);

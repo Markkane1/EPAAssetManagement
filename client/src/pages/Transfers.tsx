@@ -1,4 +1,5 @@
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTable } from "@/components/shared/DataTable";
@@ -7,8 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Loader2, Eye, Upload } from "lucide-react";
+import { Loader2, Eye, Upload, Check, ChevronsUpDown, X, FileText } from "lucide-react";
 import { useTransfers, useCreateTransfer, useTransferAction } from "@/hooks/useTransfers";
 import { useAssetItems } from "@/hooks/useAssetItems";
 import { useAssets } from "@/hooks/useAssets";
@@ -20,7 +20,15 @@ import { RecordDetailModal } from "@/components/records/RecordDetailModal";
 import { documentService } from "@/services/documentService";
 import { documentLinkService } from "@/services/documentLinkService";
 import { toast } from "sonner";
-import { getOfficeHolderId } from "@/lib/assetItemHolder";
+import { getOfficeHolderId, isStoreHolder } from "@/lib/assetItemHolder";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 
 type TransferRow = Transfer & {
   lineCount: number;
@@ -37,6 +45,7 @@ type TransferAction =
   | "receive_at_dest";
 
 type RequiredDocumentType = "handover" | "takeover";
+const CENTRAL_STORE_SOURCE_ID = "HEAD_OFFICE_STORE";
 
 const WORKFLOW_ACTIONS: Record<
   Exclude<TransferStatus, "RECEIVED_AT_DEST" | "REJECTED" | "CANCELLED">,
@@ -61,6 +70,7 @@ function pickFile(accept = ".pdf,.jpg,.jpeg,.png") {
 }
 
 export default function Transfers() {
+  const navigate = useNavigate();
   const { role, isOrgAdmin, locationId } = useAuth();
   const { data: transfers = [], isLoading } = useTransfers();
   const { data: assetItems = [] } = useAssetItems();
@@ -69,10 +79,15 @@ export default function Transfers() {
   const createTransfer = useCreateTransfer();
   const transferAction = useTransferAction();
 
-  const [fromOfficeId, setFromOfficeId] = useState(locationId || "");
+  const [fromOfficeId, setFromOfficeId] = useState(
+    isOrgAdmin ? CENTRAL_STORE_SOURCE_ID : locationId || ""
+  );
   const [toOfficeId, setToOfficeId] = useState("");
   const [notes, setNotes] = useState("");
+  const [approvalOrderFile, setApprovalOrderFile] = useState<File | null>(null);
   const [selectedAssetItemIds, setSelectedAssetItemIds] = useState<string[]>([]);
+  const [assetPickerOpen, setAssetPickerOpen] = useState(false);
+  const [assetSearch, setAssetSearch] = useState("");
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [recordModal, setRecordModal] = useState<{ open: boolean; transferId?: string; label?: string }>({
     open: false,
@@ -90,11 +105,24 @@ export default function Transfers() {
 
   const canManage = isOrgAdmin || role === "office_head" || role === "caretaker";
 
+  useEffect(() => {
+    if (!canManage) return;
+
+    if (!isOrgAdmin) {
+      if (!locationId) return;
+      setFromOfficeId((current) => (current === locationId ? current : locationId));
+      setToOfficeId((current) => (current === locationId ? "" : current));
+      return;
+    }
+
+    setFromOfficeId((current) => current || CENTRAL_STORE_SOURCE_ID);
+  }, [canManage, isOrgAdmin, locationId]);
+
   const transferableItems = useMemo(
     () =>
       assetItems.filter((item) => {
-        if (!getOfficeHolderId(item)) return false;
-        if (item.assignment_status !== "Unassigned") return false;
+        const isUnassigned = !item.assignment_status || item.assignment_status === "Unassigned";
+        if (!isUnassigned) return false;
         if (item.item_status === AssetStatus.InTransit || item.item_status === AssetStatus.Retired) return false;
         return true;
       }),
@@ -102,8 +130,19 @@ export default function Transfers() {
   );
 
   const filteredItems = useMemo(
-    () => transferableItems.filter((item) => getOfficeHolderId(item) === fromOfficeId),
+    () =>
+      transferableItems.filter((item) => {
+        if (fromOfficeId === CENTRAL_STORE_SOURCE_ID) {
+          return isStoreHolder(item);
+        }
+        return getOfficeHolderId(item) === fromOfficeId;
+      }),
     [transferableItems, fromOfficeId]
+  );
+
+  const availableItems = useMemo(
+    () => filteredItems.filter((item) => !selectedAssetItemIds.includes(item.id)),
+    [filteredItems, selectedAssetItemIds]
   );
 
   const tableRows: TransferRow[] = useMemo(
@@ -126,8 +165,14 @@ export default function Transfers() {
           lineCount: lines.length,
           assetsPreview:
             lines.length > 2 ? `${preview} +${lines.length - 2} more` : preview || "N/A",
-          fromOfficeName: locationById.get(transfer.from_office_id)?.name || "N/A",
-          toOfficeName: locationById.get(transfer.to_office_id)?.name || "N/A",
+          fromOfficeName:
+            transfer.store_id && transfer.from_office_id === transfer.store_id
+              ? "Central Store"
+              : locationById.get(transfer.from_office_id)?.name || "N/A",
+          toOfficeName:
+            transfer.store_id && transfer.to_office_id === transfer.store_id
+              ? "Central Store"
+              : locationById.get(transfer.to_office_id)?.name || "N/A",
         };
       }),
     [transfers, assetById, assetItemById, locationById]
@@ -139,10 +184,29 @@ export default function Transfers() {
     );
   };
 
+  const selectedAssetItems = useMemo(
+    () =>
+      selectedAssetItemIds
+        .map((id) => {
+          const item = assetItemById.get(id);
+          if (!item) return null;
+          const asset = assetById.get(item.asset_id);
+          return {
+            id: item.id,
+            label: item.tag || item.serial_number || item.id,
+            assetName: asset?.name || "Unknown Asset",
+          };
+        })
+        .filter((item): item is { id: string; label: string; assetName: string } => Boolean(item)),
+    [selectedAssetItemIds, assetItemById, assetById]
+  );
+
   const resetForm = () => {
     setSelectedAssetItemIds([]);
     setToOfficeId("");
     setNotes("");
+    setApprovalOrderFile(null);
+    setAssetSearch("");
   };
 
   const handleCreateTransfer = async (event: FormEvent<HTMLFormElement>) => {
@@ -160,13 +224,38 @@ export default function Transfers() {
       toast.error("Select at least one asset item");
       return;
     }
+    if (!approvalOrderFile) {
+      toast.error("Approval Order attachment is required");
+      return;
+    }
 
-    await createTransfer.mutateAsync({
+    const approvalOfficeId = fromOfficeId === CENTRAL_STORE_SOURCE_ID ? toOfficeId : fromOfficeId;
+    const approvalOrderDocument = await documentService.create({
+      title: `Approval Order - Transfer Request ${new Date().toLocaleString()}`,
+      docType: "Other",
+      status: "Final",
+      officeId: approvalOfficeId,
+    });
+    await documentService.upload(approvalOrderDocument.id, approvalOrderFile);
+
+    const createdTransfer = await createTransfer.mutateAsync({
       fromOfficeId,
       toOfficeId,
+      approvalOrderDocumentId: approvalOrderDocument.id,
       lines: selectedAssetItemIds.map((assetItemId) => ({ assetItemId })),
       notes: notes.trim() || undefined,
     });
+
+    try {
+      await documentLinkService.create({
+        documentId: approvalOrderDocument.id,
+        entityType: "Transfer",
+        entityId: createdTransfer.id,
+        requiredForStatus: "Approved",
+      });
+    } catch {
+      // Record linkage should not block transfer creation.
+    }
 
     resetForm();
   };
@@ -277,8 +366,13 @@ export default function Transfers() {
 
     return (
       <div className="flex items-center gap-2">
-        <Button variant="outline" size="sm" onClick={() => openRecordModal(row)}>
+        <Button variant="outline" size="sm" onClick={() => navigate(`/transfers/${row.id}`)}>
           <Eye className="mr-2 h-3.5 w-3.5" />
+          Details
+        </Button>
+
+        <Button variant="outline" size="sm" onClick={() => openRecordModal(row)}>
+          <FileText className="mr-2 h-3.5 w-3.5" />
           File
         </Button>
 
@@ -333,6 +427,7 @@ export default function Transfers() {
   }
 
   const destinationOffices = locations.filter((office) => office.id !== fromOfficeId);
+  const showCentralDestination = fromOfficeId !== CENTRAL_STORE_SOURCE_ID;
 
   return (
     <MainLayout title="Transfers" description="Mediated asset transfers via system store">
@@ -347,7 +442,7 @@ export default function Transfers() {
             <form onSubmit={handleCreateTransfer} className="space-y-6">
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="fromOffice">From Office *</Label>
+                  <Label htmlFor="fromOffice">From Holder *</Label>
                   <select
                     id="fromOffice"
                     className="w-full rounded-md border bg-background px-3 py-2 text-sm disabled:opacity-50"
@@ -355,11 +450,15 @@ export default function Transfers() {
                     onChange={(event) => {
                       setFromOfficeId(event.target.value);
                       setSelectedAssetItemIds([]);
+                      setAssetSearch("");
                       if (toOfficeId === event.target.value) setToOfficeId("");
                     }}
                     disabled={!isOrgAdmin}
                   >
-                    <option value="">Select office</option>
+                    <option value="">Select source</option>
+                    {isOrgAdmin && (
+                      <option value={CENTRAL_STORE_SOURCE_ID}>Central Store</option>
+                    )}
                     {locations.map((office) => (
                       <option key={office.id} value={office.id}>
                         {office.name}
@@ -377,6 +476,9 @@ export default function Transfers() {
                     onChange={(event) => setToOfficeId(event.target.value)}
                   >
                     <option value="">Select destination office</option>
+                    {showCentralDestination && (
+                      <option value={CENTRAL_STORE_SOURCE_ID}>Central Store</option>
+                    )}
                     {destinationOffices.map((office) => (
                       <option key={office.id} value={office.id}>
                         {office.name}
@@ -388,29 +490,106 @@ export default function Transfers() {
 
               <div className="space-y-2">
                 <Label>Transfer Lines (Asset Items) *</Label>
-                <div className="max-h-64 space-y-2 overflow-auto rounded-md border p-3">
-                  {filteredItems.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No transferable asset items for selected source office.</p>
-                  ) : (
-                    filteredItems.map((item: AssetItem) => {
-                      const asset = assetById.get(item.asset_id);
-                      const itemLabel = item.tag || item.serial_number || item.id;
-                      return (
-                        <label key={item.id} className="flex items-center gap-3 rounded-sm px-2 py-1 hover:bg-muted/40">
-                          <Checkbox
-                            checked={selectedAssetItemIds.includes(item.id)}
-                            onCheckedChange={() => toggleAssetSelection(item.id)}
-                          />
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-medium">{itemLabel}</p>
-                            <p className="truncate text-xs text-muted-foreground">{asset?.name || "Unknown Asset"}</p>
-                          </div>
-                        </label>
-                      );
-                    })
-                  )}
-                </div>
+                <Popover open={assetPickerOpen} onOpenChange={setAssetPickerOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      role="combobox"
+                      className="w-full justify-between font-normal"
+                    >
+                      <span className="truncate text-left">
+                        Search and select asset items...
+                        {selectedAssetItemIds.length > 0 ? ` (${selectedAssetItemIds.length} selected)` : ""}
+                      </span>
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                    <Command>
+                      <CommandInput
+                        placeholder="Search by tag, serial, or asset name..."
+                        value={assetSearch}
+                        onValueChange={setAssetSearch}
+                      />
+                      <CommandList className="max-h-64">
+                        <CommandEmpty>
+                          {fromOfficeId === CENTRAL_STORE_SOURCE_ID
+                            ? "No transferable asset items in Central Store."
+                            : "No transferable asset items for selected source office."}
+                        </CommandEmpty>
+                        {availableItems.map((item: AssetItem) => {
+                          const asset = assetById.get(item.asset_id);
+                          const itemLabel = item.tag || item.serial_number || item.id;
+                          const assetName = asset?.name || "Unknown Asset";
+                          const isSelected = selectedAssetItemIds.includes(item.id);
+                          return (
+                            <CommandItem
+                              key={item.id}
+                              value={`${itemLabel} ${item.serial_number || ""} ${assetName}`}
+                              onSelect={() => {
+                                toggleAssetSelection(item.id);
+                                setAssetSearch("");
+                              }}
+                            >
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-medium">{itemLabel}</p>
+                                <p className="truncate text-xs text-muted-foreground">{assetName}</p>
+                              </div>
+                              <Check className={`ml-auto h-4 w-4 ${isSelected ? "opacity-100" : "opacity-0"}`} />
+                            </CommandItem>
+                          );
+                        })}
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
                 <p className="text-xs text-muted-foreground">Selected: {selectedAssetItemIds.length}</p>
+                {selectedAssetItems.length > 0 && (
+                  <div className="rounded-md border">
+                    <div className="border-b px-3 py-2 text-xs font-medium text-muted-foreground">
+                      Selected Asset Items
+                    </div>
+                    <ul className="max-h-40 space-y-1 overflow-y-auto p-2">
+                      {selectedAssetItems.map((item) => (
+                        <li
+                          key={item.id}
+                          className="flex items-center justify-between rounded-sm px-2 py-1.5 text-sm"
+                        >
+                          <div className="min-w-0">
+                            <p className="truncate font-medium">{item.label}</p>
+                            <p className="truncate text-xs text-muted-foreground">{item.assetName}</p>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 shrink-0"
+                            onClick={() => toggleAssetSelection(item.id)}
+                            aria-label={`Remove ${item.label}`}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="approvalOrderFile">Approval Order *</Label>
+                <Input
+                  id="approvalOrderFile"
+                  type="file"
+                  accept=".pdf,.jpg,.jpeg,.png"
+                  onChange={(event) => setApprovalOrderFile(event.target.files?.[0] || null)}
+                />
+                {approvalOrderFile ? (
+                  <p className="text-xs text-muted-foreground">Selected file: {approvalOrderFile.name}</p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">Upload approval order before creating transfer.</p>
+                )}
               </div>
 
               <div className="space-y-2">

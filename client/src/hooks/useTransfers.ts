@@ -14,6 +14,15 @@ export const useTransfers = () => {
   });
 };
 
+export const useTransfer = (id?: string) => {
+  return useQuery({
+    queryKey: [...queryKeys.transfers, id],
+    queryFn: () => transferService.getById(String(id)),
+    enabled: Boolean(id),
+    staleTime: query.staleTime,
+  });
+};
+
 export const useCreateTransfer = () => {
   const queryClient = useQueryClient();
 

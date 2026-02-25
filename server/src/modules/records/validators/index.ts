@@ -61,6 +61,7 @@ export const documentCreateSchema = z.object({
     'IssueSlip',
     'ReturnSlip',
     'TransferChallan',
+    'MaintenanceEstimate',
     'MaintenanceJobCard',
     'RequisitionForm',
     'Warranty',

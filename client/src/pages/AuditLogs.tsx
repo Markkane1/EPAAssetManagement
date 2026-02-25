@@ -41,7 +41,7 @@ import {
   getAuditLogs,
   type AuditAction,
 } from "@/lib/auditLog";
-import { exportToCSV, exportToJSON } from "@/lib/exportUtils";
+import { exportToCSV, exportToExcel, exportToJSON } from "@/lib/exportUtils";
 import { usePageSearch } from "@/contexts/PageSearchContext";
 
 const actionIcons: Record<AuditAction, React.ReactNode> = {
@@ -76,6 +76,8 @@ export default function AuditLogs() {
   const [actionFilter, setActionFilter] = useState<string>("all");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [startDate, setStartDate] = useState<string>("");
+  const [endDate, setEndDate] = useState<string>("");
 
   const allLogs = getAuditLogs();
 
@@ -90,10 +92,22 @@ export default function AuditLogs() {
       const matchesAction = actionFilter === "all" || log.action === actionFilter;
       const matchesCategory = categoryFilter === "all" || log.category === categoryFilter;
       const matchesStatus = statusFilter === "all" || log.status === statusFilter;
+      const createdAt = new Date(log.timestamp);
+      const startDateBoundary = startDate ? new Date(`${startDate}T00:00:00`) : null;
+      const endDateBoundary = endDate ? new Date(`${endDate}T23:59:59.999`) : null;
+      const matchesStartDate = !startDateBoundary || createdAt >= startDateBoundary;
+      const matchesEndDate = !endDateBoundary || createdAt <= endDateBoundary;
 
-      return matchesSearch && matchesAction && matchesCategory && matchesStatus;
+      return (
+        matchesSearch &&
+        matchesAction &&
+        matchesCategory &&
+        matchesStatus &&
+        matchesStartDate &&
+        matchesEndDate
+      );
     });
-  }, [allLogs, searchQuery, actionFilter, categoryFilter, statusFilter]);
+  }, [allLogs, searchQuery, actionFilter, categoryFilter, statusFilter, startDate, endDate]);
 
   const handleExportCSV = () => {
     exportToCSV(
@@ -123,6 +137,24 @@ export default function AuditLogs() {
         details: log.details,
         status: log.status,
       })),
+      `audit-logs-${format(new Date(), "yyyy-MM-dd")}`,
+    );
+  };
+
+  const handleExportExcel = async () => {
+    await exportToExcel(
+      filteredLogs.map((log) => ({
+        ...log,
+        actionLabel: actionLabels[log.action],
+      })),
+      [
+        { key: "timestamp", header: "Timestamp" },
+        { key: "userEmail", header: "User" },
+        { key: "actionLabel", header: "Action" },
+        { key: "category", header: "Category" },
+        { key: "details", header: "Details" },
+        { key: "status", header: "Status" },
+      ],
       `audit-logs-${format(new Date(), "yyyy-MM-dd")}`,
     );
   };
@@ -157,6 +189,10 @@ export default function AuditLogs() {
         description="Track all user actions and security events"
         extra={
           <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => void handleExportExcel()}>
+              <Download className="h-4 w-4 mr-2" />
+              Excel
+            </Button>
             <Button variant="outline" size="sm" onClick={handleExportCSV}>
               <Download className="h-4 w-4 mr-2" />
               CSV
@@ -272,6 +308,18 @@ export default function AuditLogs() {
                 <SelectItem value="failure">Failure</SelectItem>
               </SelectContent>
             </Select>
+            <Input
+              type="date"
+              value={startDate}
+              onChange={(event) => setStartDate(event.target.value)}
+              className="w-[170px]"
+            />
+            <Input
+              type="date"
+              value={endDate}
+              onChange={(event) => setEndDate(event.target.value)}
+              className="w-[170px]"
+            />
           </div>
         </CardContent>
       </Card>

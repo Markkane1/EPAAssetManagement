@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { useQuery } from "@tanstack/react-query";
 import * as z from "zod";
 import {
   Dialog,
@@ -30,7 +31,9 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { Loader2 } from "lucide-react";
-import { MaintenanceRecord, MaintenanceType, MaintenanceStatus, AssetItem, Asset } from "@/types";
+import { vendorService } from "@/services/vendorService";
+import { getOfficeHolderId } from "@/lib/assetItemHolder";
+import { MaintenanceRecord, MaintenanceType, MaintenanceStatus, AssetItem, Asset, Vendor } from "@/types";
 
 const maintenanceSchema = z.object({
   assetItemId: z.string().min(1, "Asset item is required"),
@@ -39,11 +42,15 @@ const maintenanceSchema = z.object({
   description: z.string().min(1, "Description is required").max(500),
   scheduledDate: z.string().min(1, "Scheduled date is required"),
   cost: z.coerce.number().min(0, "Cost must be positive").optional(),
-  performedBy: z.string().max(100).optional(),
+  performedByVendorId: z.string().min(1, "Performed by vendor is required"),
   notes: z.string().max(500).optional(),
 });
 
 type MaintenanceFormData = z.infer<typeof maintenanceSchema>;
+export type MaintenanceFormSubmitData = MaintenanceFormData & {
+  performedBy?: string;
+  estimateFile?: File | null;
+};
 
 interface MaintenanceFormModalProps {
   open: boolean;
@@ -51,7 +58,7 @@ interface MaintenanceFormModalProps {
   maintenance?: MaintenanceRecord | null;
   assetItems: AssetItem[];
   assets: Asset[];
-  onSubmit: (data: MaintenanceFormData) => Promise<void>;
+  onSubmit: (data: MaintenanceFormSubmitData) => Promise<void>;
 }
 
 export function MaintenanceFormModal({
@@ -64,6 +71,9 @@ export function MaintenanceFormModal({
 }: MaintenanceFormModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [assetPickerOpen, setAssetPickerOpen] = useState(false);
+  const [vendorPickerOpen, setVendorPickerOpen] = useState(false);
+  const [estimateFile, setEstimateFile] = useState<File | null>(null);
+  const [estimateError, setEstimateError] = useState<string | null>(null);
   const isEditing = !!maintenance;
 
   const form = useForm<MaintenanceFormData>({
@@ -75,7 +85,7 @@ export function MaintenanceFormModal({
       description: "",
       scheduledDate: new Date().toISOString().split("T")[0],
       cost: 0,
-      performedBy: "",
+      performedByVendorId: "",
       notes: "",
     },
   });
@@ -91,7 +101,7 @@ export function MaintenanceFormModal({
           ? new Date(maintenance.scheduled_date).toISOString().split("T")[0]
           : new Date().toISOString().split("T")[0],
         cost: maintenance.cost || 0,
-        performedBy: maintenance.performed_by || "",
+        performedByVendorId: maintenance.performed_by_vendor_id || "",
         notes: maintenance.notes || "",
       });
     } else {
@@ -102,17 +112,62 @@ export function MaintenanceFormModal({
         description: "",
         scheduledDate: new Date().toISOString().split("T")[0],
         cost: 0,
-        performedBy: "",
+        performedByVendorId: "",
         notes: "",
       });
     }
+    setEstimateFile(null);
+    setEstimateError(null);
   }, [maintenance, form]);
 
+  const officeAssetItems = assetItems.filter((item) => Boolean(getOfficeHolderId(item)));
+  const selectedAssetItem = officeAssetItems.find((item) => item.id === form.watch("assetItemId"));
+  const selectedOfficeId = selectedAssetItem ? getOfficeHolderId(selectedAssetItem) : null;
+  const selectedVendorId = form.watch("performedByVendorId");
+
+  const { data: vendorsData, isLoading: vendorsLoading } = useQuery({
+    queryKey: ["vendors", "maintenance-form", selectedOfficeId || "none"],
+    queryFn: () => vendorService.getAll({ officeId: selectedOfficeId || undefined }),
+    enabled: Boolean(selectedOfficeId),
+    staleTime: 30_000,
+  });
+  const vendorList = vendorsData || [];
+  const selectedVendor = vendorList.find((vendor) => vendor.id === selectedVendorId);
+
+  useEffect(() => {
+    if (!selectedOfficeId && selectedVendorId) {
+      form.setValue("performedByVendorId", "");
+      return;
+    }
+    if (selectedVendorId && !vendorList.some((vendor) => vendor.id === selectedVendorId)) {
+      form.setValue("performedByVendorId", "");
+    }
+  }, [form, selectedOfficeId, selectedVendorId, vendorList]);
+
   const handleSubmit = async (data: MaintenanceFormData) => {
+    if (!isEditing) {
+      if (!estimateFile) {
+        setEstimateError("Estimate PDF is required");
+        return;
+      }
+      const isPdf = estimateFile.type === "application/pdf" || /\.pdf$/i.test(estimateFile.name);
+      if (!isPdf) {
+        setEstimateError("Estimate file must be a PDF");
+        return;
+      }
+    }
+
     setIsSubmitting(true);
     try {
-      await onSubmit(data);
+      const resolvedVendor = vendorList.find((vendor) => vendor.id === data.performedByVendorId);
+      await onSubmit({
+        ...data,
+        performedBy: resolvedVendor?.name || "",
+        estimateFile: !isEditing ? estimateFile : null,
+      });
       form.reset();
+      setEstimateFile(null);
+      setEstimateError(null);
       onOpenChange(false);
     } finally {
       setIsSubmitting(false);
@@ -122,8 +177,6 @@ export function MaintenanceFormModal({
   const getAssetName = (assetId: string) => {
     return assets.find((a) => a.id === assetId)?.name || "Unknown";
   };
-
-  const selectedAssetItem = assetItems.find((item) => item.id === form.watch("assetItemId"));
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -150,12 +203,15 @@ export function MaintenanceFormModal({
                   <CommandInput placeholder="Search by tag, serial, or asset..." />
                   <CommandList>
                     <CommandEmpty>No asset items found.</CommandEmpty>
-                    {assetItems.map((item) => (
+                    {officeAssetItems.map((item) => (
                       <CommandItem
                         key={item.id}
                         value={`${item.tag || ""} ${item.serial_number || ""} ${getAssetName(item.asset_id)}`}
                         onSelect={() => {
                           form.setValue("assetItemId", item.id);
+                          if (selectedOfficeId !== getOfficeHolderId(item)) {
+                            form.setValue("performedByVendorId", "");
+                          }
                           setAssetPickerOpen(false);
                         }}
                       >
@@ -251,13 +307,75 @@ export function MaintenanceFormModal({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="performedBy">Performed By</Label>
-            <Input
-              id="performedBy"
-              {...form.register("performedBy")}
-              placeholder="e.g., IT Support, External Vendor"
-            />
+            <Label>Performed By Vendor *</Label>
+            <Popover open={vendorPickerOpen} onOpenChange={setVendorPickerOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  role="combobox"
+                  className="w-full justify-between"
+                  disabled={!selectedOfficeId}
+                >
+                  {selectedVendor
+                    ? selectedVendor.name
+                    : selectedOfficeId
+                    ? "Search office vendors..."
+                    : "Select office-held asset item first"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                <Command>
+                  <CommandInput placeholder="Search vendor by name, email, phone..." />
+                  <CommandList>
+                    <CommandEmpty>
+                      {vendorsLoading ? "Loading vendors..." : "No vendors found for selected office."}
+                    </CommandEmpty>
+                    {vendorList.map((vendor: Vendor) => (
+                      <CommandItem
+                        key={vendor.id}
+                        value={`${vendor.name || ""} ${vendor.email || ""} ${vendor.phone || ""}`}
+                        onSelect={() => {
+                          form.setValue("performedByVendorId", vendor.id);
+                          setVendorPickerOpen(false);
+                        }}
+                      >
+                        <span>{vendor.name}</span>
+                        {vendor.phone ? (
+                          <span className="ml-2 text-xs text-muted-foreground">{vendor.phone}</span>
+                        ) : null}
+                      </CommandItem>
+                    ))}
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
+            {form.formState.errors.performedByVendorId && (
+              <p className="text-sm text-destructive">{form.formState.errors.performedByVendorId.message}</p>
+            )}
           </div>
+
+          {!isEditing && (
+            <div className="space-y-2">
+              <Label htmlFor="estimateFile">Estimate (PDF) *</Label>
+              <Input
+                id="estimateFile"
+                type="file"
+                accept="application/pdf,.pdf"
+                onChange={(event) => {
+                  const file = event.target.files?.[0] || null;
+                  setEstimateFile(file);
+                  setEstimateError(null);
+                }}
+              />
+              {estimateError && <p className="text-sm text-destructive">{estimateError}</p>}
+            </div>
+          )}
+
+          {isEditing && !maintenance?.estimate_document_id ? (
+            <p className="text-xs text-warning">
+              This legacy record has no estimate document linked.
+            </p>
+          ) : null}
 
           <div className="space-y-2">
             <Label htmlFor="notes">Notes</Label>

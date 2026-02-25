@@ -1,8 +1,7 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTable } from "@/components/shared/DataTable";
-import { ExportButton } from "@/components/shared/ExportButton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { MoreHorizontal, Eye, Pencil, Trash2, Loader2 } from "lucide-react";
@@ -20,8 +19,6 @@ import { useVendors } from "@/hooks/useVendors";
 import { useProjects } from "@/hooks/useProjects";
 import { useSchemes } from "@/hooks/useSchemes";
 import { AssetFormModal } from "@/components/forms/AssetFormModal";
-import { exportToCSV, exportToJSON, filterRowsBySearch, formatDateForExport, formatCurrencyForExport, pickExportFields } from "@/lib/exportUtils";
-import { usePageSearch } from "@/contexts/PageSearchContext";
 
 function formatDimensions(asset: Asset) {
   const dims = asset.dimensions;
@@ -43,7 +40,6 @@ export default function Assets() {
   const createAsset = useCreateAsset();
   const updateAsset = useUpdateAsset();
   const deleteAsset = useDeleteAsset();
-  const pageSearch = usePageSearch();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingAsset, setEditingAsset] = useState<Asset | null>(null);
@@ -85,11 +81,6 @@ export default function Assets() {
     { key: "unit_price", label: "Unit Price", render: (value: number) => <span className="font-medium">PKR {value?.toLocaleString("en-PK") || 0}</span> },
     { key: "acquisition_date", label: "Acquired", render: (value: string) => value ? new Date(value).toLocaleDateString() : "N/A" },
   ];
-
-  const filteredAssets = useMemo(
-    () => filterRowsBySearch(enrichedAssets as any, pageSearch?.term || ""),
-    [enrichedAssets, pageSearch?.term],
-  );
 
   const handleAddAsset = () => {
     setEditingAsset(null);
@@ -138,46 +129,12 @@ export default function Assets() {
     );
   }
 
-  const handleExportCSV = () => {
-    exportToCSV(
-      filteredAssets as any,
-      [
-        { key: "name", header: "Asset Name" },
-        { key: "categoryName", header: "Category" },
-        { key: "sourceLabel", header: "Source" },
-        { key: "sourceDetail", header: "Vendor/Project" },
-        { key: "dimensionsLabel", header: "Dimensions" },
-        { key: "quantity", header: "Quantity" },
-        { key: "unit_price", header: "Unit Price", formatter: (v) => formatCurrencyForExport(v as number) },
-        { key: "acquisition_date", header: "Acquired", formatter: (v) => formatDateForExport(v as Date) },
-      ],
-      "assets",
-    );
-  };
-
-  const handleExportJSON = () => {
-    exportToJSON(
-      pickExportFields(filteredAssets as any, [
-        "name",
-        "categoryName",
-        "sourceLabel",
-        "sourceDetail",
-        "dimensionsLabel",
-        "quantity",
-        "unit_price",
-        "acquisition_date",
-      ]),
-      "assets",
-    );
-  };
-
   return (
     <MainLayout title="Assets" description="Manage your asset catalog">
       <PageHeader 
         title="Assets" 
         description="View and manage all asset types in your organization" 
         action={{ label: "Add Asset", onClick: handleAddAsset }}
-        extra={<ExportButton onExportCSV={handleExportCSV} onExportJSON={handleExportJSON} />}
       />
       <DataTable columns={columns} data={enrichedAssets} searchPlaceholder="Search assets..." onRowClick={(row) => navigate(`/assets/${row.id}`)} actions={actions} />
       <AssetFormModal open={isModalOpen} onOpenChange={setIsModalOpen} asset={editingAsset as any} categories={categoryList as any[]} vendors={vendorList as any[]} projects={projectList as any[]} schemes={schemeList as any[]} onSubmit={handleSubmit} />

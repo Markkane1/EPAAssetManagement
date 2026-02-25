@@ -40,6 +40,30 @@ import {
   assertTransition,
 } from './transfer.controller.helpers';
 
+const NON_REPLICA_TX_ERROR = 'Transaction numbers are only allowed on a replica set member or mongos';
+
+function withSession(session?: mongoose.ClientSession) {
+  return session ? { session } : undefined;
+}
+
+function isStandaloneTransactionError(error: unknown) {
+  return error instanceof Error && error.message.includes(NON_REPLICA_TX_ERROR);
+}
+
+async function runWithOptionalTransaction(
+  session: mongoose.ClientSession,
+  handler: (session?: mongoose.ClientSession) => Promise<void>
+) {
+  try {
+    await session.withTransaction(async () => {
+      await handler(session);
+    });
+  } catch (error) {
+    if (!isStandaloneTransactionError(error)) throw error;
+    await handler();
+  }
+}
+
 export const transferController = {
   list: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
@@ -144,29 +168,58 @@ export const transferController = {
       }
 
       const body = req.body as Record<string, unknown>;
-      const fromOfficeId = readId(body as Record<string, any>, [
+      const requestedFromOfficeId = readId(body as Record<string, any>, [
         'fromOfficeId',
         'from_office_id',
       ]);
-      const toOfficeId = readId(body as Record<string, any>, [
+      const requestedToOfficeId = readId(body as Record<string, any>, [
         'toOfficeId',
         'to_office_id',
       ]);
+      const approvalOrderDocumentId = readId(body as Record<string, any>, [
+        'approvalOrderDocumentId',
+        'approval_order_document_id',
+      ]);
       const lines = parseLinePayload(body.lines);
 
-      if (!fromOfficeId || !toOfficeId) {
+      if (!requestedFromOfficeId || !requestedToOfficeId) {
         throw createHttpError(400, 'from_office_id and to_office_id are required');
       }
-      if (fromOfficeId === toOfficeId) {
+      if (!approvalOrderDocumentId) {
+        throw createHttpError(400, 'approval_order_document_id is required');
+      }
+      await ensureDocumentExists(approvalOrderDocumentId, 'Approval order document');
+      const isFromCentralStore = requestedFromOfficeId === HEAD_OFFICE_STORE_CODE;
+      const isToCentralStore = requestedToOfficeId === HEAD_OFFICE_STORE_CODE;
+      if (isFromCentralStore && !access.isOrgAdmin) {
+        throw createHttpError(403, 'Only org_admin can transfer from Central Store');
+      }
+
+      if (requestedFromOfficeId === requestedToOfficeId) {
         throw createHttpError(400, 'From and destination offices must be different');
       }
-      if (!access.isOrgAdmin && access.officeId !== fromOfficeId && access.officeId !== toOfficeId) {
+      if (
+        !access.isOrgAdmin &&
+        access.officeId !== requestedFromOfficeId &&
+        access.officeId !== requestedToOfficeId
+      ) {
         throw createHttpError(403, 'Transfers must originate from or arrive at your office');
       }
 
-      await ensureOfficeExists(fromOfficeId);
-      await ensureOfficeExists(toOfficeId);
       const store = await resolveHeadOfficeStore();
+      const fromOfficeId = isFromCentralStore ? String(store.id) : requestedFromOfficeId;
+      const toOfficeId = isToCentralStore ? String(store.id) : requestedToOfficeId;
+
+      if (fromOfficeId === toOfficeId) {
+        throw createHttpError(400, 'From and destination offices must be different');
+      }
+
+      if (!isFromCentralStore) {
+        await ensureOfficeExists(fromOfficeId);
+      }
+      if (!isToCentralStore) {
+        await ensureOfficeExists(toOfficeId);
+      }
 
       const lineAssetIds = lines.map((line) => line.asset_item_id);
       const assetItems = await AssetItemModel.find({ _id: { $in: lineAssetIds } });
@@ -178,7 +231,14 @@ export const transferController = {
         if (item.is_active === false) {
           throw createHttpError(400, `Asset item ${item.id} is inactive`);
         }
-        if (!isAssetItemHeldByOffice(item, fromOfficeId)) {
+        if (isFromCentralStore) {
+          const isInStore =
+            String(item.holder_type || '') === 'STORE' &&
+            String(item.holder_id || '') === String(store.id);
+          if (!isInStore) {
+            throw createHttpError(400, `Asset item ${item.id} is not in Central Store`);
+          }
+        } else if (!isAssetItemHeldByOffice(item, fromOfficeId)) {
           throw createHttpError(400, `Asset item ${item.id} is not in the source office`);
         }
         if (item.assignment_status !== 'Unassigned') {
@@ -186,10 +246,13 @@ export const transferController = {
         }
       }
 
-      await session.withTransaction(async () => {
+      let createdTransfer: any = null;
+      await runWithOptionalTransaction(session, async (txSession) => {
         const transferDate = body.transferDate || body.transfer_date;
         const notes = body.notes === undefined ? null : String(body.notes || '');
         const requisitionId = readId(body as Record<string, any>, ['requisitionId', 'requisition_id']);
+        const workflowTimestamp = new Date();
+        const initialStatus = isFromCentralStore ? 'RECEIVED_AT_STORE' : 'REQUESTED';
 
         const transfer = await TransferModel.create(
           [
@@ -199,19 +262,26 @@ export const transferController = {
               to_office_id: toOfficeId,
               store_id: store.id,
               requisition_id: requisitionId || null,
+              approval_order_document_id: approvalOrderDocumentId,
               transfer_date: transferDate ? new Date(String(transferDate)) : new Date(),
               handled_by: access.userId,
               requested_by_user_id: access.userId,
-              requested_at: new Date(),
-              status: 'REQUESTED',
+              requested_at: workflowTimestamp,
+              approved_by_user_id: isFromCentralStore ? access.userId : null,
+              approved_at: isFromCentralStore ? workflowTimestamp : null,
+              received_at_store_by_user_id: isFromCentralStore ? access.userId : null,
+              received_at_store_at: isFromCentralStore ? workflowTimestamp : null,
+              status: initialStatus,
               notes,
               is_active: true,
             },
           ],
-          { session }
+          withSession(txSession)
         );
+        const created = transfer[0];
+        createdTransfer = created;
 
-        const recordStatus = access.isOrgAdmin ? 'Approved' : 'PendingApproval';
+        const recordStatus = access.isOrgAdmin || isFromCentralStore ? 'Approved' : 'PendingApproval';
         await createRecord(
           {
             userId: access.userId,
@@ -221,13 +291,13 @@ export const transferController = {
           },
           {
             recordType: 'TRANSFER',
-            officeId: fromOfficeId,
+            officeId: isFromCentralStore ? toOfficeId : fromOfficeId,
             status: recordStatus,
             assetItemId: lines[0]?.asset_item_id || undefined,
-            transferId: transfer[0].id,
+            transferId: created.id,
             notes: notes || undefined,
           },
-          session
+          txSession
         );
 
         await logAudit({
@@ -239,14 +309,14 @@ export const transferController = {
           },
           action: 'TRANSFER_CREATE',
           entityType: 'Transfer',
-          entityId: transfer[0].id,
-          officeId: fromOfficeId,
-          diff: { status: 'REQUESTED', lineCount: lines.length },
-          session,
+          entityId: created.id,
+          officeId: isFromCentralStore ? toOfficeId : fromOfficeId,
+          diff: { status: initialStatus, lineCount: lines.length, source: isFromCentralStore ? 'STORE' : 'OFFICE' },
+          session: txSession,
         });
-
-        res.status(201).json(normalizeTransferForResponse(transfer[0]));
       });
+      if (!createdTransfer) throw createHttpError(500, 'Failed to create transfer');
+      res.status(201).json(normalizeTransferForResponse(createdTransfer));
     } catch (error) {
       next(error);
     } finally {
@@ -267,14 +337,14 @@ export const transferController = {
       }
       await assertTransition(transfer, 'APPROVED');
 
-      await session.withTransaction(async () => {
+      await runWithOptionalTransaction(session, async (txSession) => {
         transfer.status = 'APPROVED';
         transfer.approved_by_user_id = access.userId;
         transfer.approved_at = new Date();
         transfer.handled_by = access.userId;
-        await transfer.save({ session });
+        await transfer.save(withSession(txSession));
 
-        await updateTransferRecordStatus(access, transfer.id, 'Approved', transfer.notes || undefined, session);
+        await updateTransferRecordStatus(access, transfer.id, 'Approved', transfer.notes || undefined, txSession);
       });
 
       res.json(normalizeTransferForResponse(transfer));
@@ -309,19 +379,19 @@ export const transferController = {
       await ensureDocumentExists(effectiveHandoverDocumentId, 'Handover document');
 
       const { assetItemIds } = await loadTransferAssetItems(transfer);
-      await session.withTransaction(async () => {
+      await runWithOptionalTransaction(session, async (txSession) => {
         transfer.status = 'DISPATCHED_TO_STORE';
         transfer.handled_by = access.userId;
         transfer.handover_document_id = effectiveHandoverDocumentId as any;
         transfer.dispatched_to_store_by_user_id = access.userId;
         transfer.dispatched_to_store_at = new Date();
         transfer.dispatched_by_user_id = access.userId;
-        await transfer.save({ session });
+        await transfer.save(withSession(txSession));
 
         await AssetItemModel.updateMany(
           { _id: { $in: assetItemIds }, ...officeAssetItemFilter(fromOfficeId) },
-          { assignment_status: 'InTransit', item_status: 'InTransit' },
-          { session }
+          { assignment_status: 'InTransit', item_status: 'Transferred' },
+          withSession(txSession)
         );
       });
 
@@ -351,22 +421,22 @@ export const transferController = {
         throw createHttpError(500, 'Transfer store is not configured');
       }
 
-      await session.withTransaction(async () => {
+      await runWithOptionalTransaction(session, async (txSession) => {
         transfer.status = 'RECEIVED_AT_STORE';
         transfer.handled_by = access.userId;
         transfer.store_id = store.id;
         transfer.received_at_store_by_user_id = access.userId;
         transfer.received_at_store_at = new Date();
-        await transfer.save({ session });
+        await transfer.save(withSession(txSession));
 
         await AssetItemModel.updateMany(
           { _id: { $in: assetItemIds } },
           {
             ...setAssetItemStoreHolderUpdate(store.id),
             assignment_status: 'InTransit',
-            item_status: 'InTransit',
+            item_status: 'Transferred',
           },
-          { session }
+          withSession(txSession)
         );
       });
 
@@ -390,13 +460,13 @@ export const transferController = {
       if (!transfer) return res.status(404).json({ message: 'Not found' });
       await assertTransition(transfer, 'DISPATCHED_TO_DEST');
 
-      await session.withTransaction(async () => {
+      await runWithOptionalTransaction(session, async (txSession) => {
         transfer.status = 'DISPATCHED_TO_DEST';
         transfer.handled_by = access.userId;
         transfer.dispatched_to_dest_by_user_id = access.userId;
         transfer.dispatched_to_dest_at = new Date();
         transfer.dispatched_by_user_id = access.userId;
-        await transfer.save({ session });
+        await transfer.save(withSession(txSession));
       });
 
       res.json(normalizeTransferForResponse(transfer));
@@ -438,26 +508,26 @@ export const transferController = {
         await enforceAssetCategoryScopeForOffice(String(item.asset_id), toOfficeId);
       }
 
-      await session.withTransaction(async () => {
+      await runWithOptionalTransaction(session, async (txSession) => {
         transfer.status = 'RECEIVED_AT_DEST';
         transfer.handled_by = access.userId;
         transfer.takeover_document_id = effectiveTakeoverDocumentId as any;
         transfer.received_at_dest_by_user_id = access.userId;
         transfer.received_at_dest_at = new Date();
         transfer.received_by_user_id = access.userId;
-        await transfer.save({ session });
+        await transfer.save(withSession(txSession));
 
         await AssetItemModel.updateMany(
           { _id: { $in: assetItemIds } },
           {
             ...setAssetItemOfficeHolderUpdate(toOfficeId),
             assignment_status: 'Unassigned',
-            item_status: 'Available',
+            item_status: 'Transferred',
           },
-          { session }
+          withSession(txSession)
         );
 
-        await updateTransferRecordStatus(access, transfer.id, 'Completed', transfer.notes || undefined, session);
+        await updateTransferRecordStatus(access, transfer.id, 'Completed', transfer.notes || undefined, txSession);
       });
 
       res.json(normalizeTransferForResponse(transfer));
@@ -484,27 +554,31 @@ export const transferController = {
       const rollbackStatuses = new Set(['DISPATCHED_TO_STORE', 'RECEIVED_AT_STORE', 'DISPATCHED_TO_DEST']);
       const shouldRollbackItems = rollbackStatuses.has(String(transfer.status));
       const { assetItemIds } = shouldRollbackItems ? await loadTransferAssetItems(transfer) : { assetItemIds: [] as string[] };
+      const sourceIsStore = Boolean(transfer.store_id) && String(transfer.store_id) === fromOfficeId;
+      const sourceHolderUpdate = sourceIsStore
+        ? setAssetItemStoreHolderUpdate(String(transfer.store_id))
+        : setAssetItemOfficeHolderUpdate(fromOfficeId);
 
-      await session.withTransaction(async () => {
+      await runWithOptionalTransaction(session, async (txSession) => {
         transfer.status = 'REJECTED';
         transfer.handled_by = access.userId;
         transfer.rejected_by_user_id = access.userId;
         transfer.rejected_at = new Date();
-        await transfer.save({ session });
+        await transfer.save(withSession(txSession));
 
         if (shouldRollbackItems && assetItemIds.length > 0) {
           await AssetItemModel.updateMany(
             { _id: { $in: assetItemIds } },
             {
-              ...setAssetItemOfficeHolderUpdate(fromOfficeId),
+              ...sourceHolderUpdate,
               assignment_status: 'Unassigned',
               item_status: 'Available',
             },
-            { session }
+            withSession(txSession)
           );
         }
 
-        await updateTransferRecordStatus(access, transfer.id, 'Rejected', transfer.notes || undefined, session);
+        await updateTransferRecordStatus(access, transfer.id, 'Rejected', transfer.notes || undefined, txSession);
       });
 
       res.json(normalizeTransferForResponse(transfer));
@@ -531,27 +605,31 @@ export const transferController = {
       const rollbackStatuses = new Set(['DISPATCHED_TO_STORE', 'RECEIVED_AT_STORE', 'DISPATCHED_TO_DEST']);
       const shouldRollbackItems = rollbackStatuses.has(String(transfer.status));
       const { assetItemIds } = shouldRollbackItems ? await loadTransferAssetItems(transfer) : { assetItemIds: [] as string[] };
+      const sourceIsStore = Boolean(transfer.store_id) && String(transfer.store_id) === fromOfficeId;
+      const sourceHolderUpdate = sourceIsStore
+        ? setAssetItemStoreHolderUpdate(String(transfer.store_id))
+        : setAssetItemOfficeHolderUpdate(fromOfficeId);
 
-      await session.withTransaction(async () => {
+      await runWithOptionalTransaction(session, async (txSession) => {
         transfer.status = 'CANCELLED';
         transfer.handled_by = access.userId;
         transfer.cancelled_by_user_id = access.userId;
         transfer.cancelled_at = new Date();
-        await transfer.save({ session });
+        await transfer.save(withSession(txSession));
 
         if (shouldRollbackItems && assetItemIds.length > 0) {
           await AssetItemModel.updateMany(
             { _id: { $in: assetItemIds } },
             {
-              ...setAssetItemOfficeHolderUpdate(fromOfficeId),
+              ...sourceHolderUpdate,
               assignment_status: 'Unassigned',
               item_status: 'Available',
             },
-            { session }
+            withSession(txSession)
           );
         }
 
-        await updateTransferRecordStatus(access, transfer.id, 'Cancelled', transfer.notes || undefined, session);
+        await updateTransferRecordStatus(access, transfer.id, 'Cancelled', transfer.notes || undefined, txSession);
       });
 
       res.json(normalizeTransferForResponse(transfer));

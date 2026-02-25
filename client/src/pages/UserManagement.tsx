@@ -49,6 +49,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { 
+  Download,
   Search, 
   Users,
   MapPin,
@@ -65,12 +66,14 @@ import {
   Check,
 } from "lucide-react";
 import { toast } from "sonner";
+import { format } from "date-fns";
 import { AppRole } from "@/services/authService";
 import { userService, UserWithDetails } from "@/services/userService";
 import { locationService } from "@/services/locationService";
 import { userPermissionService } from "@/services/userPermissionService";
 import { usePageSearch } from "@/contexts/PageSearchContext";
 import { cn } from "@/lib/utils";
+import { exportToCSV, exportToExcel } from "@/lib/exportUtils";
 
 interface Location {
   id: string;
@@ -113,6 +116,8 @@ export default function UserManagement() {
   const [editingUser, setEditingUser] = useState<UserWithDetails | null>(null);
   const [selectedRole, setSelectedRole] = useState<AppRole | "">("");
   const [selectedLocation, setSelectedLocation] = useState<string>("");
+  const [roleFilter, setRoleFilter] = useState<string>("all");
+  const [locationFilter, setLocationFilter] = useState<string>("all");
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [deleteUserId, setDeleteUserId] = useState<string | null>(null);
   const [resetPasswordUser, setResetPasswordUser] = useState<UserWithDetails | null>(null);
@@ -308,7 +313,16 @@ export default function UserManagement() {
     }
   };
 
-  const visibleUsers = useMemo(() => users.items || [], [users.items]);
+  const visibleUsers = useMemo(() => {
+    const rows = users.items || [];
+    return rows.filter((user) => {
+      const normalizedRole = String(user.role || "").trim().toLowerCase();
+      const matchesRole = roleFilter === "all" || normalizedRole === roleFilter;
+      const locationId = user.location_id || "none";
+      const matchesLocation = locationFilter === "all" || locationId === locationFilter;
+      return matchesRole && matchesLocation;
+    });
+  }, [users.items, roleFilter, locationFilter]);
   const totalUsers = users.total || 0;
   const totalPages = Math.max(1, Math.ceil(totalUsers / pageSize));
   const selectedNewUserLocation = useMemo(
@@ -357,6 +371,50 @@ export default function UserManagement() {
     );
   };
 
+  const handleExportCSV = () => {
+    exportToCSV(
+      visibleUsers.map((user) => ({
+        name: user.first_name || user.last_name
+          ? `${user.first_name || ""} ${user.last_name || ""}`.trim()
+          : "No Name",
+        email: user.email || "",
+        role: toRoleLabel(user.role, roleNameMap),
+        location: user.location_name || "No Location",
+        joined: new Date(user.created_at).toISOString(),
+      })),
+      [
+        { key: "name", header: "Name" },
+        { key: "email", header: "Email" },
+        { key: "role", header: "Role" },
+        { key: "location", header: "Location" },
+        { key: "joined", header: "Joined" },
+      ],
+      `user-management-${format(new Date(), "yyyy-MM-dd")}`
+    );
+  };
+
+  const handleExportExcel = async () => {
+    await exportToExcel(
+      visibleUsers.map((user) => ({
+        name: user.first_name || user.last_name
+          ? `${user.first_name || ""} ${user.last_name || ""}`.trim()
+          : "No Name",
+        email: user.email || "",
+        role: toRoleLabel(user.role, roleNameMap),
+        location: user.location_name || "No Location",
+        joined: new Date(user.created_at).toISOString(),
+      })),
+      [
+        { key: "name", header: "Name" },
+        { key: "email", header: "Email" },
+        { key: "role", header: "Role" },
+        { key: "location", header: "Location" },
+        { key: "joined", header: "Joined" },
+      ],
+      `user-management-${format(new Date(), "yyyy-MM-dd")}`
+    );
+  };
+
   return (
     <MainLayout title="User Management" description="Manage users and permissions">
       <PageHeader
@@ -366,12 +424,24 @@ export default function UserManagement() {
           label: "Add User",
           onClick: () => setIsCreateDialogOpen(true),
         }}
+        extra={
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => void handleExportExcel()}>
+              <Download className="h-4 w-4 mr-2" />
+              Excel
+            </Button>
+            <Button variant="outline" size="sm" onClick={handleExportCSV}>
+              <Download className="h-4 w-4 mr-2" />
+              CSV
+            </Button>
+          </div>
+        }
       />
 
       <Card>
         <CardContent className="pt-6">
           {/* Search */}
-          <div className="flex items-center gap-4 mb-6">
+          <div className="flex flex-wrap items-center gap-4 mb-6">
             <div className="relative flex-1 max-w-sm">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
@@ -381,9 +451,36 @@ export default function UserManagement() {
                 className="pl-10"
               />
             </div>
+            <Select value={roleFilter} onValueChange={setRoleFilter}>
+              <SelectTrigger className="w-[190px]">
+                <SelectValue placeholder="Filter by role" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Roles</SelectItem>
+                {roleOptions.map((option) => (
+                  <SelectItem key={option.id} value={option.id}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={locationFilter} onValueChange={setLocationFilter}>
+              <SelectTrigger className="w-[230px]">
+                <SelectValue placeholder="Filter by location" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Locations</SelectItem>
+                <SelectItem value="none">No Location</SelectItem>
+                {locations.map((location) => (
+                  <SelectItem key={location.id} value={location.id}>
+                    {location.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Users className="h-4 w-4" />
-              <span>{totalUsers} total users</span>
+              <span>{visibleUsers.length} shown ({totalUsers} total users)</span>
             </div>
           </div>
 

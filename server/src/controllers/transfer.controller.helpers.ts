@@ -95,13 +95,50 @@ async function ensureOfficeExists(officeId: string) {
 }
 
 async function resolveHeadOfficeStore() {
-  const store = await StoreModel.findOne({
+  let store = await StoreModel.findOne({
     code: HEAD_OFFICE_STORE_CODE,
     is_active: { $ne: false },
   });
   if (!store) {
-    throw createHttpError(500, 'HEAD_OFFICE_STORE is not configured');
+    try {
+      store = await StoreModel.findOneAndUpdate(
+        { code: HEAD_OFFICE_STORE_CODE },
+        {
+          $setOnInsert: {
+            name: 'Central Store',
+            code: HEAD_OFFICE_STORE_CODE,
+            is_system: true,
+            is_active: true,
+          },
+        },
+        {
+          upsert: true,
+          new: true,
+          setDefaultsOnInsert: true,
+        }
+      );
+    } catch (error: any) {
+      if (error?.code === 11000) {
+        store = await StoreModel.findOne({ code: HEAD_OFFICE_STORE_CODE });
+      } else {
+        throw error;
+      }
+    }
   }
+
+  if (!store) {
+    throw createHttpError(500, 'HEAD_OFFICE_STORE could not be initialized');
+  }
+
+  if (store.is_active === false || store.is_system !== true) {
+    store.is_active = true;
+    store.is_system = true;
+    if (!store.name) {
+      store.name = 'Central Store';
+    }
+    await store.save();
+  }
+
   return store;
 }
 

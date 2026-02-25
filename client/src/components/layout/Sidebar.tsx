@@ -137,9 +137,11 @@ const authManagementNavItems: NavItem[] = [
 
 interface SidebarProps {
   className?: string;
+  isMobileDrawer?: boolean;
+  onNavigate?: () => void;
 }
 
-export function Sidebar({ className }: SidebarProps) {
+export function Sidebar({ className, isMobileDrawer = false, onNavigate }: SidebarProps) {
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
   const [movableOpen, setMovableOpen] = useState(
@@ -173,8 +175,15 @@ export function Sidebar({ className }: SidebarProps) {
       location.pathname.startsWith("/purchase-orders")
   );
   const { user, role, isOrgAdmin } = useAuth();
+  const effectiveCollapsed = isMobileDrawer ? false : collapsed;
 
   const navRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    if (isMobileDrawer) {
+      setCollapsed(false);
+    }
+  }, [isMobileDrawer]);
 
   // Restore sidebar scroll position on mount
   useEffect(() => {
@@ -291,8 +300,8 @@ export function Sidebar({ className }: SidebarProps) {
     const linkContent = (
       <Button
         variant={isActive ? "secondary" : "ghost"}
-        size={collapsed ? "icon" : "sm"}
-        className={cn("w-full", collapsed ? "justify-center" : "justify-start", linkClassName)}
+        size={effectiveCollapsed ? "icon" : "sm"}
+        className={cn("w-full", effectiveCollapsed ? "justify-center" : "justify-start", linkClassName)}
         asChild
       >
         <Link
@@ -307,11 +316,12 @@ export function Sidebar({ className }: SidebarProps) {
 
             // Avoid focus jump
             e.currentTarget.blur();
+            onNavigate?.();
           }}
         >
-          <Icon className={cn("h-4 w-4 shrink-0", !collapsed && "mr-2")} />
-          {!collapsed && <span className="truncate">{item.label}</span>}
-          {!collapsed && item.badge && (
+          <Icon className={cn("h-4 w-4 shrink-0", !effectiveCollapsed && "mr-2")} />
+          {!effectiveCollapsed && <span className="truncate">{item.label}</span>}
+          {!effectiveCollapsed && item.badge && (
             <span className="ml-auto bg-primary text-primary-foreground text-xs px-2 py-0.5 rounded-full">
               {item.badge}
             </span>
@@ -320,7 +330,7 @@ export function Sidebar({ className }: SidebarProps) {
       </Button>
     );
 
-    if (collapsed) {
+    if (effectiveCollapsed) {
       return (
         <Tooltip delayDuration={0}>
           <TooltipTrigger asChild>{linkContent}</TooltipTrigger>
@@ -337,15 +347,16 @@ export function Sidebar({ className }: SidebarProps) {
   return (
     <aside
       className={cn(
-        "shrink-0 h-screen bg-sidebar border-r border-sidebar-border transition-all duration-300",
-        collapsed ? "w-16" : "w-64",
+        "shrink-0 bg-sidebar border-r border-sidebar-border transition-all duration-300",
+        isMobileDrawer ? "h-full w-full border-r-0" : "h-screen",
+        isMobileDrawer ? "w-full" : effectiveCollapsed ? "w-16" : "w-64",
         className
       )}
     >
       <div className="flex h-full flex-col">
         {/* Logo */}
         <div className="flex h-16 items-center justify-between px-4 border-b border-sidebar-border">
-          {!collapsed && (
+          {!effectiveCollapsed && (
             <div className="flex items-center gap-2">
               <img 
                 src={epaLogo} 
@@ -355,14 +366,16 @@ export function Sidebar({ className }: SidebarProps) {
               <span className="font-semibold text-sidebar-foreground">EPA AMS</span>
             </div>
           )}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 text-sidebar-foreground hover:bg-sidebar-accent"
-            onClick={() => setCollapsed(!collapsed)}
-          >
-            {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-          </Button>
+          {!isMobileDrawer && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-sidebar-foreground hover:bg-sidebar-accent"
+              onClick={() => setCollapsed(!collapsed)}
+            >
+              {effectiveCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+            </Button>
+          )}
         </div>
 
         {/* Navigation */}
@@ -401,7 +414,7 @@ export function Sidebar({ className }: SidebarProps) {
             return (
               <div className="space-y-1">
                 {dashboardItem && <NavLink item={dashboardItem} />}
-                {showMovable && !collapsed && (
+                {showMovable && !effectiveCollapsed && (
                   <Collapsible open={movableOpen} onOpenChange={setMovableOpen}>
                     <CollapsibleTrigger asChild>
                       <Button
@@ -426,8 +439,8 @@ export function Sidebar({ className }: SidebarProps) {
                     </CollapsibleContent>
                   </Collapsible>
                 )}
-                {showMovable && collapsed && <NavLink item={movableAssetsRootItem} />}
-                {showEmployeeServices && !collapsed && (
+                {showMovable && effectiveCollapsed && <NavLink item={movableAssetsRootItem} />}
+                {showEmployeeServices && !effectiveCollapsed && (
                   <Collapsible open={employeeServicesOpen} onOpenChange={setEmployeeServicesOpen}>
                     <CollapsibleTrigger asChild>
                       <Button
@@ -452,8 +465,8 @@ export function Sidebar({ className }: SidebarProps) {
                     </CollapsibleContent>
                   </Collapsible>
                 )}
-                {showEmployeeServices && collapsed && <NavLink item={employeeServicesRootItem} />}
-                {showConsumables && !collapsed && (
+                {showEmployeeServices && effectiveCollapsed && <NavLink item={employeeServicesRootItem} />}
+                {showConsumables && !effectiveCollapsed && (
                   <Collapsible open={consumablesOpen} onOpenChange={setConsumablesOpen}>
                     <CollapsibleTrigger asChild>
                       <Button
@@ -478,7 +491,7 @@ export function Sidebar({ className }: SidebarProps) {
                     </CollapsibleContent>
                   </Collapsible>
                 )}
-                {showConsumables && collapsed && <NavLink item={consumablesRootItem} />}
+                {showConsumables && effectiveCollapsed && <NavLink item={consumablesRootItem} />}
                 {remainingItems.map((item) => (
                   <NavLink key={item.href} item={item} />
                 ))}
@@ -502,7 +515,7 @@ export function Sidebar({ className }: SidebarProps) {
             if (!showManagement) return null;
             return (
               <div className="space-y-1">
-                {!collapsed && (
+                {!effectiveCollapsed && (
                   <Collapsible open={managementOpen} onOpenChange={setManagementOpen}>
                     <CollapsibleTrigger asChild>
                       <Button
@@ -527,7 +540,7 @@ export function Sidebar({ className }: SidebarProps) {
                     </CollapsibleContent>
                   </Collapsible>
                 )}
-                {collapsed && <NavLink item={managementRootItem} />}
+                {effectiveCollapsed && <NavLink item={managementRootItem} />}
               </div>
             );
           })()}
@@ -548,12 +561,12 @@ export function Sidebar({ className }: SidebarProps) {
             if (items.length === 0 && !showReports && !showAuth && !showCompliance) return null;
             return (
               <div className="space-y-1">
-                {!collapsed && (
+                {!effectiveCollapsed && (
                   <p className="px-3 text-xs font-semibold text-sidebar-foreground/50 uppercase tracking-wider mb-2">
                     System
                   </p>
                 )}
-                {showAuth && !collapsed && (
+                {showAuth && !effectiveCollapsed && (
                   <Collapsible open={authOpen} onOpenChange={setAuthOpen}>
                     <CollapsibleTrigger asChild>
                       <Button
@@ -578,8 +591,8 @@ export function Sidebar({ className }: SidebarProps) {
                     </CollapsibleContent>
                   </Collapsible>
                 )}
-                {showAuth && collapsed && <NavLink item={authManagementRootItem} />}
-                {showReports && !collapsed && (
+                {showAuth && effectiveCollapsed && <NavLink item={authManagementRootItem} />}
+                {showReports && !effectiveCollapsed && (
                   <Collapsible open={reportsOpen} onOpenChange={setReportsOpen}>
                     <CollapsibleTrigger asChild>
                       <Button
@@ -604,7 +617,7 @@ export function Sidebar({ className }: SidebarProps) {
                     </CollapsibleContent>
                   </Collapsible>
                 )}
-                {showReports && collapsed && <NavLink item={reportsRootItem} />}
+                {showReports && effectiveCollapsed && <NavLink item={reportsRootItem} />}
                 {showCompliance && <NavLink item={complianceItem} />}
                 {items.map((item) => (
                   <NavLink key={item.href} item={item} />
@@ -616,7 +629,7 @@ export function Sidebar({ className }: SidebarProps) {
 
         {/* Footer */}
         <div className="border-t border-sidebar-border p-3">
-          {!collapsed ? (
+          {!effectiveCollapsed ? (
             <div className="flex items-center gap-3 px-3 py-2">
               <div className={cn(
                 "h-8 w-8 rounded-full flex items-center justify-center font-medium text-sm",

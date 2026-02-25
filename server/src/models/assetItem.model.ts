@@ -2,7 +2,7 @@ import mongoose, { Schema } from 'mongoose';
 import { baseSchemaOptions } from './base';
 
 const ASSIGNMENT_STATUSES = ['Assigned', 'Unassigned', 'InTransit'] as const;
-const ITEM_STATUSES = ['Available', 'Assigned', 'Maintenance', 'Damaged', 'Retired', 'InTransit'] as const;
+const ITEM_STATUSES = ['Available', 'Assigned', 'Maintenance', 'Damaged', 'Retired', 'Transferred', 'InTransit'] as const;
 const ITEM_CONDITIONS = ['New', 'Good', 'Fair', 'Poor', 'Damaged'] as const;
 const FUNCTIONAL_STATUSES = ['Functional', 'Need Repairs', 'Dead'] as const;
 const ITEM_SOURCES = ['Purchased', 'Transferred'] as const;

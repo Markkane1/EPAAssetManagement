@@ -4,6 +4,7 @@ export type DocumentType =
   | 'IssueSlip'
   | 'ReturnSlip'
   | 'TransferChallan'
+  | 'MaintenanceEstimate'
   | 'MaintenanceJobCard'
   | 'Warranty'
   | 'Invoice'

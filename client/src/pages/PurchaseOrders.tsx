@@ -1,8 +1,7 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTable } from "@/components/shared/DataTable";
-import { ExportButton } from "@/components/shared/ExportButton";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { MoreHorizontal, Eye, Pencil, Trash2, Loader2 } from "lucide-react";
@@ -19,8 +18,6 @@ import { useVendors } from "@/hooks/useVendors";
 import { useProjects } from "@/hooks/useProjects";
 import { useSchemes } from "@/hooks/useSchemes";
 import { PurchaseOrderFormModal } from "@/components/forms/PurchaseOrderFormModal";
-import { exportToCSV, exportToJSON, filterRowsBySearch, formatDateForExport, formatCurrencyForExport, pickExportFields } from "@/lib/exportUtils";
-import { usePageSearch } from "@/contexts/PageSearchContext";
 
 export default function PurchaseOrders() {
   const { data: purchaseOrders, isLoading } = usePurchaseOrders();
@@ -30,7 +27,6 @@ export default function PurchaseOrders() {
   const createPurchaseOrder = useCreatePurchaseOrder();
   const updatePurchaseOrder = useUpdatePurchaseOrder();
   const deletePurchaseOrder = useDeletePurchaseOrder();
-  const pageSearch = usePageSearch();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingOrder, setEditingOrder] = useState<PurchaseOrder | null>(null);
@@ -113,11 +109,6 @@ export default function PurchaseOrders() {
     },
   ];
 
-  const filteredOrders = useMemo(
-    () => filterRowsBySearch(enrichedOrders as any, pageSearch?.term || ""),
-    [enrichedOrders, pageSearch?.term],
-  );
-
   const handleAddOrder = () => {
     setEditingOrder(null);
     setIsModalOpen(true);
@@ -177,41 +168,6 @@ export default function PurchaseOrders() {
     );
   }
 
-  const handleExportCSV = () => {
-    exportToCSV(filteredOrders as any, [
-      { key: "order_number", header: "Order Number" },
-      { key: "source_type", header: "Source Type" },
-      { key: "source_name", header: "Source Name" },
-      { key: "vendorName", header: "Vendor / Project" },
-      { key: "order_date", header: "Order Date", formatter: (v) => formatDateForExport(v as Date) },
-      { key: "unit_price", header: "Unit Price", formatter: (v) => formatCurrencyForExport(v as number) },
-      { key: "total_amount", header: "Total Amount", formatter: (v) => formatCurrencyForExport(v as number) },
-      { key: "tax_percentage", header: "Tax %" },
-      { key: "tax_amount", header: "Tax Amount", formatter: (v) => formatCurrencyForExport(v as number) },
-      { key: "status", header: "Status" },
-      { key: "notes", header: "Notes" },
-    ], "purchase-orders");
-  };
-
-  const handleExportJSON = () => {
-    exportToJSON(
-      pickExportFields(filteredOrders as any, [
-        "order_number",
-        "source_type",
-        "source_name",
-        "vendorName",
-        "order_date",
-        "unit_price",
-        "total_amount",
-        "tax_percentage",
-        "tax_amount",
-        "status",
-        "notes",
-      ]),
-      "purchase-orders",
-    );
-  };
-
   return (
     <MainLayout title="Purchase Orders" description="Manage vendor orders">
       <PageHeader
@@ -221,7 +177,6 @@ export default function PurchaseOrders() {
           label: "New Order",
           onClick: handleAddOrder,
         }}
-        extra={<ExportButton onExportCSV={handleExportCSV} onExportJSON={handleExportJSON} />}
       />
 
       <DataTable

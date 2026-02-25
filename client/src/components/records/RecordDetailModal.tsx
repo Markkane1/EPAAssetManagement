@@ -35,6 +35,7 @@ export interface RecordDetailModalProps {
     referenceNo?: string;
   };
   title?: string;
+  highlightDocType?: string;
 }
 
 export function RecordDetailModal({
@@ -43,6 +44,7 @@ export function RecordDetailModal({
   recordId,
   lookup,
   title = "Digital File",
+  highlightDocType,
 }: RecordDetailModalProps) {
   const lookupEnabled = open && !recordId && Boolean(lookup);
   const lookupQuery = useRecordLookup(lookup || null, lookupEnabled);
@@ -53,6 +55,12 @@ export function RecordDetailModal({
 
   const detail = detailQuery.data as RecordDetailResponse | undefined;
   const missing = detail?.missingRequirements || [];
+  const orderedDocuments = (detail?.documents || []).slice().sort((left, right) => {
+    if (!highlightDocType) return 0;
+    const leftPriority = left.document?.doc_type === highlightDocType ? 0 : 1;
+    const rightPriority = right.document?.doc_type === highlightDocType ? 0 : 1;
+    return leftPriority - rightPriority;
+  });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -117,16 +125,25 @@ export function RecordDetailModal({
                   <FileText className="h-4 w-4" />
                   Documents
                 </div>
+                {highlightDocType ? (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Highlighted type: {highlightDocType}
+                  </p>
+                ) : null}
                 <Separator className="my-3" />
                 {detail.documents.length === 0 ? (
                   <p className="text-sm text-muted-foreground">No documents linked yet.</p>
                 ) : (
                   <div className="space-y-4">
-                    {detail.documents.map((docView, index) => {
+                    {orderedDocuments.map((docView, index) => {
                       const doc = docView.document;
                       const docKey = doc?.id || docView.links[0]?.id || String(index);
+                      const isHighlighted = Boolean(highlightDocType && doc?.doc_type === highlightDocType);
                       return (
-                        <div key={docKey} className="rounded-md border p-3">
+                        <div
+                          key={docKey}
+                          className={`rounded-md border p-3 ${isHighlighted ? "border-primary bg-primary/5" : ""}`}
+                        >
                           <div className="flex flex-wrap items-center justify-between gap-2">
                             <div>
                               <p className="text-sm font-semibold">{doc?.title || "Untitled Document"}</p>
@@ -134,7 +151,10 @@ export function RecordDetailModal({
                                 {doc?.doc_type || "Unknown"} • {doc?.status || "Draft"}
                               </p>
                             </div>
-                            <Badge variant="outline">{docView.versions.length} version(s)</Badge>
+                            <div className="flex items-center gap-2">
+                              {isHighlighted ? <Badge>Primary</Badge> : null}
+                              <Badge variant="outline">{docView.versions.length} version(s)</Badge>
+                            </div>
                           </div>
                           {docView.versions.length > 0 && (
                             <div className="mt-3 space-y-2 text-sm">

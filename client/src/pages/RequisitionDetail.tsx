@@ -24,6 +24,7 @@ import { useLocations } from "@/hooks/useLocations";
 import { useOfficeSubLocations } from "@/hooks/useOfficeSubLocations";
 import { useAuth } from "@/contexts/AuthContext";
 import type { AssetItem, Assignment, Asset, ConsumableItem, Office, RequisitionLine } from "@/types";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000/api";
 const API_ORIGIN = API_BASE_URL.replace(/\/api\/?$/, "");
@@ -102,6 +103,7 @@ type LineMapDraft = Record<
 
 export default function RequisitionDetail() {
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const { id } = useParams<{ id: string }>();
   const queryClient = useQueryClient();
   const { role } = useAuth();
@@ -552,30 +554,58 @@ export default function RequisitionDetail() {
             <CardTitle>Lines</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b">
-                    <th className="px-2 py-2 text-left font-medium">Item Name</th>
-                    <th className="px-2 py-2 text-left font-medium">Line Type</th>
-                    <th className="px-2 py-2 text-right font-medium">Item Quantity</th>
-                    <th className="px-2 py-2 text-right font-medium">Fulfilled Qty</th>
-                    <th className="px-2 py-2 text-left font-medium">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {lines.map((line) => (
-                    <tr key={asId(line)} className="border-b last:border-0">
-                      <td className="px-2 py-2">{line.requested_name}</td>
-                      <td className="px-2 py-2">{line.line_type}</td>
-                      <td className="px-2 py-2 text-right">{line.requested_quantity}</td>
-                      <td className="px-2 py-2 text-right">{line.fulfilled_quantity}</td>
-                      <td className="px-2 py-2">{line.status}</td>
+            {isMobile ? (
+              <div className="space-y-3">
+                {lines.map((line) => (
+                  <div key={asId(line)} className="rounded-md border p-3 space-y-2">
+                    <p className="font-medium">{line.requested_name}</p>
+                    <div className="grid grid-cols-2 gap-2 text-sm">
+                      <div>
+                        <p className="text-xs text-muted-foreground">Line Type</p>
+                        <p>{line.line_type}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Status</p>
+                        <p>{line.status}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Item Quantity</p>
+                        <p>{line.requested_quantity}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Fulfilled Qty</p>
+                        <p>{line.fulfilled_quantity}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[700px] text-sm">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="px-2 py-2 text-left font-medium">Item Name</th>
+                      <th className="px-2 py-2 text-left font-medium">Line Type</th>
+                      <th className="px-2 py-2 text-right font-medium">Item Quantity</th>
+                      <th className="px-2 py-2 text-right font-medium">Fulfilled Qty</th>
+                      <th className="px-2 py-2 text-left font-medium">Status</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {lines.map((line) => (
+                      <tr key={asId(line)} className="border-b last:border-0">
+                        <td className="px-2 py-2">{line.requested_name}</td>
+                        <td className="px-2 py-2">{line.line_type}</td>
+                        <td className="px-2 py-2 text-right">{line.requested_quantity}</td>
+                        <td className="px-2 py-2 text-right">{line.fulfilled_quantity}</td>
+                        <td className="px-2 py-2">{line.status}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -693,7 +723,7 @@ export default function RequisitionDetail() {
 
                   return (
                     <div key={`fulfill-${lineId}`} className="rounded border p-3 space-y-3">
-                      <div className="flex items-center justify-between">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                         <div>
                           <p className="text-xs text-muted-foreground">Item Name</p>
                           <p className="font-semibold text-base">{line.requested_name}</p>
@@ -1008,7 +1038,10 @@ export default function RequisitionDetail() {
               <div className="rounded-md border p-4 space-y-3">
                 <p className="font-medium">Assignments</p>
                 {requisitionAssignments.map((assignment) => (
-                  <div key={asId(assignment)} className="flex items-center justify-between rounded border p-2">
+                  <div
+                    key={asId(assignment)}
+                    className="flex flex-col gap-2 rounded border p-2 sm:flex-row sm:items-center sm:justify-between"
+                  >
                     <p className="text-sm font-mono">{asId(assignment)}</p>
                     <Badge variant="outline">{String(assignment.status || "UNKNOWN")}</Badge>
                   </div>

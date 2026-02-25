@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -14,15 +14,18 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  Command,
+  CommandEmpty,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2 } from "lucide-react";
 import { Asset, Location } from "@/types";
+import { useAuth } from "@/contexts/AuthContext";
 
 const assetItemSchema = z.object({
   assetId: z.string().min(1, "Asset is required"),
@@ -51,18 +54,45 @@ interface AssetItemFormModalProps {
   }) => Promise<void>;
 }
 
-const statusOptions = ["Available", "Assigned", "Maintenance", "Damaged", "Retired"];
-const conditionOptions = ["New", "Good", "Fair", "Poor", "Damaged"];
+const statusOptions = ["Available", "Assigned", "Maintenance", "Transferred"];
+const conditionOptions = ["New", "Good", "Fair", "Poor", "Damaged", "Retired"];
 const functionalOptions = ["Functional", "Need Repairs", "Dead"];
+const CENTRAL_STORE_LOCATION_ID = "HEAD_OFFICE_STORE";
+const CENTRAL_STORE_LABEL = "Central Store";
 
 export function AssetItemFormModal({ open, onOpenChange, assets, locations, onSubmit }: AssetItemFormModalProps) {
+  const { isOrgAdmin, locationId: authLocationId } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [assetPickerOpen, setAssetPickerOpen] = useState(false);
+  const [locationPickerOpen, setLocationPickerOpen] = useState(false);
+  const defaultLocationId = isOrgAdmin ? CENTRAL_STORE_LOCATION_ID : authLocationId || "";
+
+  const locationOptions = useMemo(() => {
+    const officeOptions = isOrgAdmin
+      ? locations
+      : locations.filter((location) => (authLocationId ? location.id === authLocationId : false));
+
+    if (!isOrgAdmin) {
+      return officeOptions.map((location) => ({
+        id: location.id,
+        name: location.name,
+      }));
+    }
+
+    return [
+      { id: CENTRAL_STORE_LOCATION_ID, name: CENTRAL_STORE_LABEL },
+      ...officeOptions.map((location) => ({
+        id: location.id,
+        name: location.name,
+      })),
+    ];
+  }, [isOrgAdmin, locations, authLocationId]);
 
   const form = useForm<AssetItemFormData>({
     resolver: zodResolver(assetItemSchema),
     defaultValues: {
       assetId: "",
-      locationId: "",
+      locationId: defaultLocationId,
       itemStatus: "Available",
       itemCondition: "New",
       functionalStatus: "Functional",
@@ -75,14 +105,16 @@ export function AssetItemFormModal({ open, onOpenChange, assets, locations, onSu
   ]);
   const [itemsError, setItemsError] = useState<string | null>(null);
   const selectedAssetId = form.watch("assetId");
+  const selectedLocationId = form.watch("locationId");
   const selectedAsset = assets.find((asset) => asset.id === selectedAssetId);
+  const selectedLocation = locationOptions.find((location) => location.id === selectedLocationId);
   const assetQuantity = selectedAsset?.quantity || 0;
 
   useEffect(() => {
     if (open) {
       form.reset({
         assetId: "",
-        locationId: "",
+        locationId: defaultLocationId,
         itemStatus: "Available",
         itemCondition: "New",
         functionalStatus: "Functional",
@@ -91,7 +123,15 @@ export function AssetItemFormModal({ open, onOpenChange, assets, locations, onSu
       setItems([{ id: crypto.randomUUID(), serialNumber: "", warrantyExpiry: "" }]);
       setItemsError(null);
     }
-  }, [open, form]);
+  }, [open, form, defaultLocationId]);
+
+  useEffect(() => {
+    const currentLocationId = form.getValues("locationId");
+    const locationExists = locationOptions.some((location) => location.id === currentLocationId);
+    if (!locationExists) {
+      form.setValue("locationId", defaultLocationId);
+    }
+  }, [locationOptions, defaultLocationId, form]);
 
   const handleSubmit = async (data: AssetItemFormData) => {
     setIsSubmitting(true);
@@ -166,33 +206,80 @@ export function AssetItemFormModal({ open, onOpenChange, assets, locations, onSu
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Asset *</Label>
-              <Select value={form.watch("assetId")} onValueChange={(v) => form.setValue("assetId", v)}>
-                <SelectTrigger><SelectValue placeholder="Select asset" /></SelectTrigger>
-                <SelectContent>
-                  {assets.map((a) => (
-                    <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Popover open={assetPickerOpen} onOpenChange={setAssetPickerOpen}>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" role="combobox" className="w-full justify-between">
+                    {selectedAsset ? selectedAsset.name : "Search asset by name..."}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                  <Command>
+                    <CommandInput placeholder="Type asset name..." />
+                    <CommandList>
+                      <CommandEmpty>No asset found.</CommandEmpty>
+                      {assets.map((asset) => (
+                        <CommandItem
+                          key={asset.id}
+                          value={`${asset.name} ${asset.description || ""}`}
+                          onSelect={() => {
+                            form.setValue("assetId", asset.id);
+                            setAssetPickerOpen(false);
+                          }}
+                        >
+                          {asset.name}
+                        </CommandItem>
+                      ))}
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
               {form.formState.errors.assetId && (
                 <p className="text-sm text-destructive">{form.formState.errors.assetId.message}</p>
               )}
             </div>
             <div className="space-y-2">
               <Label>Location *</Label>
-              <Select
-                value={form.watch("locationId")}
-                onValueChange={(v) => form.setValue("locationId", v)}
-              >
-                <SelectTrigger><SelectValue placeholder="Select location" /></SelectTrigger>
-                <SelectContent>
-                  {locations.map((l) => (
-                    <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Popover open={locationPickerOpen} onOpenChange={setLocationPickerOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    className="w-full justify-between"
+                    disabled={!isOrgAdmin}
+                  >
+                    {selectedLocation ? selectedLocation.name : "Search location by name..."}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                  <Command>
+                    <CommandInput placeholder="Type location name..." />
+                    <CommandList>
+                      <CommandEmpty>No location found.</CommandEmpty>
+                      {locationOptions.map((location) => (
+                        <CommandItem
+                          key={location.id}
+                          value={
+                            location.id === CENTRAL_STORE_LOCATION_ID
+                              ? `${location.name} head office store`
+                              : location.name
+                          }
+                          onSelect={() => {
+                            form.setValue("locationId", location.id);
+                            setLocationPickerOpen(false);
+                          }}
+                        >
+                          {location.name}
+                        </CommandItem>
+                      ))}
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
               {form.formState.errors.locationId && (
                 <p className="text-sm text-destructive">{form.formState.errors.locationId.message}</p>
+              )}
+              {!isOrgAdmin && (
+                <p className="text-xs text-muted-foreground">Only your assigned office is available.</p>
               )}
             </div>
           </div>

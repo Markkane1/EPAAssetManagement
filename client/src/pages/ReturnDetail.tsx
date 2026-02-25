@@ -18,6 +18,7 @@ import { useAssetItems } from "@/hooks/useAssetItems";
 import { useAssets } from "@/hooks/useAssets";
 import { useAuth } from "@/contexts/AuthContext";
 import { ReturnRequestStatus } from "@/types";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000/api";
 const API_ORIGIN = API_BASE_URL.replace(/\/api\/?$/, "");
@@ -63,6 +64,7 @@ async function downloadProtectedFile(fileUrl: string, fallbackName: string) {
 
 export default function ReturnDetail() {
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const { id } = useParams<{ id: string }>();
   const queryClient = useQueryClient();
   const { role } = useAuth();
@@ -230,36 +232,63 @@ export default function ReturnDetail() {
             <CardDescription>Asset items requested for return.</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b">
-                    <th className="px-2 py-2 text-left font-medium">Asset Item ID</th>
-                    <th className="px-2 py-2 text-left font-medium">Asset</th>
-                    <th className="px-2 py-2 text-left font-medium">Tag</th>
-                    <th className="px-2 py-2 text-left font-medium">Serial</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {lineRows.length === 0 ? (
-                    <tr>
-                      <td colSpan={4} className="px-2 py-6 text-center text-muted-foreground">
-                        No return lines found.
-                      </td>
+            {isMobile ? (
+              <div className="space-y-3">
+                {lineRows.length === 0 ? (
+                  <div className="rounded-md border px-3 py-6 text-center text-sm text-muted-foreground">
+                    No return lines found.
+                  </div>
+                ) : (
+                  lineRows.map((line) => (
+                    <div key={line.assetItemId} className="rounded-md border p-3 space-y-2">
+                      <p className="font-medium">{line.assetName}</p>
+                      <p className="text-xs text-muted-foreground break-all">Asset Item ID: {line.assetItemId}</p>
+                      <div className="grid grid-cols-2 gap-2 text-sm">
+                        <div>
+                          <p className="text-xs text-muted-foreground">Tag</p>
+                          <p>{line.tag}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Serial</p>
+                          <p>{line.serialNumber}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[680px] text-sm">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="px-2 py-2 text-left font-medium">Asset Item ID</th>
+                      <th className="px-2 py-2 text-left font-medium">Asset</th>
+                      <th className="px-2 py-2 text-left font-medium">Tag</th>
+                      <th className="px-2 py-2 text-left font-medium">Serial</th>
                     </tr>
-                  ) : (
-                    lineRows.map((line) => (
-                      <tr key={line.assetItemId} className="border-b last:border-0">
-                        <td className="px-2 py-2 font-mono text-xs">{line.assetItemId}</td>
-                        <td className="px-2 py-2">{line.assetName}</td>
-                        <td className="px-2 py-2">{line.tag}</td>
-                        <td className="px-2 py-2">{line.serialNumber}</td>
+                  </thead>
+                  <tbody>
+                    {lineRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="px-2 py-6 text-center text-muted-foreground">
+                          No return lines found.
+                        </td>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+                    ) : (
+                      lineRows.map((line) => (
+                        <tr key={line.assetItemId} className="border-b last:border-0">
+                          <td className="px-2 py-2 font-mono text-xs">{line.assetItemId}</td>
+                          <td className="px-2 py-2">{line.assetName}</td>
+                          <td className="px-2 py-2">{line.tag}</td>
+                          <td className="px-2 py-2">{line.serialNumber}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -284,6 +313,7 @@ export default function ReturnDetail() {
                 type="button"
                 onClick={() => receiveMutation.mutate()}
                 disabled={receiveMutation.isPending}
+                className="w-full sm:w-auto"
               >
                 {receiveMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Receive / Confirm Return
@@ -294,6 +324,7 @@ export default function ReturnDetail() {
               <Button
                 type="button"
                 variant="outline"
+                className="w-full sm:w-auto"
                 onClick={async () => {
                   if (!id) return;
                   try {
@@ -323,6 +354,7 @@ export default function ReturnDetail() {
                   type="button"
                   onClick={() => uploadMutation.mutate()}
                   disabled={uploadMutation.isPending}
+                  className="w-full sm:w-auto"
                 >
                   {uploadMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   Upload Signed Return Receipt
@@ -334,6 +366,7 @@ export default function ReturnDetail() {
               <Button
                 type="button"
                 variant="outline"
+                className="w-full sm:w-auto"
                 onClick={() =>
                   downloadProtectedFile(receiptDocUrl, `signed-return-receipt-${id}.pdf`).catch(
                     (error) => toast.error(error.message || "Failed to download signed return receipt.")

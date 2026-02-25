@@ -3,6 +3,7 @@ import { useLocation } from "react-router-dom";
 import { Sidebar } from "./Sidebar";
 import { Header } from "./Header";
 import { usePageSearch } from "@/contexts/PageSearchContext";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -16,6 +17,7 @@ export function MainLayout({ children, title, description, searchPlaceholder }: 
   const pageSearch = usePageSearch();
   const mainRef = useRef<HTMLElement>(null);
   const [fallbackSearchTerm, setFallbackSearchTerm] = useState("");
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const searchTerm = pageSearch?.term ?? fallbackSearchTerm;
   const setSearchTerm = pageSearch?.setTerm ?? setFallbackSearchTerm;
 
@@ -26,9 +28,20 @@ export function MainLayout({ children, title, description, searchPlaceholder }: 
     }
   }, [location.pathname]);
 
+  useEffect(() => {
+    setMobileNavOpen(false);
+  }, [location.pathname]);
+
   return (
     <div className="h-screen overflow-hidden bg-background flex">
-      <Sidebar />
+      <div className="hidden md:block">
+        <Sidebar />
+      </div>
+      <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
+        <SheetContent side="left" className="w-[88vw] max-w-[22rem] p-0">
+          <Sidebar isMobileDrawer onNavigate={() => setMobileNavOpen(false)} />
+        </SheetContent>
+      </Sheet>
       <div className="flex-1 flex flex-col">
         <Header
           title={title}
@@ -36,10 +49,11 @@ export function MainLayout({ children, title, description, searchPlaceholder }: 
           searchValue={searchTerm}
           onSearchChange={setSearchTerm}
           searchPlaceholder={searchPlaceholder}
+          onMenuClick={() => setMobileNavOpen(true)}
         />
         <main 
           ref={mainRef}
-          className="flex-1 overflow-y-auto overscroll-contain p-8"
+          className="flex-1 overflow-y-auto overscroll-contain p-4 sm:p-6 lg:p-8"
         >
           {children}
         </main>

@@ -30,7 +30,7 @@ export function DateRangeFilter({
   return (
     <Card className="mb-6">
       <CardContent className="pt-6">
-        <div className="flex flex-wrap items-center gap-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-4">
           <div className="flex items-center gap-2">
             <CalendarIcon className="h-5 w-5 text-muted-foreground" />
             <span className="font-medium">Date Range Filter:</span>
@@ -41,7 +41,7 @@ export function DateRangeFilter({
               <Button
                 variant="outline"
                 className={cn(
-                  "w-[180px] justify-start text-left font-normal",
+                  "w-full justify-start text-left font-normal sm:w-[180px]",
                   !startDate && "text-muted-foreground"
                 )}
               >
@@ -60,14 +60,14 @@ export function DateRangeFilter({
             </PopoverContent>
           </Popover>
 
-          <span className="text-muted-foreground">to</span>
+          <span className="hidden text-muted-foreground sm:inline">to</span>
 
           <Popover>
             <PopoverTrigger asChild>
               <Button
                 variant="outline"
                 className={cn(
-                  "w-[180px] justify-start text-left font-normal",
+                  "w-full justify-start text-left font-normal sm:w-[180px]",
                   !endDate && "text-muted-foreground"
                 )}
               >
@@ -87,12 +87,12 @@ export function DateRangeFilter({
           </Popover>
 
           {(startDate || endDate) && onClear && (
-            <Button variant="ghost" size="sm" onClick={onClear}>
+            <Button variant="ghost" size="sm" onClick={onClear} className="w-full sm:w-auto">
               Clear
             </Button>
           )}
 
-          <div className="ml-auto text-sm text-muted-foreground">
+          <div className="text-sm text-muted-foreground sm:ml-auto">
             Showing: <span className="font-medium text-foreground">{rangeText}</span>
           </div>
         </div>
