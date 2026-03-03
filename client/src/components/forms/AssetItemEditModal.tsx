@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/select";
 import { Loader2 } from "lucide-react";
 import { getOfficeHolderId } from "@/lib/assetItemHolder";
+import { SearchableSelect } from "@/components/shared/SearchableSelect";
 
 const assetItemEditSchema = z.object({
   assetId: z.string().min(1, "Asset is required"),
@@ -154,17 +155,14 @@ export function AssetItemEditModal({
             </div>
             <div className="space-y-2">
               <Label>Location *</Label>
-              <Select
+              <SearchableSelect
                 value={form.watch("locationId")}
                 onValueChange={(v) => form.setValue("locationId", v)}
-              >
-                <SelectTrigger><SelectValue placeholder="Select location" /></SelectTrigger>
-                <SelectContent>
-                  {locations.map((loc) => (
-                    <SelectItem key={loc.id} value={loc.id}>{loc.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                placeholder="Select location"
+                searchPlaceholder="Search locations..."
+                emptyText="No locations found."
+                options={locations.map((loc) => ({ value: loc.id, label: loc.name }))}
+              />
               {form.formState.errors.locationId && (
                 <p className="text-sm text-destructive">{form.formState.errors.locationId.message}</p>
               )}

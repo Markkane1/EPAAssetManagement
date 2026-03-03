@@ -28,6 +28,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useConsumableMode } from '@/hooks/useConsumableMode';
 import { filterItemsByMode, filterLocationsByMode } from '@/lib/consumableMode';
 import { ConsumableModeToggle } from '@/components/consumables/ConsumableModeToggle';
+import { SearchableSelect } from '@/components/shared/SearchableSelect';
 
 const returnSchema = z.object({
   fromLocationId: z.string().min(1, 'From location is required'),
@@ -193,14 +194,14 @@ export default function ConsumableReturns() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>From Location *</Label>
-                <Select value={fromLocationId} onValueChange={(v) => form.setValue('fromLocationId', v)}>
-                  <SelectTrigger><SelectValue placeholder="Select lab" /></SelectTrigger>
-                  <SelectContent>
-                    {filteredLocations.map((loc) => (
-                      <SelectItem key={loc.id} value={loc.id}>{loc.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={fromLocationId}
+                  onValueChange={(v) => form.setValue('fromLocationId', v)}
+                  placeholder="Select lab"
+                  searchPlaceholder="Search locations..."
+                  emptyText="No locations found."
+                  options={filteredLocations.map((loc) => ({ value: loc.id, label: loc.name }))}
+                />
               </div>
               <div className="space-y-2">
                 <Label>Destination</Label>

@@ -25,7 +25,7 @@ export function ExportButton({
     try {
       onExportCSV();
       toast.success("CSV export completed");
-    } catch (_error) {
+    } catch {
       toast.error("Failed to export CSV");
     }
   };
@@ -35,7 +35,7 @@ export function ExportButton({
       try {
         onExportJSON();
         toast.success("JSON export completed");
-      } catch (_error) {
+      } catch {
         toast.error("Failed to export JSON");
       }
     }

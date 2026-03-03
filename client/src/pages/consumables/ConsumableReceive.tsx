@@ -19,17 +19,20 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { useConsumableItems } from '@/hooks/useConsumableItems';
-import { useReceiveConsumables } from '@/hooks/useConsumableInventory';
+import { useReceiveConsumables, useReceiveConsumablesOffice } from '@/hooks/useConsumableInventory';
 import { useConsumableUnits } from '@/hooks/useConsumableUnits';
 import { useCategories } from '@/hooks/useCategories';
 import { useProjects } from '@/hooks/useProjects';
 import { useSchemes } from '@/hooks/useSchemes';
 import { useVendors } from '@/hooks/useVendors';
+import { useOffices } from '@/hooks/useOffices';
 import { getCompatibleUnits } from '@/lib/unitUtils';
 import type { Category, ConsumableItem, Project, Scheme, Vendor } from '@/types';
 import { useConsumableMode } from '@/hooks/useConsumableMode';
-import { filterItemsByMode } from '@/lib/consumableMode';
+import { filterConsumableCategoriesByMode, filterItemsByMode } from '@/lib/consumableMode';
 import { ConsumableModeToggle } from '@/components/consumables/ConsumableModeToggle';
+import { useAuth } from '@/contexts/AuthContext';
+import { canAccessPage } from '@/config/pagePermissions';
 
 const receiveSchema = z.object({
   categoryId: z.string().min(1, 'Category is required'),
@@ -111,19 +114,80 @@ function isPdfAttachment(file: File) {
 }
 
 export default function ConsumableReceive() {
+  const { role, isOrgAdmin, locationId } = useAuth();
+  const officeScopedFlow =
+    !isOrgAdmin && canAccessPage({ page: 'office-consumables', role, isOrgAdmin });
   const [itemPickerOpen, setItemPickerOpen] = useState(false);
+  const [targetPickerOpen, setTargetPickerOpen] = useState(false);
+  const [orgAdminReceiveTarget, setOrgAdminReceiveTarget] = useState('STORE:HEAD_OFFICE_STORE');
   const { data: items } = useConsumableItems();
   const { data: categories } = useCategories({ assetType: 'CONSUMABLE' });
-  const { data: vendors } = useVendors();
   const { data: projects } = useProjects();
   const { data: schemes } = useSchemes();
   const { data: units } = useConsumableUnits();
+  const { data: offices } = useOffices({ isActive: true });
+  const { data: labOffices } = useOffices({ capability: 'chemicals', isActive: true });
   const { mode, setMode } = useConsumableMode();
-  const receiveMutation = useReceiveConsumables();
+  const centralReceiveMutation = useReceiveConsumables();
+  const officeReceiveMutation = useReceiveConsumablesOffice();
+  const activeReceiveTarget = useMemo(() => {
+    if (officeScopedFlow) {
+      return {
+        holderType: 'OFFICE' as const,
+        holderId: String(locationId || '').trim(),
+      };
+    }
+    const [holderTypeToken, holderIdToken] = orgAdminReceiveTarget.split(':');
+    if (holderTypeToken === 'OFFICE' && holderIdToken) {
+      return {
+        holderType: 'OFFICE' as const,
+        holderId: holderIdToken,
+      };
+    }
+    return {
+      holderType: 'STORE' as const,
+      holderId: 'HEAD_OFFICE_STORE',
+    };
+  }, [locationId, officeScopedFlow, orgAdminReceiveTarget]);
+  const officeReceivingFlow = activeReceiveTarget.holderType === 'OFFICE';
+  const selectedReceivingOfficeId = officeReceivingFlow ? activeReceiveTarget.holderId : '';
+  const { data: vendors } = useVendors(selectedReceivingOfficeId || undefined);
 
   const [containers, setContainers] = useState<ContainerInput[]>([]);
   const [handoverDocumentationFile, setHandoverDocumentationFile] = useState<File | null>(null);
   const [handoverDocumentationError, setHandoverDocumentationError] = useState<string | null>(null);
+  const availableLabOffices = useMemo(
+    () => (labOffices || []).filter((office) => office.is_active !== false),
+    [labOffices]
+  );
+  const receiveTargetOptions = useMemo(
+    () => [
+      { value: 'STORE:HEAD_OFFICE_STORE', label: 'Central Store' },
+      ...availableLabOffices.map((office) => ({
+        value: `OFFICE:${office.id}`,
+        label: office.name,
+      })),
+    ],
+    [availableLabOffices]
+  );
+  const selectedReceiveTargetLabel = useMemo(
+    () =>
+      receiveTargetOptions.find((option) => option.value === orgAdminReceiveTarget)?.label ||
+      'Select receiving target',
+    [orgAdminReceiveTarget, receiveTargetOptions]
+  );
+  const userLocationName = useMemo(
+    () => (offices || []).find((office) => office.id === locationId)?.name || 'Your Office',
+    [offices, locationId]
+  );
+  const selectedReceivingOfficeName = useMemo(
+    () =>
+      (offices || []).find((office) => office.id === selectedReceivingOfficeId)?.name ||
+      userLocationName,
+    [offices, selectedReceivingOfficeId, userLocationName]
+  );
+  const receivingTargetLabel = officeReceivingFlow ? selectedReceivingOfficeName : 'Central Store';
+  const receiveMutation = officeReceivingFlow ? officeReceiveMutation : centralReceiveMutation;
 
   const form = useForm<ReceiveFormData>({
     resolver: zodResolver(receiveSchema),
@@ -144,10 +208,13 @@ export default function ConsumableReceive() {
     },
   });
 
-  const filteredCategories = useMemo(() => categories || [], [categories]);
+  const filteredCategories = useMemo(
+    () => filterConsumableCategoriesByMode(categories || [], mode),
+    [categories, mode]
+  );
   const modeFilteredItems = useMemo(() => filterItemsByMode(items || [], mode), [items, mode]);
   const selectedCategoryId = form.watch('categoryId');
-  const selectedSource = form.watch('source');
+  const selectedSource = officeReceivingFlow ? 'procurement' : form.watch('source');
   const selectedProjectId = form.watch('projectId');
   const filteredItems = useMemo(
     () => modeFilteredItems.filter((item) => item.category_id === selectedCategoryId),
@@ -169,6 +236,36 @@ export default function ConsumableReceive() {
   const selectedItem: ConsumableItem | undefined = useMemo(() => {
     return filteredItems.find((item) => item.id === selectedItemId);
   }, [filteredItems, selectedItemId]);
+
+  useEffect(() => {
+    if (officeReceivingFlow) {
+      form.setValue('source', 'procurement');
+      form.setValue('projectId', '');
+      form.setValue('schemeId', '');
+    }
+  }, [officeReceivingFlow, form]);
+
+  useEffect(() => {
+    if (officeScopedFlow || !isOrgAdmin) return;
+    if (!orgAdminReceiveTarget.startsWith('OFFICE:')) return;
+    const officeId = orgAdminReceiveTarget.slice('OFFICE:'.length);
+    if (!officeId) {
+      setOrgAdminReceiveTarget('STORE:HEAD_OFFICE_STORE');
+      return;
+    }
+    if (!availableLabOffices.some((office) => office.id === officeId)) {
+      setOrgAdminReceiveTarget('STORE:HEAD_OFFICE_STORE');
+    }
+  }, [availableLabOffices, isOrgAdmin, officeScopedFlow, orgAdminReceiveTarget]);
+
+  useEffect(() => {
+    const currentVendorId = form.getValues('vendorId');
+    if (!currentVendorId) return;
+    const exists = (vendors || []).some((vendor) => getEntityId(vendor) === currentVendorId);
+    if (!exists) {
+      form.setValue('vendorId', '');
+    }
+  }, [form, vendors]);
 
   useEffect(() => {
     const currentItem = form.getValues('itemId');
@@ -255,25 +352,28 @@ export default function ConsumableReceive() {
   };
 
   const handleSubmit = async (data: ReceiveFormData) => {
-    const requiresContainer = Boolean(selectedItem?.requires_container_tracking || selectedItem?.is_controlled);
+    const effectiveSource = officeReceivingFlow ? 'procurement' : data.source;
+    const requiresContainer = Boolean(
+      selectedItem?.is_chemical || selectedItem?.requires_container_tracking || selectedItem?.is_controlled
+    );
     if (requiresContainer && containers.length === 0) {
       form.setError('itemId', { message: 'This item requires container entries' });
       return;
     }
 
     const payload: any = {
-      holderType: 'STORE',
-      holderId: 'HEAD_OFFICE_STORE',
+      holderType: activeReceiveTarget.holderType,
+      holderId: activeReceiveTarget.holderId,
       categoryId: data.categoryId,
       itemId: data.itemId,
         lot: {
           lotNumber: data.lotNumber,
           receivedDate: data.receivedDate,
           expiryDate: data.expiryDate,
-        source: data.source,
-        vendorId: data.source === 'procurement' ? data.vendorId || undefined : undefined,
-        projectId: data.source === 'project' ? data.projectId || undefined : undefined,
-        schemeId: data.source === 'project' ? data.schemeId || undefined : undefined,
+        source: effectiveSource,
+        vendorId: effectiveSource === 'procurement' ? data.vendorId || undefined : undefined,
+        projectId: effectiveSource === 'project' ? data.projectId || undefined : undefined,
+        schemeId: effectiveSource === 'project' ? data.schemeId || undefined : undefined,
       },
       handoverDocumentationFile,
       qty: data.qty,
@@ -311,10 +411,21 @@ export default function ConsumableReceive() {
   };
 
   return (
-    <MainLayout title="Lot Receiving" description="Receive consumables into Central Store">
+    <MainLayout
+      title="Stock Intake"
+      description={
+        officeReceivingFlow
+          ? `Receive consumables into ${receivingTargetLabel}`
+          : 'Receive consumables into Central Store'
+      }
+    >
       <PageHeader
-        title="Lot Receiving"
-        description="Receive lots into the Central Store"
+        title="Stock Intake"
+        description={
+          officeReceivingFlow
+            ? `Receive procurement lots directly into ${receivingTargetLabel}`
+            : 'Receive consumable and lab lots into the Central Store'
+        }
         extra={<ConsumableModeToggle mode={mode} onChange={setMode} />}
       />
 
@@ -323,8 +434,46 @@ export default function ConsumableReceive() {
           <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Receiving Holder</Label>
-                <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm">Central Storage</div>
+                <Label>
+                  {isOrgAdmin && !officeScopedFlow
+                    ? 'Receiving Target'
+                    : officeReceivingFlow
+                      ? 'Receiving Office'
+                      : 'Receiving Holder'}
+                </Label>
+                {isOrgAdmin && !officeScopedFlow ? (
+                  <Popover open={targetPickerOpen} onOpenChange={setTargetPickerOpen}>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" role="combobox" className="w-full justify-between">
+                        {selectedReceiveTargetLabel}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                      <Command>
+                        <CommandInput placeholder="Search receiving target..." />
+                        <CommandList>
+                          <CommandEmpty>No target found.</CommandEmpty>
+                          {receiveTargetOptions.map((option) => (
+                            <CommandItem
+                              key={option.value}
+                              value={`${option.label} ${option.value}`}
+                              onSelect={() => {
+                                setOrgAdminReceiveTarget(option.value);
+                                setTargetPickerOpen(false);
+                              }}
+                            >
+                              {option.label}
+                            </CommandItem>
+                          ))}
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                ) : (
+                  <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm">
+                    {officeReceivingFlow ? userLocationName : 'Central Store'}
+                  </div>
+                )}
               </div>
               <div className="space-y-2">
                 <Label>Category *</Label>
@@ -380,25 +529,31 @@ export default function ConsumableReceive() {
               </div>
               <div className="space-y-2">
                 <Label>Source *</Label>
-                <Select
-                  value={selectedSource}
-                  onValueChange={(v) => {
-                    const source = v as 'procurement' | 'project';
-                    form.setValue('source', source);
-                    if (source === 'procurement') {
-                      form.setValue('projectId', '');
-                      form.setValue('schemeId', '');
-                    } else {
-                      form.setValue('vendorId', '');
-                    }
-                  }}
-                >
-                  <SelectTrigger><SelectValue placeholder="Select source" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="procurement">Procurement</SelectItem>
-                    <SelectItem value="project">Project Handover</SelectItem>
-                  </SelectContent>
-                </Select>
+                {officeReceivingFlow ? (
+                  <div className="rounded-md border bg-muted/50 px-3 py-2 text-sm text-muted-foreground cursor-not-allowed">
+                    Procurement Only
+                  </div>
+                ) : (
+                  <Select
+                    value={selectedSource}
+                    onValueChange={(v) => {
+                      const source = v as 'procurement' | 'project';
+                      form.setValue('source', source);
+                      if (source === 'procurement') {
+                        form.setValue('projectId', '');
+                        form.setValue('schemeId', '');
+                      } else {
+                        form.setValue('vendorId', '');
+                      }
+                    }}
+                  >
+                    <SelectTrigger><SelectValue placeholder="Select source" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="procurement">Procurement</SelectItem>
+                      <SelectItem value="project">Project Handover</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
               </div>
             </div>
 
@@ -554,12 +709,14 @@ export default function ConsumableReceive() {
               </div>
             </div>
 
-            {(selectedItem?.requires_container_tracking || selectedItem?.is_controlled) && (
+            {(selectedItem?.is_chemical || selectedItem?.requires_container_tracking || selectedItem?.is_controlled) && (
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <div>
                     <h4 className="font-medium">Container Details</h4>
-                    <p className="text-sm text-muted-foreground">Controlled items require container tracking.</p>
+                    <p className="text-sm text-muted-foreground">
+                      Chemical and controlled items require container tracking.
+                    </p>
                   </div>
                   <Button type="button" variant="outline" size="sm" onClick={addContainer}>
                     <Plus className="h-4 w-4 mr-2" /> Add Container

@@ -2,14 +2,17 @@ import mongoose, { Schema } from 'mongoose';
 import { baseSchemaOptions } from './base';
 
 const REQUISITION_STATUSES = [
-  'PENDING_VERIFICATION',
-  'VERIFIED_APPROVED',
-  'IN_FULFILLMENT',
+  'SUBMITTED',
+  'APPROVED',
   'PARTIALLY_FULFILLED',
-  'FULFILLED_PENDING_SIGNATURE',
   'FULFILLED',
   'REJECTED_INVALID',
   'CANCELLED',
+  // Legacy statuses kept for backward compatibility.
+  'PENDING_VERIFICATION',
+  'VERIFIED_APPROVED',
+  'IN_FULFILLMENT',
+  'FULFILLED_PENDING_SIGNATURE',
 ] as const;
 
 const REQUISITION_TARGET_TYPES = ['EMPLOYEE', 'SUB_LOCATION'] as const;
@@ -48,7 +51,7 @@ const RequisitionSchema = new Schema(
     attachment_mime_type: { type: String, default: null },
     attachment_size_bytes: { type: Number, default: null },
     attachment_path: { type: String, default: null },
-    status: { type: String, enum: REQUISITION_STATUSES, default: 'PENDING_VERIFICATION' },
+    status: { type: String, enum: REQUISITION_STATUSES, default: 'SUBMITTED' },
     remarks: { type: String, default: null },
   },
   baseSchemaOptions
@@ -78,75 +81,6 @@ RequisitionSchema.index({ issuing_office_id: 1, status: 1, created_at: -1 });
 RequisitionSchema.index({ record_id: 1 });
 RequisitionSchema.index({ signed_issuance_document_id: 1 });
 RequisitionSchema.index({ created_at: -1 });
-
-function ensureFulfilledRequiresSignedMetadata(target: {
-  status?: unknown;
-  signed_issuance_document_id?: unknown;
-  signed_issuance_uploaded_at?: unknown;
-}) {
-  if (target.status !== 'FULFILLED') return;
-  if (!target.signed_issuance_document_id || !target.signed_issuance_uploaded_at) {
-    throw new Error('Cannot set requisition status to FULFILLED without signed issuance upload');
-  }
-}
-
-RequisitionSchema.pre('save', function (next) {
-  try {
-    if (this.isModified('status') || this.status === 'FULFILLED') {
-      ensureFulfilledRequiresSignedMetadata({
-        status: this.status,
-        signed_issuance_document_id: this.signed_issuance_document_id,
-        signed_issuance_uploaded_at: this.signed_issuance_uploaded_at,
-      });
-    }
-    next();
-  } catch (error) {
-    next(error as Error);
-  }
-});
-
-RequisitionSchema.pre('findOneAndUpdate', function (next) {
-  try {
-    const update = (this.getUpdate() || {}) as Record<string, any>;
-    const set = (update.$set || {}) as Record<string, any>;
-    const status = set.status ?? update.status;
-    if (status === 'FULFILLED') {
-      const signedDocId = set.signed_issuance_document_id ?? update.signed_issuance_document_id;
-      const signedAt = set.signed_issuance_uploaded_at ?? update.signed_issuance_uploaded_at;
-      ensureFulfilledRequiresSignedMetadata({
-        status,
-        signed_issuance_document_id: signedDocId,
-        signed_issuance_uploaded_at: signedAt,
-      });
-    }
-    next();
-  } catch (error) {
-    next(error as Error);
-  }
-});
-
-function guardStatusUpdate(this: any, next: (error?: Error) => void) {
-  try {
-    const update = (this.getUpdate() || {}) as Record<string, any>;
-    const set = (update.$set || {}) as Record<string, any>;
-    const status = set.status ?? update.status;
-    if (status === 'FULFILLED') {
-      const signedDocId = set.signed_issuance_document_id ?? update.signed_issuance_document_id;
-      const signedAt = set.signed_issuance_uploaded_at ?? update.signed_issuance_uploaded_at;
-      ensureFulfilledRequiresSignedMetadata({
-        status,
-        signed_issuance_document_id: signedDocId,
-        signed_issuance_uploaded_at: signedAt,
-      });
-    }
-    next();
-  } catch (error) {
-    next(error as Error);
-  }
-}
-
-RequisitionSchema.pre('updateOne', guardStatusUpdate);
-RequisitionSchema.pre('updateMany', guardStatusUpdate);
 
 export type RequisitionDoc = mongoose.InferSchemaType<typeof RequisitionSchema>;
 

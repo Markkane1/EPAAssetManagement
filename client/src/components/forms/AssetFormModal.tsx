@@ -218,7 +218,7 @@ export function AssetFormModal({ open, onOpenChange, asset, categories, vendors,
       setAttachmentFile(null);
       setAttachmentError(null);
     }
-  }, [asset, open]);
+  }, [asset, open, form]);
 
   const selectedSource = form.watch("assetSource");
   const selectedProjectId = form.watch("projectId");

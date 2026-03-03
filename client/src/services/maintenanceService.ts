@@ -8,8 +8,8 @@ export interface MaintenanceCreateDto {
   scheduledDate: string;
   cost?: number;
   performedBy?: string;
-  performedByVendorId: string;
-  estimateDocumentId: string;
+  performedByVendorId?: string;
+  estimateDocumentId?: string;
   notes?: string;
 }
 

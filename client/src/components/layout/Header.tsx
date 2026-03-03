@@ -79,7 +79,10 @@ export function Header({
     scopeKey: user?.id || "anon",
     enabled: Boolean(user?.id),
   });
-  const notifications = notificationResponse?.data || [];
+  const notifications = useMemo(
+    () => notificationResponse?.data || [],
+    [notificationResponse?.data]
+  );
   const markAllNotificationsRead = useMarkAllNotificationsRead();
 
   const unreadCount = useMemo(() => {

@@ -14,15 +14,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Loader2 } from "lucide-react";
 import { Location, Vendor } from "@/types";
+import { SearchableSelect } from "@/components/shared/SearchableSelect";
 
 const vendorSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(100),
@@ -120,18 +114,15 @@ export function VendorFormModal({
           {isOrgAdmin && (
             <div className="space-y-2">
               <Label htmlFor="officeId">Office *</Label>
-              <Select value={form.watch("officeId") || ""} onValueChange={(value) => form.setValue("officeId", value)}>
-                <SelectTrigger id="officeId">
-                  <SelectValue placeholder="Select office" />
-                </SelectTrigger>
-                <SelectContent>
-                  {locations.map((location) => (
-                    <SelectItem key={location.id} value={location.id}>
-                      {location.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                id="officeId"
+                value={form.watch("officeId") || ""}
+                onValueChange={(value) => form.setValue("officeId", value)}
+                placeholder="Select office"
+                searchPlaceholder="Search offices..."
+                emptyText="No offices found."
+                options={locations.map((location) => ({ value: location.id, label: location.name }))}
+              />
               {form.formState.errors.officeId && (
                 <p className="text-sm text-destructive">{form.formState.errors.officeId.message}</p>
               )}

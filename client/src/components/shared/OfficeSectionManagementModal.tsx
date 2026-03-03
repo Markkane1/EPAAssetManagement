@@ -15,13 +15,6 @@ import { DataTable } from '@/components/shared/DataTable';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -36,6 +29,7 @@ import {
   useOfficeSubLocations,
   useUpdateOfficeSubLocation,
 } from '@/hooks/useOfficeSubLocations';
+import { SearchableSelect } from '@/components/shared/SearchableSelect';
 
 const ALL_VALUE = '__all__';
 
@@ -84,18 +78,15 @@ function SectionFormModal(props: {
         <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
           <div className="space-y-2">
             <Label>Office *</Label>
-            <Select
+            <SearchableSelect
               value={form.watch('officeId')}
               onValueChange={(value) => form.setValue('officeId', value)}
               disabled={Boolean(section)}
-            >
-              <SelectTrigger><SelectValue placeholder="Select office" /></SelectTrigger>
-              <SelectContent>
-                {offices.map((office) => (
-                  <SelectItem key={office.id} value={office.id}>{office.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              placeholder="Select office"
+              searchPlaceholder="Search offices..."
+              emptyText="No offices found."
+              options={offices.map((office) => ({ value: office.id, label: office.name }))}
+            />
             {form.formState.errors.officeId && (
               <p className="text-sm text-destructive">{form.formState.errors.officeId.message}</p>
             )}
@@ -218,15 +209,17 @@ export function OfficeSectionManagementModal({ open, onOpenChange, offices }: Of
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div className="space-y-2 w-full sm:w-[360px]">
             <Label>Office Filter</Label>
-            <Select value={selectedOfficeId} onValueChange={setSelectedOfficeId}>
-              <SelectTrigger><SelectValue placeholder="All offices" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ALL_VALUE}>All offices</SelectItem>
-                {offices.map((office) => (
-                  <SelectItem key={office.id} value={office.id}>{office.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              value={selectedOfficeId}
+              onValueChange={setSelectedOfficeId}
+              placeholder="All offices"
+              searchPlaceholder="Search offices..."
+              emptyText="No offices found."
+              options={[
+                { value: ALL_VALUE, label: 'All offices' },
+                ...offices.map((office) => ({ value: office.id, label: office.name })),
+              ]}
+            />
           </div>
           <Button
             onClick={() => {
@@ -263,4 +256,3 @@ export function OfficeSectionManagementModal({ open, onOpenChange, offices }: Of
     </Dialog>
   );
 }
-

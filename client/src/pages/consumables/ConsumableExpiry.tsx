@@ -20,6 +20,7 @@ import type { ConsumableExpiryRow } from '@/types';
 import { useConsumableMode } from '@/hooks/useConsumableMode';
 import { filterItemsByMode, filterLocationsByMode } from '@/lib/consumableMode';
 import { ConsumableModeToggle } from '@/components/consumables/ConsumableModeToggle';
+import { SearchableSelect } from '@/components/shared/SearchableSelect';
 
 export default function ConsumableExpiry() {
   const ALL_VALUE = '__all__';
@@ -122,15 +123,17 @@ export default function ConsumableExpiry() {
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Location</label>
-              <Select value={locationId} onValueChange={setLocationId}>
-                <SelectTrigger><SelectValue placeholder="All locations" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ALL_VALUE}>All locations</SelectItem>
-                  {filteredLocations.map((loc) => (
-                    <SelectItem key={loc.id} value={loc.id}>{loc.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={locationId}
+                onValueChange={setLocationId}
+                placeholder="All locations"
+                searchPlaceholder="Search locations..."
+                emptyText="No locations found."
+                options={[
+                  { value: ALL_VALUE, label: 'All locations' },
+                  ...filteredLocations.map((loc) => ({ value: loc.id, label: loc.name })),
+                ]}
+              />
             </div>
           </div>
         </CardContent>

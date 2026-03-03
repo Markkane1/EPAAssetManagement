@@ -1,3 +1,6 @@
+import { useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { StatsCard } from "@/components/dashboard/StatsCard";
 import { RecentActivity } from "@/components/dashboard/RecentActivity";
@@ -6,37 +9,173 @@ import { AssetStatusChart } from "@/components/dashboard/AssetStatusChart";
 import { PendingPurchaseOrders } from "@/components/dashboard/PendingPurchaseOrders";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { 
-  Package, 
-  PackageOpen, 
-  UserCheck, 
-  Wrench, 
-  DollarSign, 
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  Package,
+  PackageOpen,
+  UserCheck,
+  Wrench,
+  DollarSign,
   AlertTriangle,
   ArrowRight,
   TrendingUp,
-  Loader2
+  Loader2,
+  ClipboardList,
+  RotateCcw,
+  AlertCircle,
 } from "lucide-react";
 import { StatusBadge } from "@/components/shared/StatusBadge";
-import { Link } from "react-router-dom";
 import { useDashboardStats } from "@/hooks/useDashboard";
 import { useAssetItems } from "@/hooks/useAssetItems";
 import { useLocations } from "@/hooks/useLocations";
-import { useMemo } from "react";
-import { getOfficeHolderId, isStoreHolder } from "@/lib/assetItemHolder";
+import { useAssignments } from "@/hooks/useAssignments";
+import { useEmployees } from "@/hooks/useEmployees";
+import { useAuth } from "@/contexts/AuthContext";
 import { usePageSearch } from "@/contexts/PageSearchContext";
+import { getOfficeHolderId, isStoreHolder } from "@/lib/assetItemHolder";
+import { requisitionService } from "@/services/requisitionService";
+import { returnRequestService } from "@/services/returnRequestService";
+import { consumableInventoryService } from "@/services/consumableInventoryService";
 
 function safeId(value: unknown): string | null {
   const normalized = String(value ?? "").trim();
   return normalized ? normalized : null;
 }
 
+const OPEN_REQUISITION_STATUSES = new Set([
+  "SUBMITTED",
+  "PENDING_VERIFICATION",
+  "APPROVED",
+  "VERIFIED_APPROVED",
+  "IN_FULFILLMENT",
+  "PARTIALLY_FULFILLED",
+]);
+
 export default function Dashboard() {
+  const { role, user } = useAuth();
+  const isEmployee = role === "employee";
   const { data: dashboardStats, isLoading: statsLoading } = useDashboardStats();
   const { data: assetItems } = useAssetItems();
   const { data: locations } = useLocations();
+  const { data: employees, isLoading: employeesLoading } = useEmployees();
+  const { data: assignments, isLoading: assignmentsLoading } = useAssignments();
   const pageSearch = usePageSearch();
   const searchTerm = (pageSearch?.term || "").trim().toLowerCase();
+
+  const employeeRequisitionsQuery = useQuery({
+    queryKey: ["dashboard", "employee", "requisitions"],
+    queryFn: () => requisitionService.list({ limit: 200 }),
+    enabled: isEmployee,
+  });
+  const employeeReturnRequestsQuery = useQuery({
+    queryKey: ["dashboard", "employee", "returns"],
+    queryFn: () => returnRequestService.list({ limit: 200 }),
+    enabled: isEmployee,
+  });
+
+  const employeeList = useMemo(() => employees || [], [employees]);
+  const assignmentList = useMemo(() => assignments || [], [assignments]);
+  const currentEmployee = useMemo(() => {
+    const userId = safeId(user?.id);
+    const userEmail = String(user?.email || "").toLowerCase();
+    return (
+      employeeList.find((entry) => safeId((entry as Record<string, unknown>).user_id) === userId) ||
+      employeeList.find((entry) => String((entry as Record<string, unknown>).email || "").toLowerCase() === userEmail) ||
+      null
+    );
+  }, [employeeList, user?.email, user?.id]);
+  const currentEmployeeId = safeId((currentEmployee as Record<string, unknown> | null)?._id) || safeId((currentEmployee as Record<string, unknown> | null)?.id);
+
+  const employeeConsumableBalancesQuery = useQuery({
+    queryKey: ["dashboard", "employee", "consumable-balances", currentEmployeeId],
+    queryFn: () =>
+      consumableInventoryService.getBalances({
+        holderType: "EMPLOYEE",
+        holderId: String(currentEmployeeId),
+      }),
+    enabled: isEmployee && Boolean(currentEmployeeId),
+  });
+
+  const employeeAssignments = useMemo(() => {
+    if (!isEmployee || !currentEmployeeId) return [];
+    return assignmentList.filter((assignment) => {
+      const employeeId = safeId((assignment as Record<string, unknown>).employee_id);
+      const targetEmployeeId = safeId((assignment as Record<string, unknown>).assigned_to_id);
+      const targetType = String((assignment as Record<string, unknown>).assigned_to_type || "").toUpperCase();
+      return employeeId === currentEmployeeId || (targetType === "EMPLOYEE" && targetEmployeeId === currentEmployeeId);
+    });
+  }, [assignmentList, currentEmployeeId, isEmployee]);
+
+  const employeeActiveAssignments = useMemo(
+    () =>
+      employeeAssignments.filter((assignment) => {
+        const status = String((assignment as Record<string, unknown>).status || "").toUpperCase();
+        return status === "ISSUED" || status === "RETURN_REQUESTED" || Boolean((assignment as Record<string, unknown>).is_active);
+      }),
+    [employeeAssignments]
+  );
+  const employeeReturnRequestedCount = useMemo(
+    () =>
+      employeeAssignments.filter(
+        (assignment) => String((assignment as Record<string, unknown>).status || "").toUpperCase() === "RETURN_REQUESTED"
+      ).length,
+    [employeeAssignments]
+  );
+
+  const employeeConsumableBalances = useMemo(
+    () => employeeConsumableBalancesQuery.data || [],
+    [employeeConsumableBalancesQuery.data]
+  );
+  const employeeConsumableLines = useMemo(
+    () =>
+      employeeConsumableBalances.filter(
+        (balance) =>
+          String((balance as Record<string, unknown>).holder_type || "").toUpperCase() === "EMPLOYEE" &&
+          Number((balance as Record<string, unknown>).qty_on_hand_base || 0) > 0
+      ),
+    [employeeConsumableBalances]
+  );
+  const employeeConsumableQtyTotal = useMemo(
+    () =>
+      employeeConsumableLines.reduce(
+        (sum, row) => sum + Number((row as Record<string, unknown>).qty_on_hand_base || 0),
+        0
+      ),
+    [employeeConsumableLines]
+  );
+
+  const employeeRequisitions = useMemo(
+    () => employeeRequisitionsQuery.data?.data || [],
+    [employeeRequisitionsQuery.data]
+  );
+  const employeeOpenRequisitionsCount = useMemo(
+    () =>
+      employeeRequisitions.filter((row) =>
+        OPEN_REQUISITION_STATUSES.has(String((row as Record<string, unknown>).status || "").toUpperCase())
+      ).length,
+    [employeeRequisitions]
+  );
+
+  const employeeReturnRequests = useMemo(
+    () => employeeReturnRequestsQuery.data?.data || [],
+    [employeeReturnRequestsQuery.data]
+  );
+  const employeeOpenReturnsCount = useMemo(
+    () =>
+      employeeReturnRequests.filter((row) => {
+        const status = String((row as Record<string, unknown>).status || "").toUpperCase();
+        return status === "SUBMITTED" || status === "RECEIVED_CONFIRMED";
+      }).length,
+    [employeeReturnRequests]
+  );
+
+  const employeeLoading =
+    isEmployee &&
+    (employeesLoading ||
+      assignmentsLoading ||
+      employeeRequisitionsQuery.isLoading ||
+      employeeReturnRequestsQuery.isLoading ||
+      employeeConsumableBalancesQuery.isLoading);
 
   const stats = dashboardStats || {
     totalAssets: 0,
@@ -89,6 +228,115 @@ export default function Dashboard() {
     [locationList, searchTerm]
   );
 
+  if (employeeLoading) {
+    return (
+      <MainLayout title="Dashboard" description="Overview of your services and assigned assets">
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      </MainLayout>
+    );
+  }
+
+  if (isEmployee) {
+    return (
+      <MainLayout title="Dashboard" description="Overview of your services and assigned assets">
+        {!currentEmployeeId && (
+          <Alert variant="destructive" className="mb-6">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Employee mapping missing</AlertTitle>
+            <AlertDescription>
+              Your login is not linked to an employee profile. Contact your administrator.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          <StatsCard
+            title="Assigned Moveable"
+            value={employeeActiveAssignments.length}
+            subtitle="Currently issued to you"
+            icon={Package}
+            variant="primary"
+          />
+          <StatsCard
+            title="Consumable Lines"
+            value={employeeConsumableLines.length}
+            subtitle={`${employeeConsumableQtyTotal.toLocaleString()} total qty on hand`}
+            icon={PackageOpen}
+            variant="info"
+          />
+          <StatsCard
+            title="Open Requisitions"
+            value={employeeOpenRequisitionsCount}
+            subtitle="Pending approval/fulfillment"
+            icon={ClipboardList}
+            variant="warning"
+          />
+          <StatsCard
+            title="Open Return Requests"
+            value={employeeOpenReturnsCount}
+            subtitle={`${employeeReturnRequestedCount} assignment return requested`}
+            icon={RotateCcw}
+            variant="success"
+          />
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+          <Card>
+            <CardHeader>
+              <CardTitle>Quick Actions</CardTitle>
+            </CardHeader>
+            <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Button asChild variant="outline">
+                <Link to="/my-assets">My Assets</Link>
+              </Button>
+              <Button asChild variant="outline">
+                <Link to="/requisitions">My Requisitions</Link>
+              </Button>
+              <Button asChild variant="outline">
+                <Link to="/returns">My Return Requests</Link>
+              </Button>
+              <Button asChild variant="outline">
+                <Link to="/consumables/consume">Consumable Consumption</Link>
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Recent Assignment Records</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {employeeAssignments.slice(0, 5).map((assignment, index) => {
+                const status = String((assignment as Record<string, unknown>).status || "UNKNOWN");
+                const assignedDate = String((assignment as Record<string, unknown>).assigned_date || "");
+                const key = safeId((assignment as Record<string, unknown>).id) || safeId((assignment as Record<string, unknown>)._id) || `employee-assignment-${index}`;
+                return (
+                  <div
+                    key={key}
+                    className="flex items-center justify-between p-3 rounded-lg bg-muted/30"
+                  >
+                    <div>
+                      <p className="text-sm font-medium">Assignment {key.slice(-8)}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {assignedDate ? new Date(assignedDate).toLocaleDateString() : "Date N/A"}
+                      </p>
+                    </div>
+                    <StatusBadge status={status} />
+                  </div>
+                );
+              })}
+              {employeeAssignments.length === 0 && (
+                <p className="text-sm text-muted-foreground">No assignment records yet.</p>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </MainLayout>
+    );
+  }
+
   if (statsLoading) {
     return (
       <MainLayout title="Dashboard" description="Overview of your asset management">
@@ -101,7 +349,6 @@ export default function Dashboard() {
 
   return (
     <MainLayout title="Dashboard" description="Overview of your asset management">
-      {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         <StatsCard
           title="Total Assets"
@@ -134,7 +381,6 @@ export default function Dashboard() {
         />
       </div>
 
-      {/* Secondary Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <StatsCard
           title="Total Asset Value"
@@ -158,7 +404,6 @@ export default function Dashboard() {
         />
       </div>
 
-      {/* Charts & Activity */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
         <div className="lg:col-span-1">
           <AssetStatusChart />
@@ -171,14 +416,11 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Purchase Orders Widget */}
       <div className="mb-8">
         <PendingPurchaseOrders />
       </div>
 
-      {/* Quick Access Tables */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Recent Asset Items */}
         <Card className="animate-fade-in">
           <CardHeader className="flex flex-row items-center justify-between pb-3">
             <CardTitle className="text-lg font-semibold">Recent Asset Items</CardTitle>
@@ -215,7 +457,6 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        {/* Locations Overview */}
         <Card className="animate-fade-in">
           <CardHeader className="flex flex-row items-center justify-between pb-3">
             <CardTitle className="text-lg font-semibold">Locations Overview</CardTitle>

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery } from "@tanstack/react-query";
@@ -42,7 +42,7 @@ const maintenanceSchema = z.object({
   description: z.string().min(1, "Description is required").max(500),
   scheduledDate: z.string().min(1, "Scheduled date is required"),
   cost: z.coerce.number().min(0, "Cost must be positive").optional(),
-  performedByVendorId: z.string().min(1, "Performed by vendor is required"),
+  performedByVendorId: z.string().optional(),
   notes: z.string().max(500).optional(),
 });
 
@@ -58,6 +58,7 @@ interface MaintenanceFormModalProps {
   maintenance?: MaintenanceRecord | null;
   assetItems: AssetItem[];
   assets: Asset[];
+  isEmployeeRequest?: boolean;
   onSubmit: (data: MaintenanceFormSubmitData) => Promise<void>;
 }
 
@@ -67,6 +68,7 @@ export function MaintenanceFormModal({
   maintenance,
   assetItems,
   assets,
+  isEmployeeRequest = false,
   onSubmit,
 }: MaintenanceFormModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -120,7 +122,9 @@ export function MaintenanceFormModal({
     setEstimateError(null);
   }, [maintenance, form]);
 
-  const officeAssetItems = assetItems.filter((item) => Boolean(getOfficeHolderId(item)));
+  const officeAssetItems = isEmployeeRequest
+    ? assetItems
+    : assetItems.filter((item) => Boolean(getOfficeHolderId(item)));
   const selectedAssetItem = officeAssetItems.find((item) => item.id === form.watch("assetItemId"));
   const selectedOfficeId = selectedAssetItem ? getOfficeHolderId(selectedAssetItem) : null;
   const selectedVendorId = form.watch("performedByVendorId");
@@ -131,7 +135,7 @@ export function MaintenanceFormModal({
     enabled: Boolean(selectedOfficeId),
     staleTime: 30_000,
   });
-  const vendorList = vendorsData || [];
+  const vendorList = useMemo(() => vendorsData || [], [vendorsData]);
   const selectedVendor = vendorList.find((vendor) => vendor.id === selectedVendorId);
 
   useEffect(() => {
@@ -145,7 +149,7 @@ export function MaintenanceFormModal({
   }, [form, selectedOfficeId, selectedVendorId, vendorList]);
 
   const handleSubmit = async (data: MaintenanceFormData) => {
-    if (!isEditing) {
+    if (!isEmployeeRequest && !isEditing) {
       if (!estimateFile) {
         setEstimateError("Estimate PDF is required");
         return;
@@ -156,14 +160,19 @@ export function MaintenanceFormModal({
         return;
       }
     }
+    if (!isEmployeeRequest && !data.performedByVendorId) {
+      form.setError("performedByVendorId", { message: "Performed by vendor is required" });
+      return;
+    }
 
     setIsSubmitting(true);
     try {
       const resolvedVendor = vendorList.find((vendor) => vendor.id === data.performedByVendorId);
       await onSubmit({
         ...data,
-        performedBy: resolvedVendor?.name || "",
-        estimateFile: !isEditing ? estimateFile : null,
+        performedByVendorId: isEmployeeRequest ? undefined : data.performedByVendorId,
+        performedBy: isEmployeeRequest ? undefined : resolvedVendor?.name || "",
+        estimateFile: !isEditing && !isEmployeeRequest ? estimateFile : null,
       });
       form.reset();
       setEstimateFile(null);
@@ -182,9 +191,15 @@ export function MaintenanceFormModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[500px] max-h-[85vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{isEditing ? "Edit Maintenance" : "Schedule Maintenance"}</DialogTitle>
+          <DialogTitle>
+            {isEditing ? "Edit Maintenance" : isEmployeeRequest ? "Request Maintenance" : "Schedule Maintenance"}
+          </DialogTitle>
           <DialogDescription>
-            {isEditing ? "Update maintenance record." : "Schedule a new maintenance task."}
+            {isEditing
+              ? "Update maintenance record."
+              : isEmployeeRequest
+              ? "Submit a maintenance request for your assigned asset item."
+              : "Schedule a new maintenance task."}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
@@ -209,7 +224,7 @@ export function MaintenanceFormModal({
                         value={`${item.tag || ""} ${item.serial_number || ""} ${getAssetName(item.asset_id)}`}
                         onSelect={() => {
                           form.setValue("assetItemId", item.id);
-                          if (selectedOfficeId !== getOfficeHolderId(item)) {
+                          if (!isEmployeeRequest && selectedOfficeId !== getOfficeHolderId(item)) {
                             form.setValue("performedByVendorId", "");
                           }
                           setAssetPickerOpen(false);
@@ -306,55 +321,57 @@ export function MaintenanceFormModal({
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label>Performed By Vendor *</Label>
-            <Popover open={vendorPickerOpen} onOpenChange={setVendorPickerOpen}>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  role="combobox"
-                  className="w-full justify-between"
-                  disabled={!selectedOfficeId}
-                >
-                  {selectedVendor
-                    ? selectedVendor.name
-                    : selectedOfficeId
-                    ? "Search office vendors..."
-                    : "Select office-held asset item first"}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-                <Command>
-                  <CommandInput placeholder="Search vendor by name, email, phone..." />
-                  <CommandList>
-                    <CommandEmpty>
-                      {vendorsLoading ? "Loading vendors..." : "No vendors found for selected office."}
-                    </CommandEmpty>
-                    {vendorList.map((vendor: Vendor) => (
-                      <CommandItem
-                        key={vendor.id}
-                        value={`${vendor.name || ""} ${vendor.email || ""} ${vendor.phone || ""}`}
-                        onSelect={() => {
-                          form.setValue("performedByVendorId", vendor.id);
-                          setVendorPickerOpen(false);
-                        }}
-                      >
-                        <span>{vendor.name}</span>
-                        {vendor.phone ? (
-                          <span className="ml-2 text-xs text-muted-foreground">{vendor.phone}</span>
-                        ) : null}
-                      </CommandItem>
-                    ))}
-                  </CommandList>
-                </Command>
-              </PopoverContent>
-            </Popover>
-            {form.formState.errors.performedByVendorId && (
-              <p className="text-sm text-destructive">{form.formState.errors.performedByVendorId.message}</p>
-            )}
-          </div>
+          {!isEmployeeRequest && (
+            <div className="space-y-2">
+              <Label>Performed By Vendor *</Label>
+              <Popover open={vendorPickerOpen} onOpenChange={setVendorPickerOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    className="w-full justify-between"
+                    disabled={!selectedOfficeId}
+                  >
+                    {selectedVendor
+                      ? selectedVendor.name
+                      : selectedOfficeId
+                      ? "Search office vendors..."
+                      : "Select office-held asset item first"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                  <Command>
+                    <CommandInput placeholder="Search vendor by name, email, phone..." />
+                    <CommandList>
+                      <CommandEmpty>
+                        {vendorsLoading ? "Loading vendors..." : "No vendors found for selected office."}
+                      </CommandEmpty>
+                      {vendorList.map((vendor: Vendor) => (
+                        <CommandItem
+                          key={vendor.id}
+                          value={`${vendor.name || ""} ${vendor.email || ""} ${vendor.phone || ""}`}
+                          onSelect={() => {
+                            form.setValue("performedByVendorId", vendor.id);
+                            setVendorPickerOpen(false);
+                          }}
+                        >
+                          <span>{vendor.name}</span>
+                          {vendor.phone ? (
+                            <span className="ml-2 text-xs text-muted-foreground">{vendor.phone}</span>
+                          ) : null}
+                        </CommandItem>
+                      ))}
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+              {form.formState.errors.performedByVendorId && (
+                <p className="text-sm text-destructive">{form.formState.errors.performedByVendorId.message}</p>
+              )}
+            </div>
+          )}
 
-          {!isEditing && (
+          {!isEditing && !isEmployeeRequest && (
             <div className="space-y-2">
               <Label htmlFor="estimateFile">Estimate (PDF) *</Label>
               <Input
@@ -393,7 +410,7 @@ export function MaintenanceFormModal({
             </Button>
             <Button type="submit" disabled={isSubmitting}>
               {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {isEditing ? "Update" : "Schedule"}
+              {isEditing ? "Update" : isEmployeeRequest ? "Submit Request" : "Schedule"}
             </Button>
           </DialogFooter>
         </form>

@@ -22,10 +22,13 @@ import { useProjects } from "@/hooks/useProjects";
 import { useSchemes } from "@/hooks/useSchemes";
 import { AssetItemFormModal } from "@/components/forms/AssetItemFormModal";
 import { AssetItemEditModal } from "@/components/forms/AssetItemEditModal";
+import { OfficeAssetItemFormModal } from "@/components/forms/OfficeAssetItemFormModal";
+import { OfficeAssetItemEditModal } from "@/components/forms/OfficeAssetItemEditModal";
 import { AssignmentHistoryModal } from "@/components/shared/AssignmentHistoryModal";
 import { QRCodeModal } from "@/components/shared/QRCodeModal";
 import { AssignmentFormModal } from "@/components/forms/AssignmentFormModal";
 import { getOfficeHolderId, isStoreHolder } from "@/lib/assetItemHolder";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   Dialog,
   DialogContent,
@@ -35,6 +38,8 @@ import {
 } from "@/components/ui/dialog";
 
 export default function AssetItems() {
+  const { isOrgAdmin } = useAuth();
+  const officeScopedMode = !isOrgAdmin;
   const { data: assetItems, isLoading } = useAssetItems();
   const { data: assets } = useAssets();
   const { data: locations } = useLocations();
@@ -182,10 +187,17 @@ export default function AssetItems() {
 
   if (isLoading) return <MainLayout title="Asset Items" description="Track individual asset instances"><div className="flex items-center justify-center h-64"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div></MainLayout>;
   return (
-    <MainLayout title="Asset Items" description="Track individual asset instances">
+    <MainLayout
+      title={officeScopedMode ? "Office Asset Items" : "Asset Items"}
+      description={officeScopedMode ? "Track individual asset items located in your office" : "Track individual asset instances"}
+    >
       <PageHeader 
-        title="Asset Items" 
-        description="View and manage individual asset items by serial number and tag" 
+        title={officeScopedMode ? "Office Asset Items" : "Asset Items"}
+        description={
+          officeScopedMode
+            ? "View and manage individual asset items for your office"
+            : "View and manage individual asset items by serial number and tag"
+        }
         action={{ label: "Add Item", onClick: handleAddItem }} 
       />
       <DataTable
@@ -196,22 +208,43 @@ export default function AssetItems() {
         virtualized
       />
 
-      <AssetItemFormModal
-        open={isModalOpen}
-        onOpenChange={setIsModalOpen}
-        assets={assetList as any}
-        locations={locationList as any}
-        onSubmit={handleSubmit}
-      />
+      {officeScopedMode ? (
+        <OfficeAssetItemFormModal
+          open={isModalOpen}
+          onOpenChange={setIsModalOpen}
+          assets={assetList as any}
+          locations={locationList as any}
+          onSubmit={handleSubmit}
+        />
+      ) : (
+        <AssetItemFormModal
+          open={isModalOpen}
+          onOpenChange={setIsModalOpen}
+          assets={assetList as any}
+          locations={locationList as any}
+          onSubmit={handleSubmit}
+        />
+      )}
 
-      <AssetItemEditModal
-        open={editModal.open}
-        onOpenChange={(open) => setEditModal({ open, item: open ? editModal.item : null })}
-        assetItem={editModal.item}
-        assets={assetList as any}
-        locations={locationList as any}
-        onSubmit={handleEditSubmit}
-      />
+      {officeScopedMode ? (
+        <OfficeAssetItemEditModal
+          open={editModal.open}
+          onOpenChange={(open) => setEditModal({ open, item: open ? editModal.item : null })}
+          assetItem={editModal.item}
+          assets={assetList as any}
+          locations={locationList as any}
+          onSubmit={handleEditSubmit}
+        />
+      ) : (
+        <AssetItemEditModal
+          open={editModal.open}
+          onOpenChange={(open) => setEditModal({ open, item: open ? editModal.item : null })}
+          assetItem={editModal.item}
+          assets={assetList as any}
+          locations={locationList as any}
+          onSubmit={handleEditSubmit}
+        />
+      )}
 
       {detailModal.item && (
         <Dialog open={detailModal.open} onOpenChange={(open) => setDetailModal({ open, item: open ? detailModal.item : null })}>

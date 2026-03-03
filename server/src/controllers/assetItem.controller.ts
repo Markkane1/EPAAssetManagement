@@ -8,6 +8,7 @@ import type { AuthRequest } from '../middleware/auth';
 import { resolveAccessContext, ensureOfficeScope, isOfficeManager } from '../utils/accessControl';
 import { createHttpError } from '../utils/httpError';
 import { enforceAssetCategoryScopeForOffice } from '../utils/categoryScope';
+import { createBulkNotifications, resolveNotificationRecipientsByOffice } from '../services/notification.service';
 import {
   getAssetItemOfficeId,
   officeAssetItemFilter,
@@ -134,6 +135,58 @@ async function validateHolderAndCategory(assetId: string, holder: { holder_type:
 
   const storeExists = await StoreModel.exists({ _id: holder.holder_id, is_active: { $ne: false } });
   if (!storeExists) throw createHttpError(404, 'Store not found');
+}
+
+function parseDateSafe(value: unknown) {
+  if (!value) return null;
+  const parsed = new Date(String(value));
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed;
+}
+
+async function maybeDispatchWarrantyExpiryAlert(params: {
+  assetItem: any;
+  excludeUserIds?: string[];
+}) {
+  const officeId = getAssetItemOfficeId(params.assetItem);
+  if (!officeId) return;
+  const assetItemId = String(params.assetItem?._id || params.assetItem?.id || '').trim();
+  if (!assetItemId) return;
+
+  const expiryDate = parseDateSafe(params.assetItem?.warranty_expiry);
+  if (!expiryDate) return;
+  const now = Date.now();
+  const daysUntilExpiry = Math.ceil((expiryDate.getTime() - now) / (24 * 60 * 60 * 1000));
+  if (daysUntilExpiry > 30) return;
+
+  const recipients = await resolveNotificationRecipientsByOffice({
+    officeIds: [officeId],
+    includeOrgAdmins: true,
+    includeRoles: ['office_head', 'caretaker'],
+    excludeUserIds: params.excludeUserIds,
+  });
+  if (recipients.length === 0) return;
+
+  const tag = params.assetItem?.tag ? String(params.assetItem.tag) : 'Asset item';
+  const message =
+    daysUntilExpiry < 0
+      ? `${tag} warranty expired on ${expiryDate.toLocaleDateString()}.`
+      : daysUntilExpiry === 0
+        ? `${tag} warranty expires today.`
+        : `${tag} warranty expires in ${daysUntilExpiry} day(s) on ${expiryDate.toLocaleDateString()}.`;
+
+  await createBulkNotifications(
+    recipients.map((recipientUserId) => ({
+      recipientUserId,
+      officeId,
+      type: 'WARRANTY_EXPIRY_ALERT',
+      title: 'Warranty Expiry Alert',
+      message,
+      entityType: 'AssetItem',
+      entityId: assetItemId,
+      dedupeWindowHours: 24,
+    }))
+  );
 }
 
 export const assetItemController = {
@@ -275,6 +328,10 @@ export const assetItemController = {
         payload.tag = generateAssetTag(String(payload.asset_id), existingCount + 1);
       }
       const item = await AssetItemModel.create(payload);
+      await maybeDispatchWarrantyExpiryAlert({
+        assetItem: item,
+        excludeUserIds: [access.userId],
+      });
       res.status(201).json(item);
     } catch (error) {
       next(error);
@@ -354,6 +411,14 @@ export const assetItemController = {
       }));
 
       const created = await AssetItemModel.insertMany(docs);
+      await Promise.all(
+        created.map((item) =>
+          maybeDispatchWarrantyExpiryAlert({
+            assetItem: item,
+            excludeUserIds: [access.userId],
+          })
+        )
+      );
       res.status(201).json(created);
     } catch (error) {
       next(error);
@@ -392,6 +457,12 @@ export const assetItemController = {
         await enforceAssetCategoryScopeForOffice(targetAssetId, targetOfficeId);
       }
       const updated = await AssetItemModel.findByIdAndUpdate(req.params.id, payload, { new: true });
+      if (updated) {
+        await maybeDispatchWarrantyExpiryAlert({
+          assetItem: updated,
+          excludeUserIds: [access.userId],
+        });
+      }
       return res.json(updated);
     } catch (error) {
       next(error);

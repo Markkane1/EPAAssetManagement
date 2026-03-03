@@ -23,6 +23,7 @@ export interface PaginatedResponse<T> {
 export interface RequisitionListParams {
   officeId?: string;
   status?: string;
+  queue?: string;
   fileNumber?: string;
   from?: string;
   to?: string;

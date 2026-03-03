@@ -34,6 +34,30 @@ const NONE_ROOM_OPTION = "__none__";
 const ALLOWED_FILE_TYPES = new Set(["application/pdf", "image/jpeg", "image/png"]);
 const ALLOWED_EXTENSIONS = [".pdf", ".jpg", ".jpeg", ".png"];
 
+type MongoIdLike = {
+  id?: unknown;
+  _id?: unknown;
+  $oid?: unknown;
+};
+
+function asId(value: unknown): string {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "object") {
+    const record = value as MongoIdLike;
+    if (typeof record.$oid === "string") return record.$oid;
+    if (typeof record.id === "string") return record.id;
+    if (typeof record._id === "string") return record._id;
+  }
+  return "";
+}
+
+function employeeId(employee: unknown): string {
+  if (!employee || typeof employee !== "object") return "";
+  const record = employee as MongoIdLike;
+  return asId(record.id) || asId(record._id);
+}
+
 function isAllowedAttachment(file: File) {
   if (ALLOWED_FILE_TYPES.has(file.type)) return true;
   const lowerName = file.name.toLowerCase();
@@ -43,7 +67,7 @@ function isAllowedAttachment(file: File) {
 export default function RequisitionNew() {
   const navigate = useNavigate();
   const { user, locationId } = useAuth();
-  const { data: employees } = useEmployees();
+  const { data: employees, refetch: refetchEmployees } = useEmployees();
   const { data: locations } = useLocations();
   const { data: roomSections = [] } = useOfficeSubLocations({
     officeId: locationId || undefined,
@@ -60,25 +84,36 @@ export default function RequisitionNew() {
   const employeeList = useMemo(() => employees || [], [employees]);
   const locationList = useMemo(() => locations || [], [locations]);
   const officeName = useMemo(() => {
-    const office = locationList.find((entry) => entry.id === locationId);
+    const office = locationList.find((entry) => asId(entry.id) === asId(locationId));
     return office?.name || locationId || "Unassigned Office";
   }, [locationList, locationId]);
 
-  const officeEmployees = useMemo(() => {
-    if (!locationId) return [];
-    return employeeList.filter((employee) => employee.location_id === locationId);
+  const scopedEmployees = useMemo(() => {
+    const officeId = asId(locationId);
+    if (!officeId) return employeeList;
+    const filtered = employeeList.filter((employee) => {
+      const locationMatch = asId(employee.location_id) === officeId;
+      const directorateMatch = asId(employee.directorate_id) === officeId;
+      return locationMatch || directorateMatch;
+    });
+    return filtered.length > 0 ? filtered : employeeList;
   }, [employeeList, locationId]);
   const currentEmployee = useMemo(() => {
-    const currentUserId = user?.id || "";
+    const currentUserId = asId(user?.id);
     const currentUserEmail = (user?.email || "").toLowerCase();
-    const byUserId = officeEmployees.find((employee) => employee.user_id === currentUserId);
-    const byEmail = officeEmployees.find((employee) => employee.email?.toLowerCase() === currentUserEmail);
+    const byUserId = scopedEmployees.find((employee) => asId(employee.user_id) === currentUserId);
+    const byEmail = scopedEmployees.find((employee) => employee.email?.toLowerCase() === currentUserEmail);
     return byUserId || byEmail || null;
-  }, [officeEmployees, user?.id, user?.email]);
+  }, [scopedEmployees, user?.id, user?.email]);
+  const currentEmployeeId = useMemo(() => employeeId(currentEmployee), [currentEmployee]);
 
   useEffect(() => {
-    setTargetEmployeeId(currentEmployee?.id || "");
-  }, [currentEmployee]);
+    void refetchEmployees();
+  }, [refetchEmployees]);
+
+  useEffect(() => {
+    setTargetEmployeeId(currentEmployeeId);
+  }, [currentEmployeeId]);
 
   const addLine = () => {
     setLines((previous) => [...previous, { ...DEFAULT_LINE }]);
@@ -121,9 +156,9 @@ export default function RequisitionNew() {
     });
     if (!targetEmployeeId) {
       errors.push("Your employee profile is not linked to this login for the selected office.");
-    } else if (currentEmployee && targetEmployeeId !== currentEmployee.id) {
+    } else if (currentEmployeeId && targetEmployeeId !== currentEmployeeId) {
       errors.push("Employees can only submit requisitions for themselves.");
-    } else if (!officeEmployees.some((employee) => employee.id === targetEmployeeId)) {
+    } else if (!scopedEmployees.some((employee) => employeeId(employee) === targetEmployeeId)) {
       errors.push("Your employee profile is not valid for this office.");
     }
     if (
@@ -228,7 +263,7 @@ export default function RequisitionNew() {
                   id="targetEmployee"
                   value={
                     currentEmployee
-                      ? `${currentEmployee.first_name} ${currentEmployee.last_name} (${currentEmployee.email})`
+                      ? `${currentEmployee.first_name || ""} ${currentEmployee.last_name || ""} (${currentEmployee.email || "no-email"})`
                       : "Employee profile not linked"
                   }
                   disabled

@@ -3,8 +3,8 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import { AuthProvider } from "@/contexts/AuthContext";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { PageSearchProvider } from "@/contexts/PageSearchContext";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { API_CONFIG } from "@/config/api.config";
@@ -48,6 +48,7 @@ const RequisitionDetail = lazy(() => import("./pages/RequisitionDetail"));
 const Returns = lazy(() => import("./pages/Returns"));
 const ReturnRequestNew = lazy(() => import("./pages/ReturnRequestNew"));
 const ReturnDetail = lazy(() => import("./pages/ReturnDetail"));
+const MyAssets = lazy(() => import("./pages/MyAssets"));
 const AssetSummaryReport = lazy(() => import("./pages/reports/AssetSummaryReport"));
 const AssetItemsInventoryReport = lazy(() => import("./pages/reports/AssetItemsInventoryReport"));
 const AssignmentSummaryReport = lazy(() => import("./pages/reports/AssignmentSummaryReport"));
@@ -67,15 +68,19 @@ const UserManagement = lazy(() => import("./pages/UserManagement"));
 const UserActivity = lazy(() => import("./pages/UserActivity"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
-const OfficeAssets = lazy(() => import("./pages/office/OfficeAssets"));
-const OfficeAssetItems = lazy(() => import("./pages/office/OfficeAssetItems"));
-const OfficeConsumableReceive = lazy(() => import("./pages/office/OfficeConsumableReceive"));
-
 const RouteFallback = () => (
   <div className="flex min-h-screen items-center justify-center text-sm text-muted-foreground">
     Loading...
   </div>
 );
+
+const AssignmentsEntry = () => {
+  const { role } = useAuth();
+  if (role === "employee") {
+    return <Navigate to="/my-assets" replace />;
+  }
+  return <Assignments />;
+};
 
 const App = () => {
   const [queryClient] = useState(
@@ -106,30 +111,31 @@ const App = () => {
                   <Route path="/login" element={<Login />} />
                   <Route path="/forgot-password" element={<ForgotPassword />} />
                   <Route path="/" element={<ProtectedRoute page="dashboard"><Dashboard /></ProtectedRoute>} />
-                  <Route path="/assets" element={<ProtectedRoute page="assets"><Assets /></ProtectedRoute>} />
-                  <Route path="/assets/:id" element={<ProtectedRoute page="assets"><AssetDetail /></ProtectedRoute>} />
-                  <Route path="/asset-items" element={<ProtectedRoute page="asset-items"><AssetItems /></ProtectedRoute>} />
+                  <Route path="/assets" element={<ProtectedRoute anyOfPages={["assets", "office-assets"]}><Assets /></ProtectedRoute>} />
+                  <Route path="/assets/:id" element={<ProtectedRoute anyOfPages={["assets", "office-assets"]}><AssetDetail /></ProtectedRoute>} />
+                  <Route path="/asset-items" element={<ProtectedRoute anyOfPages={["asset-items", "office-asset-items"]}><AssetItems /></ProtectedRoute>} />
                   
                   {/* Office Specific Routes */}
-                  <Route path="/office/assets" element={<ProtectedRoute page="office-assets"><OfficeAssets /></ProtectedRoute>} />
-                  <Route path="/office/asset-items" element={<ProtectedRoute page="office-asset-items"><OfficeAssetItems /></ProtectedRoute>} />
-                  <Route path="/office/consumables/receive" element={<ProtectedRoute page="office-consumables"><OfficeConsumableReceive /></ProtectedRoute>} />
+                  <Route path="/office/assets" element={<ProtectedRoute anyOfPages={["assets", "office-assets"]}><Navigate to="/assets" replace /></ProtectedRoute>} />
+                  <Route path="/office/asset-items" element={<ProtectedRoute anyOfPages={["asset-items", "office-asset-items"]}><Navigate to="/asset-items" replace /></ProtectedRoute>} />
                   <Route path="/consumables" element={<ProtectedRoute page="consumables"><ConsumableMaster /></ProtectedRoute>} />
-                  <Route path="/consumables/receive" element={<ProtectedRoute page="consumables"><ConsumableReceive /></ProtectedRoute>} />
+                  <Route path="/consumables/receive" element={<ProtectedRoute anyOfPages={["consumables", "office-consumables"]}><ConsumableReceive /></ProtectedRoute>} />
+                  <Route path="/office/consumables/receive" element={<ProtectedRoute anyOfPages={["consumables", "office-consumables"]}><Navigate to="/consumables/receive" replace /></ProtectedRoute>} />
                   <Route path="/consumables/containers" element={<ProtectedRoute page="consumables"><ConsumableContainers /></ProtectedRoute>} />
                   <Route path="/consumables/units" element={<ProtectedRoute page="consumables"><ConsumableUnits /></ProtectedRoute>} />
                   <Route path="/consumables/inventory" element={<ProtectedRoute page="consumables"><ConsumableInventory /></ProtectedRoute>} />
                   <Route path="/consumables/transfers" element={<ProtectedRoute page="consumables"><ConsumableTransfers /></ProtectedRoute>} />
                   <Route path="/consumables/assignments" element={<ProtectedRoute page="consumables"><ConsumableAssignments /></ProtectedRoute>} />
-                  <Route path="/consumables/consume" element={<ProtectedRoute page="consumables"><ConsumableConsume /></ProtectedRoute>} />
+                  <Route path="/consumables/consume" element={<ProtectedRoute page="inventory"><ConsumableConsume /></ProtectedRoute>} />
                   <Route path="/consumables/adjustments" element={<ProtectedRoute page="consumables"><ConsumableAdjustments /></ProtectedRoute>} />
                   <Route path="/consumables/disposal" element={<ProtectedRoute page="consumables"><ConsumableDisposal /></ProtectedRoute>} />
                   <Route path="/consumables/returns" element={<ProtectedRoute page="consumables"><ConsumableReturns /></ProtectedRoute>} />
-                  <Route path="/consumables/ledger" element={<ProtectedRoute page="consumables"><ConsumableLedger /></ProtectedRoute>} />
+                  <Route path="/consumables/ledger" element={<ProtectedRoute page="inventory"><ConsumableLedger /></ProtectedRoute>} />
                   <Route path="/consumables/expiry" element={<ProtectedRoute page="consumables"><ConsumableExpiry /></ProtectedRoute>} />
                   <Route path="/employees" element={<ProtectedRoute page="employees"><Employees /></ProtectedRoute>} />
                   <Route path="/employees/:id" element={<ProtectedRoute page="employees"><EmployeeDetail /></ProtectedRoute>} />
-                  <Route path="/assignments" element={<ProtectedRoute page="assignments"><Assignments /></ProtectedRoute>} />
+                  <Route path="/assignments" element={<ProtectedRoute page="assignments"><AssignmentsEntry /></ProtectedRoute>} />
+                  <Route path="/my-assets" element={<ProtectedRoute page="assignments" allowedRoles={["employee"]}><MyAssets /></ProtectedRoute>} />
                   <Route path="/transfers" element={<ProtectedRoute page="transfers"><Transfers /></ProtectedRoute>} />
                   <Route path="/transfers/:id" element={<ProtectedRoute page="transfers"><TransferDetail /></ProtectedRoute>} />
                   <Route path="/maintenance" element={<ProtectedRoute page="maintenance"><Maintenance /></ProtectedRoute>} />
@@ -142,8 +148,19 @@ const App = () => {
                   <Route path="/schemes" element={<ProtectedRoute page="schemes"><Schemes /></ProtectedRoute>} />
                   <Route path="/reports" element={<ProtectedRoute page="reports"><Reports /></ProtectedRoute>} />
                   <Route path="/compliance" element={<ProtectedRoute page="compliance"><Compliance /></ProtectedRoute>} />
-                  <Route path="/inventory" element={<ProtectedRoute page="inventory"><InventoryHub /></ProtectedRoute>} />
+                  <Route
+                    path="/inventory"
+                    element={
+                      <ProtectedRoute
+                        page="inventory"
+                        allowedRoles={["org_admin", "office_head", "caretaker"]}
+                      >
+                        <InventoryHub />
+                      </ProtectedRoute>
+                    }
+                  />
                   <Route path="/requisitions" element={<ProtectedRoute page="requisitions"><Requisitions /></ProtectedRoute>} />
+                  <Route path="/requisitions/approved" element={<ProtectedRoute page="requisitions"><Requisitions /></ProtectedRoute>} />
                   <Route path="/requisitions/new" element={<ProtectedRoute page="requisitions-new"><RequisitionNew /></ProtectedRoute>} />
                   <Route path="/requisitions/:id" element={<ProtectedRoute page="requisitions"><RequisitionDetail /></ProtectedRoute>} />
                   <Route path="/returns/new" element={<ProtectedRoute page="returns-new"><ReturnRequestNew /></ProtectedRoute>} />
@@ -199,8 +216,8 @@ const App = () => {
                     }
                   />
                   <Route path="/reports/employee-assets" element={<ProtectedRoute page="reports"><EmployeeAssetsReport /></ProtectedRoute>} />
-                  <Route path="/settings" element={<ProtectedRoute page="settings"><Settings /></ProtectedRoute>} />
-                  <Route path="/settings/notifications" element={<ProtectedRoute page="settings"><NotificationDetails /></ProtectedRoute>} />
+                  <Route path="/settings" element={<ProtectedRoute page="settings" allowedRoles={["org_admin", "office_head", "caretaker"]}><Settings /></ProtectedRoute>} />
+                  <Route path="/settings/notifications" element={<ProtectedRoute page="settings" allowedRoles={["org_admin", "office_head", "caretaker"]}><NotificationDetails /></ProtectedRoute>} />
                   <Route path="/audit-logs" element={<ProtectedRoute page="audit-logs"><AuditLogs /></ProtectedRoute>} />
                   <Route path="/user-permissions" element={<ProtectedRoute page="user-permissions"><UserPermissions /></ProtectedRoute>} />
                   <Route path="/user-management" element={<ProtectedRoute page="user-management"><UserManagement /></ProtectedRoute>} />

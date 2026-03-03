@@ -29,6 +29,7 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
+import { SearchableSelect } from "@/components/shared/SearchableSelect";
 
 type TransferRow = Transfer & {
   lineCount: number;
@@ -443,48 +444,44 @@ export default function Transfers() {
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="fromOffice">From Holder *</Label>
-                  <select
+                  <SearchableSelect
                     id="fromOffice"
-                    className="w-full rounded-md border bg-background px-3 py-2 text-sm disabled:opacity-50"
                     value={fromOfficeId}
-                    onChange={(event) => {
-                      setFromOfficeId(event.target.value);
+                    onValueChange={(value) => {
+                      setFromOfficeId(value);
                       setSelectedAssetItemIds([]);
                       setAssetSearch("");
-                      if (toOfficeId === event.target.value) setToOfficeId("");
+                      if (toOfficeId === value) setToOfficeId("");
                     }}
                     disabled={!isOrgAdmin}
-                  >
-                    <option value="">Select source</option>
-                    {isOrgAdmin && (
-                      <option value={CENTRAL_STORE_SOURCE_ID}>Central Store</option>
-                    )}
-                    {locations.map((office) => (
-                      <option key={office.id} value={office.id}>
-                        {office.name}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="Select source"
+                    searchPlaceholder="Search holders..."
+                    emptyText="No holders found."
+                    options={[
+                      ...(isOrgAdmin
+                        ? [{ value: CENTRAL_STORE_SOURCE_ID, label: "Central Store" }]
+                        : []),
+                      ...locations.map((office) => ({ value: office.id, label: office.name })),
+                    ]}
+                  />
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="toOffice">Destination Office *</Label>
-                  <select
+                  <SearchableSelect
                     id="toOffice"
-                    className="w-full rounded-md border bg-background px-3 py-2 text-sm"
                     value={toOfficeId}
-                    onChange={(event) => setToOfficeId(event.target.value)}
-                  >
-                    <option value="">Select destination office</option>
-                    {showCentralDestination && (
-                      <option value={CENTRAL_STORE_SOURCE_ID}>Central Store</option>
-                    )}
-                    {destinationOffices.map((office) => (
-                      <option key={office.id} value={office.id}>
-                        {office.name}
-                      </option>
-                    ))}
-                  </select>
+                    onValueChange={setToOfficeId}
+                    placeholder="Select destination office"
+                    searchPlaceholder="Search offices..."
+                    emptyText="No offices found."
+                    options={[
+                      ...(showCentralDestination
+                        ? [{ value: CENTRAL_STORE_SOURCE_ID, label: "Central Store" }]
+                        : []),
+                      ...destinationOffices.map((office) => ({ value: office.id, label: office.name })),
+                    ]}
+                  />
                 </div>
               </div>
 

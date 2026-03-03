@@ -1,6 +1,7 @@
 import { Response, NextFunction } from 'express';
 import bcrypt from 'bcryptjs';
 import { UserModel } from '../models/user.model';
+import { EmployeeModel } from '../models/employee.model';
 import { OfficeModel } from '../models/office.model';
 import type { AuthRequest } from '../middleware/auth';
 import { normalizeRole } from '../utils/roles';
@@ -8,6 +9,90 @@ import { validateStrongPassword } from '../utils/passwordPolicy';
 import { escapeRegex, readPagination } from '../utils/requestParsing';
 
 const isAdminRole = (role?: string | null) => role === 'org_admin';
+
+async function ensureEmployeeProfileForUser(input: {
+  userId: string;
+  email: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  locationId?: string | null;
+}) {
+  const normalizedEmail = String(input.email || '').trim().toLowerCase();
+  if (!normalizedEmail) return;
+
+  const byUserId = await EmployeeModel.findOne({ user_id: input.userId });
+  if (byUserId) {
+    let changed = false;
+    if (!byUserId.email || String(byUserId.email).toLowerCase() !== normalizedEmail) {
+      byUserId.email = normalizedEmail;
+      changed = true;
+    }
+    if (!byUserId.first_name && input.firstName) {
+      byUserId.first_name = input.firstName;
+      changed = true;
+    }
+    if (!byUserId.last_name && input.lastName) {
+      byUserId.last_name = input.lastName;
+      changed = true;
+    }
+    if (input.locationId !== undefined) {
+      const nextLocationId = input.locationId || null;
+      const currentLocationId = byUserId.location_id ? String(byUserId.location_id) : null;
+      if (currentLocationId !== nextLocationId) {
+        byUserId.location_id = nextLocationId;
+        changed = true;
+      }
+    }
+    if (byUserId.is_active === false) {
+      byUserId.is_active = true;
+      changed = true;
+    }
+    if (changed) await byUserId.save();
+    return;
+  }
+
+  const byEmail = await EmployeeModel.findOne({
+    email: { $regex: `^${escapeRegex(normalizedEmail)}$`, $options: 'i' },
+  });
+  if (byEmail) {
+    let changed = false;
+    if (!byEmail.user_id) {
+      byEmail.user_id = input.userId as any;
+      changed = true;
+    }
+    if (!byEmail.first_name && input.firstName) {
+      byEmail.first_name = input.firstName;
+      changed = true;
+    }
+    if (!byEmail.last_name && input.lastName) {
+      byEmail.last_name = input.lastName;
+      changed = true;
+    }
+    if (input.locationId !== undefined) {
+      const nextLocationId = input.locationId || null;
+      const currentLocationId = byEmail.location_id ? String(byEmail.location_id) : null;
+      if (currentLocationId !== nextLocationId) {
+        byEmail.location_id = nextLocationId;
+        changed = true;
+      }
+    }
+    if (byEmail.is_active === false) {
+      byEmail.is_active = true;
+      changed = true;
+    }
+    if (changed) await byEmail.save();
+    return;
+  }
+
+  await EmployeeModel.create({
+    user_id: input.userId,
+    email: normalizedEmail,
+    first_name: String(input.firstName || '').trim() || 'Employee',
+    last_name: String(input.lastName || '').trim() || 'User',
+    location_id: input.locationId || null,
+    is_active: true,
+  });
+}
 
 export const userController = {
   list: async (req: AuthRequest, res: Response, next: NextFunction) => {
@@ -112,6 +197,16 @@ export const userController = {
         location_id: locationId || null,
       });
 
+      if (normalizedRole === 'employee') {
+        await ensureEmployeeProfileForUser({
+          userId: user.id,
+          email: user.email,
+          firstName: user.first_name,
+          lastName: user.last_name,
+          locationId: user.location_id ? String(user.location_id) : null,
+        });
+      }
+
       res.status(201).json({
         id: user.id,
         user_id: user.id,
@@ -138,6 +233,15 @@ export const userController = {
 
       const user = await UserModel.findByIdAndUpdate(req.params.id, { role: normalizedRole }, { new: true });
       if (!user) return res.status(404).json({ message: 'Not found' });
+      if (normalizedRole === 'employee') {
+        await ensureEmployeeProfileForUser({
+          userId: user.id,
+          email: user.email,
+          firstName: user.first_name,
+          lastName: user.last_name,
+          locationId: user.location_id ? String(user.location_id) : null,
+        });
+      }
       res.json({ role: normalizeRole(user.role) });
     } catch (error) {
       next(error);
@@ -153,6 +257,15 @@ export const userController = {
       const { locationId } = req.body as { locationId: string | null };
       const user = await UserModel.findByIdAndUpdate(req.params.id, { location_id: locationId }, { new: true });
       if (!user) return res.status(404).json({ message: 'Not found' });
+      if (normalizeRole(user.role) === 'employee') {
+        await ensureEmployeeProfileForUser({
+          userId: user.id,
+          email: user.email,
+          firstName: user.first_name,
+          lastName: user.last_name,
+          locationId: user.location_id ? String(user.location_id) : null,
+        });
+      }
       res.json({ location_id: user.location_id });
     } catch (error) {
       next(error);

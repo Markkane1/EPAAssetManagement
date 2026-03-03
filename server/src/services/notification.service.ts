@@ -23,6 +23,9 @@ const NOTIFICATION_TYPES = new Set([
   'LOW_STOCK_ALERT',
   'WARRANTY_EXPIRY_ALERT',
   'REQUISITION_SUBMITTED',
+  'REQUISITION_APPROVED',
+  'REQUISITION_FULFILLED',
+  'REQUISITION_STATUS_CHANGED',
   'REQUISITION_VERIFIED',
   'REQUISITION_REJECTED',
 ]);
@@ -64,6 +67,9 @@ const NOTIFICATION_TYPE_TO_PREFERENCE: Record<string, NotificationPreferenceKey>
   RETURN_SLIP_READY: 'assignment_notifications',
   ASSIGNMENT_RETURNED: 'assignment_notifications',
   REQUISITION_SUBMITTED: 'assignment_notifications',
+  REQUISITION_APPROVED: 'assignment_notifications',
+  REQUISITION_FULFILLED: 'assignment_notifications',
+  REQUISITION_STATUS_CHANGED: 'assignment_notifications',
   REQUISITION_VERIFIED: 'assignment_notifications',
   REQUISITION_REJECTED: 'assignment_notifications',
   TRANSFER_REQUESTED: 'assignment_notifications',
@@ -87,6 +93,18 @@ export type NotificationCreateInput = {
   message: string;
   entityType: string;
   entityId: string;
+  dedupeWindowHours?: number | null;
+};
+
+type ValidatedNotificationPayload = {
+  recipient_user_id: string;
+  office_id: string;
+  type: string;
+  title: string;
+  message: string;
+  entity_type: string;
+  entity_id: string;
+  dedupe_window_hours: number | null;
 };
 
 function asNonEmptyString(value: unknown, fieldName: string) {
@@ -133,6 +151,9 @@ function validateCreateInput(input: NotificationCreateInput) {
   const message = asNonEmptyString(input.message, 'message');
   const entityType = normalizeEntityType(input.entityType);
   const entityId = asObjectId(input.entityId, 'entityId');
+  const dedupeWindowHours = Number(input?.dedupeWindowHours);
+  const normalizedDedupeWindowHours =
+    Number.isFinite(dedupeWindowHours) && dedupeWindowHours > 0 ? Math.floor(dedupeWindowHours) : null;
 
   return {
     recipient_user_id: recipientUserId,
@@ -142,7 +163,8 @@ function validateCreateInput(input: NotificationCreateInput) {
     message,
     entity_type: entityType,
     entity_id: entityId,
-  };
+    dedupe_window_hours: normalizedDedupeWindowHours,
+  } satisfies ValidatedNotificationPayload;
 }
 
 function asBoolean(value: unknown, fallback: boolean) {
@@ -175,6 +197,85 @@ function isNotificationTypeEnabled(type: string, settings: NotificationSettingsS
   return settings[preferenceKey];
 }
 
+function toInsertablePayload(payload: ValidatedNotificationPayload) {
+  const { dedupe_window_hours: _dedupeWindowHours, ...insertable } = payload;
+  return insertable;
+}
+
+async function isDuplicateNotification(payload: ValidatedNotificationPayload) {
+  if (!payload.dedupe_window_hours) return false;
+  const createdAfter = new Date(Date.now() - payload.dedupe_window_hours * 60 * 60 * 1000);
+  const existing = await NotificationModel.exists({
+    recipient_user_id: payload.recipient_user_id,
+    office_id: payload.office_id,
+    type: payload.type,
+    entity_type: payload.entity_type,
+    entity_id: payload.entity_id,
+    created_at: { $gte: createdAfter },
+  });
+  return Boolean(existing);
+}
+
+function normalizeUniqueObjectIds(list: string[]) {
+  return Array.from(
+    new Set(
+      list
+        .map((entry) => String(entry || '').trim())
+        .filter((entry) => Types.ObjectId.isValid(entry))
+    )
+  );
+}
+
+export async function resolveNotificationRecipientsByOffice(input: {
+  officeIds?: string[];
+  includeOrgAdmins?: boolean;
+  includeRoles?: string[];
+  includeUserIds?: string[];
+  excludeUserIds?: string[];
+}) {
+  const includeOrgAdmins = input.includeOrgAdmins !== false;
+  const officeIds = normalizeUniqueObjectIds(input.officeIds || []);
+  const includeRoles = Array.from(
+    new Set(
+      (input.includeRoles || ['office_head', 'caretaker'])
+        .map((role) => String(role || '').trim().toLowerCase())
+        .filter(Boolean)
+    )
+  );
+  const includeUserIds = normalizeUniqueObjectIds(input.includeUserIds || []);
+  const excludeUserIds = new Set(normalizeUniqueObjectIds(input.excludeUserIds || []));
+
+  const roleFilters: Record<string, unknown>[] = [];
+  if (includeRoles.length > 0 && officeIds.length > 0) {
+    roleFilters.push({
+      role: { $in: includeRoles },
+      location_id: { $in: officeIds },
+    });
+  }
+  if (includeOrgAdmins) {
+    roleFilters.push({ role: 'org_admin' });
+  }
+  if (includeUserIds.length > 0) {
+    roleFilters.push({ _id: { $in: includeUserIds } });
+  }
+  if (roleFilters.length === 0) {
+    return [] as string[];
+  }
+
+  const users = await UserModel.find(
+    {
+      is_active: true,
+      $or: roleFilters,
+    },
+    { _id: 1 }
+  )
+    .lean()
+    .exec();
+
+  const recipients = Array.from(new Set(users.map((user) => String(user._id))));
+  return recipients.filter((id) => !excludeUserIds.has(id));
+}
+
 export async function createNotification(input: NotificationCreateInput) {
   const payload = validateCreateInput(input);
   if (!payload) return null;
@@ -185,8 +286,10 @@ export async function createNotification(input: NotificationCreateInput) {
 
   const recipientExists = await UserModel.exists({ _id: payload.recipient_user_id });
   if (!recipientExists) return null;
+  const isDuplicate = await isDuplicateNotification(payload);
+  if (isDuplicate) return null;
 
-  return NotificationModel.create(payload);
+  return NotificationModel.create(toInsertablePayload(payload));
 }
 
 export async function createBulkNotifications(list: NotificationCreateInput[]) {
@@ -206,8 +309,11 @@ export async function createBulkNotifications(list: NotificationCreateInput[]) {
   const settings = await getNotificationSettingsSnapshot();
   const enabledRows = normalized.filter((row) => isNotificationTypeEnabled(row.type, settings));
   if (enabledRows.length === 0) return [];
+  const duplicateFlags = await Promise.all(enabledRows.map((row) => isDuplicateNotification(row)));
+  const dedupedRows = enabledRows.filter((_, index) => !duplicateFlags[index]);
+  if (dedupedRows.length === 0) return [];
 
-  const recipientIds = Array.from(new Set(enabledRows.map((row) => row.recipient_user_id)));
+  const recipientIds = Array.from(new Set(dedupedRows.map((row) => row.recipient_user_id)));
   const existingRecipients = await UserModel.find(
     { _id: { $in: recipientIds } },
     { _id: 1 }
@@ -216,7 +322,9 @@ export async function createBulkNotifications(list: NotificationCreateInput[]) {
     .exec();
   const existingRecipientSet = new Set(existingRecipients.map((doc) => String(doc._id)));
 
-  const insertable = enabledRows.filter((row) => existingRecipientSet.has(String(row.recipient_user_id)));
+  const insertable = dedupedRows
+    .filter((row) => existingRecipientSet.has(String(row.recipient_user_id)))
+    .map((row) => toInsertablePayload(row));
   if (insertable.length === 0) return [];
 
   return NotificationModel.insertMany(insertable, { ordered: false });

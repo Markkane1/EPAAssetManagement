@@ -74,6 +74,7 @@ import { userPermissionService } from "@/services/userPermissionService";
 import { usePageSearch } from "@/contexts/PageSearchContext";
 import { cn } from "@/lib/utils";
 import { exportToCSV, exportToExcel } from "@/lib/exportUtils";
+import { SearchableSelect } from "@/components/shared/SearchableSelect";
 
 interface Location {
   id: string;
@@ -464,20 +465,20 @@ export default function UserManagement() {
                 ))}
               </SelectContent>
             </Select>
-            <Select value={locationFilter} onValueChange={setLocationFilter}>
-              <SelectTrigger className="w-[230px]">
-                <SelectValue placeholder="Filter by location" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Locations</SelectItem>
-                <SelectItem value="none">No Location</SelectItem>
-                {locations.map((location) => (
-                  <SelectItem key={location.id} value={location.id}>
-                    {location.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="w-[230px]">
+              <SearchableSelect
+                value={locationFilter}
+                onValueChange={setLocationFilter}
+                placeholder="Filter by location"
+                searchPlaceholder="Search locations..."
+                emptyText="No locations found."
+                options={[
+                  { value: "all", label: "All Locations" },
+                  { value: "none", label: "No Location" },
+                  ...locations.map((location) => ({ value: location.id, label: location.name })),
+                ]}
+              />
+            </div>
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Users className="h-4 w-4" />
               <span>{visibleUsers.length} shown ({totalUsers} total users)</span>
@@ -659,19 +660,17 @@ export default function UserManagement() {
                 <MapPin className="h-4 w-4" />
                 Location
               </label>
-              <Select value={selectedLocation} onValueChange={setSelectedLocation}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a location" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No Location (All Access)</SelectItem>
-                  {locations.map((location) => (
-                    <SelectItem key={location.id} value={location.id}>
-                      {location.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={selectedLocation}
+                onValueChange={setSelectedLocation}
+                placeholder="Select a location"
+                searchPlaceholder="Search locations..."
+                emptyText="No locations found."
+                options={[
+                  { value: "none", label: "No Location (All Access)" },
+                  ...locations.map((location) => ({ value: location.id, label: location.name })),
+                ]}
+              />
               <p className="text-xs text-muted-foreground">
                 {selectedRole === "org_admin"
                   ? "Org admins are global. Location assignment is optional."

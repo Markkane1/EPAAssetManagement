@@ -42,6 +42,7 @@ import {
   useUpdateConsumableContainer,
 } from '@/hooks/useConsumableContainers';
 import { useAuth } from '@/contexts/AuthContext';
+import { SearchableSelect } from '@/components/shared/SearchableSelect';
 
 const ALL_VALUE = '__all__';
 
@@ -137,14 +138,14 @@ function ContainerFormModal(props: {
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Location *</Label>
-              <Select value={form.watch('currentLocationId')} onValueChange={(value) => form.setValue('currentLocationId', value)}>
-                <SelectTrigger><SelectValue placeholder="Select location" /></SelectTrigger>
-                <SelectContent>
-                  {locations.map((location) => (
-                    <SelectItem key={location.id} value={location.id}>{location.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={form.watch('currentLocationId')}
+                onValueChange={(value) => form.setValue('currentLocationId', value)}
+                placeholder="Select location"
+                searchPlaceholder="Search locations..."
+                emptyText="No locations found."
+                options={locations.map((location) => ({ value: location.id, label: location.name }))}
+              />
               {form.formState.errors.currentLocationId && (
                 <p className="text-sm text-destructive">{form.formState.errors.currentLocationId.message}</p>
               )}
@@ -330,15 +331,17 @@ export default function ConsumableContainers() {
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Location</Label>
-              <Select value={selectedLocationId} onValueChange={setSelectedLocationId}>
-                <SelectTrigger><SelectValue placeholder="All locations" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ALL_VALUE}>All locations</SelectItem>
-                  {locations.map((location) => (
-                    <SelectItem key={location.id} value={location.id}>{location.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={selectedLocationId}
+                onValueChange={setSelectedLocationId}
+                placeholder="All locations"
+                searchPlaceholder="Search locations..."
+                emptyText="No locations found."
+                options={[
+                  { value: ALL_VALUE, label: 'All locations' },
+                  ...locations.map((location) => ({ value: location.id, label: location.name })),
+                ]}
+              />
             </div>
             <div className="space-y-2">
               <Label>Status</Label>

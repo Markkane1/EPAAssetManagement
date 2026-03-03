@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
 import { SystemSettingsModel } from '../models/systemSettings.model';
+import { OfficeModel } from '../models/office.model';
 import type { AuthRequest } from '../middleware/auth';
 import { createHttpError } from '../utils/httpError';
 
@@ -46,26 +47,52 @@ const PERMISSION_PAGE_KEYS = [
   'user-activity',
 ] as const;
 const PERMISSION_PAGE_SET = new Set<string>(PERMISSION_PAGE_KEYS);
+const EMPLOYEE_RESTRICTED_PAGE_KEYS = [
+  'assets',
+  'asset-items',
+  'office-assets',
+  'office-asset-items',
+  'transfers',
+  'employees',
+  'offices',
+  'rooms-sections',
+  'categories',
+  'vendors',
+  'projects',
+  'schemes',
+  'purchase-orders',
+  'settings',
+] as const;
+const OFFICE_HEAD_RESTRICTED_PAGE_KEYS = [
+  'categories',
+  'projects',
+  'schemes',
+] as const;
+const CENTRAL_CARETAKER_ONLY_PAGE_KEYS = [
+  'categories',
+  'projects',
+  'schemes',
+] as const;
 const DEFAULT_ALLOWED_ROLES_BY_PAGE: Record<string, string[]> = {
   dashboard: ['org_admin', 'office_head', 'caretaker', 'employee'],
   inventory: ['org_admin', 'office_head', 'caretaker', 'employee'],
-  assets: ['org_admin'],
-  'asset-items': ['org_admin'],
+  assets: ['org_admin', 'office_head'],
+  'asset-items': ['org_admin', 'office_head'],
   consumables: ['org_admin'],
-  'office-assets': ['office_head'],
-  'office-asset-items': ['office_head'],
+  'office-assets': [],
+  'office-asset-items': [],
   'office-consumables': ['office_head'],
-  employees: ['org_admin', 'office_head', 'caretaker', 'employee'],
+  employees: ['org_admin', 'office_head', 'caretaker'],
   assignments: ['org_admin', 'office_head', 'caretaker', 'employee'],
-  transfers: ['org_admin', 'office_head', 'caretaker', 'employee'],
+  transfers: ['org_admin', 'office_head', 'caretaker'],
   maintenance: ['org_admin', 'office_head', 'caretaker', 'employee'],
-  'purchase-orders': ['org_admin', 'office_head', 'caretaker', 'employee'],
+  'purchase-orders': ['org_admin', 'office_head', 'caretaker'],
   offices: ['org_admin'],
   'rooms-sections': ['org_admin', 'office_head', 'caretaker'],
-  categories: ['org_admin', 'office_head', 'caretaker', 'employee'],
-  vendors: ['org_admin', 'office_head', 'caretaker', 'employee'],
-  projects: ['org_admin', 'office_head', 'caretaker', 'employee'],
-  schemes: ['org_admin', 'office_head', 'caretaker', 'employee'],
+  categories: ['org_admin', 'caretaker'],
+  vendors: ['org_admin', 'office_head', 'caretaker'],
+  projects: ['org_admin', 'caretaker'],
+  schemes: ['org_admin', 'caretaker'],
   reports: ['org_admin', 'office_head', 'caretaker', 'employee'],
   compliance: ['org_admin', 'office_head', 'caretaker', 'employee'],
   requisitions: ['org_admin', 'office_head', 'caretaker', 'employee'],
@@ -73,7 +100,7 @@ const DEFAULT_ALLOWED_ROLES_BY_PAGE: Record<string, string[]> = {
   returns: ['org_admin', 'office_head', 'caretaker', 'employee'],
   'returns-new': ['employee'],
   'returns-detail': ['org_admin', 'office_head', 'caretaker', 'employee'],
-  settings: ['org_admin', 'office_head', 'caretaker', 'employee'],
+  settings: ['org_admin', 'office_head', 'caretaker'],
   'audit-logs': ['org_admin', 'office_head', 'caretaker', 'employee'],
   'user-permissions': ['org_admin'],
   'user-management': ['org_admin'],
@@ -198,7 +225,7 @@ function buildDefaultRolePermissions(role: string) {
       defaultPermissions[key] = ['view'];
     }
   }
-  return defaultPermissions;
+  return syncLegacyAssetPagePermissions(defaultPermissions);
 }
 
 function findRolePermissionEntry(roles: StoredRolePermission[], role: string) {
@@ -207,6 +234,52 @@ function findRolePermissionEntry(roles: StoredRolePermission[], role: string) {
     roles.find((entry) => Array.isArray(entry.sourceRoles) && entry.sourceRoles.includes(role)) ||
     null
   );
+}
+
+function syncLegacyAssetPagePermissions(permissions: Record<string, PermissionAction[]>) {
+  const mergeActions = (primaryKey: string, legacyKey: string) => {
+    const merged = Array.from(
+      new Set([
+        ...sanitizePermissionActions(permissions[primaryKey]),
+        ...sanitizePermissionActions(permissions[legacyKey]),
+      ])
+    );
+    permissions[primaryKey] = merged;
+    permissions[legacyKey] = merged;
+  };
+
+  mergeActions('assets', 'office-assets');
+  mergeActions('asset-items', 'office-asset-items');
+  return permissions;
+}
+
+function applyFixedRoleRestrictions(
+  role: string,
+  permissions: Record<string, PermissionAction[]>
+) {
+  const normalizedRole = String(role || '').trim().toLowerCase();
+  if (normalizedRole === 'employee') {
+    EMPLOYEE_RESTRICTED_PAGE_KEYS.forEach((pageKey) => {
+      permissions[pageKey] = [];
+    });
+    return permissions;
+  }
+  if (normalizedRole === 'office_head') {
+    OFFICE_HEAD_RESTRICTED_PAGE_KEYS.forEach((pageKey) => {
+      permissions[pageKey] = [];
+    });
+    return permissions;
+  }
+  return permissions;
+}
+
+function applyCentralCaretakerRestrictions(
+  permissions: Record<string, PermissionAction[]>
+) {
+  CENTRAL_CARETAKER_ONLY_PAGE_KEYS.forEach((pageKey) => {
+    permissions[pageKey] = [];
+  });
+  return permissions;
 }
 
 function buildEffectiveRolePermissions(settings: any, role: string) {
@@ -223,13 +296,19 @@ function buildEffectiveRolePermissions(settings: any, role: string) {
   const matchedRole = findRolePermissionEntry(storedRoles, normalizedRole);
 
   if (!matchedRole) {
-    return effectivePermissions;
+    return applyFixedRoleRestrictions(
+      normalizedRole,
+      syncLegacyAssetPagePermissions(effectivePermissions)
+    );
   }
 
   for (const key of PERMISSION_PAGE_KEYS) {
     effectivePermissions[key] = sanitizePermissionActions(matchedRole.permissions[key]);
   }
-  return effectivePermissions;
+  return applyFixedRoleRestrictions(
+    normalizedRole,
+    syncLegacyAssetPagePermissions(effectivePermissions)
+  );
 }
 
 const buildSystemInfo = async (req: Request, lastBackupAt: string | null) => {
@@ -322,6 +401,18 @@ export const settingsController = {
       }
       const settings = await getOrCreateSettings();
       const effectivePermissions = buildEffectiveRolePermissions(settings, role);
+      if (role === 'caretaker') {
+        const locationId = String(req.user?.locationId || '').trim();
+        if (!locationId) {
+          applyCentralCaretakerRestrictions(effectivePermissions);
+        } else {
+          const office: any = await OfficeModel.findById(locationId, { _id: 1, type: 1, is_active: 1 }).lean();
+          const officeType = String(office?.type || '').trim().toUpperCase();
+          if (!office?._id || office?.is_active === false || officeType !== 'HEAD_OFFICE') {
+            applyCentralCaretakerRestrictions(effectivePermissions);
+          }
+        }
+      }
       const allowedPages = PERMISSION_PAGE_KEYS.filter((page) =>
         hasPageView(effectivePermissions[page])
       );

@@ -29,13 +29,14 @@ import { useAuth } from '@/contexts/AuthContext';
 
 export default function ConsumableMaster() {
   const { role, isOrgAdmin } = useAuth();
+  const { mode, setMode } = useConsumableMode();
   const { data: items, isLoading } = useConsumableItems();
   const { data: units } = useConsumableUnits();
-  const { data: categories } = useCategories({ assetType: 'CONSUMABLE' });
+  const categoryScope = mode === 'chemicals' ? 'LAB_ONLY' : 'GENERAL';
+  const { data: categories } = useCategories({ assetType: 'CONSUMABLE', scope: categoryScope });
   const createItem = useCreateConsumableItem();
   const updateItem = useUpdateConsumableItem();
   const deleteItem = useDeleteConsumableItem();
-  const { mode, setMode } = useConsumableMode();
   const modeLabel = mode === 'chemicals' ? 'chemical' : 'general consumable';
   const canManage = isOrgAdmin || role === 'caretaker';
 
@@ -150,7 +151,7 @@ export default function ConsumableMaster() {
         title="Item Master"
         description={`Create and maintain ${modeLabel} inventory items`}
         extra={<ConsumableModeToggle mode={mode} onChange={setMode} />}
-        action={canManage ? { label: 'Add Item', onClick: handleAdd } : undefined}
+        action={canManage ? { label: 'Add Consumable Item', onClick: handleAdd } : undefined}
       />
 
       <DataTable
@@ -165,6 +166,7 @@ export default function ConsumableMaster() {
           open={isModalOpen}
           onOpenChange={setIsModalOpen}
           item={editing}
+          mode={mode}
           categories={categoryList}
           units={unitList}
           onSubmit={handleSubmit}

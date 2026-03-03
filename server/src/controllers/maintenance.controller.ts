@@ -3,6 +3,8 @@ import mongoose from 'mongoose';
 import { MaintenanceRecordModel } from '../models/maintenanceRecord.model';
 import { AssetItemModel } from '../models/assetItem.model';
 import { VendorModel } from '../models/vendor.model';
+import { EmployeeModel } from '../models/employee.model';
+import { AssignmentModel } from '../models/assignment.model';
 import { mapFields } from '../utils/mapFields';
 import type { AuthRequest } from '../middleware/auth';
 import { resolveAccessContext, ensureOfficeScope, isOfficeManager } from '../utils/accessControl';
@@ -14,11 +16,16 @@ import { DocumentLinkModel } from '../models/documentLink.model';
 import { DocumentModel } from '../models/document.model';
 import { DocumentVersionModel } from '../models/documentVersion.model';
 import { getAssetItemOfficeId, officeAssetItemFilter } from '../utils/assetHolder';
+import { createBulkNotifications, resolveNotificationRecipientsByOffice } from '../services/notification.service';
 
 function clampInt(value: unknown, fallback: number, max: number) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.max(1, Math.min(Math.floor(parsed), max));
+}
+
+function escapeRegex(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 async function hasCompletionDocs(maintenanceRecordId: string) {
@@ -93,6 +100,109 @@ function requireAssetItemOfficeId(item: { holder_type?: string | null; holder_id
     throw createHttpError(400, message);
   }
   return officeId;
+}
+
+function toRecordId(record: any) {
+  if (record?._id) return String(record._id);
+  if (record?.id) return String(record.id);
+  return '';
+}
+
+function toIsoDateLabel(value: unknown) {
+  const parsed = value ? new Date(String(value)) : null;
+  if (!parsed || Number.isNaN(parsed.getTime())) return 'unspecified date';
+  return parsed.toLocaleDateString();
+}
+
+async function notifyMaintenanceEvent(input: {
+  maintenanceRecord: any;
+  officeId: string;
+  type: 'MAINTENANCE_SCHEDULED' | 'MAINTENANCE_DUE' | 'MAINTENANCE_OVERDUE' | 'MAINTENANCE_COMPLETED';
+  title: string;
+  message: string;
+  excludeUserIds?: string[];
+  dedupeWindowHours?: number;
+}) {
+  const recordId = toRecordId(input.maintenanceRecord);
+  if (!recordId) return;
+
+  const recipients = await resolveNotificationRecipientsByOffice({
+    officeIds: [input.officeId],
+    includeOrgAdmins: true,
+    includeRoles: ['office_head', 'caretaker'],
+    excludeUserIds: input.excludeUserIds,
+  });
+  if (recipients.length === 0) return;
+
+  await createBulkNotifications(
+    recipients.map((recipientUserId) => ({
+      recipientUserId,
+      officeId: input.officeId,
+      type: input.type,
+      title: input.title,
+      message: input.message,
+      entityType: 'MaintenanceRecord',
+      entityId: recordId,
+      dedupeWindowHours: input.dedupeWindowHours ?? 24,
+    }))
+  );
+}
+
+async function dispatchDueAndOverdueMaintenanceReminders(records: any[]) {
+  if (!Array.isArray(records) || records.length === 0) return;
+  const now = Date.now();
+  const threeDaysMs = 3 * 24 * 60 * 60 * 1000;
+  const assetItemIds = Array.from(
+    new Set(records.map((record) => String(record.asset_item_id || '')).filter(Boolean))
+  );
+  if (assetItemIds.length === 0) return;
+
+  const items = await AssetItemModel.find(
+    { _id: { $in: assetItemIds } },
+    { _id: 1, holder_type: 1, holder_id: 1, location_id: 1 }
+  )
+    .lean()
+    .exec();
+  const officeByAssetItemId = new Map<string, string>();
+  items.forEach((item: any) => {
+    const officeId = getAssetItemOfficeId(item);
+    if (officeId) {
+      officeByAssetItemId.set(String(item._id), officeId);
+    }
+  });
+
+  await Promise.all(
+    records.map(async (record) => {
+      const officeId = officeByAssetItemId.get(String(record.asset_item_id || ''));
+      if (!officeId) return;
+      const scheduledDateRaw = record?.scheduled_date;
+      const scheduledDate = scheduledDateRaw ? new Date(String(scheduledDateRaw)).getTime() : Number.NaN;
+      if (!Number.isFinite(scheduledDate)) return;
+
+      if (scheduledDate < now) {
+        await notifyMaintenanceEvent({
+          maintenanceRecord: record,
+          officeId,
+          type: 'MAINTENANCE_OVERDUE',
+          title: 'Maintenance Overdue',
+          message: `Maintenance is overdue since ${toIsoDateLabel(scheduledDateRaw)}.`,
+          dedupeWindowHours: 24,
+        });
+        return;
+      }
+
+      if (scheduledDate - now <= threeDaysMs) {
+        await notifyMaintenanceEvent({
+          maintenanceRecord: record,
+          officeId,
+          type: 'MAINTENANCE_DUE',
+          title: 'Maintenance Due Soon',
+          message: `Maintenance is due on ${toIsoDateLabel(scheduledDateRaw)}.`,
+          dedupeWindowHours: 24,
+        });
+      }
+    })
+  );
 }
 
 async function ensureMaintenanceScope(
@@ -181,12 +291,77 @@ async function validateEstimateDocument(params: {
   return { id: String(document._id) };
 }
 
+async function resolveRequesterEmployee(req: AuthRequest, projection: Record<string, 1>) {
+  const userId = String(req.user?.userId || '').trim();
+  if (!userId) return null;
+
+  const byUserId: any = await EmployeeModel.findOne(
+    { user_id: userId, is_active: { $ne: false } },
+    projection
+  ).lean();
+  if (byUserId?._id) return byUserId;
+
+  const requesterEmail = String(req.user?.email || '').trim();
+  if (!requesterEmail) return null;
+  const byEmail: any = await EmployeeModel.findOne(
+    {
+      email: { $regex: `^${escapeRegex(requesterEmail)}$`, $options: 'i' },
+      is_active: { $ne: false },
+    },
+    projection
+  ).lean();
+  return byEmail || null;
+}
+
+async function resolveRequesterEmployeeId(req: AuthRequest) {
+  const employee: any = await resolveRequesterEmployee(req, { _id: 1 });
+  if (!employee?._id) {
+    throw createHttpError(403, 'Employee mapping not found for user');
+  }
+  return String(employee._id);
+}
+
+async function resolveActiveEmployeeAssetItemIds(employeeId: string, officeId?: string | null) {
+  const assignmentRows: any[] = await AssignmentModel.find(
+    {
+      employee_id: employeeId,
+      is_active: true,
+      returned_date: null,
+    },
+    { asset_item_id: 1 }
+  )
+    .lean()
+    .exec();
+  const assignedAssetItemIds = Array.from(
+    new Set(
+      assignmentRows
+        .map((assignment) => String(assignment.asset_item_id || ''))
+        .filter(Boolean)
+    )
+  );
+  if (assignedAssetItemIds.length === 0) return [];
+  if (!officeId) return assignedAssetItemIds;
+
+  const scopedAssetItems: any[] = await AssetItemModel.find(
+    {
+      _id: { $in: assignedAssetItemIds },
+      ...officeAssetItemFilter(officeId),
+      is_active: { $ne: false },
+    },
+    { _id: 1 }
+  )
+    .lean()
+    .exec();
+  return scopedAssetItems.map((item) => String(item._id));
+}
+
 export const maintenanceController = {
   list: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const limit = clampInt(req.query.limit, 200, 1000);
       const page = clampInt(req.query.page, 1, 10_000);
       const access = await resolveAccessContext(req.user);
+      const isEmployeeRequester = access.role === 'employee';
       if (access.isOrgAdmin) {
         const records = await MaintenanceRecordModel.find({ is_active: { $ne: false } })
           .sort({ created_at: -1 })
@@ -195,6 +370,24 @@ export const maintenanceController = {
         return res.json(records);
       }
       if (!access.officeId) throw createHttpError(403, 'User is not assigned to an office');
+      if (isEmployeeRequester) {
+        const requesterEmployeeId = await resolveRequesterEmployeeId(req);
+        const employeeAssetItemIds = await resolveActiveEmployeeAssetItemIds(
+          requesterEmployeeId,
+          access.officeId
+        );
+        if (employeeAssetItemIds.length === 0) {
+          return res.json([]);
+        }
+        const records = await MaintenanceRecordModel.find({
+          asset_item_id: { $in: employeeAssetItemIds },
+          is_active: { $ne: false },
+        })
+          .sort({ created_at: -1 })
+          .skip((page - 1) * limit)
+          .limit(limit);
+        return res.json(records);
+      }
       const assetItemIds = await AssetItemModel.distinct('_id', {
         ...officeAssetItemFilter(access.officeId),
         is_active: { $ne: false },
@@ -216,22 +409,36 @@ export const maintenanceController = {
       const limit = clampInt(req.query.limit, 200, 1000);
       const page = clampInt(req.query.page, 1, 10_000);
       const access = await resolveAccessContext(req.user);
+      const isEmployeeRequester = access.role === 'employee';
       const filter: Record<string, unknown> = {
         maintenance_status: 'Scheduled',
         is_active: { $ne: false },
       };
       if (!access.isOrgAdmin) {
         if (!access.officeId) throw createHttpError(403, 'User is not assigned to an office');
-        const assetItemIds = await AssetItemModel.distinct('_id', {
-          ...officeAssetItemFilter(access.officeId),
-          is_active: { $ne: false },
-        });
-        filter.asset_item_id = { $in: assetItemIds };
+        if (isEmployeeRequester) {
+          const requesterEmployeeId = await resolveRequesterEmployeeId(req);
+          const employeeAssetItemIds = await resolveActiveEmployeeAssetItemIds(
+            requesterEmployeeId,
+            access.officeId
+          );
+          if (employeeAssetItemIds.length === 0) {
+            return res.json([]);
+          }
+          filter.asset_item_id = { $in: employeeAssetItemIds };
+        } else {
+          const assetItemIds = await AssetItemModel.distinct('_id', {
+            ...officeAssetItemFilter(access.officeId),
+            is_active: { $ne: false },
+          });
+          filter.asset_item_id = { $in: assetItemIds };
+        }
       }
       const records = await MaintenanceRecordModel.find(filter)
         .sort({ created_at: -1 })
         .skip((page - 1) * limit)
         .limit(limit);
+      await dispatchDueAndOverdueMaintenanceReminders(records);
       res.json(records);
     } catch (error) {
       next(error);
@@ -242,7 +449,16 @@ export const maintenanceController = {
       const record = await MaintenanceRecordModel.findById(req.params.id);
       if (!record) return res.status(404).json({ message: 'Not found' });
       const access = await resolveAccessContext(req.user);
-      if (!access.isOrgAdmin) {
+      if (!access.isOrgAdmin && access.role === 'employee') {
+        const requesterEmployeeId = await resolveRequesterEmployeeId(req);
+        const employeeAssetItemIds = await resolveActiveEmployeeAssetItemIds(
+          requesterEmployeeId,
+          access.officeId
+        );
+        if (!employeeAssetItemIds.includes(String(record.asset_item_id || ''))) {
+          throw createHttpError(403, 'Employees can only access maintenance for assigned asset items');
+        }
+      } else if (!access.isOrgAdmin) {
         const item = await AssetItemModel.findById(record.asset_item_id);
         const officeId = item ? getAssetItemOfficeId(item) : null;
         if (!officeId) throw createHttpError(403, 'Access restricted to assigned office');
@@ -258,7 +474,16 @@ export const maintenanceController = {
       const limit = clampInt(req.query.limit, 200, 1000);
       const page = clampInt(req.query.page, 1, 10_000);
       const access = await resolveAccessContext(req.user);
-      if (!access.isOrgAdmin) {
+      if (!access.isOrgAdmin && access.role === 'employee') {
+        const requesterEmployeeId = await resolveRequesterEmployeeId(req);
+        const employeeAssetItemIds = await resolveActiveEmployeeAssetItemIds(
+          requesterEmployeeId,
+          access.officeId
+        );
+        if (!employeeAssetItemIds.includes(String(req.params.assetItemId || ''))) {
+          throw createHttpError(403, 'Employees can only access maintenance for assigned asset items');
+        }
+      } else if (!access.isOrgAdmin) {
         const item = await AssetItemModel.findById(req.params.assetItemId);
         const officeId = item ? getAssetItemOfficeId(item) : null;
         if (!officeId) throw createHttpError(403, 'Access restricted to assigned office');
@@ -280,7 +505,8 @@ export const maintenanceController = {
     const session = await mongoose.startSession();
     try {
       const access = await resolveAccessContext(req.user);
-      if (!access.isOrgAdmin && !isOfficeManager(access.role)) {
+      const isEmployeeRequester = access.role === 'employee';
+      if (!access.isOrgAdmin && !isOfficeManager(access.role) && !isEmployeeRequester) {
         throw createHttpError(403, 'Not permitted to create maintenance records');
       }
       const payload = buildPayload(req.body);
@@ -297,32 +523,56 @@ export const maintenanceController = {
       if (!access.isOrgAdmin) {
         ensureOfficeScope(access, assetItemOfficeId);
       }
-      const vendor = await resolveMaintenanceVendor({
-        vendorId: payload.performed_by_vendor_id,
-        officeId: assetItemOfficeId,
-      });
-      payload.performed_by_vendor_id = vendor.id;
-      payload.performed_by = vendor.name;
+      let requesterEmployeeId: string | null = null;
+      if (isEmployeeRequester) {
+        requesterEmployeeId = await resolveRequesterEmployeeId(req);
+        const employeeAssetItemIds = await resolveActiveEmployeeAssetItemIds(
+          requesterEmployeeId,
+          access.officeId
+        );
+        if (!employeeAssetItemIds.includes(String(payload.asset_item_id || ''))) {
+          throw createHttpError(
+            403,
+            'Employees can only request maintenance for currently assigned asset items'
+          );
+        }
+        payload.performed_by_vendor_id = null;
+        payload.estimate_document_id = null;
+        payload.performed_by = normalizeNullableString(payload.performed_by) || 'Employee Request';
+      } else {
+        const vendor = await resolveMaintenanceVendor({
+          vendorId: payload.performed_by_vendor_id,
+          officeId: assetItemOfficeId,
+        });
+        payload.performed_by_vendor_id = vendor.id;
+        payload.performed_by = vendor.name;
+      }
+      let createdRecord: any = null;
 
       await session.withTransaction(async () => {
-        const estimateDocument = await validateEstimateDocument({
-          documentId: payload.estimate_document_id,
-          officeId: assetItemOfficeId,
-          session,
-        });
-        payload.estimate_document_id = estimateDocument.id;
+        if (!isEmployeeRequester) {
+          const estimateDocument = await validateEstimateDocument({
+            documentId: payload.estimate_document_id,
+            officeId: assetItemOfficeId,
+            session,
+          });
+          payload.estimate_document_id = estimateDocument.id;
+        }
 
         const record = await MaintenanceRecordModel.create([payload], { session });
-        await DocumentLinkModel.create(
-          [
-            {
-              document_id: estimateDocument.id,
-              entity_type: 'MaintenanceRecord',
-              entity_id: record[0].id,
-            },
-          ],
-          { session }
-        );
+        createdRecord = record[0];
+        if (!isEmployeeRequester && payload.estimate_document_id) {
+          await DocumentLinkModel.create(
+            [
+              {
+                document_id: payload.estimate_document_id,
+                entity_type: 'MaintenanceRecord',
+                entity_id: record[0].id,
+              },
+            ],
+            { session }
+          );
+        }
         await AssetItemModel.findByIdAndUpdate(
           payload.asset_item_id,
           { item_status: 'Maintenance' },
@@ -338,13 +588,14 @@ export const maintenanceController = {
           },
           {
             recordType: 'MAINTENANCE',
-            officeId: assetItemOfficeId,
-            status: 'Approved',
-            assetItemId: payload.asset_item_id as string,
-            maintenanceRecordId: record[0].id,
-            notes: payload.notes as string | undefined,
-          },
-          session
+              officeId: assetItemOfficeId,
+              status: isEmployeeRequester ? 'Draft' : 'Approved',
+              assetItemId: payload.asset_item_id as string,
+              employeeId: requesterEmployeeId || undefined,
+              maintenanceRecordId: record[0].id,
+              notes: payload.notes as string | undefined,
+            },
+            session
         );
 
         await logAudit({
@@ -361,9 +612,21 @@ export const maintenanceController = {
           diff: { maintenanceStatus: record[0].maintenance_status },
           session,
         });
-
-        res.status(201).json(record[0]);
       });
+      if (!createdRecord) {
+        throw createHttpError(500, 'Failed to create maintenance record');
+      }
+      if (String(createdRecord.maintenance_status || '') === 'Scheduled') {
+        await notifyMaintenanceEvent({
+          maintenanceRecord: createdRecord,
+          officeId: assetItemOfficeId,
+          type: 'MAINTENANCE_SCHEDULED',
+          title: 'Maintenance Scheduled',
+          message: `Maintenance has been scheduled for ${toIsoDateLabel(createdRecord.scheduled_date)}.`,
+          excludeUserIds: [access.userId],
+        });
+      }
+      res.status(201).json(createdRecord);
     } catch (error) {
       next(error);
     } finally {
@@ -535,6 +798,15 @@ export const maintenanceController = {
           diff: { completedDate: record.completed_date },
           session,
         });
+      });
+
+      await notifyMaintenanceEvent({
+        maintenanceRecord: record,
+        officeId: assetItemOfficeId,
+        type: 'MAINTENANCE_COMPLETED',
+        title: 'Maintenance Completed',
+        message: `Maintenance was completed on ${toIsoDateLabel(record.completed_date)}.`,
+        excludeUserIds: [access.userId],
       });
 
       res.json(record);

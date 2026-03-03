@@ -23,6 +23,7 @@ import { createRecord } from '../modules/records/services/record.service';
 import { generateAndStoreReturnReceipt } from '../services/returnRequestReceipt.service';
 import { officeAssetItemFilter } from '../utils/assetHolder';
 import { assertUploadedFileIntegrity } from '../utils/uploadValidation';
+import { escapeRegex } from '../utils/requestParsing';
 
 import {
   RECEIVE_ALLOWED_STATUSES,
@@ -39,8 +40,30 @@ import {
   getSignedReturnFile,
 } from './returnRequest.controller.helpers';
 
-async function resolveRequesterEmployeeId(userId: string) {
-  const requesterEmployee: any = await EmployeeModel.findOne({ user_id: userId }, { _id: 1 }).lean();
+async function resolveRequesterEmployee(req: AuthRequest, projection: Record<string, 1>) {
+  const userId = String(req.user?.userId || '').trim();
+  if (!userId) return null;
+
+  const byUserId: any = await EmployeeModel.findOne(
+    { user_id: userId, is_active: { $ne: false } },
+    projection
+  ).lean();
+  if (byUserId?._id) return byUserId;
+
+  const requesterEmail = String(req.user?.email || '').trim();
+  if (!requesterEmail) return null;
+  const byEmail: any = await EmployeeModel.findOne(
+    {
+      email: { $regex: `^${escapeRegex(requesterEmail)}$`, $options: 'i' },
+      is_active: { $ne: false },
+    },
+    projection
+  ).lean();
+  return byEmail || null;
+}
+
+async function resolveRequesterEmployeeId(req: AuthRequest) {
+  const requesterEmployee: any = await resolveRequesterEmployee(req, { _id: 1 });
   if (!requesterEmployee?._id) {
     throw createHttpError(403, 'Employee mapping not found for user');
   }
@@ -81,7 +104,7 @@ export const returnRequestController = {
         }
         filter.office_id = ctx.locationId;
       } else if (isEmployeeScopedViewer) {
-        const requesterEmployeeId = await resolveRequesterEmployeeId(ctx.userId);
+        const requesterEmployeeId = await resolveRequesterEmployeeId(req);
         if (employeeId && employeeId !== requesterEmployeeId) {
           throw createHttpError(403, 'Employees can only access their own return requests');
         }
@@ -141,7 +164,7 @@ export const returnRequestController = {
           throw createHttpError(403, 'Access restricted to assigned office');
         }
       } else if (isEmployeeScopedViewer) {
-        const requesterEmployeeId = await resolveRequesterEmployeeId(ctx.userId);
+        const requesterEmployeeId = await resolveRequesterEmployeeId(req);
         if (String(returnRequest.employee_id || '') !== requesterEmployeeId) {
           throw createHttpError(403, 'Employees can only access their own return requests');
         }
@@ -233,7 +256,7 @@ export const returnRequestController = {
       const isIssuer = ctx.isOrgAdmin || isOfficeManager(ctx.role);
       let isOwnerEmployee = false;
       if (!isIssuer) {
-        const requesterEmployee: any = await EmployeeModel.findOne({ user_id: ctx.userId }, { _id: 1 }).lean();
+        const requesterEmployee: any = await resolveRequesterEmployee(req, { _id: 1 });
         isOwnerEmployee =
           Boolean(requesterEmployee?._id) &&
           String(requesterEmployee?._id) === String(returnRequest.employee_id || '');
@@ -394,10 +417,10 @@ export const returnRequestController = {
         throw createHttpError(400, 'officeId is invalid');
       }
 
-      const requesterEmployee: any = await EmployeeModel.findOne(
-        { user_id: ctx.userId },
+      const requesterEmployee: any = await resolveRequesterEmployee(
+        req,
         { _id: 1, location_id: 1, directorate_id: 1 }
-      ).lean();
+      );
 
       const employeeId = requestedEmployeeId || (requesterEmployee?._id ? String(requesterEmployee._id) : null);
       if (!employeeId) {

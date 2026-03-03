@@ -10,15 +10,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Loader2 } from "lucide-react";
 import type { Employee, Office } from "@/types";
+import { SearchableSelect } from "@/components/shared/SearchableSelect";
 
 interface EmployeeTransferModalProps {
   open: boolean;
@@ -99,24 +93,15 @@ export function EmployeeTransferModal({
 
           <div className="space-y-2">
             <Label htmlFor="newOffice">New Office *</Label>
-            <Select value={newOfficeId} onValueChange={setNewOfficeId}>
-              <SelectTrigger id="newOffice">
-                <SelectValue placeholder="Select destination office" />
-              </SelectTrigger>
-              <SelectContent>
-                {officeOptions.length === 0 ? (
-                  <SelectItem value="__none__" disabled>
-                    No eligible offices available
-                  </SelectItem>
-                ) : (
-                  officeOptions.map((office) => (
-                    <SelectItem key={office.id} value={office.id}>
-                      {office.name}
-                    </SelectItem>
-                  ))
-                )}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              id="newOffice"
+              value={newOfficeId}
+              onValueChange={setNewOfficeId}
+              placeholder="Select destination office"
+              searchPlaceholder="Search offices..."
+              emptyText="No eligible offices available."
+              options={officeOptions.map((office) => ({ value: office.id, label: office.name }))}
+            />
           </div>
 
           <div className="space-y-2">
@@ -154,4 +139,3 @@ export function EmployeeTransferModal({
     </Dialog>
   );
 }
-

@@ -3,13 +3,6 @@ import { MainLayout } from "@/components/layout/MainLayout";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTable } from "@/components/shared/DataTable";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { MoreHorizontal, Eye, Pencil, Trash2, Mail, Phone, Loader2 } from "lucide-react";
 import {
   DropdownMenu,
@@ -24,6 +17,7 @@ import { useVendors, useCreateVendor, useUpdateVendor, useDeleteVendor } from "@
 import { VendorFormModal } from "@/components/forms/VendorFormModal";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLocations } from "@/hooks/useLocations";
+import { SearchableSelect } from "@/components/shared/SearchableSelect";
 
 export default function Vendors() {
   const { role, locationId } = useAuth();
@@ -142,19 +136,17 @@ export default function Vendors() {
 
       {isOrgAdmin && (
         <div className="mb-4 w-full max-w-sm">
-          <Select value={officeFilter} onValueChange={setOfficeFilter}>
-            <SelectTrigger>
-              <SelectValue placeholder="Filter by office" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Offices</SelectItem>
-              {locations.map((office) => (
-                <SelectItem key={office.id} value={office.id}>
-                  {office.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <SearchableSelect
+            value={officeFilter}
+            onValueChange={setOfficeFilter}
+            placeholder="Filter by office"
+            searchPlaceholder="Search offices..."
+            emptyText="No offices found."
+            options={[
+              { value: "all", label: "All Offices" },
+              ...locations.map((office) => ({ value: office.id, label: office.name })),
+            ]}
+          />
         </div>
       )}
 

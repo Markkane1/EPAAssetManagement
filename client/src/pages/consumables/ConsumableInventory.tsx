@@ -24,6 +24,7 @@ import { useConsumableMode } from '@/hooks/useConsumableMode';
 import { filterItemsByMode, filterLocationsByMode } from '@/lib/consumableMode';
 import { ConsumableModeToggle } from '@/components/consumables/ConsumableModeToggle';
 import { useAuth } from '@/contexts/AuthContext';
+import { SearchableSelect } from '@/components/shared/SearchableSelect';
 
 function asId(value: { id?: string; _id?: string }) {
   return value.id || value._id || '';
@@ -250,16 +251,18 @@ export default function ConsumableInventory() {
             <div className="space-y-2">
               <label className="text-sm font-medium">Location</label>
               {role === 'org_admin' ? (
-                <Select value={locationId} onValueChange={setLocationId}>
-                  <SelectTrigger><SelectValue placeholder="All locations" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={ALL_VALUE}>All locations</SelectItem>
-                    <SelectItem value={STORE_FILTER}>Head Office Store</SelectItem>
-                    {filteredLocations.map((loc) => (
-                      <SelectItem key={loc.id} value={loc.id}>{loc.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={locationId}
+                  onValueChange={setLocationId}
+                  placeholder="All locations"
+                  searchPlaceholder="Search locations..."
+                  emptyText="No locations found."
+                  options={[
+                    { value: ALL_VALUE, label: 'All locations' },
+                    { value: STORE_FILTER, label: 'Head Office Store' },
+                    ...filteredLocations.map((loc) => ({ value: loc.id, label: loc.name })),
+                  ]}
+                />
               ) : (
                 <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm">
                   {filteredLocations.find((loc) => loc.id === locationId)?.name || 'Assigned location'}

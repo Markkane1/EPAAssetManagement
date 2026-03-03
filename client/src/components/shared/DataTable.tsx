@@ -388,7 +388,7 @@ export function DataTable<T extends { id?: string; _id?: string }>({
       xlsx.utils.book_append_sheet(workbook, worksheet, "Data");
       xlsx.writeFile(workbook, `${resolvedExportFileName}.xlsx`);
       toast.success(`Exported ${exportRows.length} rows as Excel`);
-    } catch (_error) {
+    } catch {
       toast.error("Failed to export Excel file");
     } finally {
       setIsExporting(false);

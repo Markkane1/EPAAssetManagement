@@ -71,7 +71,7 @@ export default function NotificationDetails() {
   const markAllRead = useMarkAllNotificationsRead();
   const markRead = useMarkNotificationRead();
 
-  const notifications = data?.data || [];
+  const notifications = useMemo(() => data?.data || [], [data?.data]);
   const total = data?.total || 0;
   const totalPages = Math.max(1, Math.ceil(total / limit));
   const unreadCount = unreadMeta?.total || 0;

@@ -161,6 +161,11 @@ export const env = {
   ),
   mongoRetryWrites: parseBoolean('MONGO_RETRY_WRITES', process.env.MONGO_RETRY_WRITES, true),
   mongoRetryReads: parseBoolean('MONGO_RETRY_READS', process.env.MONGO_RETRY_READS, true),
+  mongoRequireReplicaSet: parseBoolean(
+    'MONGO_REQUIRE_REPLICA_SET',
+    process.env.MONGO_REQUIRE_REPLICA_SET,
+    true
+  ),
   jwtSecret: assertSecret('JWT_SECRET', process.env.JWT_SECRET),
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
   jwtInvalidateBefore: parseOptionalUnixTimestamp('JWT_INVALIDATE_BEFORE', process.env.JWT_INVALIDATE_BEFORE),

@@ -386,14 +386,17 @@ export interface Transfer {
 }
 
 export enum RequisitionStatus {
-  PendingVerification = "PENDING_VERIFICATION",
-  VerifiedApproved = "VERIFIED_APPROVED",
-  InFulfillment = "IN_FULFILLMENT",
+  Submitted = "SUBMITTED",
+  Approved = "APPROVED",
   PartiallyFulfilled = "PARTIALLY_FULFILLED",
-  FulfilledPendingSignature = "FULFILLED_PENDING_SIGNATURE",
   Fulfilled = "FULFILLED",
   RejectedInvalid = "REJECTED_INVALID",
   Cancelled = "CANCELLED",
+  // Legacy statuses kept for compatibility with existing records.
+  PendingVerification = "PENDING_VERIFICATION",
+  VerifiedApproved = "VERIFIED_APPROVED",
+  InFulfillment = "IN_FULFILLMENT",
+  FulfilledPendingSignature = "FULFILLED_PENDING_SIGNATURE",
 }
 
 export enum RequisitionLineType {

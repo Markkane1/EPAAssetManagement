@@ -62,6 +62,15 @@ function resolveHolderOfficeId(holder: HolderContext) {
 
 const nowIso = () => new Date().toISOString();
 
+async function runWithTransaction(
+  session: ClientSession,
+  handler: (session: ClientSession) => Promise<void>
+) {
+  await session.withTransaction(async () => {
+    await handler(session);
+  });
+}
+
 function ensureAllowed(condition: boolean, message: string) {
   if (!condition) throw createHttpError(403, message);
 }
@@ -240,6 +249,23 @@ function extractHolderArgs(
   return { holderId, holderType };
 }
 
+async function resolveFilterHolder(
+  payload: any,
+  options: {
+    holderIdKey: string;
+    holderTypeKey: string;
+    defaultType?: HolderType;
+  },
+  session?: ClientSession
+) {
+  const holderArgs = extractHolderArgs(payload, options);
+  const holder = await resolveHolder(holderArgs.holderId, holderArgs.holderType, session);
+  return {
+    holderType: holder.holderType,
+    holderId: holder.holderId,
+  };
+}
+
 function withAnd(base: any, clause: any) {
   if (!clause || Object.keys(clause).length === 0) return base;
   if (!base || Object.keys(base).length === 0) return clause;
@@ -348,6 +374,71 @@ async function verifyReasonCode(reasonCodeId: string, category: 'ADJUST' | 'DISP
 
 function requiresContainer(item: { requires_container_tracking?: boolean; is_controlled?: boolean }) {
   return Boolean(item.requires_container_tracking || item.is_controlled);
+}
+
+function requiresReceiveContainer(item: {
+  is_chemical?: boolean;
+  requires_container_tracking?: boolean;
+  is_controlled?: boolean;
+}) {
+  return Boolean(item.is_chemical || item.requires_container_tracking || item.is_controlled);
+}
+
+function buildAutoContainerCode(seed: string) {
+  const token = String(seed || 'LOT')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '')
+    .slice(0, 12) || 'LOT';
+  const stamp = Date.now();
+  const random = Math.floor(Math.random() * 9000 + 1000);
+  return `${token}-AUTO-${stamp}-${random}`;
+}
+
+function normalizeReceiveContainers(options: {
+  item: any;
+  payload: any;
+  qtyBase: number;
+  lotId: string | null;
+  unitLookup: any;
+}) {
+  const { item, payload, qtyBase, lotId, unitLookup } = options;
+  const providedContainers = Array.isArray(payload?.containers) ? payload.containers : [];
+  const mustTrackContainer = requiresReceiveContainer(item);
+
+  if (mustTrackContainer && !lotId) {
+    throw createHttpError(400, 'Container tracking requires lot-tracked receiving');
+  }
+
+  let normalized = providedContainers.map((container: any) => ({
+    containerCode: String(container?.containerCode || '').trim(),
+    initialQtyBase: convertToBaseQty(container?.initialQty, payload?.uom, item.base_uom, unitLookup),
+    openedDate: container?.openedDate || null,
+  }));
+
+  if (mustTrackContainer && normalized.length === 0) {
+    const seed = String(payload?.lot?.lotNumber || lotId || item?.name || 'LOT');
+    normalized = [
+      {
+        containerCode: buildAutoContainerCode(seed),
+        initialQtyBase: qtyBase,
+        openedDate: null,
+      },
+    ];
+  }
+
+  if (normalized.length === 0) return normalized;
+
+  if (normalized.some((container) => !container.containerCode)) {
+    throw createHttpError(400, 'Container code is required for each container');
+  }
+
+  const sumContainers = normalized.reduce((total, container) => total + container.initialQtyBase, 0);
+  const diff = Math.abs(sumContainers - qtyBase);
+  if (diff > 0.0001) {
+    throw createHttpError(400, 'Container quantities must sum to total received quantity');
+  }
+
+  return normalized;
 }
 
 function normalizeAllowNegative(allowNegative: boolean | undefined, overrideNote?: string) {
@@ -643,15 +734,15 @@ export const inventoryService = {
     const session = await mongoose.startSession();
     let result: any;
     try {
-      await session.withTransaction(async () => {
+      await runWithTransaction(session, async (txSession) => {
         const permissions = resolveConsumablePermissions(user.role);
         ensureAllowed(permissions.canReceiveCentral, 'Not permitted to receive into Central Store');
 
-        const item = await getItem(payload.itemId, session);
+        const item = await getItem(payload.itemId, txSession);
         const categoryId = String(payload.categoryId || '').trim();
-        await ensureReceiveCategory(item, categoryId, session);
-        const storeHolder = await getCentralStoreHolder(session);
-        const unitLookup = await getUnitLookup({ session });
+        await ensureReceiveCategory(item, categoryId, txSession);
+        const storeHolder = await getCentralStoreHolder(txSession as ClientSession);
+        const unitLookup = await getUnitLookup({ session: txSession });
         ensureChemicalsHolder(item, storeHolder, 'Receiving holder');
 
         const qtyBase = convertToBaseQty(payload.qty, payload.uom, item.base_uom, unitLookup);
@@ -662,7 +753,7 @@ export const inventoryService = {
           if (handoverDocumentation) {
             throw createHttpError(400, 'Handover documentation is only accepted when creating a new lot');
           }
-          await ensureLotMatchesItem(lotId, item.id, session);
+          await ensureLotMatchesItem(lotId, item.id, txSession);
         } else if (item.requires_lot_tracking !== false) {
           if (!payload.lot) throw createHttpError(400, 'Lot details are required for this item');
           if (!payload.lot.expiryDate) throw createHttpError(400, 'Lot expiry date is required');
@@ -670,7 +761,7 @@ export const inventoryService = {
           if (Number.isNaN(expiryDate.getTime())) {
             throw createHttpError(400, 'Lot expiry date is invalid');
           }
-          const sourceMeta = await resolveReceiveSource(payload.lot, session);
+          const sourceMeta = await resolveReceiveSource(payload.lot, txSession);
           const attachment = buildHandoverAttachmentPayload(handoverDocumentation || null);
           const receivedQty = roundQty(qtyBase);
           const newLot = await ConsumableLotModel.create(
@@ -698,7 +789,7 @@ export const inventoryService = {
                 },
               },
             ],
-            { session }
+            { session: txSession }
           );
           lotId = newLot[0].id.toString();
         }
@@ -725,7 +816,7 @@ export const inventoryService = {
               metadata: buildMetadata(payload, false),
             },
           ],
-          { session }
+          { session: txSession }
         );
 
         await updateBalance(
@@ -737,28 +828,28 @@ export const inventoryService = {
           },
           qtyBase,
           true,
-          session
+          txSession as ClientSession
         );
 
-        if (Array.isArray(payload.containers) && payload.containers.length > 0) {
-          const sumContainers = payload.containers.reduce((total: number, container: any) => {
-            return total + convertToBaseQty(container.initialQty, payload.uom, item.base_uom, unitLookup);
-          }, 0);
-          const diff = Math.abs(sumContainers - qtyBase);
-          if (diff > 0.0001) {
-            throw createHttpError(400, 'Container quantities must sum to total received quantity');
-          }
+        const normalizedContainers = normalizeReceiveContainers({
+          item,
+          payload,
+          qtyBase,
+          lotId,
+          unitLookup,
+        });
+        if (normalizedContainers.length > 0) {
           await ConsumableContainerModel.insertMany(
-            payload.containers.map((container: any) => ({
+            normalizedContainers.map((container: any) => ({
               lot_id: lotId,
               container_code: container.containerCode,
-              initial_qty_base: convertToBaseQty(container.initialQty, payload.uom, item.base_uom, unitLookup),
-              current_qty_base: convertToBaseQty(container.initialQty, payload.uom, item.base_uom, unitLookup),
+              initial_qty_base: container.initialQtyBase,
+              current_qty_base: container.initialQtyBase,
               current_location_id: storeHolder.holderId,
               status: 'IN_STOCK',
               opened_date: container.openedDate || null,
             })),
-            { session }
+            { session: txSession }
           );
         }
 
@@ -774,7 +865,7 @@ export const inventoryService = {
             lotId,
             qtyBase,
           },
-          session
+          txSession
         );
 
         result = tx[0];
@@ -789,18 +880,10 @@ export const inventoryService = {
     const session = await mongoose.startSession();
     let result: any;
     try {
-      await session.withTransaction(async () => {
+      await runWithTransaction(session, async (txSession) => {
         const permissions = resolveConsumablePermissions(user.role);
         ensureAllowed(permissions.canReceiveOffice, 'Not permitted to receive into Office');
 
-        // Resolve the user's assigned office
-        const userContext = await getUserContext(user.userId, session);
-        const userLocationId = userContext.location_id?.toString();
-        if (!userLocationId) {
-          throw createHttpError(403, 'User is not assigned to an office');
-        }
-
-        // Validate that holderId matches the user's assigned office
         const requestedHolderId = String(payload.holderId || '').trim();
         const requestedHolderType = normalizeHolderType(payload.holderType, 'OFFICE');
 
@@ -808,16 +891,31 @@ export const inventoryService = {
           throw createHttpError(400, 'Office receiving must target an OFFICE holder');
         }
 
-        if (requestedHolderId && requestedHolderId !== userLocationId) {
-          throw createHttpError(403, 'You can only receive stock into your own office');
+        let targetOfficeId = requestedHolderId;
+        if (isGlobalConsumableRole(user.role)) {
+          if (!targetOfficeId) {
+            throw createHttpError(400, 'holderId is required for office receiving');
+          }
+        } else {
+          const userContext = await getUserContext(user.userId, txSession);
+          const userLocationId = userContext.location_id?.toString();
+          if (!userLocationId) {
+            throw createHttpError(403, 'User is not assigned to an office');
+          }
+          if (!targetOfficeId) {
+            targetOfficeId = userLocationId;
+          }
+          if (targetOfficeId !== userLocationId) {
+            throw createHttpError(403, 'You can only receive stock into your own office');
+          }
         }
 
-        const officeHolder = await resolveHolder(userLocationId, 'OFFICE', session);
+        const officeHolder = await resolveHolder(targetOfficeId, 'OFFICE', txSession);
 
-        const item = await getItem(payload.itemId, session);
+        const item = await getItem(payload.itemId, txSession);
         const categoryId = String(payload.categoryId || '').trim();
-        await ensureReceiveCategory(item, categoryId, session);
-        const unitLookup = await getUnitLookup({ session });
+        await ensureReceiveCategory(item, categoryId, txSession);
+        const unitLookup = await getUnitLookup({ session: txSession });
         ensureChemicalsHolder(item, officeHolder, 'Receiving holder');
 
         const qtyBase = convertToBaseQty(payload.qty, payload.uom, item.base_uom, unitLookup);
@@ -835,14 +933,14 @@ export const inventoryService = {
           if (handoverDocumentation) {
             throw createHttpError(400, 'Handover documentation is only accepted when creating a new lot');
           }
-          await ensureLotMatchesItem(lotId, item.id, session);
+          await ensureLotMatchesItem(lotId, item.id, txSession);
         } else if (item.requires_lot_tracking !== false) {
           if (!lotPayload.expiryDate) throw createHttpError(400, 'Lot expiry date is required');
           const expiryDate = new Date(lotPayload.expiryDate);
           if (Number.isNaN(expiryDate.getTime())) {
             throw createHttpError(400, 'Lot expiry date is invalid');
           }
-          const sourceMeta = await resolveReceiveSource(lotPayload, session, { officeScopeId: userLocationId });
+          const sourceMeta = await resolveReceiveSource(lotPayload, txSession, { officeScopeId: targetOfficeId });
           const attachment = buildHandoverAttachmentPayload(handoverDocumentation || null);
           const receivedQty = roundQty(qtyBase);
           const newLot = await ConsumableLotModel.create(
@@ -870,7 +968,7 @@ export const inventoryService = {
                 },
               },
             ],
-            { session }
+            { session: txSession }
           );
           lotId = newLot[0].id.toString();
         }
@@ -897,7 +995,7 @@ export const inventoryService = {
               metadata: buildMetadata(payload, false),
             },
           ],
-          { session }
+          { session: txSession }
         );
 
         await updateBalance(
@@ -909,28 +1007,28 @@ export const inventoryService = {
           },
           qtyBase,
           true,
-          session
+          txSession as ClientSession
         );
 
-        if (Array.isArray(payload.containers) && payload.containers.length > 0) {
-          const sumContainers = payload.containers.reduce((total: number, container: any) => {
-            return total + convertToBaseQty(container.initialQty, payload.uom, item.base_uom, unitLookup);
-          }, 0);
-          const diff = Math.abs(sumContainers - qtyBase);
-          if (diff > 0.0001) {
-            throw createHttpError(400, 'Container quantities must sum to total received quantity');
-          }
+        const normalizedContainers = normalizeReceiveContainers({
+          item,
+          payload,
+          qtyBase,
+          lotId,
+          unitLookup,
+        });
+        if (normalizedContainers.length > 0) {
           await ConsumableContainerModel.insertMany(
-            payload.containers.map((container: any) => ({
+            normalizedContainers.map((container: any) => ({
               lot_id: lotId,
               container_code: container.containerCode,
-              initial_qty_base: convertToBaseQty(container.initialQty, payload.uom, item.base_uom, unitLookup),
-              current_qty_base: convertToBaseQty(container.initialQty, payload.uom, item.base_uom, unitLookup),
+              initial_qty_base: container.initialQtyBase,
+              current_qty_base: container.initialQtyBase,
               current_location_id: officeHolder.holderId,
               status: 'IN_STOCK',
               opened_date: container.openedDate || null,
             })),
-            { session }
+            { session: txSession }
           );
         }
 
@@ -942,11 +1040,11 @@ export const inventoryService = {
             itemId: item.id,
             holderType: officeHolder.holderType,
             holderId: officeHolder.holderId,
-            locationId: userLocationId,
+            locationId: targetOfficeId,
             lotId,
             qtyBase,
           },
-          session
+          txSession
         );
 
         result = tx[0];
@@ -1850,7 +1948,7 @@ export const inventoryService = {
     const permissions = resolveConsumablePermissions(user.role);
     ensureAllowed(permissions.canViewReports, 'Not permitted to view balances');
 
-    const holderArgs = extractHolderArgs(query, {
+    const holderArgs = await resolveFilterHolder(query, {
       holderIdKey: 'holderId',
       holderTypeKey: 'holderType',
     });
@@ -1880,8 +1978,9 @@ export const inventoryService = {
     const allowedLocationId = await resolveAccessibleLocationId(user.userId, role);
 
     let filter: any = {};
+    let holderArgs: { holderType: HolderType; holderId: string } | null = null;
     if (query.holderId) {
-      const holderArgs = extractHolderArgs(query, {
+      holderArgs = await resolveFilterHolder(query, {
         holderIdKey: 'holderId',
         holderTypeKey: 'holderType',
       });
@@ -1892,12 +1991,11 @@ export const inventoryService = {
 
     if (allowedLocationId) {
       const scope = await resolveOfficeScopedHolderIds(allowedLocationId);
-      if (query.holderId) {
-        const requestedType = normalizeHolderType(query.holderType || 'OFFICE');
-        if (requestedType === 'STORE') {
+      if (holderArgs) {
+        if (holderArgs.holderType === 'STORE') {
           throw createHttpError(403, 'User does not have access to this store');
         }
-        if (!isHolderInOfficeScope(requestedType, String(query.holderId), scope)) {
+        if (!isHolderInOfficeScope(holderArgs.holderType, holderArgs.holderId, scope)) {
           throw createHttpError(403, 'User does not have access to this holder');
         }
       }
@@ -1988,9 +2086,10 @@ export const inventoryService = {
     ensureAllowed(permissions.canViewReports, 'Not permitted to view rollup');
 
     let match: any = {};
+    let holderArgs: { holderType: HolderType; holderId: string } | null = null;
     if (query.itemId) match.consumable_item_id = new mongoose.Types.ObjectId(query.itemId);
     if (query.holderId) {
-      const holderArgs = extractHolderArgs(query, {
+      holderArgs = await resolveFilterHolder(query, {
         holderIdKey: 'holderId',
         holderTypeKey: 'holderType',
       });
@@ -2000,12 +2099,11 @@ export const inventoryService = {
     const allowedLocationId = await resolveAccessibleLocationId(user.userId, user.role);
     if (allowedLocationId) {
       const scope = await resolveOfficeScopedHolderIds(allowedLocationId);
-      if (query.holderId) {
-        const requestedType = normalizeHolderType(query.holderType || 'OFFICE');
-        if (requestedType === 'STORE') {
+      if (holderArgs) {
+        if (holderArgs.holderType === 'STORE') {
           throw createHttpError(403, 'User does not have access to this store');
         }
-        if (!isHolderInOfficeScope(requestedType, String(query.holderId), scope)) {
+        if (!isHolderInOfficeScope(holderArgs.holderType, holderArgs.holderId, scope)) {
           throw createHttpError(403, 'User does not have access to this holder');
         }
       }
@@ -2053,6 +2151,7 @@ export const inventoryService = {
     ensureAllowed(permissions.canViewReports, 'Not permitted to view ledger');
 
     let filter: any = {};
+    let holderArgs: { holderType: HolderType; holderId: string } | null = null;
     if (query.from || query.to) {
       filter.tx_time = {};
       if (query.from) filter.tx_time.$gte = query.from;
@@ -2063,7 +2162,7 @@ export const inventoryService = {
     if (query.txType) filter.tx_type = query.txType;
 
     if (query.holderId) {
-      const holderArgs = extractHolderArgs(query, {
+      holderArgs = await resolveFilterHolder(query, {
         holderIdKey: 'holderId',
         holderTypeKey: 'holderType',
       });
@@ -2073,12 +2172,11 @@ export const inventoryService = {
     const allowedLocationId = await resolveAccessibleLocationId(user.userId, user.role);
     if (allowedLocationId) {
       const scope = await resolveOfficeScopedHolderIds(allowedLocationId);
-      if (query.holderId) {
-        const requestedType = normalizeHolderType(query.holderType || 'OFFICE');
-        if (requestedType === 'STORE') {
+      if (holderArgs) {
+        if (holderArgs.holderType === 'STORE') {
           throw createHttpError(403, 'User does not have access to this store');
         }
-        if (!isHolderInOfficeScope(requestedType, String(query.holderId), scope)) {
+        if (!isHolderInOfficeScope(holderArgs.holderType, holderArgs.holderId, scope)) {
           throw createHttpError(403, 'User does not have access to this holder');
         }
       }
@@ -2103,8 +2201,9 @@ export const inventoryService = {
     cutoff.setDate(cutoff.getDate() + days);
 
     let balanceFilter: any = { qty_on_hand_base: { $gt: 0 } };
+    let holderArgs: { holderType: HolderType; holderId: string } | null = null;
     if (query.holderId) {
-      const holderArgs = extractHolderArgs(query, {
+      holderArgs = await resolveFilterHolder(query, {
         holderIdKey: 'holderId',
         holderTypeKey: 'holderType',
       });
@@ -2113,12 +2212,11 @@ export const inventoryService = {
     const allowedLocationId = await resolveAccessibleLocationId(user.userId, user.role);
     if (allowedLocationId) {
       const scope = await resolveOfficeScopedHolderIds(allowedLocationId);
-      if (query.holderId) {
-        const requestedType = normalizeHolderType(query.holderType || 'OFFICE');
-        if (requestedType === 'STORE') {
+      if (holderArgs) {
+        if (holderArgs.holderType === 'STORE') {
           throw createHttpError(403, 'User does not have access to this store');
         }
-        if (!isHolderInOfficeScope(requestedType, String(query.holderId), scope)) {
+        if (!isHolderInOfficeScope(holderArgs.holderType, holderArgs.holderId, scope)) {
           throw createHttpError(403, 'User does not have access to this holder');
         }
       }
@@ -2187,4 +2285,3 @@ export const inventoryService = {
     return expiring.sort((a, b) => new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime());
   },
 };
-

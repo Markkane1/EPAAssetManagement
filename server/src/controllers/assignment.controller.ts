@@ -361,8 +361,8 @@ export const assignmentController = {
       if (!assignment) throw createHttpError(404, 'Assignment not found');
       const { officeId } = await ensureAssignmentAssetScope(access, assignment);
 
-      if (String(assignment.status) !== 'DRAFT') {
-        throw createHttpError(400, 'Handover slip can be generated only for DRAFT assignments');
+      if (String(assignment.status) === 'CANCELLED') {
+        throw createHttpError(400, 'Handover slip cannot be generated for cancelled assignments');
       }
 
       const slip = await resolveGeneratedSlipFile({

@@ -20,9 +20,11 @@ import { usePageSearch } from "@/contexts/PageSearchContext";
 import { ViewModeToggle } from "@/components/shared/ViewModeToggle";
 import { useViewMode } from "@/hooks/useViewMode";
 import { DataTable } from "@/components/shared/DataTable";
+import { useAuth } from "@/contexts/AuthContext";
 
 
 export default function Categories() {
+  const { isOrgAdmin } = useAuth();
   const { data: categories, isLoading } = useCategories();
   const { data: assets, isLoading: assetsLoading } = useAssets();
   const { data: consumableItems, isLoading: consumableItemsLoading } = useConsumableItems();
@@ -151,9 +153,11 @@ export default function Categories() {
         <DropdownMenuItem onClick={() => handleEdit(category)}>
           <Pencil className="h-4 w-4 mr-2" /> Edit
         </DropdownMenuItem>
-        <DropdownMenuItem className="text-destructive" onClick={() => handleDelete(category.id)}>
-          <Trash2 className="h-4 w-4 mr-2" /> Delete
-        </DropdownMenuItem>
+        {isOrgAdmin && (
+          <DropdownMenuItem className="text-destructive" onClick={() => handleDelete(category.id)}>
+            <Trash2 className="h-4 w-4 mr-2" /> Delete
+          </DropdownMenuItem>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -205,9 +209,11 @@ export default function Categories() {
                         <DropdownMenuItem onClick={() => handleEdit(category)}>
                           <Pencil className="h-4 w-4 mr-2" /> Edit
                         </DropdownMenuItem>
-                        <DropdownMenuItem className="text-destructive" onClick={() => handleDelete(category.id)}>
-                          <Trash2 className="h-4 w-4 mr-2" /> Delete
-                        </DropdownMenuItem>
+                        {isOrgAdmin && (
+                          <DropdownMenuItem className="text-destructive" onClick={() => handleDelete(category.id)}>
+                            <Trash2 className="h-4 w-4 mr-2" /> Delete
+                          </DropdownMenuItem>
+                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>

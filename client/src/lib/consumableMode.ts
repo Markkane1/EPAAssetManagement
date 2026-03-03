@@ -1,4 +1,4 @@
-import type { ConsumableItem, Location } from "@/types";
+import type { Category, ConsumableItem, Location } from "@/types";
 
 export type ConsumableMode = "chemicals" | "general";
 
@@ -24,6 +24,17 @@ export function filterItemsByMode(items: ConsumableItem[], mode: ConsumableMode)
   return items.filter((item) => {
     const isChemical = item.is_chemical === true;
     return mode === "chemicals" ? isChemical : !isChemical;
+  });
+}
+
+function resolveCategoryScope(scope: Category["scope"]) {
+  return scope === "LAB_ONLY" ? "LAB_ONLY" : "GENERAL";
+}
+
+export function filterConsumableCategoriesByMode(categories: Category[], mode: ConsumableMode) {
+  return categories.filter((category) => {
+    const scope = resolveCategoryScope(category.scope ?? null);
+    return mode === "chemicals" ? scope === "LAB_ONLY" : scope === "GENERAL";
   });
 }
 

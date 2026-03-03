@@ -47,23 +47,23 @@ type RuntimeRolePermission = {
 export const PAGE_ALLOWED_ROLES: Record<AppPageKey, AppRole[]> = {
   dashboard: allRoles,
   inventory: allRoles,
-  assets: ["org_admin"],
-  "asset-items": ["org_admin"],
+  assets: ["org_admin", "office_head"],
+  "asset-items": ["org_admin", "office_head"],
   consumables: ["org_admin"],
-  "office-assets": ["office_head"],
-  "office-asset-items": ["office_head"],
+  "office-assets": [],
+  "office-asset-items": [],
   "office-consumables": ["office_head"],
-  employees: allRoles,
+  employees: ["org_admin", "office_head", "caretaker"],
   assignments: allRoles,
-  transfers: allRoles,
+  transfers: ["org_admin", "office_head", "caretaker"],
   maintenance: allRoles,
-  "purchase-orders": allRoles,
+  "purchase-orders": ["org_admin", "office_head", "caretaker"],
   offices: ["org_admin"],
   "rooms-sections": ["org_admin", "office_head", "caretaker"],
-  categories: allRoles,
-  vendors: allRoles,
-  projects: allRoles,
-  schemes: allRoles,
+  categories: ["org_admin", "caretaker"],
+  vendors: ["org_admin", "office_head", "caretaker"],
+  projects: ["org_admin", "caretaker"],
+  schemes: ["org_admin", "caretaker"],
   reports: allRoles,
   compliance: allRoles,
   requisitions: allRoles,
@@ -71,13 +71,42 @@ export const PAGE_ALLOWED_ROLES: Record<AppPageKey, AppRole[]> = {
   returns: ["org_admin", "office_head", "caretaker", "employee"],
   "returns-new": ["employee"],
   "returns-detail": ["org_admin", "office_head", "caretaker", "employee"],
-  settings: allRoles,
+  settings: ["org_admin", "office_head", "caretaker"],
   "audit-logs": allRoles,
   "user-permissions": ["org_admin"],
   "user-management": ["org_admin"],
   "user-activity": ["org_admin"],
   profile: allRoles,
 };
+
+const PAGE_PERMISSION_ALIASES: Partial<Record<AppPageKey, AppPageKey[]>> = {
+  assets: ["office-assets"],
+  "asset-items": ["office-asset-items"],
+  "office-assets": ["assets"],
+  "office-asset-items": ["asset-items"],
+};
+
+const EMPLOYEE_RESTRICTED_PAGES = new Set<AppPageKey>([
+  "assets",
+  "asset-items",
+  "office-assets",
+  "office-asset-items",
+  "transfers",
+  "employees",
+  "offices",
+  "rooms-sections",
+  "categories",
+  "vendors",
+  "projects",
+  "schemes",
+  "purchase-orders",
+  "settings",
+]);
+const OFFICE_HEAD_RESTRICTED_PAGES = new Set<AppPageKey>([
+  "categories",
+  "projects",
+  "schemes",
+]);
 
 let runtimeRolePermissions: RuntimeRolePermission[] | null = null;
 
@@ -158,14 +187,30 @@ export function canAccessPage(options: {
   isOrgAdmin: boolean;
 }) {
   if (!options.role) return false;
-  if (options.isOrgAdmin) return true;
-  const runtimeRole = findRuntimeRolePermission(String(options.role));
-  if (runtimeRole) {
-    const actions = sanitizePermissionActions(
-      runtimeRole.permissions?.[options.page] || []
-    );
-    return hasViewPermission(actions);
+  const currentRole = options.role;
+  const candidatePages = [options.page, ...(PAGE_PERMISSION_ALIASES[options.page] || [])];
+  if (
+    currentRole === "employee" &&
+    candidatePages.some((candidate) => EMPLOYEE_RESTRICTED_PAGES.has(candidate))
+  ) {
+    return false;
   }
-  const allowed = PAGE_ALLOWED_ROLES[options.page] || [];
-  return allowed.includes(options.role);
+  if (
+    currentRole === "office_head" &&
+    candidatePages.some((candidate) => OFFICE_HEAD_RESTRICTED_PAGES.has(candidate))
+  ) {
+    return false;
+  }
+  if (options.isOrgAdmin) return true;
+  const runtimeRole = findRuntimeRolePermission(String(currentRole));
+  if (runtimeRole) {
+    return candidatePages.some((candidate) => {
+      const actions = sanitizePermissionActions(runtimeRole.permissions?.[candidate] || []);
+      return hasViewPermission(actions);
+    });
+  }
+  return candidatePages.some((candidate) => {
+    const allowed = PAGE_ALLOWED_ROLES[candidate] || [];
+    return allowed.includes(currentRole);
+  });
 }

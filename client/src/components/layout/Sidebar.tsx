@@ -35,6 +35,7 @@ import epaLogo from "@/assets/epa-logo.jpg";
 import { useAuth } from "@/contexts/AuthContext";
 import type { AppPageKey } from "@/config/pagePermissions";
 import { canAccessPage } from "@/config/pagePermissions";
+import type { AppRole } from "@/services/authService";
 
 const SIDEBAR_SCROLL_KEY = "epaams.sidebar.scrollTop";
 const SIDEBAR_LAST_CLICKED_KEY = "epaams.sidebar.lastClickedHref";
@@ -45,11 +46,19 @@ interface NavItem {
   icon: React.ElementType;
   badge?: number;
   page: AppPageKey;
+  anyOfPages?: AppPageKey[];
+  allowedRoles?: AppRole[];
 }
 
 const mainNavItems: NavItem[] = [
   { label: "Dashboard", href: "/", icon: LayoutDashboard, page: "dashboard" },
-  { label: "Inventory & Assignments", href: "/inventory", icon: Layers, page: "inventory" },
+  {
+    label: "Inventory & Assignments",
+    href: "/inventory",
+    icon: Layers,
+    page: "inventory",
+    allowedRoles: ["org_admin", "office_head", "caretaker"],
+  },
 ];
 
 const managementNavItems: NavItem[] = [
@@ -65,7 +74,13 @@ const managementNavItems: NavItem[] = [
 
 const systemNavItems: NavItem[] = [
   { label: "Audit Logs", href: "/audit-logs", icon: Shield, page: "audit-logs" },
-  { label: "Settings", href: "/settings", icon: Settings, page: "settings" },
+  {
+    label: "Settings",
+    href: "/settings",
+    icon: Settings,
+    page: "settings",
+    allowedRoles: ["org_admin", "office_head", "caretaker"],
+  },
 ];
 
 const reportsRootItem: NavItem = { label: "Reports", href: "/reports", icon: FileText, page: "reports" };
@@ -83,12 +98,22 @@ const reportNavItems: NavItem[] = [
   { label: "Employee Assets", href: "/reports/employee-assets", icon: FileText, page: "reports" },
 ];
 
-const movableAssetsRootItem: NavItem = { label: "Movable Assets", href: "/assets", icon: Package, page: "assets" };
+const movableAssetsRootItem: NavItem = {
+  label: "Movable Assets",
+  href: "/assets",
+  icon: Package,
+  page: "assets",
+  anyOfPages: ["assets", "office-assets"],
+};
 const movableAssetsNavItems: NavItem[] = [
-  { label: "Assets", href: "/assets", icon: Package, page: "assets" },
-  { label: "Asset Items", href: "/asset-items", icon: PackageOpen, page: "asset-items" },
-  { label: "Office Assets", href: "/office/assets", icon: Package, page: "office-assets" },
-  { label: "Office Asset Items", href: "/office/asset-items", icon: PackageOpen, page: "office-asset-items" },
+  { label: "Assets", href: "/assets", icon: Package, page: "assets", anyOfPages: ["assets", "office-assets"] },
+  {
+    label: "Asset Items",
+    href: "/asset-items",
+    icon: PackageOpen,
+    page: "asset-items",
+    anyOfPages: ["asset-items", "office-asset-items"],
+  },
   { label: "Transfers", href: "/transfers", icon: ArrowRightLeft, page: "transfers" },
   { label: "Maintenance", href: "/maintenance", icon: Wrench, page: "maintenance" },
 ];
@@ -100,19 +125,97 @@ const employeeServicesRootItem: NavItem = {
   page: "assignments",
 };
 const employeeServicesNavItems: NavItem[] = [
-  { label: "Assignment Records", href: "/assignments", icon: ClipboardList, page: "assignments" },
-  { label: "Requisitions", href: "/requisitions", icon: ClipboardList, page: "requisitions" },
-  { label: "New Requisition", href: "/requisitions/new", icon: ClipboardList, page: "requisitions-new" },
-  { label: "Return Requests", href: "/returns", icon: ArrowRightLeft, page: "returns" },
-  { label: "New Return Request", href: "/returns/new", icon: ArrowRightLeft, page: "returns-new" },
+  { label: "My Assets", href: "/my-assets", icon: Package, page: "assignments", allowedRoles: ["employee"] },
+  {
+    label: "Assignment Records",
+    href: "/assignments",
+    icon: ClipboardList,
+    page: "assignments",
+    allowedRoles: ["org_admin", "office_head", "caretaker"],
+  },
+  { label: "Maintenance Requests", href: "/maintenance", icon: Wrench, page: "maintenance", allowedRoles: ["employee"] },
+  {
+    label: "Consumable Consumption",
+    href: "/consumables/consume",
+    icon: ClipboardList,
+    page: "inventory",
+    allowedRoles: ["employee"],
+  },
+  {
+    label: "Consumption History",
+    href: "/consumables/ledger",
+    icon: FileText,
+    page: "inventory",
+    allowedRoles: ["employee"],
+  },
+  {
+    label: "My Requisitions",
+    href: "/requisitions",
+    icon: ClipboardList,
+    page: "requisitions",
+    allowedRoles: ["employee"],
+  },
+  {
+    label: "Requisitions",
+    href: "/requisitions",
+    icon: ClipboardList,
+    page: "requisitions",
+    allowedRoles: ["org_admin", "office_head"],
+  },
+  {
+    label: "Approved Requisitions",
+    href: "/requisitions/approved",
+    icon: ClipboardList,
+    page: "requisitions",
+    allowedRoles: ["org_admin", "caretaker"],
+  },
+  {
+    label: "New Requisition",
+    href: "/requisitions/new",
+    icon: ClipboardList,
+    page: "requisitions-new",
+    allowedRoles: ["employee"],
+  },
+  {
+    label: "My Return Requests",
+    href: "/returns",
+    icon: ArrowRightLeft,
+    page: "returns",
+    allowedRoles: ["employee"],
+  },
+  {
+    label: "Return Requests",
+    href: "/returns",
+    icon: ArrowRightLeft,
+    page: "returns",
+    allowedRoles: ["org_admin", "office_head", "caretaker"],
+  },
+  {
+    label: "New Return Request",
+    href: "/returns/new",
+    icon: ArrowRightLeft,
+    page: "returns-new",
+    allowedRoles: ["employee"],
+  },
 ];
 
 
-const consumablesRootItem: NavItem = { label: "Consumables", href: "/consumables", icon: Layers, page: "consumables" };
+const consumablesRootItem: NavItem = {
+  label: "Consumables",
+  href: "/consumables/receive",
+  icon: Layers,
+  page: "consumables",
+  anyOfPages: ["consumables", "office-consumables"],
+};
 const consumableNavItems: NavItem[] = [
   { label: "Item Master", href: "/consumables", icon: Layers, page: "consumables" },
-  { label: "Lot Receiving", href: "/consumables/receive", icon: PackageOpen, page: "consumables" },
-  { label: "Office Lot Receiving", href: "/office/consumables/receive", icon: PackageOpen, page: "office-consumables" },
+  {
+    label: "Stock Intake",
+    href: "/consumables/receive",
+    icon: PackageOpen,
+    page: "consumables",
+    anyOfPages: ["consumables", "office-consumables"],
+  },
   { label: "Containers", href: "/consumables/containers", icon: PackageOpen, page: "consumables" },
   { label: "Units", href: "/consumables/units", icon: Ruler, page: "consumables" },
   { label: "Inventory", href: "/consumables/inventory", icon: Package, page: "consumables" },
@@ -148,12 +251,14 @@ export function Sidebar({ className, isMobileDrawer = false, onNavigate }: Sideb
     location.pathname.startsWith("/assets") ||
       location.pathname.startsWith("/asset-items") ||
       location.pathname.startsWith("/transfers") ||
-      location.pathname.startsWith("/maintenance") ||
-      location.pathname.startsWith("/office/assets") ||
-      location.pathname.startsWith("/office/asset-items")
+      location.pathname.startsWith("/maintenance")
   );
   const [employeeServicesOpen, setEmployeeServicesOpen] = useState(
+    location.pathname.startsWith("/my-assets") ||
     location.pathname.startsWith("/assignments") ||
+      location.pathname.startsWith("/maintenance") ||
+      location.pathname.startsWith("/consumables/consume") ||
+      location.pathname.startsWith("/consumables/ledger") ||
       location.pathname.startsWith("/requisitions") ||
       location.pathname.startsWith("/returns")
   );
@@ -233,14 +338,16 @@ export function Sidebar({ className, isMobileDrawer = false, onNavigate }: Sideb
       location.pathname.startsWith("/assets") ||
       location.pathname.startsWith("/asset-items") ||
       location.pathname.startsWith("/transfers") ||
-      location.pathname.startsWith("/maintenance") ||
-      location.pathname.startsWith("/office/assets") ||
-      location.pathname.startsWith("/office/asset-items")
+      location.pathname.startsWith("/maintenance")
   ) {
       setMovableOpen(true);
     }
     if (
+      location.pathname.startsWith("/my-assets") ||
       location.pathname.startsWith("/assignments") ||
+      location.pathname.startsWith("/maintenance") ||
+      location.pathname.startsWith("/consumables/consume") ||
+      location.pathname.startsWith("/consumables/ledger") ||
       location.pathname.startsWith("/requisitions") ||
       location.pathname.startsWith("/returns")
     ) {
@@ -255,6 +362,14 @@ export function Sidebar({ className, isMobileDrawer = false, onNavigate }: Sideb
 
   const filterItems = (items: NavItem[]) => {
     return items.filter((item) => {
+      if (item.allowedRoles && item.allowedRoles.length > 0) {
+        if (!role || !item.allowedRoles.includes(role)) return false;
+      }
+      if (item.anyOfPages && item.anyOfPages.length > 0) {
+        return item.anyOfPages.some((candidate) =>
+          canAccessPage({ page: candidate, role, isOrgAdmin })
+        );
+      }
       return canAccessPage({ page: item.page, role, isOrgAdmin });
     });
   };
@@ -392,18 +507,20 @@ export function Sidebar({ className, isMobileDrawer = false, onNavigate }: Sideb
             const movableItems = filterItems(movableAssetsNavItems);
             const employeeServiceItems = filterItems(employeeServicesNavItems);
             const consumableItems = filterItems(consumableNavItems);
-            const showMovable = movableItems.length > 0;
+            const showMovable = role !== "employee" && movableItems.length > 0;
             const showEmployeeServices = employeeServiceItems.length > 0;
             const showConsumables = consumableItems.length > 0;
             const isMovableActive =
               location.pathname.startsWith("/assets") ||
               location.pathname.startsWith("/asset-items") ||
               location.pathname.startsWith("/transfers") ||
-              location.pathname.startsWith("/maintenance") ||
-              location.pathname.startsWith("/office/assets") ||
-              location.pathname.startsWith("/office/asset-items");
+              location.pathname.startsWith("/maintenance");
             const isEmployeeServicesActive =
+              location.pathname.startsWith("/my-assets") ||
               location.pathname.startsWith("/assignments") ||
+              location.pathname.startsWith("/maintenance") ||
+              location.pathname.startsWith("/consumables/consume") ||
+              location.pathname.startsWith("/consumables/ledger") ||
               location.pathname.startsWith("/requisitions") ||
               location.pathname.startsWith("/returns");
             const isConsumablesActive =

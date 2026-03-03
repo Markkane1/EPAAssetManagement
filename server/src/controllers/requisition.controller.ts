@@ -26,6 +26,7 @@ import { ConsumableItemModel } from '../modules/consumables/models/consumableIte
 import { ConsumableInventoryBalanceModel } from '../modules/consumables/models/consumableInventoryBalance.model';
 import { ConsumableInventoryTransactionModel } from '../modules/consumables/models/consumableInventoryTransaction.model';
 import { generateAndStoreIssuanceReport } from '../services/requisitionIssuanceReport.service';
+import { generateHandoverSlip } from '../services/assignmentSlip.service';
 import { createBulkNotifications } from '../services/notification.service';
 import { isAssetItemHeldByOffice } from '../utils/assetHolder';
 import { assertUploadedFileIntegrity } from '../utils/uploadValidation';
@@ -71,11 +72,17 @@ import {
   toObjectIdString,
   enrichLinesWithMappingMetadata,
   buildRequisitionMappingSummary,
-  dispatchDraftAssignmentNotifications,
 } from './requisition.controller.helpers';
 
 const LEGACY_REQUISITION_VIEWER_ROLES = new Set(['org_admin', 'office_head', 'caretaker', 'employee']);
 const LEGACY_REQUISITION_MANAGER_ROLES = new Set(['office_head', 'caretaker']);
+const SUBMITTED_STATUSES = new Set(['SUBMITTED', 'PENDING_VERIFICATION']);
+const CARETAKER_PENDING_FULFILLMENT_STATUSES = new Set([
+  'APPROVED',
+  'VERIFIED_APPROVED',
+  'IN_FULFILLMENT',
+  'PARTIALLY_FULFILLED',
+]);
 
 function hasMutatingPermission(actions: PermissionAction[]) {
   return (
@@ -99,6 +106,72 @@ async function resolveRequisitionPermissionFlags(role: string) {
   };
 }
 
+function uniqueObjectIdStrings(ids: Array<string | null | undefined>) {
+  return Array.from(
+    new Set(
+      ids
+        .map((id) => String(id || '').trim())
+        .filter((id) => Types.ObjectId.isValid(id))
+    )
+  );
+}
+
+async function resolveActiveUserIdsByOfficeAndRoles(officeId: string, roles: string[]) {
+  if (!Types.ObjectId.isValid(officeId) || roles.length === 0) return [] as string[];
+  const users = await UserModel.find(
+    {
+      is_active: true,
+      location_id: officeId,
+      role: { $in: roles },
+    },
+    { _id: 1 }
+  )
+    .lean()
+    .exec();
+  return users.map((user) => String(user._id));
+}
+
+async function resolveActiveOrgAdminUserIds() {
+  const users = await UserModel.find(
+    {
+      is_active: true,
+      role: 'org_admin',
+    },
+    { _id: 1 }
+  )
+    .lean()
+    .exec();
+  return users.map((user) => String(user._id));
+}
+
+async function dispatchRequisitionNotifications(input: {
+  officeId: string;
+  requisitionId: string;
+  type:
+    | 'REQUISITION_SUBMITTED'
+    | 'REQUISITION_APPROVED'
+    | 'REQUISITION_REJECTED'
+    | 'REQUISITION_FULFILLED'
+    | 'REQUISITION_STATUS_CHANGED';
+  title: string;
+  message: string;
+  recipientUserIds: Array<string | null | undefined>;
+}) {
+  const recipients = uniqueObjectIdStrings(input.recipientUserIds);
+  if (recipients.length === 0) return;
+  await createBulkNotifications(
+    recipients.map((recipientUserId) => ({
+      recipientUserId,
+      officeId: input.officeId,
+      type: input.type,
+      title: input.title,
+      message: input.message,
+      entityType: 'Requisition',
+      entityId: input.requisitionId,
+    }))
+  );
+}
+
 export const requisitionController = {
   list: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
@@ -117,7 +190,8 @@ export const requisitionController = {
       const page = parsePositiveInt(req.query.page, 1, 100_000);
       const limit = parsePositiveInt(req.query.limit, 50, 200);
       const skip = (page - 1) * limit;
-      const status = asNullableString(req.query.status);
+      const status = asNullableString(req.query.status)?.toUpperCase() || null;
+      const queue = asNullableString(req.query.queue)?.toLowerCase() || null;
       const fileNumber = asNullableString(req.query.fileNumber);
       const officeId = asNullableString(req.query.officeId);
       const from = parseDateInput(req.query.from, 'from');
@@ -131,6 +205,7 @@ export const requisitionController = {
       }
 
       const filter: Record<string, unknown> = {};
+      let roleScopedStatusFilter: unknown = null;
       if (!canViewAll) {
         if (!ctx.locationId) throw createHttpError(403, 'User is not assigned to an office');
         if (officeId && officeId !== ctx.locationId) {
@@ -139,12 +214,30 @@ export const requisitionController = {
         filter.office_id = ctx.locationId;
         if (ctx.role === 'employee') {
           filter.submitted_by_user_id = ctx.userId;
+        } else if (ctx.role === 'office_head') {
+          if (status && !SUBMITTED_STATUSES.has(status)) {
+            throw createHttpError(403, 'Office head can only view submitted requisitions');
+          }
+          roleScopedStatusFilter = { $in: Array.from(SUBMITTED_STATUSES) };
+        } else if (ctx.role === 'caretaker') {
+          if (status && SUBMITTED_STATUSES.has(status)) {
+            throw createHttpError(403, 'Caretaker cannot view submitted requisitions');
+          }
+          if (queue === 'approved') {
+            roleScopedStatusFilter = { $in: Array.from(CARETAKER_PENDING_FULFILLMENT_STATUSES) };
+          } else {
+            roleScopedStatusFilter = { $nin: Array.from(SUBMITTED_STATUSES) };
+          }
         }
       } else if (officeId) {
         filter.office_id = officeId;
       }
 
-      if (status) filter.status = status;
+      if (status) {
+        filter.status = status;
+      } else if (roleScopedStatusFilter) {
+        filter.status = roleScopedStatusFilter;
+      }
       if (fileNumber) filter.file_number = { $regex: escapeRegex(fileNumber), $options: 'i' };
       if (from || to) {
         const createdAt: Record<string, Date> = {};
@@ -236,6 +329,13 @@ export const requisitionController = {
           if (!submittedByUserId || submittedByUserId !== ctx.userId) {
             throw createHttpError(403, 'Access restricted to your own requisitions');
           }
+        }
+        const normalizedStatus = String(requisition.status || '').toUpperCase();
+        if (ctx.role === 'office_head' && !SUBMITTED_STATUSES.has(normalizedStatus)) {
+          throw createHttpError(403, 'Office head can only access submitted requisitions');
+        }
+        if (ctx.role === 'caretaker' && SUBMITTED_STATUSES.has(normalizedStatus)) {
+          throw createHttpError(403, 'Caretaker cannot access submitted requisitions');
         }
       }
 
@@ -618,7 +718,7 @@ export const requisitionController = {
         requested_by_employee_id: requestedByEmployeeId,
         submitted_by_user_id: ctx.userId,
         fulfilled_by_user_id: null,
-        status: 'PENDING_VERIFICATION',
+        status: 'SUBMITTED',
         remarks,
         attachment_file_name: req.file?.originalname || null,
         attachment_mime_type: req.file?.mimetype || null,
@@ -671,6 +771,19 @@ export const requisitionController = {
         lineRows.map((line) => line.toJSON()) as Array<Record<string, unknown>>
       );
       const mappingSummary = buildRequisitionMappingSummary(responseLines as Array<Record<string, unknown>>);
+
+      const [officeHeadUserIds, orgAdminUserIds] = await Promise.all([
+        resolveActiveUserIdsByOfficeAndRoles(officeId, ['office_head']),
+        resolveActiveOrgAdminUserIds(),
+      ]);
+      await dispatchRequisitionNotifications({
+        officeId,
+        requisitionId: requisition.id,
+        type: 'REQUISITION_SUBMITTED',
+        title: 'Requisition Submitted',
+        message: `Requisition ${fileNumber} is submitted and waiting for office head approval.`,
+        recipientUserIds: [...officeHeadUserIds, ...orgAdminUserIds, ctx.userId],
+      });
 
       res.status(201).json({
         requisition: {
@@ -740,12 +853,15 @@ export const requisitionController = {
       if (!officeId) {
         throw createHttpError(400, 'Requisition office is missing');
       }
+      if (!ctx.isOrgAdmin && ctx.role !== 'office_head') {
+        throw createHttpError(403, 'Only office head can approve or reject submitted requisitions');
+      }
 
       const hqDirectorate = await isHqDirectorateOffice(officeId);
       const allowedRoles = hqDirectorate ? HQ_DIRECTORATE_VERIFIER_ROLES : DISTRICT_LAB_VERIFIER_ROLES;
       const hasLegacyVerifyAccess = allowedRoles.has(ctx.role);
       const hasDynamicVerifyAccess = permissionFlags.hasStoredRoleEntry && permissionFlags.canManageRequisitions;
-      if (!hasLegacyVerifyAccess && !hasDynamicVerifyAccess) {
+      if (!ctx.isOrgAdmin && !hasLegacyVerifyAccess && !hasDynamicVerifyAccess) {
         throw createHttpError(403, 'Not permitted to verify requisition for this office type');
       }
 
@@ -753,11 +869,11 @@ export const requisitionController = {
         throw createHttpError(403, 'Access restricted to assigned office');
       }
 
-      if (requisition.status !== 'PENDING_VERIFICATION') {
-        throw createHttpError(400, 'Only pending requisitions can be verified');
+      if (!SUBMITTED_STATUSES.has(String(requisition.status || '').toUpperCase())) {
+        throw createHttpError(400, 'Only submitted requisitions can be approved or rejected');
       }
 
-      requisition.status = decision === 'VERIFY' ? 'VERIFIED_APPROVED' : 'REJECTED_INVALID';
+      requisition.status = decision === 'VERIFY' ? 'APPROVED' : 'REJECTED_INVALID';
       requisition.remarks = remarks ?? requisition.remarks ?? null;
       await requisition.save();
 
@@ -772,6 +888,26 @@ export const requisitionController = {
           status: requisition.status,
           remarks: requisition.remarks,
         },
+      });
+
+      const [caretakerUserIds, orgAdminUserIds] = await Promise.all([
+        resolveActiveUserIdsByOfficeAndRoles(officeId, ['caretaker']),
+        resolveActiveOrgAdminUserIds(),
+      ]);
+      const statusMessage =
+        decision === 'VERIFY'
+          ? `Requisition ${requisition.file_number} has been approved and moved to caretaker fulfillment queue.`
+          : `Requisition ${requisition.file_number} has been rejected by office head.`;
+      await dispatchRequisitionNotifications({
+        officeId,
+        requisitionId: requisition.id,
+        type: decision === 'VERIFY' ? 'REQUISITION_APPROVED' : 'REQUISITION_REJECTED',
+        title: decision === 'VERIFY' ? 'Requisition Approved' : 'Requisition Rejected',
+        message: statusMessage,
+        recipientUserIds:
+          decision === 'VERIFY'
+            ? [String(requisition.submitted_by_user_id || ''), ...caretakerUserIds, ...orgAdminUserIds]
+            : [String(requisition.submitted_by_user_id || ''), ...orgAdminUserIds],
       });
 
       return res.json(requisition);
@@ -813,7 +949,7 @@ export const requisitionController = {
         const allowedRoles = hqDirectorate ? HQ_DIRECTORATE_FULFILLER_ROLES : DISTRICT_LAB_FULFILLER_ROLES;
         const hasLegacyAdjustAccess = allowedRoles.has(ctx.role);
         const hasDynamicAdjustAccess = permissionFlags.hasStoredRoleEntry && permissionFlags.canManageRequisitions;
-        if (!hasLegacyAdjustAccess && !hasDynamicAdjustAccess) {
+        if (!ctx.isOrgAdmin && !hasLegacyAdjustAccess && !hasDynamicAdjustAccess) {
           throw createHttpError(403, 'Not permitted to adjust requisition for this office type');
         }
         if (!ctx.isOrgAdmin && ctx.locationId !== issuingOfficeId) {
@@ -885,7 +1021,7 @@ export const requisitionController = {
         );
 
         requisition.record_id = newIssueRecord._id as any;
-        requisition.status = 'FULFILLED_PENDING_SIGNATURE';
+        requisition.status = 'PARTIALLY_FULFILLED';
         requisition.signed_issuance_document_id = null;
         requisition.signed_issuance_uploaded_at = null;
         await requisition.save({ session });
@@ -964,7 +1100,7 @@ export const requisitionController = {
         const allowedRoles = hqDirectorate ? HQ_DIRECTORATE_FULFILLER_ROLES : DISTRICT_LAB_FULFILLER_ROLES;
         const hasLegacyFinalizeAccess = allowedRoles.has(ctx.role);
         const hasDynamicFinalizeAccess = permissionFlags.hasStoredRoleEntry && permissionFlags.canManageRequisitions;
-        if (!hasLegacyFinalizeAccess && !hasDynamicFinalizeAccess) {
+        if (!ctx.isOrgAdmin && !hasLegacyFinalizeAccess && !hasDynamicFinalizeAccess) {
           throw createHttpError(403, 'Not permitted to finalize requisition for this office type');
         }
         if (!ctx.isOrgAdmin && ctx.locationId !== issuingOfficeId) {
@@ -1165,9 +1301,12 @@ export const requisitionController = {
 
       const hqDirectorate = await isHqDirectorateOffice(issuingOfficeId);
       const allowedRoles = hqDirectorate ? HQ_DIRECTORATE_FULFILLER_ROLES : DISTRICT_LAB_FULFILLER_ROLES;
+      if (!ctx.isOrgAdmin && ctx.role !== 'caretaker') {
+        throw createHttpError(403, 'Only caretaker can fulfill approved requisitions');
+      }
       const hasLegacyFulfillAccess = allowedRoles.has(ctx.role);
       const hasDynamicFulfillAccess = permissionFlags.hasStoredRoleEntry && permissionFlags.canManageRequisitions;
-      if (!hasLegacyFulfillAccess && !hasDynamicFulfillAccess) {
+      if (!ctx.isOrgAdmin && !hasLegacyFulfillAccess && !hasDynamicFulfillAccess) {
         throw createHttpError(403, 'Not permitted to fulfill requisition for this office type');
       }
 
@@ -1201,6 +1340,8 @@ export const requisitionController = {
         assignments: unknown[];
         consumableTransactions: unknown[];
       } | null = null;
+      const issuedAssignmentIds: string[] = [];
+      let nextRequisitionStatus: string | null = null;
 
       await session.withTransaction(async () => {
         let issueRecordId = requisition.record_id ? requisition.record_id.toString() : null;
@@ -1220,7 +1361,6 @@ export const requisitionController = {
         }
 
         const createdAssignments: unknown[] = [];
-        const createdDraftAssignmentIds: string[] = [];
         const consumableTransactions: unknown[] = [];
 
         for (const payloadLine of payloadLines) {
@@ -1287,18 +1427,26 @@ export const requisitionController = {
               const assignmentRows = await AssignmentModel.insertMany(
                 assetItems.map((item) => ({
                   asset_item_id: item._id,
-                  status: 'DRAFT',
+                  status: 'ISSUED',
                   assigned_to_type: targetType,
                   assigned_to_id: requisition.target_id,
                   employee_id: targetType === 'EMPLOYEE' ? requisition.target_id : null,
                   requisition_id: requisition._id,
                   requisition_line_id: line._id,
+                  issued_by_user_id: ctx.userId,
+                  issued_at: new Date(),
                   assigned_date: new Date(),
                   expected_return_date: null,
                   returned_date: null,
-                  notes: `Draft via requisition ${requisition.file_number} line ${line.id}`,
+                  notes: `Issued via requisition ${requisition.file_number} line ${line.id}`,
                   is_active: true,
                 })),
+                { session }
+              );
+
+              await AssetItemModel.updateMany(
+                { _id: { $in: assignIds } },
+                { $set: { assignment_status: 'Assigned', item_status: 'Assigned' } },
                 { session }
               );
 
@@ -1313,19 +1461,22 @@ export const requisitionController = {
                     {
                       recordType: 'ISSUE',
                       officeId: issuingOfficeId,
-                      status: 'Draft',
+                      status: 'Completed',
                       assetItemId: String(assignment.asset_item_id || ''),
                       employeeId: targetType === 'EMPLOYEE' ? String(requisition.target_id || '') : undefined,
                       assignmentId: String(assignment._id),
-                      notes: `Draft via requisition ${requisition.file_number} line ${line.id}`,
+                      notes: `Issued via requisition ${requisition.file_number} line ${line.id}`,
                     },
                     session
                   );
+                } else {
+                  existingIssueRecord.status = 'Completed';
+                  await existingIssueRecord.save({ session });
                 }
               }
 
               createdAssignments.push(...assignmentRows.map((assignment) => assignment.toJSON()));
-              createdDraftAssignmentIds.push(...assignmentRows.map((assignment) => String(assignment._id)));
+              issuedAssignmentIds.push(...assignmentRows.map((assignment) => String(assignment._id)));
               additionalFulfilled = assignmentRows.length;
             }
           } else if (line.line_type === 'CONSUMABLE') {
@@ -1424,15 +1575,16 @@ export const requisitionController = {
         });
 
         requisition.fulfilled_by_user_id = ctx.userId as any;
-        requisition.status = allFulfilled ? 'FULFILLED_PENDING_SIGNATURE' : 'PARTIALLY_FULFILLED';
+        requisition.status = allFulfilled ? 'FULFILLED' : 'PARTIALLY_FULFILLED';
         await requisition.save({ session });
+        nextRequisitionStatus = String(requisition.status || '');
 
-        if (createdDraftAssignmentIds.length > 0) {
-          await dispatchDraftAssignmentNotifications({
-            officeId: issuingOfficeId,
-            requisition,
-            assignmentIds: createdDraftAssignmentIds,
-          });
+        if (issueRecordId) {
+          const issueRecord = await RecordModel.findById(issueRecordId).session(session);
+          if (issueRecord) {
+            issueRecord.status = allFulfilled ? 'Completed' : 'Draft';
+            await issueRecord.save({ session });
+          }
         }
 
         await logAudit({
@@ -1466,6 +1618,45 @@ export const requisitionController = {
           assignments: createdAssignments,
           consumableTransactions,
         };
+      });
+
+      if (issuedAssignmentIds.length > 0) {
+        await Promise.allSettled(
+          issuedAssignmentIds.map((assignmentId) =>
+            generateHandoverSlip({
+              assignmentId,
+              generatedByUserId: ctx.userId,
+            })
+          )
+        );
+      }
+
+      const [officeHeadUserIds, caretakerUserIds, orgAdminUserIds] = await Promise.all([
+        resolveActiveUserIdsByOfficeAndRoles(issuingOfficeId, ['office_head']),
+        resolveActiveUserIdsByOfficeAndRoles(issuingOfficeId, ['caretaker']),
+        resolveActiveOrgAdminUserIds(),
+      ]);
+      const normalizedStatus = String(nextRequisitionStatus || '').toUpperCase();
+      const stageType =
+        normalizedStatus === 'FULFILLED' ? 'REQUISITION_FULFILLED' : 'REQUISITION_STATUS_CHANGED';
+      const stageTitle =
+        normalizedStatus === 'FULFILLED' ? 'Requisition Fulfilled' : 'Requisition Status Updated';
+      const stageMessage =
+        normalizedStatus === 'FULFILLED'
+          ? `Requisition ${requisition.file_number} has been fulfilled and completed.`
+          : `Requisition ${requisition.file_number} moved to status ${normalizedStatus}.`;
+      await dispatchRequisitionNotifications({
+        officeId: issuingOfficeId,
+        requisitionId: requisition.id,
+        type: stageType,
+        title: stageTitle,
+        message: stageMessage,
+        recipientUserIds: [
+          String(requisition.submitted_by_user_id || ''),
+          ...officeHeadUserIds,
+          ...caretakerUserIds,
+          ...orgAdminUserIds,
+        ],
       });
 
       if (!responsePayload) {

@@ -45,6 +45,7 @@ async function main() {
   process.env.CORS_ORIGIN = 'http://localhost:5173';
   process.env.JWT_EXPIRES_IN = '7d';
   process.env.SEED_SUPER_ADMIN = 'false';
+  process.env.MONGO_REQUIRE_REPLICA_SET = 'false';
 
   const { connectDatabase } = await import('../../src/config/db');
   const { createApp } = await import('../../src/app');

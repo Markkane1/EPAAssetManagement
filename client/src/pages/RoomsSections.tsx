@@ -6,13 +6,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -37,6 +30,7 @@ import {
 } from "@/hooks/useOfficeSubLocations";
 import type { OfficeSubLocation } from "@/services/officeSubLocationService";
 import { Loader2, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { SearchableSelect } from "@/components/shared/SearchableSelect";
 
 const ALL_VALUE = "__all__";
 
@@ -180,19 +174,17 @@ export default function RoomsSections() {
             {isOrgAdmin && (
               <div className="max-w-sm space-y-2">
                 <Label>Office Filter</Label>
-                <Select value={selectedOfficeId} onValueChange={setSelectedOfficeId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="All offices" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={ALL_VALUE}>All offices</SelectItem>
-                    {locations.map((office) => (
-                      <SelectItem key={office.id} value={office.id}>
-                        {office.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={selectedOfficeId}
+                  onValueChange={setSelectedOfficeId}
+                  placeholder="All offices"
+                  searchPlaceholder="Search offices..."
+                  emptyText="No offices found."
+                  options={[
+                    { value: ALL_VALUE, label: "All offices" },
+                    ...locations.map((office) => ({ value: office.id, label: office.name })),
+                  ]}
+                />
               </div>
             )}
 
@@ -240,18 +232,14 @@ export default function RoomsSections() {
             {isOrgAdmin && !editingSection && (
               <div className="space-y-2">
                 <Label>Office *</Label>
-                <Select value={formOfficeId} onValueChange={setFormOfficeId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select office" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {scopedOfficeOptions.map((office) => (
-                      <SelectItem key={office.id} value={office.id}>
-                        {office.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={formOfficeId}
+                  onValueChange={setFormOfficeId}
+                  placeholder="Select office"
+                  searchPlaceholder="Search offices..."
+                  emptyText="No offices found."
+                  options={scopedOfficeOptions.map((office) => ({ value: office.id, label: office.name }))}
+                />
               </div>
             )}
 

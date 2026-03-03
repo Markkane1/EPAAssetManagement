@@ -15,6 +15,7 @@ import { useLocations } from "@/hooks/useLocations";
 import { useAuth } from "@/contexts/AuthContext";
 import { isHeadOfficeLocation } from "@/lib/locationUtils";
 import { usePageSearch } from "@/contexts/PageSearchContext";
+import { SearchableSelect } from "@/components/shared/SearchableSelect";
 
 type ComplianceIssue = {
   type: "REQUISITION" | "RETURN_REQUEST";
@@ -159,18 +160,17 @@ export default function Compliance() {
             {isHqView && (
               <div className="space-y-2">
                 <Label>Office</Label>
-                <select
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                <SearchableSelect
                   value={selectedOfficeId}
-                  onChange={(event) => setSelectedOfficeId(event.target.value)}
-                >
-                  <option value="ALL">All Offices</option>
-                  {locationList.map((office) => (
-                    <option key={office.id} value={office.id}>
-                      {office.name}
-                    </option>
-                  ))}
-                </select>
+                  onValueChange={setSelectedOfficeId}
+                  placeholder="All Offices"
+                  searchPlaceholder="Search offices..."
+                  emptyText="No offices found."
+                  options={[
+                    { value: "ALL", label: "All Offices" },
+                    ...locationList.map((office) => ({ value: office.id, label: office.name })),
+                  ]}
+                />
               </div>
             )}
 

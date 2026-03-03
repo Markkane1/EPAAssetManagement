@@ -39,6 +39,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useConsumableMode } from '@/hooks/useConsumableMode';
 import { filterItemsByMode, filterLocationsByMode } from '@/lib/consumableMode';
 import { ConsumableModeToggle } from '@/components/consumables/ConsumableModeToggle';
+import { SearchableSelect } from '@/components/shared/SearchableSelect';
 
 const FEFO_VALUE = '__fefo__';
 const holderTypeSchema = z.enum(['OFFICE', 'SUB_LOCATION', 'EMPLOYEE']);
@@ -390,14 +391,14 @@ export default function ConsumableConsume() {
               <div className="space-y-2">
                 <Label>Lab Location *</Label>
                 {role === 'org_admin' ? (
-                  <Select value={selectedLocationId} onValueChange={(v) => form.setValue('locationId', v)}>
-                    <SelectTrigger><SelectValue placeholder="Select lab" /></SelectTrigger>
-                    <SelectContent>
-                      {filteredLocations.map((loc) => (
-                        <SelectItem key={loc.id} value={loc.id}>{loc.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <SearchableSelect
+                    value={selectedLocationId}
+                    onValueChange={(v) => form.setValue('locationId', v)}
+                    placeholder="Select lab"
+                    searchPlaceholder="Search labs..."
+                    emptyText="No labs found."
+                    options={filteredLocations.map((loc) => ({ value: loc.id, label: loc.name }))}
+                  />
                 ) : (
                   <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm">
                     {selectedLocation?.name || 'Assigned Lab'}

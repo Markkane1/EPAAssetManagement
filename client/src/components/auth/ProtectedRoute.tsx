@@ -11,6 +11,7 @@ interface ProtectedRouteProps {
   requireSuperAdmin?: boolean;
   allowedRoles?: AppRole[];
   page?: AppPageKey;
+  anyOfPages?: AppPageKey[];
 }
 
 export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
@@ -19,6 +20,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   requireSuperAdmin = false,
   allowedRoles,
   page,
+  anyOfPages,
 }) => {
   const { isAuthenticated, isLoading, isOrgAdmin, role, locationId } = useAuth();
   const location = useLocation();
@@ -53,7 +55,14 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     );
   }
 
-  if (page && !canAccessPage({ page, role, isOrgAdmin })) {
+  if (anyOfPages && anyOfPages.length > 0) {
+    const hasAnyAccess = anyOfPages.some((candidate) =>
+      canAccessPage({ page: candidate, role, isOrgAdmin })
+    );
+    if (!hasAnyAccess) {
+      return <Navigate to="/" replace />;
+    }
+  } else if (page && !canAccessPage({ page, role, isOrgAdmin })) {
     return <Navigate to="/" replace />;
   }
 

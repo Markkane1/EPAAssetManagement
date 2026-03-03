@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTable } from "@/components/shared/DataTable";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { Button } from "@/components/ui/button";
-import { MoreHorizontal, Eye, Pencil, CheckCircle, XCircle, Loader2, FileUp } from "lucide-react";
+import { MoreHorizontal, Eye, Pencil, CheckCircle, XCircle, Loader2, FileUp, AlertCircle } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   Select,
   SelectContent,
@@ -39,11 +40,29 @@ import { documentService, documentLinkService } from "@/services";
 import type { DocumentStatus, DocumentType } from "@/services/documentService";
 import { RecordDetailModal } from "@/components/records/RecordDetailModal";
 import { getOfficeHolderId } from "@/lib/assetItemHolder";
+import { useAssignments } from "@/hooks/useAssignments";
+import { useEmployees } from "@/hooks/useEmployees";
+import { useAuth } from "@/contexts/AuthContext";
+
+function asId(value: unknown): string {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "object") {
+    const record = value as { id?: unknown; _id?: unknown; $oid?: unknown };
+    if (typeof record.id === "string") return record.id;
+    if (typeof record._id === "string") return record._id;
+    if (typeof record.$oid === "string") return record.$oid;
+  }
+  return "";
+}
 
 export default function Maintenance() {
+  const { role, user } = useAuth();
   const { data: maintenanceRecords, isLoading } = useMaintenance();
   const { data: assetItems } = useAssetItems();
   const { data: assets } = useAssets();
+  const { data: assignments } = useAssignments();
+  const { data: employees } = useEmployees();
   const createMaintenance = useCreateMaintenance();
   const completeMaintenance = useCompleteMaintenance();
   const updateMaintenance = useUpdateMaintenance();
@@ -74,8 +93,47 @@ export default function Maintenance() {
   const maintenanceList = maintenanceRecords || [];
   const assetItemList = assetItems || [];
   const assetList = assets || [];
+  const assignmentList = assignments || [];
+  const employeeList = employees || [];
+  const isEmployeeView = role === "employee";
 
-  const enrichedRecords = maintenanceList.map((record) => {
+  const currentEmployee = useMemo(() => {
+    const userId = asId(user?.id);
+    const email = String(user?.email || "").toLowerCase();
+    return (
+      employeeList.find((employee) => asId(employee.user_id) === userId) ||
+      employeeList.find((employee) => String(employee.email || "").toLowerCase() === email) ||
+      null
+    );
+  }, [employeeList, user?.email, user?.id]);
+  const currentEmployeeId = asId(currentEmployee);
+
+  const assignedAssetItemIdSet = useMemo(() => {
+    if (!isEmployeeView || !currentEmployeeId) return new Set<string>();
+    return new Set(
+      assignmentList
+        .filter(
+          (assignment) =>
+            assignment.is_active &&
+            !assignment.returned_date &&
+            asId(assignment.employee_id) === currentEmployeeId
+        )
+        .map((assignment) => asId(assignment.asset_item_id))
+        .filter(Boolean)
+    );
+  }, [assignmentList, currentEmployeeId, isEmployeeView]);
+
+  const visibleMaintenanceList = useMemo(() => {
+    if (!isEmployeeView) return maintenanceList;
+    return maintenanceList.filter((record) => assignedAssetItemIdSet.has(asId(record.asset_item_id)));
+  }, [assignedAssetItemIdSet, isEmployeeView, maintenanceList]);
+
+  const requestableAssetItems = useMemo(() => {
+    if (!isEmployeeView) return assetItemList;
+    return assetItemList.filter((item) => assignedAssetItemIdSet.has(asId(item.id)));
+  }, [assetItemList, assignedAssetItemIdSet, isEmployeeView]);
+
+  const enrichedRecords = visibleMaintenanceList.map((record) => {
     const item = assetItemList.find((i) => i.id === record.asset_item_id);
     const asset = item ? assetList.find((a) => a.id === item.asset_id) : null;
     
@@ -141,7 +199,7 @@ export default function Maintenance() {
       render: (value: unknown, row: MaintenanceRecord & { assetName: string; itemTag: string }) => {
         const estimateDocumentId = typeof value === "string" ? value : "";
         if (!estimateDocumentId) {
-          return <span className="text-xs text-destructive">Missing</span>;
+          return <span className="text-xs text-muted-foreground">{isEmployeeView ? "-" : "Missing"}</span>;
         }
 
         return (
@@ -164,6 +222,14 @@ export default function Maintenance() {
   ];
 
   const handleScheduleMaintenance = () => {
+    if (isEmployeeView && !currentEmployeeId) {
+      toast.error("Your user account is not linked to an employee profile.");
+      return;
+    }
+    if (isEmployeeView && requestableAssetItems.length === 0) {
+      toast.error("No assigned asset items are available for maintenance requests.");
+      return;
+    }
     setEditingMaintenance(null);
     setIsModalOpen(true);
   };
@@ -181,7 +247,9 @@ export default function Maintenance() {
   };
 
   const handleSubmit = async (data: MaintenanceFormSubmitData) => {
-    const item = assetItemList.find((entry) => entry.id === data.assetItemId);
+    const item = (isEmployeeView ? requestableAssetItems : assetItemList).find(
+      (entry) => entry.id === data.assetItemId
+    );
     const officeId = item ? getOfficeHolderId(item) || undefined : undefined;
     if (!officeId) {
       toast.error("Maintenance is allowed only for office-held asset items.");
@@ -202,6 +270,26 @@ export default function Maintenance() {
           performedByVendorId: data.performedByVendorId,
           notes: data.notes,
         },
+      });
+      return;
+    }
+
+    if (isEmployeeView) {
+      if (!currentEmployeeId) {
+        toast.error("Your user account is not linked to an employee profile.");
+        return;
+      }
+      if (!assignedAssetItemIdSet.has(data.assetItemId)) {
+        toast.error("You can only request maintenance for your currently assigned asset items.");
+        return;
+      }
+      await createMaintenance.mutateAsync({
+        assetItemId: data.assetItemId,
+        type: data.type,
+        description: data.description,
+        scheduledDate: data.scheduledDate,
+        cost: data.cost,
+        notes: data.notes,
       });
       return;
     }
@@ -367,26 +455,57 @@ export default function Maintenance() {
     <MainLayout title="Maintenance" description="Track asset maintenance and repairs">
       <PageHeader
         title="Maintenance Records"
-        description="Schedule and track maintenance activities for assets"
-        action={{
-          label: "Schedule Maintenance",
-          onClick: handleScheduleMaintenance,
-        }}
+        description={
+          isEmployeeView
+            ? "Request maintenance for asset items currently assigned to you"
+            : "Schedule and track maintenance activities for assets"
+        }
+        action={
+          isEmployeeView
+            ? {
+                label: "Request Maintenance",
+                onClick: handleScheduleMaintenance,
+              }
+            : {
+                label: "Schedule Maintenance",
+                onClick: handleScheduleMaintenance,
+              }
+        }
       />
+
+      {isEmployeeView && !currentEmployeeId && (
+        <Alert variant="destructive" className="mb-4">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Employee mapping missing</AlertTitle>
+          <AlertDescription>
+            Your user account is not linked to an employee record. Contact your administrator.
+          </AlertDescription>
+        </Alert>
+      )}
+      {isEmployeeView && !!currentEmployeeId && requestableAssetItems.length === 0 && (
+        <Alert className="mb-4">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>No assigned asset items</AlertTitle>
+          <AlertDescription>
+            You can submit maintenance requests only for asset items currently assigned to you.
+          </AlertDescription>
+        </Alert>
+      )}
 
       <DataTable
         columns={columns}
         data={enrichedRecords}
         searchPlaceholder="Search maintenance records..."
-        actions={actions}
+        actions={isEmployeeView ? undefined : actions}
       />
 
       <MaintenanceFormModal
         open={isModalOpen}
         onOpenChange={setIsModalOpen}
         maintenance={editingMaintenance}
-        assetItems={assetItemList}
+        assetItems={isEmployeeView ? requestableAssetItems : assetItemList}
         assets={assetList}
+        isEmployeeRequest={isEmployeeView}
         onSubmit={handleSubmit}
       />
 

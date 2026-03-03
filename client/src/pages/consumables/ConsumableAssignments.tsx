@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -16,11 +16,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Loader2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useConsumableMode } from '@/hooks/useConsumableMode';
 import { ConsumableModeToggle } from '@/components/consumables/ConsumableModeToggle';
 import { filterItemsByMode, filterLocationsByMode } from '@/lib/consumableMode';
+import { SearchableSelect } from '@/components/shared/SearchableSelect';
 import { useConsumableItems } from '@/hooks/useConsumableItems';
 import { useOffices } from '@/hooks/useOffices';
 import { useEmployees } from '@/hooks/useEmployees';
@@ -65,6 +68,7 @@ function asId<T extends { id?: string; _id?: string }>(row: T): string {
 
 export default function ConsumableAssignments() {
   const { role, locationId } = useAuth();
+  const [itemPickerOpen, setItemPickerOpen] = useState(false);
   const { mode, setMode } = useConsumableMode();
   const { data: items } = useConsumableItems();
   const { data: locations } = useOffices({
@@ -93,6 +97,10 @@ export default function ConsumableAssignments() {
   const filteredLocations = useMemo(() => filterLocationsByMode(locations || [], mode), [locations, mode]);
   const modeFilteredItems = useMemo(() => filterItemsByMode(items || [], mode), [items, mode]);
   const unitList = useMemo(() => units || [], [units]);
+  const allUnitCodes = useMemo(
+    () => Array.from(new Set(unitList.map((unit) => String(unit.code || '').trim()).filter(Boolean))),
+    [unitList]
+  );
 
   const sourceOfficeId = form.watch('sourceOfficeId');
   const assigneeType = form.watch('assigneeType');
@@ -148,12 +156,12 @@ export default function ConsumableAssignments() {
   );
 
   const compatibleUnits = useMemo(() => {
-    if (!selectedItem) return [] as string[];
+    if (!selectedItem) return allUnitCodes;
     const resolved = getCompatibleUnits(selectedItem.base_uom, unitList);
-    if (!resolved.length) return [selectedItem.base_uom];
+    if (!resolved.length) return selectedItem.base_uom ? [selectedItem.base_uom] : allUnitCodes;
     if (!resolved.includes(selectedItem.base_uom)) return [selectedItem.base_uom, ...resolved];
     return resolved;
-  }, [selectedItem, unitList]);
+  }, [allUnitCodes, selectedItem, unitList]);
 
   useEffect(() => {
     const currentItem = form.getValues('itemId');
@@ -169,6 +177,20 @@ export default function ConsumableAssignments() {
       form.setValue('uom', selectedItem.base_uom);
     }
   }, [selectedItem, form]);
+
+  useEffect(() => {
+    const currentUom = form.getValues('uom');
+    if (currentUom && compatibleUnits.includes(currentUom)) return;
+    if (selectedItem?.base_uom) {
+      form.setValue('uom', selectedItem.base_uom);
+      return;
+    }
+    if (compatibleUnits.length > 0) {
+      form.setValue('uom', compatibleUnits[0]);
+      return;
+    }
+    form.setValue('uom', '');
+  }, [compatibleUnits, selectedItem, form]);
 
   const assigneeOptions = useMemo<AssigneeOption[]>(() => {
     if (!sourceOfficeId) return [];
@@ -347,14 +369,14 @@ export default function ConsumableAssignments() {
               <div className="space-y-2">
                 <Label>Source Office *</Label>
                 {role === 'org_admin' ? (
-                  <Select value={sourceOfficeId} onValueChange={(value) => form.setValue('sourceOfficeId', value)}>
-                    <SelectTrigger><SelectValue placeholder="Select office" /></SelectTrigger>
-                    <SelectContent>
-                      {filteredLocations.map((office) => (
-                        <SelectItem key={office.id} value={office.id}>{office.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <SearchableSelect
+                    value={sourceOfficeId}
+                    onValueChange={(value) => form.setValue('sourceOfficeId', value)}
+                    placeholder="Select office"
+                    searchPlaceholder="Search offices..."
+                    emptyText="No offices found."
+                    options={filteredLocations.map((office) => ({ value: office.id, label: office.name }))}
+                  />
                 ) : (
                   <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm">
                     {filteredLocations.find((office) => office.id === sourceOfficeId)?.name || 'Assigned Office'}
@@ -398,14 +420,33 @@ export default function ConsumableAssignments() {
             <div className="grid grid-cols-4 gap-4">
               <div className="space-y-2">
                 <Label>Item *</Label>
-                <Select value={itemId} onValueChange={(value) => form.setValue('itemId', value)}>
-                  <SelectTrigger><SelectValue placeholder="Select item" /></SelectTrigger>
-                  <SelectContent>
-                    {filteredItems.map((item) => (
-                      <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Popover open={itemPickerOpen} onOpenChange={setItemPickerOpen}>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" role="combobox" className="w-full justify-between">
+                      {selectedItem ? selectedItem.name : 'Search item by name...'}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                    <Command>
+                      <CommandInput placeholder="Type item name..." />
+                      <CommandList>
+                        <CommandEmpty>No item found.</CommandEmpty>
+                        {filteredItems.map((item) => (
+                          <CommandItem
+                            key={item.id}
+                            value={`${item.name} ${item.base_uom}`}
+                            onSelect={() => {
+                              form.setValue('itemId', item.id);
+                              setItemPickerOpen(false);
+                            }}
+                          >
+                            {item.name}
+                          </CommandItem>
+                        ))}
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
                 {form.formState.errors.itemId && (
                   <p className="text-sm text-destructive">{form.formState.errors.itemId.message}</p>
                 )}
@@ -436,7 +477,11 @@ export default function ConsumableAssignments() {
 
               <div className="space-y-2">
                 <Label>UoM *</Label>
-                <Select value={uom} onValueChange={(value) => form.setValue('uom', value)}>
+                <Select
+                  value={uom}
+                  onValueChange={(value) => form.setValue('uom', value)}
+                  disabled={compatibleUnits.length === 0}
+                >
                   <SelectTrigger><SelectValue placeholder="Select unit" /></SelectTrigger>
                   <SelectContent>
                     {compatibleUnits.map((unit) => (

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation } from "@tanstack/react-query";
 import { MainLayout } from "@/components/layout/MainLayout";
@@ -16,11 +16,35 @@ import { useAssetItems } from "@/hooks/useAssetItems";
 import { useAssets } from "@/hooks/useAssets";
 import { returnRequestService } from "@/services/returnRequestService";
 
+type MongoIdLike = {
+  id?: unknown;
+  _id?: unknown;
+  $oid?: unknown;
+};
+
+function asId(value: unknown): string {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "object") {
+    const record = value as MongoIdLike;
+    if (typeof record.$oid === "string") return record.$oid;
+    if (typeof record.id === "string") return record.id;
+    if (typeof record._id === "string") return record._id;
+  }
+  return "";
+}
+
+function employeeId(employee: unknown): string {
+  if (!employee || typeof employee !== "object") return "";
+  const record = employee as MongoIdLike;
+  return asId(record.id) || asId(record._id);
+}
+
 export default function ReturnRequestNew() {
   const navigate = useNavigate();
   const { user, locationId } = useAuth();
   const { data: assignments, isLoading: assignmentsLoading } = useAssignments();
-  const { data: employees } = useEmployees();
+  const { data: employees, refetch: refetchEmployees } = useEmployees();
   const { data: assetItems } = useAssetItems();
   const { data: assets } = useAssets();
 
@@ -32,33 +56,50 @@ export default function ReturnRequestNew() {
   const assetItemList = useMemo(() => assetItems || [], [assetItems]);
   const assetList = useMemo(() => assets || [], [assets]);
 
+  const scopedEmployees = useMemo(() => {
+    const officeId = asId(locationId);
+    if (!officeId) return employeeList;
+    const filtered = employeeList.filter((employee) => {
+      const locationMatch = asId(employee.location_id) === officeId;
+      const directorateMatch = asId(employee.directorate_id) === officeId;
+      return locationMatch || directorateMatch;
+    });
+    return filtered.length > 0 ? filtered : employeeList;
+  }, [employeeList, locationId]);
+
   const currentEmployee = useMemo(() => {
-    const byUserId = employeeList.find((employee) => employee.user_id === user?.id);
-    const byEmail = employeeList.find(
+    const currentUserId = asId(user?.id);
+    const byUserId = scopedEmployees.find((employee) => asId(employee.user_id) === currentUserId);
+    const byEmail = scopedEmployees.find(
       (employee) => employee.email?.toLowerCase() === (user?.email || "").toLowerCase()
     );
     return byUserId || byEmail || null;
-  }, [employeeList, user?.id, user?.email]);
+  }, [scopedEmployees, user?.id, user?.email]);
+  const currentEmployeeId = useMemo(() => employeeId(currentEmployee), [currentEmployee]);
+
+  useEffect(() => {
+    void refetchEmployees();
+  }, [refetchEmployees]);
 
   const myAssignments = useMemo(() => {
-    if (!currentEmployee?.id) return [];
+    if (!currentEmployeeId) return [];
     return assignmentList.filter(
       (assignment) =>
-        assignment.employee_id === currentEmployee.id &&
+        asId(assignment.employee_id) === currentEmployeeId &&
         assignment.is_active &&
         !assignment.returned_date
     );
-  }, [assignmentList, currentEmployee?.id]);
+  }, [assignmentList, currentEmployeeId]);
 
   const myAssignedAssets = useMemo(() => {
     return myAssignments
       .map((assignment) => {
-        const item = assetItemList.find((entry) => entry.id === assignment.asset_item_id);
+        const item = assetItemList.find((entry) => asId(entry.id) === asId(assignment.asset_item_id));
         if (!item) return null;
-        const asset = assetList.find((entry) => entry.id === item.asset_id);
+        const asset = assetList.find((entry) => asId(entry.id) === asId(item.asset_id));
         return {
-          assignmentId: assignment.id,
-          assetItemId: item.id,
+          assignmentId: asId(assignment.id),
+          assetItemId: asId(item.id),
           tag: item.tag || "N/A",
           serialNumber: item.serial_number || "N/A",
           assetName: asset?.name || "Unknown Asset",
@@ -70,15 +111,15 @@ export default function ReturnRequestNew() {
 
   const createMutation = useMutation({
     mutationFn: async () => {
-      if (!currentEmployee?.id) {
+      if (!currentEmployeeId) {
         throw new Error("Your account is not mapped to an employee record.");
       }
       if (!returnAll && selectedAssetItemIds.length === 0) {
         throw new Error("Select at least one assigned asset, or use Return All.");
       }
       return returnRequestService.create({
-        employeeId: currentEmployee.id,
-        officeId: locationId || currentEmployee.location_id || undefined,
+        employeeId: currentEmployeeId,
+        officeId: asId(locationId) || asId(currentEmployee?.location_id) || undefined,
         returnAll,
         assetItemIds: returnAll ? undefined : selectedAssetItemIds,
       });

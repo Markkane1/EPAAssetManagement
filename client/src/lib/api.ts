@@ -28,6 +28,15 @@ function normalizeMongoIds(value: unknown): unknown {
   }
 
   const record = value as Record<string, unknown>;
+
+  // Handle Mongo Extended JSON ObjectId shape: { "$oid": "..." }.
+  if (
+    typeof record.$oid === 'string' &&
+    Object.keys(record).length === 1
+  ) {
+    return record.$oid;
+  }
+
   const normalized: Record<string, unknown> = {};
 
   for (const [key, entry] of Object.entries(record)) {

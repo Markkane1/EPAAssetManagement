@@ -15,6 +15,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { StatusBadge } from "@/components/shared/StatusBadge";
 import { requisitionService } from "@/services/requisitionService";
 import { assignmentService } from "@/services/assignmentService";
 import { assetService } from "@/services/assetService";
@@ -30,10 +31,27 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000
 const API_ORIGIN = API_BASE_URL.replace(/\/api\/?$/, "");
 
 const FULFILLABLE_STATUSES = new Set([
+  "APPROVED",
   "VERIFIED_APPROVED",
   "IN_FULFILLMENT",
   "PARTIALLY_FULFILLED",
 ]);
+
+type WorkflowState = "pending" | "in_progress" | "done" | "blocked";
+
+function getWorkflowStateLabel(state: WorkflowState) {
+  if (state === "done") return "Done";
+  if (state === "in_progress") return "In Progress";
+  if (state === "blocked") return "Blocked";
+  return "Pending";
+}
+
+function getWorkflowStateClassName(state: WorkflowState) {
+  if (state === "done") return "bg-emerald-100 text-emerald-800";
+  if (state === "in_progress") return "bg-blue-100 text-blue-800";
+  if (state === "blocked") return "bg-red-100 text-red-800";
+  return "bg-muted text-muted-foreground";
+}
 
 function asId<T extends { id?: string; _id?: string }>(row: T): string {
   return String(row.id || row._id || "");
@@ -142,18 +160,30 @@ export default function RequisitionDetail() {
     return room?.name || linkedId;
   }, [officeSubLocations, requisition?.linked_sub_location_id]);
 
-  const canIssuerAct = useMemo(() => {
+  const canVerifyRole = useMemo(() => {
+    if (role === "org_admin") return true;
     const hqDirectorate = isHqDirectorateOffice(officeId, locationList);
     if (hqDirectorate) {
-      return role === "caretaker" || role === "office_head";
+      return role === "office_head";
     }
-    return role === "office_head" || role === "caretaker";
+    return role === "office_head";
   }, [officeId, locationList, role]);
 
+  const canFulfillRole = useMemo(() => {
+    if (role === "org_admin") return true;
+    const hqDirectorate = isHqDirectorateOffice(officeId, locationList);
+    if (hqDirectorate) {
+      return role === "caretaker";
+    }
+    return role === "caretaker";
+  }, [officeId, locationList, role]);
+
+  const requisitionStatus = String(requisition?.status || "");
   const canVerifyReject =
-    canIssuerAct && String(requisition?.status || "") === "PENDING_VERIFICATION";
+    canVerifyRole && (requisitionStatus === "SUBMITTED" || requisitionStatus === "PENDING_VERIFICATION");
   const canFulfill =
-    canIssuerAct && FULFILLABLE_STATUSES.has(String(requisition?.status || ""));
+    canFulfillRole && FULFILLABLE_STATUSES.has(requisitionStatus);
+  const canIssuerAct = canVerifyRole || canFulfillRole;
   const canManageAssignmentSlips =
     role === "org_admin" || role === "office_head" || role === "caretaker";
   const canRequestReturn = role === "employee";
@@ -211,7 +241,9 @@ export default function RequisitionDetail() {
       if (!mappedAssetId || String(item.asset_id) !== mappedAssetId) return false;
       if (!token) return true;
       const haystack =
-        `${item.tag || ""} ${item.serial_number || ""} ${item.id}`.toLowerCase();
+        `${line?.requested_name || ""} ${item.assets?.name || ""} ${item.tag || ""} ${
+          item.serial_number || ""
+        } ${item.id}`.toLowerCase();
       return haystack.includes(token);
     });
   }, [lineById, officeStockItems, pickerLineId, pickerSearch]);
@@ -250,6 +282,73 @@ export default function RequisitionDetail() {
     return map;
   }, [requisitionAssignments]);
 
+  const officeStockItemById = useMemo(() => {
+    const map = new Map<string, AssetItem>();
+    officeStockItems.forEach((item) => map.set(String(item.id || ""), item));
+    return map;
+  }, [officeStockItems]);
+
+  const workflowSnapshot = useMemo(() => {
+    const status = String(requisitionStatus || "").toUpperCase();
+    const isRejected = status === "REJECTED_INVALID";
+    const verificationState: WorkflowState =
+      isRejected
+        ? "blocked"
+        : status === "SUBMITTED" || status === "PENDING_VERIFICATION"
+          ? "in_progress"
+          : "done";
+    const fulfillmentState: WorkflowState = isRejected
+      ? "blocked"
+      : status === "APPROVED" ||
+          status === "VERIFIED_APPROVED" ||
+          status === "IN_FULFILLMENT" ||
+          status === "PARTIALLY_FULFILLED"
+        ? "in_progress"
+        : status === "FULFILLED_PENDING_SIGNATURE" || status === "FULFILLED"
+          ? "done"
+          : "pending";
+    const signingState: WorkflowState = isRejected
+      ? "blocked"
+      : status === "FULFILLED_PENDING_SIGNATURE"
+        ? "in_progress"
+        : status === "FULFILLED"
+          ? "done"
+          : "pending";
+    return [
+      { id: "verify", label: "Verification", state: verificationState },
+      { id: "fulfill", label: "Fulfillment", state: fulfillmentState },
+      { id: "sign", label: "Signed Receipt", state: signingState },
+    ];
+  }, [requisitionStatus]);
+
+  const fulfillmentSummary = useMemo(() => {
+    const totalLines = lines.length;
+    let mappedLines = 0;
+    let readyLines = 0;
+    let fulfilledLines = 0;
+    lines.forEach((line) => {
+      const lineId = asId(line);
+      const draft = fulfillDraft[lineId] || { assignedAssetItemIds: [], issuedQuantity: "" };
+      const isMapped =
+        line.line_type === "MOVEABLE" ? Boolean(line.asset_id) : Boolean(line.consumable_id);
+      if (isMapped) mappedLines += 1;
+      if (Number(line.fulfilled_quantity || 0) > 0) fulfilledLines += 1;
+      if (!isMapped) return;
+      if (line.line_type === "MOVEABLE") {
+        if (draft.assignedAssetItemIds.length > 0) readyLines += 1;
+        return;
+      }
+      if (Number(draft.issuedQuantity) > 0) readyLines += 1;
+    });
+    return {
+      totalLines,
+      mappedLines,
+      readyLines,
+      fulfilledLines,
+      canSubmit: readyLines > 0,
+    };
+  }, [fulfillDraft, lines]);
+
   const verifyMutation = useMutation({
     mutationFn: (decision: "VERIFY" | "REJECT") =>
       requisitionService.verify(String(id), {
@@ -260,7 +359,8 @@ export default function RequisitionDetail() {
       toast.success("Requisition updated.");
       setShowRejectInput(false);
       setRejectRemarks("");
-      await queryClient.invalidateQueries({ queryKey: ["requisition", id] });
+      await queryClient.invalidateQueries({ queryKey: ["requisitions"] });
+      navigate("/requisitions");
     },
     onError: (error: Error) => toast.error(error.message || "Failed to update requisition."),
   });
@@ -493,35 +593,79 @@ export default function RequisitionDetail() {
       />
 
       <div className="mt-6 space-y-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Header</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
-            <div>
-              <p className="text-xs text-muted-foreground">File Number</p>
-              <p className="font-medium">{requisition.file_number}</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Status</p>
-              <Badge variant="outline" className="mt-1 font-mono">
-                {requisition.status}
-              </Badge>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Created At</p>
-              <p className="font-medium">{new Date(requisition.created_at).toLocaleString()}</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Office</p>
-              <p className="font-medium">{officeName}</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Room / Section</p>
-              <p className="font-medium">{linkedSubLocationName}</p>
-            </div>
-          </CardContent>
-        </Card>
+        <div className="grid gap-6 lg:grid-cols-3">
+          <Card className="lg:col-span-2">
+            <CardHeader>
+              <CardTitle>Requisition Overview</CardTitle>
+              <CardDescription>Core request information and current status.</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              <div>
+                <p className="text-xs text-muted-foreground">File Number</p>
+                <p className="font-medium">{requisition.file_number}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Status</p>
+                <div className="mt-1">
+                  <StatusBadge status={String(requisition.status || "UNKNOWN")} />
+                </div>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Created At</p>
+                <p className="font-medium">{new Date(requisition.created_at).toLocaleString()}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Office</p>
+                <p className="font-medium">{officeName}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Room / Section</p>
+                <p className="font-medium">{linkedSubLocationName}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Lines</p>
+                <p className="font-medium">{lines.length}</p>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Workflow Snapshot</CardTitle>
+              <CardDescription>Progress of requisition lifecycle stages.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {workflowSnapshot.map((step) => (
+                <div key={step.id} className="flex items-center justify-between rounded-md border p-2">
+                  <p className="text-sm font-medium">{step.label}</p>
+                  <Badge className={getWorkflowStateClassName(step.state)}>
+                    {getWorkflowStateLabel(step.state)}
+                  </Badge>
+                </div>
+              ))}
+              <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+                <div className="rounded-md border p-2">
+                  <p className="text-xs text-muted-foreground">Mapped</p>
+                  <p className="font-semibold">
+                    {fulfillmentSummary.mappedLines}/{fulfillmentSummary.totalLines}
+                  </p>
+                </div>
+                <div className="rounded-md border p-2">
+                  <p className="text-xs text-muted-foreground">Ready</p>
+                  <p className="font-semibold">
+                    {fulfillmentSummary.readyLines}/{fulfillmentSummary.totalLines}
+                  </p>
+                </div>
+                <div className="rounded-md border p-2">
+                  <p className="text-xs text-muted-foreground">Fulfilled</p>
+                  <p className="font-semibold">
+                    {fulfillmentSummary.fulfilledLines}/{fulfillmentSummary.totalLines}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
 
         <Card>
           <CardHeader>
@@ -551,30 +695,35 @@ export default function RequisitionDetail() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Lines</CardTitle>
+            <CardTitle>Requested Lines</CardTitle>
+            <CardDescription>
+              Requested items with requested, approved, and fulfilled quantities.
+            </CardDescription>
           </CardHeader>
           <CardContent>
             {isMobile ? (
               <div className="space-y-3">
                 {lines.map((line) => (
                   <div key={asId(line)} className="rounded-md border p-3 space-y-2">
-                    <p className="font-medium">{line.requested_name}</p>
-                    <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div className="space-y-1">
+                      <p className="font-medium">{line.requested_name}</p>
+                      <div className="flex flex-wrap gap-2">
+                        <Badge variant="outline">{line.line_type}</Badge>
+                        <StatusBadge status={String(line.status || "UNKNOWN")} />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 text-sm">
                       <div>
-                        <p className="text-xs text-muted-foreground">Line Type</p>
-                        <p>{line.line_type}</p>
+                        <p className="text-xs text-muted-foreground">Requested</p>
+                        <p className="font-medium">{line.requested_quantity}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-muted-foreground">Status</p>
-                        <p>{line.status}</p>
+                        <p className="text-xs text-muted-foreground">Approved</p>
+                        <p className="font-medium">{line.approved_quantity}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-muted-foreground">Item Quantity</p>
-                        <p>{line.requested_quantity}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">Fulfilled Qty</p>
-                        <p>{line.fulfilled_quantity}</p>
+                        <p className="text-xs text-muted-foreground">Fulfilled</p>
+                        <p className="font-medium">{line.fulfilled_quantity}</p>
                       </div>
                     </div>
                   </div>
@@ -588,6 +737,7 @@ export default function RequisitionDetail() {
                       <th className="px-2 py-2 text-left font-medium">Item Name</th>
                       <th className="px-2 py-2 text-left font-medium">Line Type</th>
                       <th className="px-2 py-2 text-right font-medium">Item Quantity</th>
+                      <th className="px-2 py-2 text-right font-medium">Approved Qty</th>
                       <th className="px-2 py-2 text-right font-medium">Fulfilled Qty</th>
                       <th className="px-2 py-2 text-left font-medium">Status</th>
                     </tr>
@@ -598,8 +748,11 @@ export default function RequisitionDetail() {
                         <td className="px-2 py-2">{line.requested_name}</td>
                         <td className="px-2 py-2">{line.line_type}</td>
                         <td className="px-2 py-2 text-right">{line.requested_quantity}</td>
+                        <td className="px-2 py-2 text-right">{line.approved_quantity}</td>
                         <td className="px-2 py-2 text-right">{line.fulfilled_quantity}</td>
-                        <td className="px-2 py-2">{line.status}</td>
+                        <td className="px-2 py-2">
+                          <StatusBadge status={String(line.status || "UNKNOWN")} />
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -611,8 +764,8 @@ export default function RequisitionDetail() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Actions</CardTitle>
-            <CardDescription>Role-gated requisition workflow actions.</CardDescription>
+            <CardTitle>Workflow Actions</CardTitle>
+            <CardDescription>Verify, map, and fulfill this requisition based on your role.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             {!canIssuerAct && (
@@ -620,26 +773,31 @@ export default function RequisitionDetail() {
                 <AlertCircle className="h-4 w-4" />
                 <AlertTitle>Read-only access</AlertTitle>
                 <AlertDescription>
-                  Your role cannot verify or fulfill this requisition for the selected office type.
+                  Your role cannot approve/reject or fulfill this requisition for the selected office type.
                 </AlertDescription>
               </Alert>
             )}
 
             {canVerifyReject && (
               <div className="rounded-md border p-4 space-y-3">
-                <p className="font-medium">Verification</p>
+                <p className="font-medium">Verification Decision</p>
+                <p className="text-sm text-muted-foreground">
+                  Office Head validates this request before it is available for fulfillment.
+                </p>
                 <div className="flex flex-wrap gap-2">
                   <Button
                     type="button"
+                    className="w-full sm:w-auto"
                     onClick={() => verifyMutation.mutate("VERIFY")}
                     disabled={verifyMutation.isPending}
                   >
                     {verifyMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    Verify Approved
+                    Approve Requisition
                   </Button>
                   <Button
                     type="button"
                     variant="destructive"
+                    className="w-full sm:w-auto"
                     onClick={() => setShowRejectInput((previous) => !previous)}
                     disabled={verifyMutation.isPending}
                   >
@@ -660,6 +818,7 @@ export default function RequisitionDetail() {
                     <Button
                       type="button"
                       variant="destructive"
+                      className="w-full sm:w-auto"
                       onClick={() => {
                         if (!rejectRemarks.trim()) {
                           toast.error("Reject remarks are required.");
@@ -678,7 +837,17 @@ export default function RequisitionDetail() {
 
             {canFulfill && (
               <div className="rounded-md border p-4 space-y-4">
-                <p className="font-medium">Fulfillment</p>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="font-medium">Fulfillment Workspace</p>
+                    <p className="text-sm text-muted-foreground">
+                      Map each line, then select exact asset items or issued quantity.
+                    </p>
+                  </div>
+                  <Badge variant="outline">
+                    Ready {fulfillmentSummary.readyLines}/{fulfillmentSummary.totalLines}
+                  </Badge>
+                </div>
                 {(assetsQuery.isLoading || consumablesQuery.isLoading || assetItemsQuery.isLoading) && (
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -710,6 +879,10 @@ export default function RequisitionDetail() {
                     line.line_type === "MOVEABLE"
                       ? assetById.get(mappedId)?.name || null
                       : consumableById.get(mappedId)?.name || null;
+                  const lineReadyForSubmission =
+                    line.line_type === "MOVEABLE"
+                      ? draft.assignedAssetItemIds.length > 0
+                      : Number(draft.issuedQuantity || 0) > 0;
                   const lineAssignments = assignmentsByLineId.get(lineId) || [];
 
                   const filteredMapOptions =
@@ -725,10 +898,24 @@ export default function RequisitionDetail() {
                     <div key={`fulfill-${lineId}`} className="rounded border p-3 space-y-3">
                       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                         <div>
-                          <p className="text-xs text-muted-foreground">Item Name</p>
+                          <p className="text-xs text-muted-foreground">Requested Item</p>
                           <p className="font-semibold text-base">{line.requested_name}</p>
+                          <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                            <span>Requested: {line.requested_quantity}</span>
+                            <span>Approved: {line.approved_quantity}</span>
+                            <span>Fulfilled: {line.fulfilled_quantity}</span>
+                          </div>
                         </div>
-                        <Badge variant="outline">{line.line_type}</Badge>
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline">{line.line_type}</Badge>
+                          <StatusBadge status={String(line.status || "UNKNOWN")} />
+                          <Badge
+                            variant="outline"
+                            className={lineReadyForSubmission ? "text-emerald-700" : "text-amber-700"}
+                          >
+                            {lineReadyForSubmission ? "Ready" : "Pending Input"}
+                          </Badge>
+                        </div>
                       </div>
 
                       <div className="rounded-md border bg-muted/20 p-3 space-y-2">
@@ -786,6 +973,7 @@ export default function RequisitionDetail() {
                           <Button
                             type="button"
                             variant="outline"
+                            className="w-full sm:w-auto"
                             onClick={() => {
                               if (!mapDraft.selectedId) {
                                 toast.error("Select an item to map first.");
@@ -810,15 +998,15 @@ export default function RequisitionDetail() {
                               : "Map to this Consumable"}
                           </Button>
                         </div>
-                        {isMapped ? (
-                          <p className="text-sm text-emerald-700">
-                            Mapped to: {mappedName || mappedId}
-                          </p>
-                        ) : (
-                          <p className="text-sm text-amber-700">
-                            Map this line before fulfillment.
-                          </p>
-                        )}
+                        <div className="rounded border bg-background p-2 text-sm">
+                          {isMapped ? (
+                            <p className="text-emerald-700">
+                              Mapped to: <span className="font-medium">{mappedName || mappedId}</span>
+                            </p>
+                          ) : (
+                            <p className="text-amber-700">Map this line before fulfillment.</p>
+                          )}
+                        </div>
                       </div>
 
                       {line.line_type === "MOVEABLE" ? (
@@ -827,6 +1015,7 @@ export default function RequisitionDetail() {
                             type="button"
                             variant="outline"
                             size="sm"
+                            className="w-full sm:w-auto"
                             onClick={() => openAssetPicker(line)}
                             disabled={!isMapped}
                           >
@@ -838,9 +1027,31 @@ export default function RequisitionDetail() {
                             </p>
                           )}
                           {draft.assignedAssetItemIds.length > 0 && (
-                            <p className="text-xs text-muted-foreground break-all">
-                              {draft.assignedAssetItemIds.join(", ")}
-                            </p>
+                            <div className="rounded border bg-muted/20 p-2">
+                              <p className="text-xs font-medium text-muted-foreground">
+                                Selected Asset Items ({draft.assignedAssetItemIds.length})
+                              </p>
+                              <ul className="mt-1 space-y-1 text-xs">
+                                {draft.assignedAssetItemIds.slice(0, 3).map((assetItemId) => {
+                                  const selectedItem = officeStockItemById.get(assetItemId);
+                                  const selectedAssetName =
+                                    assetById.get(String(selectedItem?.asset_id || ""))?.name ||
+                                    selectedItem?.assets?.name ||
+                                    "Unknown Asset";
+                                  return (
+                                    <li key={`${lineId}-${assetItemId}`} className="text-muted-foreground">
+                                      {selectedAssetName} | Tag: {selectedItem?.tag || "N/A"} | Serial:{" "}
+                                      {selectedItem?.serial_number || "N/A"}
+                                    </li>
+                                  );
+                                })}
+                                {draft.assignedAssetItemIds.length > 3 && (
+                                  <li className="text-muted-foreground">
+                                    +{draft.assignedAssetItemIds.length - 3} more selected
+                                  </li>
+                                )}
+                              </ul>
+                            </div>
                           )}
                         </div>
                       ) : (
@@ -874,7 +1085,7 @@ export default function RequisitionDetail() {
                               <div key={assignmentId} className="rounded border p-2 space-y-2">
                                 <div className="flex flex-wrap items-center justify-between gap-2">
                                   <p className="text-xs font-mono">Assignment {assignmentId}</p>
-                                  <Badge variant="outline">{assignmentStatus || "UNKNOWN"}</Badge>
+                                  <StatusBadge status={assignmentStatus || "UNKNOWN"} />
                                 </div>
 
                                 {assignmentStatus === "DRAFT" && (
@@ -944,6 +1155,30 @@ export default function RequisitionDetail() {
                                 {(assignmentStatus === "ISSUED" ||
                                   assignmentStatus === "RETURN_REQUESTED") && (
                                   <div className="space-y-2">
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      onClick={async () => {
+                                        try {
+                                          const blob = await assignmentService.downloadHandoverSlipPdf(
+                                            assignmentId
+                                          );
+                                          await downloadBlob(
+                                            blob,
+                                            `handover-slip-${assignmentId}.pdf`
+                                          );
+                                        } catch (error) {
+                                          toast.error(
+                                            error instanceof Error
+                                              ? error.message
+                                              : "Failed to open handover slip."
+                                          );
+                                        }
+                                      }}
+                                    >
+                                      Open Handover Receipt
+                                    </Button>
+
                                     {assignmentStatus === "ISSUED" && canRequestReturn && (
                                       <Button
                                         type="button"
@@ -1023,14 +1258,20 @@ export default function RequisitionDetail() {
                   );
                 })}
 
-                <Button
-                  type="button"
-                  onClick={() => fulfillMutation.mutate()}
-                  disabled={fulfillMutation.isPending}
-                >
-                  {fulfillMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Submit Fulfillment
-                </Button>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between rounded-md border bg-muted/20 p-3">
+                  <p className="text-sm text-muted-foreground">
+                    Submit once at least one mapped line has selected asset items or issued quantity.
+                  </p>
+                  <Button
+                    type="button"
+                    className="w-full sm:w-auto"
+                    onClick={() => fulfillMutation.mutate()}
+                    disabled={fulfillMutation.isPending || !fulfillmentSummary.canSubmit}
+                  >
+                    {fulfillMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Submit Fulfillment
+                  </Button>
+                </div>
               </div>
             )}
 
@@ -1043,7 +1284,7 @@ export default function RequisitionDetail() {
                     className="flex flex-col gap-2 rounded border p-2 sm:flex-row sm:items-center sm:justify-between"
                   >
                     <p className="text-sm font-mono">{asId(assignment)}</p>
-                    <Badge variant="outline">{String(assignment.status || "UNKNOWN")}</Badge>
+                    <StatusBadge status={String(assignment.status || "UNKNOWN")} />
                   </div>
                 ))}
               </div>
@@ -1056,7 +1297,7 @@ export default function RequisitionDetail() {
         open={Boolean(pickerLineId)}
         onOpenChange={(open) => (!open ? setPickerLineId(null) : null)}
       >
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Select Asset Items</DialogTitle>
             <DialogDescription>
@@ -1064,8 +1305,14 @@ export default function RequisitionDetail() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
+            <div className="flex items-center justify-between rounded-md border bg-muted/20 p-2 text-sm">
+              <span className="text-muted-foreground">Selected for this line</span>
+              <span className="font-medium">
+                {pickerLineId ? fulfillDraft[pickerLineId]?.assignedAssetItemIds.length || 0 : 0}
+              </span>
+            </div>
             <Input
-              placeholder="Search by tag, serial number, or ID"
+              placeholder="Search by asset name, tag, serial number, or ID"
               value={pickerSearch}
               onChange={(event) => setPickerSearch(event.target.value)}
             />
@@ -1076,10 +1323,16 @@ export default function RequisitionDetail() {
               ) : (
                 pickerItems.map((item: AssetItem) => {
                   const lineId = pickerLineId || "";
+                  const line = lineById.get(lineId);
                   const selectedForLine =
                     fulfillDraft[lineId]?.assignedAssetItemIds.includes(item.id) || false;
                   const disabledByOtherLine =
                     !selectedForLine && selectedAssetsAcrossLines.has(item.id);
+                  const assetName =
+                    assetById.get(String(item.asset_id || ""))?.name ||
+                    item.assets?.name ||
+                    line?.requested_name ||
+                    "Unknown Asset";
                   return (
                     <label
                       key={item.id}
@@ -1093,10 +1346,11 @@ export default function RequisitionDetail() {
                         }
                       />
                       <div className="text-sm">
-                        <p className="font-medium">{item.tag || "No Tag"}</p>
+                        <p className="font-medium">{assetName}</p>
                         <p className="text-xs text-muted-foreground">
-                          Serial: {item.serial_number || "N/A"} | ID: {item.id}
+                          Tag: {item.tag || "N/A"} | Serial: {item.serial_number || "N/A"}
                         </p>
+                        <p className="text-xs text-muted-foreground">Asset Item ID: {item.id}</p>
                       </div>
                     </label>
                   );
@@ -1104,7 +1358,7 @@ export default function RequisitionDetail() {
               )}
             </div>
 
-            <div className="flex justify-end">
+            <div className="sticky bottom-0 flex justify-end border-t bg-background pt-3">
               <Button type="button" onClick={() => setPickerLineId(null)}>
                 Done
               </Button>

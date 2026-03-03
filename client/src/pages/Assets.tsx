@@ -19,6 +19,8 @@ import { useVendors } from "@/hooks/useVendors";
 import { useProjects } from "@/hooks/useProjects";
 import { useSchemes } from "@/hooks/useSchemes";
 import { AssetFormModal } from "@/components/forms/AssetFormModal";
+import { OfficeAssetFormModal } from "@/components/forms/OfficeAssetFormModal";
+import { useAuth } from "@/contexts/AuthContext";
 
 function formatDimensions(asset: Asset) {
   const dims = asset.dimensions;
@@ -26,12 +28,14 @@ function formatDimensions(asset: Asset) {
   const values = [dims.length, dims.width, dims.height];
   if (values.every((value) => value === null || value === undefined)) return "N/A";
   const [l, w, h] = values.map((value) => (value ?? "-"));
-  return `${l} × ${w} × ${h} ${dims.unit || "cm"}`;
+  return `${l} x ${w} x ${h} ${dims.unit || "cm"}`;
 }
 
 export default function Assets() {
   const navigate = useNavigate();
-  
+  const { isOrgAdmin } = useAuth();
+  const officeScopedMode = !isOrgAdmin;
+
   const { data: assets, isLoading } = useAssets();
   const { data: categories } = useCategories({ assetType: "ASSET" });
   const { data: vendors } = useVendors();
@@ -54,10 +58,16 @@ export default function Assets() {
     const vendor = vendorList.find((v) => v.id === asset.vendor_id);
     const project = projectList.find((p) => p.id === asset.project_id);
     const scheme = schemeList.find((s) => s.id === asset.scheme_id);
-    const sourceLabel = asset.asset_source === "project" ? "Project" : "Procurement";
-    const sourceDetail = asset.asset_source === "project"
-      ? `${project?.name || "N/A"}${scheme ? ` · ${scheme.name}` : ""}`
-      : vendor?.name || "N/A";
+    const sourceLabel = officeScopedMode
+      ? "Procurement"
+      : asset.asset_source === "project"
+        ? "Project"
+        : "Procurement";
+    const sourceDetail = officeScopedMode
+      ? vendor?.name || "N/A"
+      : asset.asset_source === "project"
+        ? `${project?.name || "N/A"}${scheme ? ` - ${scheme.name}` : ""}`
+        : vendor?.name || "N/A";
 
     return {
       ...asset,
@@ -70,16 +80,39 @@ export default function Assets() {
   });
 
   const columns = [
-    { key: "name", label: "Asset Name", render: (value: string, row: Asset) => (
-      <div><p className="font-medium">{value}</p><p className="text-xs text-muted-foreground truncate max-w-[200px]">{row.description}</p></div>
-    )},
-    { key: "categoryName", label: "Category", render: (value: string) => <Badge variant="secondary" className="font-normal">{value}</Badge> },
-    { key: "sourceLabel", label: "Source", render: (value: string) => <Badge variant="outline" className="font-normal">{value}</Badge> },
+    {
+      key: "name",
+      label: "Asset Name",
+      render: (value: string, row: Asset) => (
+        <div>
+          <p className="font-medium">{value}</p>
+          <p className="text-xs text-muted-foreground truncate max-w-[200px]">{row.description}</p>
+        </div>
+      ),
+    },
+    {
+      key: "categoryName",
+      label: "Category",
+      render: (value: string) => <Badge variant="secondary" className="font-normal">{value}</Badge>,
+    },
+    {
+      key: "sourceLabel",
+      label: "Source",
+      render: (value: string) => <Badge variant="outline" className="font-normal">{value}</Badge>,
+    },
     { key: "sourceDetail", label: "Vendor/Project" },
     { key: "dimensionsLabel", label: "Dimensions" },
     { key: "quantity", label: "Quantity", render: (value: number) => <span className="font-medium">{value}</span> },
-    { key: "unit_price", label: "Unit Price", render: (value: number) => <span className="font-medium">PKR {value?.toLocaleString("en-PK") || 0}</span> },
-    { key: "acquisition_date", label: "Acquired", render: (value: string) => value ? new Date(value).toLocaleDateString() : "N/A" },
+    {
+      key: "unit_price",
+      label: "Unit Price",
+      render: (value: number) => <span className="font-medium">PKR {value?.toLocaleString("en-PK") || 0}</span>,
+    },
+    {
+      key: "acquisition_date",
+      label: "Acquired",
+      render: (value: string) => (value ? new Date(value).toLocaleDateString() : "N/A"),
+    },
   ];
 
   const handleAddAsset = () => {
@@ -130,14 +163,47 @@ export default function Assets() {
   }
 
   return (
-    <MainLayout title="Assets" description="Manage your asset catalog">
-      <PageHeader 
-        title="Assets" 
-        description="View and manage all asset types in your organization" 
-        action={{ label: "Add Asset", onClick: handleAddAsset }}
+    <MainLayout
+      title={officeScopedMode ? "Office Assets" : "Assets"}
+      description={officeScopedMode ? "Manage your office's asset catalog" : "Manage your asset catalog"}
+    >
+      <PageHeader
+        title={officeScopedMode ? "Office Assets" : "Assets"}
+        description={
+          officeScopedMode
+            ? "View and manage asset definitions for your office"
+            : "View and manage all asset types in your organization"
+        }
+        action={{ label: officeScopedMode ? "Add Procurement Asset" : "Add Asset", onClick: handleAddAsset }}
       />
-      <DataTable columns={columns} data={enrichedAssets} searchPlaceholder="Search assets..." onRowClick={(row) => navigate(`/assets/${row.id}`)} actions={actions} />
-      <AssetFormModal open={isModalOpen} onOpenChange={setIsModalOpen} asset={editingAsset as any} categories={categoryList as any[]} vendors={vendorList as any[]} projects={projectList as any[]} schemes={schemeList as any[]} onSubmit={handleSubmit} />
+      <DataTable
+        columns={columns}
+        data={enrichedAssets}
+        searchPlaceholder="Search assets..."
+        onRowClick={(row) => navigate(`/assets/${row.id}`)}
+        actions={actions}
+      />
+      {officeScopedMode ? (
+        <OfficeAssetFormModal
+          open={isModalOpen}
+          onOpenChange={setIsModalOpen}
+          asset={editingAsset as any}
+          categories={categoryList as any[]}
+          vendors={vendorList as any[]}
+          onSubmit={handleSubmit}
+        />
+      ) : (
+        <AssetFormModal
+          open={isModalOpen}
+          onOpenChange={setIsModalOpen}
+          asset={editingAsset as any}
+          categories={categoryList as any[]}
+          vendors={vendorList as any[]}
+          projects={projectList as any[]}
+          schemes={schemeList as any[]}
+          onSubmit={handleSubmit}
+        />
+      )}
     </MainLayout>
   );
 }

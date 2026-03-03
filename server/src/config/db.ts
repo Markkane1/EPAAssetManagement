@@ -75,6 +75,23 @@ function bindMongoCommandMetrics() {
   });
 }
 
+async function assertReplicaSetSupportRequired() {
+  if (!env.mongoRequireReplicaSet) return;
+  const db = mongoose.connection.db;
+  if (!db) {
+    throw new Error('[db] MongoDB database handle is unavailable after connect');
+  }
+  const hello = await db.admin().command({ hello: 1 });
+  const setName = String((hello as { setName?: unknown }).setName || '').trim();
+  const msg = String((hello as { msg?: unknown }).msg || '').trim().toLowerCase();
+  const isMongos = msg === 'isdbgrid';
+  if (!setName && !isMongos) {
+    throw new Error(
+      '[db] MongoDB transactions require a replica set or mongos. Configure a local single-node replica set and use a replica-set URI (example: mongodb://127.0.0.1:27017/ams?replicaSet=rs0).'
+    );
+  }
+}
+
 export async function connectDatabase(): Promise<void> {
   bindConnectionListeners();
 
@@ -97,9 +114,17 @@ export async function connectDatabase(): Promise<void> {
   while (attempt < env.mongoConnectRetries) {
     try {
       await mongoose.connect(env.mongoUri, connectOptions);
+      await assertReplicaSetSupportRequired();
       bindMongoCommandMetrics();
       return;
     } catch (error) {
+      if (mongoose.connection.readyState !== 0) {
+        try {
+          await mongoose.disconnect();
+        } catch {
+          // Ignore disconnect cleanup failures here; retry loop will surface the original connect error.
+        }
+      }
       lastError = error;
       attempt += 1;
       if (attempt >= env.mongoConnectRetries) {

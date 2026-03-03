@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { PageHeader } from "@/components/shared/PageHeader";
@@ -23,75 +23,80 @@ type StatusFilterOption = {
   label: string;
 };
 
+const SUBMITTED_STATUSES = new Set(["SUBMITTED", "PENDING_VERIFICATION"]);
+const APPROVED_STATUSES = new Set(["APPROVED", "VERIFIED_APPROVED", "IN_FULFILLMENT"]);
+
 const EMPLOYEE_STATUS_OPTIONS: StatusFilterOption[] = [
   { value: "ALL", label: "All" },
   { value: "SUBMITTED", label: "Submitted" },
-  { value: "PENDING", label: "Pending" },
+  { value: "APPROVED", label: "Approved" },
   { value: "PARTIALLY_FULFILLED", label: "Partially Fulfilled" },
   { value: "FULFILLED", label: "Fulfilled" },
   { value: "REJECTED_INVALID", label: "Rejected" },
   { value: "CANCELLED", label: "Cancelled" },
+];
+
+const OFFICE_HEAD_STATUS_OPTIONS: StatusFilterOption[] = [
+  { value: "ALL", label: "All Submitted" },
+  { value: "SUBMITTED", label: "Submitted" },
 ];
 
 const CARETAKER_STATUS_OPTIONS: StatusFilterOption[] = [
   { value: "ALL", label: "All" },
-  { value: "RECEIVED", label: "Received" },
-  { value: "PENDING", label: "Pending" },
+  { value: "APPROVED", label: "Approved" },
   { value: "PARTIALLY_FULFILLED", label: "Partially Fulfilled" },
   { value: "FULFILLED", label: "Fulfilled" },
-  { value: "FULFILLED_PENDING_SIGNATURE", label: "Fulfilled Pending Signature" },
   { value: "REJECTED_INVALID", label: "Rejected" },
   { value: "CANCELLED", label: "Cancelled" },
+];
+
+const CARETAKER_APPROVED_QUEUE_OPTIONS: StatusFilterOption[] = [
+  { value: "ALL", label: "Pending Fulfillment" },
+  { value: "APPROVED", label: "Approved" },
+  { value: "PARTIALLY_FULFILLED", label: "Partially Fulfilled" },
+  { value: "FULFILLED", label: "Fulfilled" },
 ];
 
 const DEFAULT_STATUS_OPTIONS: StatusFilterOption[] = [
   { value: "ALL", label: "All" },
-  { value: "PENDING_VERIFICATION", label: "Pending Verification" },
-  { value: "VERIFIED_APPROVED", label: "Verified Approved" },
-  { value: "IN_FULFILLMENT", label: "In Fulfillment" },
+  { value: "SUBMITTED", label: "Submitted" },
+  { value: "APPROVED", label: "Approved" },
   { value: "PARTIALLY_FULFILLED", label: "Partially Fulfilled" },
-  { value: "FULFILLED_PENDING_SIGNATURE", label: "Fulfilled Pending Signature" },
   { value: "FULFILLED", label: "Fulfilled" },
   { value: "REJECTED_INVALID", label: "Rejected" },
   { value: "CANCELLED", label: "Cancelled" },
 ];
 
-const PENDING_STATUSES = new Set([
-  "PENDING_VERIFICATION",
-  "VERIFIED_APPROVED",
-  "IN_FULFILLMENT",
-]);
-
 function getBackendStatusForFilter(filterValue: string): string | undefined {
-  if (
-    filterValue === "PENDING" ||
-    filterValue === "RECEIVED" ||
-    filterValue === "SUBMITTED" ||
-    filterValue === "ALL"
-  ) {
+  if (!filterValue || filterValue === "ALL" || filterValue === "APPROVED" || filterValue === "SUBMITTED") {
     return undefined;
   }
-  return filterValue || undefined;
+  return filterValue;
 }
 
 function matchFilterStatus(filterValue: string, status: string): boolean {
-  if (filterValue === "ALL" || filterValue === "SUBMITTED") return true;
-  if (filterValue === "RECEIVED") return status === "PENDING_VERIFICATION";
-  if (filterValue === "PENDING") return PENDING_STATUSES.has(status);
+  if (filterValue === "ALL") return true;
+  if (filterValue === "SUBMITTED") return SUBMITTED_STATUSES.has(status);
+  if (filterValue === "APPROVED") return APPROVED_STATUSES.has(status);
   return status === filterValue;
 }
 
 export default function Requisitions() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { role } = useAuth();
   const { data: locations } = useLocations();
   const canCreateRequisition = role === "employee";
+  const isApprovedQueue = location.pathname === "/requisitions/approved";
 
   const statusOptions = useMemo(() => {
     if (role === "employee") return EMPLOYEE_STATUS_OPTIONS;
-    if (role === "caretaker") return CARETAKER_STATUS_OPTIONS;
+    if (role === "office_head") return OFFICE_HEAD_STATUS_OPTIONS;
+    if (role === "caretaker") {
+      return isApprovedQueue ? CARETAKER_APPROVED_QUEUE_OPTIONS : CARETAKER_STATUS_OPTIONS;
+    }
     return DEFAULT_STATUS_OPTIONS;
-  }, [role]);
+  }, [isApprovedQueue, role]);
 
   const [status, setStatus] = useState<string>("ALL");
   const [fileNumber, setFileNumber] = useState("");
@@ -105,10 +110,18 @@ export default function Requisitions() {
   });
 
   const query = useQuery({
-    queryKey: ["requisitions", appliedFilters.status, appliedFilters.fileNumber, appliedFilters.fromDate, appliedFilters.toDate],
+    queryKey: [
+      "requisitions",
+      isApprovedQueue ? "approved" : "all",
+      appliedFilters.status,
+      appliedFilters.fileNumber,
+      appliedFilters.fromDate,
+      appliedFilters.toDate,
+    ],
     queryFn: () =>
       requisitionService.list({
         limit: 200,
+        queue: isApprovedQueue ? "approved" : undefined,
         status: getBackendStatusForFilter(appliedFilters.status),
         fileNumber: appliedFilters.fileNumber || undefined,
         from: appliedFilters.fromDate || undefined,
@@ -127,9 +140,7 @@ export default function Requisitions() {
   const rows = useMemo(() => {
     const data = query.data?.data || [];
     return data
-      .filter((row) =>
-        matchFilterStatus(appliedFilters.status, String(row.status || ""))
-      )
+      .filter((row) => matchFilterStatus(appliedFilters.status, String(row.status || "")))
       .map((row) => {
         const id = asId(row);
         return {
@@ -140,7 +151,7 @@ export default function Requisitions() {
         };
       })
       .filter((row) => row.id);
-  }, [query.data?.data, officeNameById, appliedFilters.status]);
+  }, [appliedFilters.status, officeNameById, query.data?.data]);
 
   const columns = [
     { key: "file_number", label: "File Number", render: (value: unknown) => <span className="font-medium">{String(value || "N/A")}</span> },
@@ -176,10 +187,13 @@ export default function Requisitions() {
   }
 
   return (
-    <MainLayout title="Requisitions" description="Track requisition requests and status">
+    <MainLayout
+      title={isApprovedQueue ? "Approved Requisitions" : "Requisitions"}
+      description={isApprovedQueue ? "Caretaker queue for approved requisitions pending fulfillment." : "Track requisition requests and status"}
+    >
       <PageHeader
-        title="Requisitions"
-        description="Filter and review requisition requests."
+        title={isApprovedQueue ? "Approved Requisitions" : "Requisitions"}
+        description={isApprovedQueue ? "Review approved requisitions and complete fulfillment." : "Filter and review requisition requests."}
         action={
           canCreateRequisition
             ? { label: "New Requisition", onClick: () => navigate("/requisitions/new") }

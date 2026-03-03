@@ -75,8 +75,6 @@ const appPages: PermissionPage[] = [
   { id: "assets", name: "Assets", category: "Inventory" },
   { id: "asset-items", name: "Asset Items", category: "Inventory" },
   { id: "consumables", name: "Consumables", category: "Inventory" },
-  { id: "office-assets", name: "Office Assets", category: "Inventory" },
-  { id: "office-asset-items", name: "Office Asset Items", category: "Inventory" },
   { id: "office-consumables", name: "Office Consumables", category: "Inventory" },
   { id: "assignments", name: "Assignments", category: "Inventory" },
   { id: "transfers", name: "Transfers", category: "Inventory" },
@@ -123,8 +121,8 @@ const ROLE_ACTION_OVERRIDES: Record<
   org_admin: {},
   office_head: {
     "rooms-sections": ["view", "create", "edit", "delete"],
-    "office-assets": ["view", "create", "edit", "delete"],
-    "office-asset-items": ["view", "create", "edit", "delete"],
+    assets: ["view", "create", "edit", "delete"],
+    "asset-items": ["view", "create", "edit", "delete"],
     "office-consumables": ["view", "create", "edit", "delete"],
     requisitions: ["view", "edit"],
     returns: ["view", "edit"],
@@ -183,6 +181,23 @@ function sanitizePermissionMap(
       base[pageId] = sanitizePermissionActions(actions);
     }
   );
+
+  const raw = permissions as Record<string, unknown>;
+  const legacyAssetActions = sanitizePermissionActions(raw["office-assets"]);
+  if (legacyAssetActions.length > 0) {
+    base.assets = normalizePermissionList([
+      ...(base.assets || []),
+      ...legacyAssetActions,
+    ]);
+  }
+  const legacyAssetItemActions = sanitizePermissionActions(raw["office-asset-items"]);
+  if (legacyAssetItemActions.length > 0) {
+    base["asset-items"] = normalizePermissionList([
+      ...(base["asset-items"] || []),
+      ...legacyAssetItemActions,
+    ]);
+  }
+
   return base;
 }
 

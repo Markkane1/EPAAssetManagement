@@ -57,6 +57,26 @@ Update `server/.env` with your MongoDB connection string and a strong JWT secret
 npm run dev
 ```
 
+### MongoDB replica set requirement (transactions)
+
+The API uses MongoDB transactions and now requires MongoDB to run as a replica set (or mongos).
+For local single-node development:
+
+```sh
+# Start mongod with replica set enabled
+mongod --dbpath <YOUR_DB_PATH> --replSet rs0
+
+# Initialize replica set once
+mongosh --eval "rs.initiate({_id:'rs0',members:[{_id:0,host:'127.0.0.1:27017'}]})"
+```
+
+Use a replica-set URI in `server/.env`:
+
+```sh
+MONGO_URI=mongodb://127.0.0.1:27017/ams?replicaSet=rs0
+MONGO_REQUIRE_REPLICA_SET=true
+```
+
 ### Office migration (required once)
 
 Locations and Directorates are now unified into Offices. Migrate existing data once:

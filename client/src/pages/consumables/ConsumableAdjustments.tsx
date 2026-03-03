@@ -28,6 +28,7 @@ import type { ConsumableItem } from '@/types';
 import { useConsumableMode } from '@/hooks/useConsumableMode';
 import { filterItemsByMode, filterLocationsByMode } from '@/lib/consumableMode';
 import { ConsumableModeToggle } from '@/components/consumables/ConsumableModeToggle';
+import { SearchableSelect } from '@/components/shared/SearchableSelect';
 
 const adjustSchema = z.object({
   locationId: z.string().min(1, 'Location is required'),
@@ -206,14 +207,14 @@ export default function ConsumableAdjustments() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Location *</Label>
-                <Select value={selectedLocationId} onValueChange={(v) => form.setValue('locationId', v)}>
-                  <SelectTrigger><SelectValue placeholder="Select location" /></SelectTrigger>
-                  <SelectContent>
-                    {filteredLocations.map((loc) => (
-                      <SelectItem key={loc.id} value={loc.id}>{loc.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={selectedLocationId}
+                  onValueChange={(v) => form.setValue('locationId', v)}
+                  placeholder="Select location"
+                  searchPlaceholder="Search locations..."
+                  emptyText="No locations found."
+                  options={filteredLocations.map((loc) => ({ value: loc.id, label: loc.name }))}
+                />
               </div>
               <div className="space-y-2">
                 <Label>Item *</Label>

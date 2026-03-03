@@ -12,6 +12,7 @@ import { createRecord, updateRecordStatus } from '../modules/records/services/re
 import { logAudit } from '../modules/records/services/audit.service';
 import { RecordModel } from '../models/record.model';
 import { enforceAssetCategoryScopeForOffice } from '../utils/categoryScope';
+import { createBulkNotifications, resolveNotificationRecipientsByOffice } from '../services/notification.service';
 import {
   isAssetItemHeldByOffice,
   officeAssetItemFilter,
@@ -40,28 +41,74 @@ import {
   assertTransition,
 } from './transfer.controller.helpers';
 
-const NON_REPLICA_TX_ERROR = 'Transaction numbers are only allowed on a replica set member or mongos';
-
 function withSession(session?: mongoose.ClientSession) {
   return session ? { session } : undefined;
 }
 
-function isStandaloneTransactionError(error: unknown) {
-  return error instanceof Error && error.message.includes(NON_REPLICA_TX_ERROR);
+async function resolveTransferNotificationContext(transfer: any) {
+  const fromId = String(transfer?.from_office_id || '').trim();
+  const toId = String(transfer?.to_office_id || '').trim();
+  const officeCandidates = [fromId, toId].filter((value) => mongoose.Types.ObjectId.isValid(value));
+  const offices = officeCandidates.length
+    ? await OfficeModel.find({ _id: { $in: officeCandidates } }, { _id: 1, name: 1 }).lean().exec()
+    : [];
+  const officeNameById = new Map(offices.map((office: any) => [String(office._id), String(office.name || 'Office')]));
+  const officeIds = Array.from(new Set(offices.map((office: any) => String(office._id))));
+  return {
+    officeIds,
+    fromLabel: officeNameById.get(fromId) || 'Central Store',
+    toLabel: officeNameById.get(toId) || 'Central Store',
+  };
 }
 
-async function runWithOptionalTransaction(
+function toTransferId(transfer: any) {
+  if (transfer?._id) return String(transfer._id);
+  if (transfer?.id) return String(transfer.id);
+  return '';
+}
+
+async function notifyTransferLifecycle(input: {
+  transfer: any;
+  type: 'TRANSFER_REQUESTED' | 'TRANSFER_APPROVED' | 'TRANSFER_REJECTED' | 'TRANSFER_DISPATCHED' | 'TRANSFER_RECEIVED';
+  title: string;
+  message: string;
+  excludeUserIds?: string[];
+}) {
+  const transferId = toTransferId(input.transfer);
+  if (!transferId || !mongoose.Types.ObjectId.isValid(transferId)) return;
+
+  const context = await resolveTransferNotificationContext(input.transfer);
+  if (context.officeIds.length === 0) return;
+
+  const recipients = await resolveNotificationRecipientsByOffice({
+    officeIds: context.officeIds,
+    includeOrgAdmins: true,
+    includeRoles: ['office_head', 'caretaker'],
+    excludeUserIds: input.excludeUserIds,
+  });
+  if (recipients.length === 0) return;
+
+  await createBulkNotifications(
+    recipients.map((recipientUserId) => ({
+      recipientUserId,
+      officeId: context.officeIds[0],
+      type: input.type,
+      title: input.title,
+      message: input.message,
+      entityType: 'Transfer',
+      entityId: transferId,
+      dedupeWindowHours: 24,
+    }))
+  );
+}
+
+async function runWithTransaction(
   session: mongoose.ClientSession,
-  handler: (session?: mongoose.ClientSession) => Promise<void>
+  handler: (session: mongoose.ClientSession) => Promise<void>
 ) {
-  try {
-    await session.withTransaction(async () => {
-      await handler(session);
-    });
-  } catch (error) {
-    if (!isStandaloneTransactionError(error)) throw error;
-    await handler();
-  }
+  await session.withTransaction(async () => {
+    await handler(session);
+  });
 }
 
 export const transferController = {
@@ -247,7 +294,7 @@ export const transferController = {
       }
 
       let createdTransfer: any = null;
-      await runWithOptionalTransaction(session, async (txSession) => {
+      await runWithTransaction(session, async (txSession) => {
         const transferDate = body.transferDate || body.transfer_date;
         const notes = body.notes === undefined ? null : String(body.notes || '');
         const requisitionId = readId(body as Record<string, any>, ['requisitionId', 'requisition_id']);
@@ -316,6 +363,15 @@ export const transferController = {
         });
       });
       if (!createdTransfer) throw createHttpError(500, 'Failed to create transfer');
+
+      const transferContext = await resolveTransferNotificationContext(createdTransfer);
+      await notifyTransferLifecycle({
+        transfer: createdTransfer,
+        type: 'TRANSFER_REQUESTED',
+        title: 'Transfer Requested',
+        message: `Transfer requested from ${transferContext.fromLabel} to ${transferContext.toLabel}.`,
+        excludeUserIds: [access.userId],
+      });
       res.status(201).json(normalizeTransferForResponse(createdTransfer));
     } catch (error) {
       next(error);
@@ -337,7 +393,7 @@ export const transferController = {
       }
       await assertTransition(transfer, 'APPROVED');
 
-      await runWithOptionalTransaction(session, async (txSession) => {
+      await runWithTransaction(session, async (txSession) => {
         transfer.status = 'APPROVED';
         transfer.approved_by_user_id = access.userId;
         transfer.approved_at = new Date();
@@ -345,6 +401,15 @@ export const transferController = {
         await transfer.save(withSession(txSession));
 
         await updateTransferRecordStatus(access, transfer.id, 'Approved', transfer.notes || undefined, txSession);
+      });
+
+      const transferContext = await resolveTransferNotificationContext(transfer);
+      await notifyTransferLifecycle({
+        transfer,
+        type: 'TRANSFER_APPROVED',
+        title: 'Transfer Approved',
+        message: `Transfer approved from ${transferContext.fromLabel} to ${transferContext.toLabel}.`,
+        excludeUserIds: [access.userId],
       });
 
       res.json(normalizeTransferForResponse(transfer));
@@ -379,7 +444,7 @@ export const transferController = {
       await ensureDocumentExists(effectiveHandoverDocumentId, 'Handover document');
 
       const { assetItemIds } = await loadTransferAssetItems(transfer);
-      await runWithOptionalTransaction(session, async (txSession) => {
+      await runWithTransaction(session, async (txSession) => {
         transfer.status = 'DISPATCHED_TO_STORE';
         transfer.handled_by = access.userId;
         transfer.handover_document_id = effectiveHandoverDocumentId as any;
@@ -393,6 +458,15 @@ export const transferController = {
           { assignment_status: 'InTransit', item_status: 'Transferred' },
           withSession(txSession)
         );
+      });
+
+      const transferContext = await resolveTransferNotificationContext(transfer);
+      await notifyTransferLifecycle({
+        transfer,
+        type: 'TRANSFER_DISPATCHED',
+        title: 'Transfer Dispatched',
+        message: `Transfer dispatched from ${transferContext.fromLabel} for ${transferContext.toLabel}.`,
+        excludeUserIds: [access.userId],
       });
 
       res.json(normalizeTransferForResponse(transfer));
@@ -421,7 +495,7 @@ export const transferController = {
         throw createHttpError(500, 'Transfer store is not configured');
       }
 
-      await runWithOptionalTransaction(session, async (txSession) => {
+      await runWithTransaction(session, async (txSession) => {
         transfer.status = 'RECEIVED_AT_STORE';
         transfer.handled_by = access.userId;
         transfer.store_id = store.id;
@@ -438,6 +512,15 @@ export const transferController = {
           },
           withSession(txSession)
         );
+      });
+
+      const transferContext = await resolveTransferNotificationContext(transfer);
+      await notifyTransferLifecycle({
+        transfer,
+        type: 'TRANSFER_RECEIVED',
+        title: 'Transfer Received At Store',
+        message: `Transfer from ${transferContext.fromLabel} has been received at Central Store.`,
+        excludeUserIds: [access.userId],
       });
 
       res.json(normalizeTransferForResponse(transfer));
@@ -460,13 +543,22 @@ export const transferController = {
       if (!transfer) return res.status(404).json({ message: 'Not found' });
       await assertTransition(transfer, 'DISPATCHED_TO_DEST');
 
-      await runWithOptionalTransaction(session, async (txSession) => {
+      await runWithTransaction(session, async (txSession) => {
         transfer.status = 'DISPATCHED_TO_DEST';
         transfer.handled_by = access.userId;
         transfer.dispatched_to_dest_by_user_id = access.userId;
         transfer.dispatched_to_dest_at = new Date();
         transfer.dispatched_by_user_id = access.userId;
         await transfer.save(withSession(txSession));
+      });
+
+      const transferContext = await resolveTransferNotificationContext(transfer);
+      await notifyTransferLifecycle({
+        transfer,
+        type: 'TRANSFER_DISPATCHED',
+        title: 'Transfer Sent To Destination',
+        message: `Transfer is on the way to ${transferContext.toLabel}.`,
+        excludeUserIds: [access.userId],
       });
 
       res.json(normalizeTransferForResponse(transfer));
@@ -508,7 +600,7 @@ export const transferController = {
         await enforceAssetCategoryScopeForOffice(String(item.asset_id), toOfficeId);
       }
 
-      await runWithOptionalTransaction(session, async (txSession) => {
+      await runWithTransaction(session, async (txSession) => {
         transfer.status = 'RECEIVED_AT_DEST';
         transfer.handled_by = access.userId;
         transfer.takeover_document_id = effectiveTakeoverDocumentId as any;
@@ -528,6 +620,15 @@ export const transferController = {
         );
 
         await updateTransferRecordStatus(access, transfer.id, 'Completed', transfer.notes || undefined, txSession);
+      });
+
+      const transferContext = await resolveTransferNotificationContext(transfer);
+      await notifyTransferLifecycle({
+        transfer,
+        type: 'TRANSFER_RECEIVED',
+        title: 'Transfer Completed',
+        message: `Transfer from ${transferContext.fromLabel} has been received at ${transferContext.toLabel}.`,
+        excludeUserIds: [access.userId],
       });
 
       res.json(normalizeTransferForResponse(transfer));
@@ -559,7 +660,7 @@ export const transferController = {
         ? setAssetItemStoreHolderUpdate(String(transfer.store_id))
         : setAssetItemOfficeHolderUpdate(fromOfficeId);
 
-      await runWithOptionalTransaction(session, async (txSession) => {
+      await runWithTransaction(session, async (txSession) => {
         transfer.status = 'REJECTED';
         transfer.handled_by = access.userId;
         transfer.rejected_by_user_id = access.userId;
@@ -579,6 +680,15 @@ export const transferController = {
         }
 
         await updateTransferRecordStatus(access, transfer.id, 'Rejected', transfer.notes || undefined, txSession);
+      });
+
+      const transferContext = await resolveTransferNotificationContext(transfer);
+      await notifyTransferLifecycle({
+        transfer,
+        type: 'TRANSFER_REJECTED',
+        title: 'Transfer Rejected',
+        message: `Transfer from ${transferContext.fromLabel} to ${transferContext.toLabel} was rejected.`,
+        excludeUserIds: [access.userId],
       });
 
       res.json(normalizeTransferForResponse(transfer));
@@ -610,7 +720,7 @@ export const transferController = {
         ? setAssetItemStoreHolderUpdate(String(transfer.store_id))
         : setAssetItemOfficeHolderUpdate(fromOfficeId);
 
-      await runWithOptionalTransaction(session, async (txSession) => {
+      await runWithTransaction(session, async (txSession) => {
         transfer.status = 'CANCELLED';
         transfer.handled_by = access.userId;
         transfer.cancelled_by_user_id = access.userId;

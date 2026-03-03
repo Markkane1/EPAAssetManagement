@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { Office, Division, District, OfficeType } from "@/types";
+import { SearchableSelect } from "@/components/shared/SearchableSelect";
 
 const OFFICE_TYPE_OPTIONS: Array<{ value: OfficeType; label: string }> = [
   { value: "HEAD_OFFICE", label: "Head Office" },
@@ -389,22 +390,18 @@ export function OfficeFormModal({
                   <FormItem>
                     <FormLabel>Parent Head Office *</FormLabel>
                     <FormControl>
-                      <Select
+                      <SearchableSelect
                         value={field.value || undefined}
                         onValueChange={field.onChange}
                         disabled={headOfficeOptions.length === 0}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select head office" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {headOfficeOptions.map((entry) => (
-                            <SelectItem key={entry.id} value={entry.id}>
-                              {entry.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        placeholder="Select head office"
+                        searchPlaceholder="Search head offices..."
+                        emptyText="No head offices found."
+                        options={headOfficeOptions.map((entry) => ({
+                          value: entry.id,
+                          label: entry.name,
+                        }))}
+                      />
                     </FormControl>
                     {headOfficeOptions.length === 0 && (
                       <p className="text-xs text-muted-foreground">
