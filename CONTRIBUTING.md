@@ -23,22 +23,11 @@
 - Use pagination caps, projections, and `.lean()` on read-heavy routes.
 - Keep payload sizes controlled; avoid eager loading large admin views.
 
-## Phase 8 Continuous Ratchet
+## Bundle Budget Gate
 
-- Run the monthly ratchet bundle:
-  - `npm run phase8:monthly`
-- Generated artifacts are written to:
-  - `artifacts/phase8/YYYY-MM/debt-metrics.json`
-  - `artifacts/phase8/YYYY-MM/security-posture.md`
-  - `artifacts/phase8/YYYY-MM/performance-trend.md`
-- Performance scenarios covered:
-  - `load`
-  - `spike`
-  - `soak`
-- High-debt module changes are CI-gated by:
-  - `.github/workflows/high-debt-acceptance.yml`
-  - Required gate command: `npm run phase8:acceptance`
-  - No-regression check command: `npm run phase8:no-regression`
+- Use bundle budget check for client chunk size:
+  - `npm run build:client:budget`
+  - `npm run perf:bundle`
 
 ## Local Quality Gates
 

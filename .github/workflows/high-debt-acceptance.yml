@@ -28,5 +28,4 @@ jobs:
         run: npm ci
 
       - name: Run high-debt acceptance gates
-        run: npm run phase8:acceptance
-
+        run: npm run lint:server && npm run build -w server && npm run test:security -w server && npm run test:consumables -w server && npm run lint -w client && npm run build -w client && npm run perf:bundle
