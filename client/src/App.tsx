@@ -216,8 +216,8 @@ const App = () => {
                     }
                   />
                   <Route path="/reports/employee-assets" element={<ProtectedRoute page="reports"><EmployeeAssetsReport /></ProtectedRoute>} />
-                  <Route path="/settings" element={<ProtectedRoute page="settings" allowedRoles={["org_admin", "office_head", "caretaker"]}><Settings /></ProtectedRoute>} />
-                  <Route path="/settings/notifications" element={<ProtectedRoute page="settings" allowedRoles={["org_admin", "office_head", "caretaker"]}><NotificationDetails /></ProtectedRoute>} />
+                  <Route path="/settings" element={<ProtectedRoute page="settings" allowedRoles={["org_admin", "office_head"]}><Settings /></ProtectedRoute>} />
+                  <Route path="/settings/notifications" element={<ProtectedRoute page="settings" allowedRoles={["org_admin", "office_head"]}><NotificationDetails /></ProtectedRoute>} />
                   <Route path="/audit-logs" element={<ProtectedRoute page="audit-logs"><AuditLogs /></ProtectedRoute>} />
                   <Route path="/user-permissions" element={<ProtectedRoute page="user-permissions"><UserPermissions /></ProtectedRoute>} />
                   <Route path="/user-management" element={<ProtectedRoute page="user-management"><UserManagement /></ProtectedRoute>} />

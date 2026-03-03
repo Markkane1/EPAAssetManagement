@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { PageHeader } from "@/components/shared/PageHeader";
@@ -121,6 +121,7 @@ type LineMapDraft = Record<
 
 export default function RequisitionDetail() {
   const navigate = useNavigate();
+  const location = useLocation();
   const isMobile = useIsMobile();
   const { id } = useParams<{ id: string }>();
   const queryClient = useQueryClient();
@@ -187,6 +188,14 @@ export default function RequisitionDetail() {
   const canManageAssignmentSlips =
     role === "org_admin" || role === "office_head" || role === "caretaker";
   const canRequestReturn = role === "employee";
+  const backToListPath = useMemo(() => {
+    const navigationState = location.state as { from?: string } | null;
+    const from = String(navigationState?.from || "").trim();
+    if (from === "/requisitions" || from === "/requisitions/approved") {
+      return from;
+    }
+    return "/requisitions";
+  }, [location.state]);
 
   const assetsQuery = useQuery({
     queryKey: ["assets", "map-for-requisition", officeId],
@@ -360,7 +369,7 @@ export default function RequisitionDetail() {
       setShowRejectInput(false);
       setRejectRemarks("");
       await queryClient.invalidateQueries({ queryKey: ["requisitions"] });
-      navigate("/requisitions");
+      navigate(backToListPath);
     },
     onError: (error: Error) => toast.error(error.message || "Failed to update requisition."),
   });
@@ -571,7 +580,7 @@ export default function RequisitionDetail() {
             <CardDescription>Check the requisition ID and try again.</CardDescription>
           </CardHeader>
           <CardContent>
-            <Button variant="outline" onClick={() => navigate("/requisitions")}>
+            <Button variant="outline" onClick={() => navigate(backToListPath)}>
               Back to Requisitions
             </Button>
           </CardContent>
@@ -589,7 +598,7 @@ export default function RequisitionDetail() {
       <PageHeader
         title={`Requisition ${requisition.file_number}`}
         description="Review verification, mapping, fulfillment, and assignment slips."
-        action={{ label: "Back to List", onClick: () => navigate("/requisitions") }}
+        action={{ label: "Back to List", onClick: () => navigate(backToListPath) }}
       />
 
       <div className="mt-6 space-y-6">

@@ -41,20 +41,17 @@ const OFFICE_HEAD_STATUS_OPTIONS: StatusFilterOption[] = [
   { value: "SUBMITTED", label: "Submitted" },
 ];
 
-const CARETAKER_STATUS_OPTIONS: StatusFilterOption[] = [
-  { value: "ALL", label: "All" },
-  { value: "APPROVED", label: "Approved" },
-  { value: "PARTIALLY_FULFILLED", label: "Partially Fulfilled" },
-  { value: "FULFILLED", label: "Fulfilled" },
-  { value: "REJECTED_INVALID", label: "Rejected" },
-  { value: "CANCELLED", label: "Cancelled" },
-];
-
 const CARETAKER_APPROVED_QUEUE_OPTIONS: StatusFilterOption[] = [
   { value: "ALL", label: "Pending Fulfillment" },
   { value: "APPROVED", label: "Approved" },
   { value: "PARTIALLY_FULFILLED", label: "Partially Fulfilled" },
   { value: "FULFILLED", label: "Fulfilled" },
+];
+
+const CARETAKER_FULFILLED_QUEUE_OPTIONS: StatusFilterOption[] = [
+  { value: "ALL", label: "All Fulfilled" },
+  { value: "FULFILLED", label: "Fulfilled" },
+  { value: "FULFILLED_PENDING_SIGNATURE", label: "Fulfilled Pending Signature" },
 ];
 
 const DEFAULT_STATUS_OPTIONS: StatusFilterOption[] = [
@@ -88,12 +85,34 @@ export default function Requisitions() {
   const { data: locations } = useLocations();
   const canCreateRequisition = role === "employee";
   const isApprovedQueue = location.pathname === "/requisitions/approved";
+  const isCaretaker = role === "caretaker";
+  const isCaretakerFulfilledQueue = isCaretaker && !isApprovedQueue;
+  const queueParam = isApprovedQueue
+    ? "approved"
+    : isCaretakerFulfilledQueue
+      ? "fulfilled"
+      : undefined;
+  const pageTitle = isApprovedQueue
+    ? "Approved Requisitions"
+    : isCaretakerFulfilledQueue
+      ? "Fulfilled Requisitions"
+      : "Requisitions";
+  const pageDescription = isApprovedQueue
+    ? "Caretaker queue for approved requisitions pending fulfillment."
+    : isCaretakerFulfilledQueue
+      ? "Master list of fulfilled requisitions with full filtering."
+      : "Track requisition requests and status";
+  const headerDescription = isApprovedQueue
+    ? "Review approved requisitions and complete fulfillment."
+    : isCaretakerFulfilledQueue
+      ? "Review fulfilled requisitions and open full requisition details."
+      : "Filter and review requisition requests.";
 
   const statusOptions = useMemo(() => {
     if (role === "employee") return EMPLOYEE_STATUS_OPTIONS;
     if (role === "office_head") return OFFICE_HEAD_STATUS_OPTIONS;
     if (role === "caretaker") {
-      return isApprovedQueue ? CARETAKER_APPROVED_QUEUE_OPTIONS : CARETAKER_STATUS_OPTIONS;
+      return isApprovedQueue ? CARETAKER_APPROVED_QUEUE_OPTIONS : CARETAKER_FULFILLED_QUEUE_OPTIONS;
     }
     return DEFAULT_STATUS_OPTIONS;
   }, [isApprovedQueue, role]);
@@ -112,7 +131,7 @@ export default function Requisitions() {
   const query = useQuery({
     queryKey: [
       "requisitions",
-      isApprovedQueue ? "approved" : "all",
+      queueParam || "all",
       appliedFilters.status,
       appliedFilters.fileNumber,
       appliedFilters.fromDate,
@@ -121,7 +140,7 @@ export default function Requisitions() {
     queryFn: () =>
       requisitionService.list({
         limit: 200,
-        queue: isApprovedQueue ? "approved" : undefined,
+        queue: queueParam,
         status: getBackendStatusForFilter(appliedFilters.status),
         fileNumber: appliedFilters.fileNumber || undefined,
         from: appliedFilters.fromDate || undefined,
@@ -178,7 +197,7 @@ export default function Requisitions() {
 
   if (query.isLoading) {
     return (
-      <MainLayout title="Requisitions" description="Track requisition requests and status">
+      <MainLayout title={pageTitle} description={pageDescription}>
         <div className="flex h-64 items-center justify-center">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
@@ -188,12 +207,12 @@ export default function Requisitions() {
 
   return (
     <MainLayout
-      title={isApprovedQueue ? "Approved Requisitions" : "Requisitions"}
-      description={isApprovedQueue ? "Caretaker queue for approved requisitions pending fulfillment." : "Track requisition requests and status"}
+      title={pageTitle}
+      description={pageDescription}
     >
       <PageHeader
-        title={isApprovedQueue ? "Approved Requisitions" : "Requisitions"}
-        description={isApprovedQueue ? "Review approved requisitions and complete fulfillment." : "Filter and review requisition requests."}
+        title={pageTitle}
+        description={headerDescription}
         action={
           canCreateRequisition
             ? { label: "New Requisition", onClick: () => navigate("/requisitions/new") }
@@ -280,7 +299,9 @@ export default function Requisitions() {
           columns={columns}
           data={rows as Array<{ id: string }>}
           searchable={false}
-          onRowClick={(row) => navigate(`/requisitions/${row.id}`)}
+          onRowClick={(row) =>
+            navigate(`/requisitions/${row.id}`, { state: { from: location.pathname } })
+          }
         />
       </div>
     </MainLayout>

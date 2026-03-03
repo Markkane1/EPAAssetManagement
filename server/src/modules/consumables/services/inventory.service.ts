@@ -631,6 +631,23 @@ async function ensureOfficeHolderAccess(user: AuthUser, holder: HolderContext, s
   await ensureLocationAccess(user, officeId, session);
 }
 
+async function isCentralStoreCaretaker(user: AuthUser, session?: ClientSession) {
+  if (user.role !== 'caretaker') return false;
+  const userContext = await getUserContext(user.userId, session);
+  const locationId = userContext.location_id ? String(userContext.location_id) : '';
+  if (!locationId) return false;
+  const office: any = await OfficeModel.findById(locationId, { _id: 1, type: 1, is_active: 1 })
+    .session(session || null)
+    .lean();
+  if (!office?._id || office?.is_active === false) return false;
+  return String(office.type || '').trim().toUpperCase() === 'HEAD_OFFICE';
+}
+
+async function hasCentralStoreAuthority(user: AuthUser, session?: ClientSession) {
+  if (user.role === 'org_admin') return true;
+  return isCentralStoreCaretaker(user, session);
+}
+
 async function getCentralStoreHolder(session: ClientSession) {
   const store = await resolveHeadOfficeStore(session);
   return {
@@ -736,7 +753,11 @@ export const inventoryService = {
     try {
       await runWithTransaction(session, async (txSession) => {
         const permissions = resolveConsumablePermissions(user.role);
-        ensureAllowed(permissions.canReceiveCentral, 'Not permitted to receive into Central Store');
+        const canOperateCentralStore = await hasCentralStoreAuthority(user, txSession);
+        ensureAllowed(
+          permissions.canReceiveCentral || canOperateCentralStore,
+          'Not permitted to receive into Central Store'
+        );
 
         const item = await getItem(payload.itemId, txSession);
         const categoryId = String(payload.categoryId || '').trim();
@@ -1075,7 +1096,11 @@ export const inventoryService = {
         ensureChemicalsHolder(item, toHolder, 'To holder');
 
         if (fromHolder.holderType === 'STORE') {
-          ensureAllowed(permissions.canTransferCentral, 'Not permitted to transfer from Central Store');
+          const canOperateCentralStore = await hasCentralStoreAuthority(user, session);
+          ensureAllowed(
+            permissions.canTransferCentral || canOperateCentralStore,
+            'Not permitted to transfer from Central Store'
+          );
         } else {
           ensureAllowed(permissions.canTransferLab, 'Not permitted to transfer between labs');
           await ensureOfficeHolderAccess(user, fromHolder, session);

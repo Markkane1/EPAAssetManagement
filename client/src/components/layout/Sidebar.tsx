@@ -79,7 +79,7 @@ const systemNavItems: NavItem[] = [
     href: "/settings",
     icon: Settings,
     page: "settings",
-    allowedRoles: ["org_admin", "office_head", "caretaker"],
+    allowedRoles: ["org_admin", "office_head"],
   },
 ];
 
@@ -161,6 +161,13 @@ const employeeServicesNavItems: NavItem[] = [
     icon: ClipboardList,
     page: "requisitions",
     allowedRoles: ["org_admin", "office_head"],
+  },
+  {
+    label: "Fulfilled Requisitions",
+    href: "/requisitions",
+    icon: ClipboardList,
+    page: "requisitions",
+    allowedRoles: ["caretaker"],
   },
   {
     label: "Approved Requisitions",

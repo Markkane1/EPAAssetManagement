@@ -83,6 +83,7 @@ const CARETAKER_PENDING_FULFILLMENT_STATUSES = new Set([
   'IN_FULFILLMENT',
   'PARTIALLY_FULFILLED',
 ]);
+const CARETAKER_FULFILLED_HISTORY_STATUSES = new Set(['FULFILLED', 'FULFILLED_PENDING_SIGNATURE']);
 
 function hasMutatingPermission(actions: PermissionAction[]) {
   return (
@@ -225,6 +226,8 @@ export const requisitionController = {
           }
           if (queue === 'approved') {
             roleScopedStatusFilter = { $in: Array.from(CARETAKER_PENDING_FULFILLMENT_STATUSES) };
+          } else if (queue === 'fulfilled') {
+            roleScopedStatusFilter = { $in: Array.from(CARETAKER_FULFILLED_HISTORY_STATUSES) };
           } else {
             roleScopedStatusFilter = { $nin: Array.from(SUBMITTED_STATUSES) };
           }
@@ -233,10 +236,19 @@ export const requisitionController = {
         filter.office_id = officeId;
       }
 
+      const queueScopedStatusFilter =
+        queue === 'approved'
+          ? { $in: Array.from(CARETAKER_PENDING_FULFILLMENT_STATUSES) }
+          : queue === 'fulfilled'
+            ? { $in: Array.from(CARETAKER_FULFILLED_HISTORY_STATUSES) }
+            : null;
+
       if (status) {
         filter.status = status;
       } else if (roleScopedStatusFilter) {
         filter.status = roleScopedStatusFilter;
+      } else if (queueScopedStatusFilter) {
+        filter.status = queueScopedStatusFilter;
       }
       if (fileNumber) filter.file_number = { $regex: escapeRegex(fileNumber), $options: 'i' };
       if (from || to) {
