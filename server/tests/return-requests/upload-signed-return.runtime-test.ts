@@ -45,7 +45,7 @@ async function main() {
 
   const office = await OfficeModel.create({
     name: 'Signed Return Lab',
-    type: 'LAB',
+    type: 'DISTRICT_LAB',
     is_headoffice: false,
   });
 
@@ -53,7 +53,7 @@ async function main() {
   const user = await UserModel.create({
     email: 'signed-return-admin@example.com',
     password_hash: passwordHash,
-    role: 'location_admin',
+    role: 'office_head',
     first_name: 'Signed',
     last_name: 'Return',
     location_id: office._id,
@@ -74,7 +74,8 @@ async function main() {
   });
   const item = await AssetItemModel.create({
     asset_id: asset._id,
-    location_id: office._id,
+    holder_type: 'OFFICE',
+    holder_id: office._id,
     assignment_status: 'Unassigned',
     item_status: 'Available',
     is_active: true,
@@ -161,3 +162,4 @@ main().catch(async (error) => {
   }
   process.exit(1);
 });
+

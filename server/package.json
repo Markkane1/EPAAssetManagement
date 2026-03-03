@@ -15,8 +15,19 @@
     "migrate:transfer-lines": "tsx scripts/migrate-transfers-to-lines.ts",
     "migrate:maintenance-legacy": "tsx scripts/backfill-maintenance-legacy-fields.ts",
     "openapi:generate": "node scripts/generate-openapi.js",
-    "test:consumables": "tsx tests/consumables/unitConversion.test.ts",
-    "test:security": "tsx tests/security/security-runtime-tests.ts"
+    "test:suite": "node scripts/run-test-suites.js",
+    "test:security": "node scripts/run-test-suites.js security",
+    "test:consumables": "node scripts/run-test-suites.js consumables",
+    "test:requisition": "node scripts/run-test-suites.js requisition",
+    "test:returns": "node scripts/run-test-suites.js returns",
+    "test:reports": "node scripts/run-test-suites.js reports",
+    "test:employees": "node scripts/run-test-suites.js employees",
+    "test:office": "node scripts/run-test-suites.js office",
+    "test:asset-items": "node scripts/run-test-suites.js assetItems",
+    "test:runtime": "node scripts/run-test-suites.js runtime",
+    "test:all": "node scripts/run-test-suites.js all",
+    "test:manual:assignment-slip": "tsx tests/manual/generate-assignment-slip.manual-test.ts",
+    "audit": "npm audit --audit-level=high"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -25,12 +36,14 @@
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^5.2.1",
+    "express-mongo-sanitize": "^2.2.0",
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.9.5",
     "morgan": "^1.10.0",
     "multer": "^1.4.5-lts.1",
     "pdf-lib": "^1.17.1",
+    "xss-clean": "^0.1.4",
     "zod": "^3.24.1"
   },
   "devDependencies": {

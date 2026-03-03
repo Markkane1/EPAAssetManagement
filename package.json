@@ -20,14 +20,20 @@
     "perf:bundle": "node scripts/check-client-bundle.mjs",
     "preview": "npm run preview -w client",
     "test:security": "npm run test:security -w server",
-    "test:consumables": "npm run test:consumables -w server"
+    "test:consumables": "npm run test:consumables -w server",
+    "test:runtime": "npm run test:runtime -w server",
+    "test:server:all": "npm run test:all -w server",
+    "audit": "npm audit --audit-level=high",
+    "audit:retire": "retire --js --node"
   },
   "workspaces": [
     "client",
     "server"
   ],
   "devDependencies": {
-    "concurrently": "^9.2.1"
+    "concurrently": "^9.2.1",
+    "eslint-plugin-security": "^4.0.0",
+    "retire": "^5.4.2"
   },
   "overrides": {
     "glob": "^10.5.0",

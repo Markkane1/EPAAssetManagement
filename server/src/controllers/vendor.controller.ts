@@ -15,12 +15,13 @@ function readOfficeIdFromBody(body: Record<string, unknown>) {
 }
 
 function normalizeWritePayload(body: Record<string, unknown>) {
-  const payload: Record<string, unknown> = { ...body };
-  if (body.contactInfo !== undefined) {
-    payload.contact_info = body.contactInfo;
-    delete payload.contactInfo;
-  }
-  delete payload.officeId;
+  const payload: Record<string, unknown> = {};
+  if (body.name !== undefined) payload.name = body.name;
+  if (body.contactInfo !== undefined) payload.contact_info = body.contactInfo;
+  else if (body.contact_info !== undefined) payload.contact_info = body.contact_info;
+  if (body.email !== undefined) payload.email = body.email;
+  if (body.phone !== undefined) payload.phone = body.phone;
+  if (body.address !== undefined) payload.address = body.address;
   return payload;
 }
 

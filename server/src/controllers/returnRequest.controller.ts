@@ -642,8 +642,10 @@ export const returnRequestController = {
         const now = new Date();
         const closedAssignmentIds: string[] = [];
         for (const assignment of assignments) {
+          assignment.status = 'RETURNED';
+          assignment.returned_by_user_id = new Types.ObjectId(ctx.userId);
+          assignment.returned_at = now;
           assignment.returned_date = now;
-          assignment.is_active = false;
           await assignment.save({ session });
           closedAssignmentIds.push(assignment.id);
         }

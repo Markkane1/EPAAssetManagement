@@ -1,9 +1,9 @@
 import mongoose from 'mongoose';
-import { connectDatabase } from '../src/config/db';
-import { AssignmentModel } from '../src/models/assignment.model';
-import { RequisitionModel } from '../src/models/requisition.model';
-import { UserModel } from '../src/models/user.model';
-import { generateHandoverSlip, generateReturnSlip } from '../src/services/assignmentSlip.service';
+import { connectDatabase } from '../../src/config/db';
+import { AssignmentModel } from '../../src/models/assignment.model';
+import { RequisitionModel } from '../../src/models/requisition.model';
+import { UserModel } from '../../src/models/user.model';
+import { generateHandoverSlip, generateReturnSlip } from '../../src/services/assignmentSlip.service';
 
 const ASSIGNMENT_ID_PLACEHOLDER = 'PUT_REAL_ASSIGNMENT_ID_HERE';
 const ASSIGNMENT_ID = String(process.env.ASSIGNMENT_ID || ASSIGNMENT_ID_PLACEHOLDER).trim();

@@ -98,6 +98,8 @@ npm run lint
 npm run lint:server
 npm run test:security
 npm run test:consumables
+npm run test:runtime
+npm run test:server:all
 npm run build:client:budget
 npm run perf:bundle
 npm run precommit:checks
@@ -112,6 +114,11 @@ npm run lint
 npm run openapi:generate
 npm run seed:store
 npm run seed:consumables
+npm run test:suite -- security --list
+npm run test:security
+npm run test:consumables
+npm run test:runtime
+npm run test:all
 ```
 
 ### Frontend (`client/`)
@@ -121,6 +128,29 @@ npm run dev
 npm run build
 npm run lint
 npm run preview
+```
+
+## Test Suites and Folders
+
+Server tests are organized in separate folders under `server/tests/` and run by suite:
+
+- `security/`
+- `consumables/`
+- `requisition/`
+- `return-requests/`
+- `reports/`
+- `employees/`
+- `office-sub-locations/`
+- `asset-items/`
+- `manual/` (manual/ad-hoc scripts, not part of automated suite)
+
+Folder-based runner:
+
+```sh
+cd server
+node scripts/run-test-suites.js security --list
+node scripts/run-test-suites.js runtime
+node scripts/run-test-suites.js all
 ```
 
 ## Migrations and Seed Runbook

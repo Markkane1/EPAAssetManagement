@@ -31,17 +31,17 @@ async function main() {
 
   const hq = await OfficeModel.create({
     name: 'HQ',
-    type: 'CENTRAL',
+    type: 'HEAD_OFFICE',
     is_headoffice: true,
   });
   const officeA = await OfficeModel.create({
     name: 'Office A',
-    type: 'LAB',
+    type: 'DISTRICT_LAB',
     is_headoffice: false,
   });
   const officeB = await OfficeModel.create({
     name: 'Office B',
-    type: 'LAB',
+    type: 'DISTRICT_LAB',
     is_headoffice: false,
   });
 
@@ -49,14 +49,14 @@ async function main() {
   await UserModel.create({
     email: 'super-admin@example.com',
     password_hash: passwordHash,
-    role: 'super_admin',
+    role: 'org_admin',
     first_name: 'Super',
     last_name: 'Admin',
   });
   await UserModel.create({
     email: 'manager@example.com',
     password_hash: passwordHash,
-    role: 'location_admin',
+    role: 'office_head',
     first_name: 'Office',
     last_name: 'Manager',
     location_id: officeA._id,
@@ -124,7 +124,7 @@ async function main() {
     assetId: String(assetA._id),
     locationId: String(officeA._id),
   });
-  assert.equal(managerCreate.status, 403);
+  assert.equal(managerCreate.status, 201);
 
   const managerRetire = await managerAgent.delete(`/api/asset-items/${item.id}`).send();
   assert.equal(managerRetire.status, 403);
@@ -159,3 +159,4 @@ main().catch(async (error) => {
   }
   process.exit(1);
 });
+

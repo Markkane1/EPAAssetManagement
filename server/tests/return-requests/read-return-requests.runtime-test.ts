@@ -39,12 +39,12 @@ async function main() {
 
   const officeA = await OfficeModel.create({
     name: 'Return Read Office A',
-    type: 'LAB',
+    type: 'DISTRICT_LAB',
     is_headoffice: false,
   });
   const officeB = await OfficeModel.create({
     name: 'Return Read Office B',
-    type: 'LAB',
+    type: 'DISTRICT_LAB',
     is_headoffice: false,
   });
 
@@ -52,14 +52,14 @@ async function main() {
   const superAdmin = await UserModel.create({
     email: 'rr-super@example.com',
     password_hash: passwordHash,
-    role: 'super_admin',
+    role: 'org_admin',
     first_name: 'Super',
     last_name: 'Admin',
   });
   const managerA = await UserModel.create({
     email: 'rr-manager-a@example.com',
     password_hash: passwordHash,
-    role: 'location_admin',
+    role: 'office_head',
     first_name: 'Manager',
     last_name: 'A',
     location_id: officeA._id,
@@ -67,7 +67,7 @@ async function main() {
   const employeeUserA = await UserModel.create({
     email: 'rr-employee-a@example.com',
     password_hash: passwordHash,
-    role: 'user',
+    role: 'employee',
     first_name: 'Employee',
     last_name: 'A',
     location_id: officeA._id,
@@ -75,7 +75,7 @@ async function main() {
   const outsiderUserA = await UserModel.create({
     email: 'rr-outsider-a@example.com',
     password_hash: passwordHash,
-    role: 'user',
+    role: 'employee',
     first_name: 'Outsider',
     last_name: 'A',
     location_id: officeA._id,
@@ -112,21 +112,24 @@ async function main() {
   });
   const item1 = await AssetItemModel.create({
     asset_id: asset._id,
-    location_id: officeA._id,
+    holder_type: 'OFFICE',
+    holder_id: officeA._id,
     assignment_status: 'Assigned',
     item_status: 'Assigned',
     is_active: true,
   });
   const item2 = await AssetItemModel.create({
     asset_id: asset._id,
-    location_id: officeA._id,
+    holder_type: 'OFFICE',
+    holder_id: officeA._id,
     assignment_status: 'Assigned',
     item_status: 'Assigned',
     is_active: true,
   });
   const item3 = await AssetItemModel.create({
     asset_id: asset._id,
-    location_id: officeB._id,
+    holder_type: 'OFFICE',
+    holder_id: officeB._id,
     assignment_status: 'Assigned',
     item_status: 'Assigned',
     is_active: true,
@@ -295,3 +298,4 @@ main().catch(async (error) => {
   }
   process.exit(1);
 });
+

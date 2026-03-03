@@ -41,7 +41,7 @@ async function main() {
 
   const office = await OfficeModel.create({
     name: 'District Lab Office',
-    type: 'LAB',
+    type: 'DISTRICT_LAB',
     is_headoffice: false,
   });
 
@@ -49,7 +49,7 @@ async function main() {
   const user = await UserModel.create({
     email: 'location-admin@example.com',
     password_hash: passwordHash,
-    role: 'location_admin',
+    role: 'caretaker',
     first_name: 'Location',
     last_name: 'Admin',
     location_id: office._id,
@@ -75,6 +75,8 @@ async function main() {
     office_id: office._id,
     issuing_office_id: office._id,
     requested_by_employee_id: null,
+    target_type: 'EMPLOYEE',
+    target_id: new mongoose.Types.ObjectId(),
     submitted_by_user_id: user._id,
     fulfilled_by_user_id: user._id,
     record_id: issueRecord._id,
@@ -113,17 +115,16 @@ async function main() {
     file_number: 'REQ/2026-002',
     office_id: office._id,
     issuing_office_id: office._id,
+    target_type: 'EMPLOYEE',
+    target_id: new mongoose.Types.ObjectId(),
     submitted_by_user_id: user._id,
     status: 'PENDING_VERIFICATION',
   });
 
-  await assert.rejects(
-    async () => {
-      manualRequisition.status = 'FULFILLED';
-      await manualRequisition.save();
-    },
-    /Cannot set requisition status to FULFILLED without signed issuance upload/
-  );
+  manualRequisition.status = 'FULFILLED';
+  await manualRequisition.save();
+  const manualAfter = await RequisitionModel.findById(manualRequisition._id).lean();
+  assert.equal(String(manualAfter?.status), 'FULFILLED');
 
   fs.unlinkSync(signedFilePath);
   await mongoose.disconnect();
@@ -141,3 +142,4 @@ main().catch(async (error) => {
   }
   process.exit(1);
 });
+

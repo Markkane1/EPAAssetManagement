@@ -34,7 +34,7 @@ async function main() {
 
   const office = await OfficeModel.create({
     name: 'Return Request Lab',
-    type: 'LAB',
+    type: 'DISTRICT_LAB',
     is_headoffice: false,
   });
 
@@ -42,7 +42,7 @@ async function main() {
   const user = await UserModel.create({
     email: 'return-user@example.com',
     password_hash: passwordHash,
-    role: 'user',
+    role: 'employee',
     first_name: 'Return',
     last_name: 'User',
     location_id: office._id,
@@ -65,14 +65,16 @@ async function main() {
 
   const itemA = await AssetItemModel.create({
     asset_id: asset._id,
-    location_id: office._id,
+    holder_type: 'OFFICE',
+    holder_id: office._id,
     assignment_status: 'Assigned',
     item_status: 'Assigned',
     is_active: true,
   });
   const itemB = await AssetItemModel.create({
     asset_id: asset._id,
-    location_id: office._id,
+    holder_type: 'OFFICE',
+    holder_id: office._id,
     assignment_status: 'Assigned',
     item_status: 'Assigned',
     is_active: true,
@@ -80,13 +82,23 @@ async function main() {
 
   await AssignmentModel.create({
     asset_item_id: itemA._id,
+    status: 'ISSUED',
+    assigned_to_type: 'EMPLOYEE',
+    assigned_to_id: employee._id,
     employee_id: employee._id,
+    requisition_id: new mongoose.Types.ObjectId(),
+    requisition_line_id: new mongoose.Types.ObjectId(),
     assigned_date: new Date(),
     is_active: true,
   });
   await AssignmentModel.create({
     asset_item_id: itemB._id,
+    status: 'ISSUED',
+    assigned_to_type: 'EMPLOYEE',
+    assigned_to_id: employee._id,
     employee_id: employee._id,
+    requisition_id: new mongoose.Types.ObjectId(),
+    requisition_line_id: new mongoose.Types.ObjectId(),
     assigned_date: new Date(),
     is_active: true,
   });
@@ -144,3 +156,4 @@ main().catch(async (error) => {
   }
   process.exit(1);
 });
+

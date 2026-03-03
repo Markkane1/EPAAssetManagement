@@ -36,9 +36,26 @@
 - Pre-commit hook runs:
   - `npm run precommit:checks`
 - Manual phase gate command set:
-  - `npm run lint -w client`
+  - `npm run lint`
   - `npm run lint:server`
-  - `npm run build -w server`
-  - `npm run build -w client`
-  - `npm run test:security -w server`
+  - `npm run build:server`
+  - `npm run test:security`
+  - `npm run test:consumables`
+  - `npm run build:client`
   - `npm run perf:bundle`
+
+## Test Folder Separation
+
+- Keep server tests under `server/tests/` by domain folder:
+  - `server/tests/security/`
+  - `server/tests/consumables/`
+  - `server/tests/requisition/`
+  - `server/tests/return-requests/`
+  - `server/tests/reports/`
+  - `server/tests/employees/`
+  - `server/tests/office-sub-locations/`
+  - `server/tests/asset-items/`
+  - `server/tests/manual/` for ad-hoc/manual scripts only
+- Do not place test files in `server/scripts/`.
+- Use folder-scoped scripts to run only the relevant suite when working on a module.
+- Use `npm run test:runtime` or domain scripts (`npm run test:requisition -w server`, etc.) for targeted module validation.

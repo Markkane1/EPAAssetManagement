@@ -4,6 +4,8 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import cookieParser from 'cookie-parser';
 import compression from 'compression';
+import mongoSanitize from 'express-mongo-sanitize';
+import { clean as cleanXssPayload } from 'xss-clean/lib/xss';
 import { env } from './config/env';
 import routes from './routes';
 import { errorHandler } from './middleware/errorHandler';
@@ -22,6 +24,59 @@ function compressionFilter(req: express.Request, res: express.Response) {
     return false;
   }
   return compression.filter(req, res);
+}
+
+const mongoSanitizeHelper = mongoSanitize as typeof mongoSanitize & {
+  sanitize: (target: unknown, options?: { replaceWith?: string; allowDots?: boolean; dryRun?: boolean }) => unknown;
+};
+
+function replaceObjectContents(
+  target: Record<string, unknown>,
+  source: Record<string, unknown>
+) {
+  for (const key of Object.keys(target)) {
+    delete target[key];
+  }
+  Object.assign(target, source);
+}
+
+function sanitizeXssValue(value: unknown) {
+  return cleanXssPayload(value);
+}
+
+function sanitizeXssRequest(req: express.Request) {
+  if (req.body !== undefined) {
+    req.body = sanitizeXssValue(req.body);
+  }
+  if (req.params && typeof req.params === 'object') {
+    const sanitized = sanitizeXssValue(req.params);
+    if (sanitized && typeof sanitized === 'object' && !Array.isArray(sanitized)) {
+      replaceObjectContents(req.params as Record<string, unknown>, sanitized as Record<string, unknown>);
+    }
+  }
+  if (req.query && typeof req.query === 'object') {
+    const queryObject = req.query as Record<string, unknown>;
+    const sanitized = sanitizeXssValue(queryObject);
+    if (sanitized && typeof sanitized === 'object' && !Array.isArray(sanitized)) {
+      replaceObjectContents(queryObject, sanitized as Record<string, unknown>);
+    }
+  }
+}
+
+function sanitizeNoSqlRequest(req: express.Request) {
+  const options = {
+    replaceWith: '_',
+    allowDots: false,
+  };
+  if (req.body && typeof req.body === 'object') {
+    mongoSanitizeHelper.sanitize(req.body, options);
+  }
+  if (req.params && typeof req.params === 'object') {
+    mongoSanitizeHelper.sanitize(req.params, options);
+  }
+  if (req.query && typeof req.query === 'object') {
+    mongoSanitizeHelper.sanitize(req.query as Record<string, unknown>, options);
+  }
 }
 
 export function createApp() {
@@ -96,6 +151,16 @@ export function createApp() {
   );
   app.use(express.json({ limit: env.httpJsonLimit }));
   app.use(express.urlencoded({ extended: false, limit: env.httpUrlEncodedLimit, parameterLimit: 200 }));
+  app.use(
+    (req, _res, next) => {
+      sanitizeNoSqlRequest(req);
+      next();
+    }
+  );
+  app.use((req, _res, next) => {
+    sanitizeXssRequest(req);
+    next();
+  });
   app.use(observeRequestMetrics);
   app.use(morgan('dev'));
   app.use(applyCachePolicy);

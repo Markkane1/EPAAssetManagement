@@ -32,21 +32,21 @@ async function main() {
 
   await connectDatabase();
 
-  const officeA = await OfficeModel.create({ name: 'Office A', type: 'LAB', is_headoffice: false });
-  const officeB = await OfficeModel.create({ name: 'Office B', type: 'LAB', is_headoffice: false });
+  const officeA = await OfficeModel.create({ name: 'Office A', type: 'DISTRICT_LAB', is_headoffice: false });
+  const officeB = await OfficeModel.create({ name: 'Office B', type: 'DISTRICT_LAB', is_headoffice: false });
 
   const passwordHash = await bcrypt.hash('Passw0rd!', 10);
   const superAdmin = await UserModel.create({
     email: 'requisition-super@example.com',
     password_hash: passwordHash,
-    role: 'super_admin',
+    role: 'org_admin',
     first_name: 'Super',
     last_name: 'Admin',
   });
   await UserModel.create({
     email: 'requisition-manager-a@example.com',
     password_hash: passwordHash,
-    role: 'location_admin',
+    role: 'office_head',
     first_name: 'Manager',
     last_name: 'A',
     location_id: officeA._id,
@@ -56,6 +56,8 @@ async function main() {
     file_number: `REQ-READ-A-${Date.now()}`,
     office_id: officeA._id,
     issuing_office_id: officeA._id,
+    target_type: 'EMPLOYEE',
+    target_id: new mongoose.Types.ObjectId(),
     submitted_by_user_id: superAdmin._id,
     status: 'PENDING_VERIFICATION',
   });
@@ -63,6 +65,8 @@ async function main() {
     file_number: `REQ-READ-B-${Date.now()}`,
     office_id: officeB._id,
     issuing_office_id: officeB._id,
+    target_type: 'EMPLOYEE',
+    target_id: new mongoose.Types.ObjectId(),
     submitted_by_user_id: superAdmin._id,
     status: 'VERIFIED_APPROVED',
   });
@@ -222,3 +226,4 @@ main().catch(async (error) => {
   }
   process.exit(1);
 });
+

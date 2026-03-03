@@ -7,19 +7,22 @@ const runningFromWorkspaceRoot = fs.existsSync(path.resolve(cwd, 'server'));
 const workspaceRoot = runningFromWorkspaceRoot ? cwd : path.resolve(cwd, '..');
 const rootEnvPath = path.resolve(workspaceRoot, '.env');
 const serverEnvPath = path.resolve(workspaceRoot, 'server', '.env');
+const skipDotenvLoadInTests = process.env.NODE_ENV === 'test' && process.env.LOAD_DOTENV_IN_TEST !== 'true';
 
 let loadedAnyEnv = false;
-if (fs.existsSync(rootEnvPath)) {
-  dotenv.config({ path: rootEnvPath });
-  loadedAnyEnv = true;
-}
-if (fs.existsSync(serverEnvPath)) {
-  // Server-local env can override root workspace env values when needed.
-  dotenv.config({ path: serverEnvPath, override: true });
-  loadedAnyEnv = true;
-}
-if (!loadedAnyEnv) {
-  dotenv.config();
+if (!skipDotenvLoadInTests) {
+  if (fs.existsSync(rootEnvPath)) {
+    dotenv.config({ path: rootEnvPath });
+    loadedAnyEnv = true;
+  }
+  if (fs.existsSync(serverEnvPath)) {
+    // Server-local env can override root workspace env values when needed.
+    dotenv.config({ path: serverEnvPath, override: true });
+    loadedAnyEnv = true;
+  }
+  if (!loadedAnyEnv) {
+    dotenv.config();
+  }
 }
 
 function assertSecret(name: string, value: string | undefined) {

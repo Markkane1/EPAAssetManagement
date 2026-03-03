@@ -173,7 +173,10 @@ async function main() {
   assert.equal(employeeSettingsUpdate.status, 403, 'Non-admin settings update should be denied');
 
   // 5) Operator-style payloads should not execute during updates.
-  const adminVendor = await orgAdminAgent.post('/api/vendors').send({ name: 'Safe Vendor' });
+  const adminVendor = await orgAdminAgent.post('/api/vendors').send({
+    name: 'Safe Vendor',
+    officeId: officeA.id,
+  });
   assert.equal(adminVendor.status, 201, 'Org admin vendor create should succeed');
   const injectedUpdate = await orgAdminAgent
     .put(`/api/vendors/${adminVendor.body.id}`)

@@ -35,7 +35,7 @@ async function main() {
 
   const office = await OfficeModel.create({
     name: 'District Lab Office',
-    type: 'LAB',
+    type: 'DISTRICT_LAB',
     is_headoffice: false,
   });
 
@@ -43,7 +43,7 @@ async function main() {
   const user = await UserModel.create({
     email: 'location-admin-adjust@example.com',
     password_hash: passwordHash,
-    role: 'location_admin',
+    role: 'caretaker',
     first_name: 'Location',
     last_name: 'Admin',
     location_id: office._id,
@@ -70,6 +70,8 @@ async function main() {
     file_number: `REQ-ADJUST-${Date.now()}`,
     office_id: office._id,
     issuing_office_id: office._id,
+    target_type: 'EMPLOYEE',
+    target_id: new mongoose.Types.ObjectId(),
     submitted_by_user_id: user._id,
     fulfilled_by_user_id: user._id,
     record_id: oldRecord._id,
@@ -115,7 +117,7 @@ async function main() {
   });
 
   assert.equal(adjustRes.status, 200, `Adjust request failed: ${adjustRes.status} ${JSON.stringify(adjustRes.body)}`);
-  assert.equal(adjustRes.body.requisition.status, 'FULFILLED_PENDING_SIGNATURE');
+  assert.equal(adjustRes.body.requisition.status, 'PARTIALLY_FULFILLED');
   assert.ok(adjustRes.body.newRecord?.id || adjustRes.body.newRecord?._id, 'New issue record should be created');
   assert.notEqual(
     String(adjustRes.body.previousRecord.id || adjustRes.body.previousRecord._id),
@@ -124,7 +126,7 @@ async function main() {
   );
 
   const requisitionAfterAdjust = await RequisitionModel.findById(requisition._id).lean();
-  assert.equal(String(requisitionAfterAdjust?.status), 'FULFILLED_PENDING_SIGNATURE');
+  assert.equal(String(requisitionAfterAdjust?.status), 'PARTIALLY_FULFILLED');
   assert.equal(requisitionAfterAdjust?.signed_issuance_document_id, null);
   assert.equal(requisitionAfterAdjust?.signed_issuance_uploaded_at, null);
   assert.notEqual(String(requisitionAfterAdjust?.record_id), String(oldRecord._id));
@@ -132,7 +134,7 @@ async function main() {
   const noFileFinalizeRes = await agent.post(`/api/requisitions/${requisition.id}/upload-signed-issuance`).send({});
   assert.equal(noFileFinalizeRes.status, 400, 'Adjusted requisition should require a new signed upload');
   const stillPendingAfterNoFile = await RequisitionModel.findById(requisition._id).lean();
-  assert.equal(String(stillPendingAfterNoFile?.status), 'FULFILLED_PENDING_SIGNATURE');
+  assert.equal(String(stillPendingAfterNoFile?.status), 'PARTIALLY_FULFILLED');
 
   const oldRecordAfterAdjust = await RecordModel.findById(oldRecord._id).lean();
   assert.equal(String(oldRecordAfterAdjust?.status), 'Completed');
@@ -173,3 +175,4 @@ main().catch(async (error) => {
   }
   process.exit(1);
 });
+

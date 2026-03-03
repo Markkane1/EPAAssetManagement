@@ -29,15 +29,15 @@ async function main() {
 
   await connectDatabase();
 
-  const officeA = await OfficeModel.create({ name: 'Transfer Office A', type: 'LAB', is_headoffice: false });
-  const officeB = await OfficeModel.create({ name: 'Transfer Office B', type: 'LAB', is_headoffice: false });
-  const officeC = await OfficeModel.create({ name: 'Transfer Office C', type: 'LAB', is_headoffice: false });
+  const officeA = await OfficeModel.create({ name: 'Transfer Office A', type: 'DISTRICT_LAB', is_headoffice: false });
+  const officeB = await OfficeModel.create({ name: 'Transfer Office B', type: 'DISTRICT_LAB', is_headoffice: false });
+  const officeC = await OfficeModel.create({ name: 'Transfer Office C', type: 'DISTRICT_LAB', is_headoffice: false });
 
   const passwordHash = await bcrypt.hash('Passw0rd!', 10);
   await UserModel.create({
     email: 'transfer-super@example.com',
     password_hash: passwordHash,
-    role: 'super_admin',
+    role: 'org_admin',
     first_name: 'Super',
     last_name: 'Admin',
   });
@@ -52,7 +52,7 @@ async function main() {
   await UserModel.create({
     email: 'transfer-location-admin@example.com',
     password_hash: passwordHash,
-    role: 'location_admin',
+    role: 'office_head',
     first_name: 'Location',
     last_name: 'Admin',
     location_id: officeA._id,
@@ -149,3 +149,4 @@ main().catch(async (error) => {
   }
   process.exit(1);
 });
+

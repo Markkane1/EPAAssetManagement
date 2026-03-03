@@ -146,8 +146,9 @@ export const reportController = {
       }
 
       const officeId = resolveScopedOfficeId(ctx, req.query.officeId);
+      const officeObjectId = officeId ? new Types.ObjectId(officeId) : null;
       const filter: Record<string, unknown> = {};
-      if (officeId) filter.office_id = officeId;
+      if (officeObjectId) filter.office_id = officeObjectId;
       if (status) filter.status = status;
       applyCreatedAtRange(filter, from, to);
 
@@ -190,6 +191,7 @@ export const reportController = {
       }
 
       const officeId = resolveScopedOfficeId(ctx, req.query.officeId);
+      const officeObjectId = officeId ? new Types.ObjectId(officeId) : null;
 
       const requisitionFilter: Record<string, unknown> = {
         status: { $in: ['FULFILLED', 'FULFILLED_PENDING_SIGNATURE'] },
@@ -197,9 +199,9 @@ export const reportController = {
       const returnRequestFilter: Record<string, unknown> = {
         status: { $in: ['CLOSED', 'CLOSED_PENDING_SIGNATURE'] },
       };
-      if (officeId) {
-        requisitionFilter.office_id = officeId;
-        returnRequestFilter.office_id = officeId;
+      if (officeObjectId) {
+        requisitionFilter.office_id = officeObjectId;
+        returnRequestFilter.office_id = officeObjectId;
       }
       applyCreatedAtRange(requisitionFilter, from, to);
       applyCreatedAtRange(returnRequestFilter, from, to);
