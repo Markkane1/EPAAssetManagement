@@ -21,8 +21,19 @@ import { createHttpError } from '../utils/httpError';
 import { convertToBaseQty, formatUom } from '../utils/unitConversion';
 import { resolveConsumablePermissions } from '../utils/permissions';
 import { supportsChemicals } from '../utils/officeCapabilities';
+import {
+  officeSupportsLabOnly,
+  officeTypeSupportsLabOnly,
+  resolveConsumableCategoryScopeForItem,
+  resolveLabOnlyConsumableItemIds,
+  resolveOfficeTypeById,
+} from '../utils/labScope';
 import { getUnitLookup } from './consumableUnit.service';
 import { roundQty } from './balance.service';
+import {
+  dispatchConsumableWorkflowNotifications,
+  resolveOfficeIdsFromTransactions,
+} from './workflowNotification.service';
 
 const HEAD_OFFICE_STORE_CODE = 'HEAD_OFFICE_STORE';
 const HOLDER_TYPES = ['OFFICE', 'STORE', 'EMPLOYEE', 'SUB_LOCATION'] as const;
@@ -32,6 +43,7 @@ type AuthUser = {
   userId: string;
   role: string;
   email: string;
+  isOrgAdmin?: boolean;
 };
 
 type AuditMeta = Record<string, unknown> | undefined;
@@ -81,6 +93,24 @@ function ensureChemicalsHolder(item: any, holder: HolderContext, label: string) 
   if (!supportsChemicals(holder.office)) {
     throw createHttpError(400, `${label} must be a lab-enabled chemical location`);
   }
+}
+
+async function ensureLabOnlyHolder(item: any, holder: HolderContext, label: string, session?: ClientSession) {
+  const categoryScope = await resolveConsumableCategoryScopeForItem(item, session);
+  if (categoryScope !== 'LAB_ONLY') return;
+  if (holder.holderType === 'STORE') return;
+  if (!officeSupportsLabOnly(holder.office as any)) {
+    throw createHttpError(403, `${label} must be a lab-enabled location for LAB_ONLY consumables`);
+  }
+}
+
+async function resolveLabOnlyRestrictionForLocation(locationId: string | null | undefined, session?: ClientSession) {
+  if (!locationId) return null;
+  const officeType = await resolveOfficeTypeById(String(locationId), session);
+  if (officeTypeSupportsLabOnly(officeType)) return null;
+  const labOnlyItemIds = await resolveLabOnlyConsumableItemIds(session);
+  if (!labOnlyItemIds.length) return null;
+  return labOnlyItemIds;
 }
 
 async function getUserContext(userId: string, session?: ClientSession) {
@@ -228,8 +258,8 @@ async function resolveHolder(
   };
 }
 
-function isGlobalConsumableRole(role?: string | null) {
-  return role === 'org_admin';
+function isGlobalConsumableRole(role?: string | null, isOrgAdmin?: boolean) {
+  return Boolean(isOrgAdmin || role === 'org_admin');
 }
 
 function extractHolderArgs(
@@ -457,8 +487,8 @@ function buildMetadata(payload: any, allowNegative: boolean) {
   return metadata;
 }
 
-async function resolveAccessibleLocationId(userId: string, role: string, session?: ClientSession) {
-  if (isGlobalConsumableRole(role)) {
+async function resolveAccessibleLocationId(userId: string, role: string, isOrgAdmin?: boolean, session?: ClientSession) {
+  if (isGlobalConsumableRole(role, isOrgAdmin)) {
     return null;
   }
   const user = await getUserContext(userId, session);
@@ -473,6 +503,18 @@ async function resolveCurrentEmployeeForUser(userId: string, session?: ClientSes
     return null;
   }
   return employee;
+}
+
+function resolveEmployeeAllowedSubLocationIds(employee: any) {
+  const ids = new Set<string>();
+  const defaultSubLocationId = employee?.default_sub_location_id ? String(employee.default_sub_location_id) : '';
+  if (defaultSubLocationId) ids.add(defaultSubLocationId);
+  const allowed = Array.isArray(employee?.allowed_sub_location_ids) ? employee.allowed_sub_location_ids : [];
+  for (const entry of allowed) {
+    const id = String(entry || '').trim();
+    if (id) ids.add(id);
+  }
+  return Array.from(ids);
 }
 
 async function resolveOfficeScopedHolderIds(locationId: string, session?: ClientSession) {
@@ -528,6 +570,47 @@ function isHolderInOfficeScope(
   if (holderType === 'OFFICE') return holderId === scope.officeId;
   if (holderType === 'SUB_LOCATION') return scope.subLocationIds.includes(holderId);
   if (holderType === 'EMPLOYEE') return scope.employeeIds.includes(holderId);
+  return false;
+}
+
+async function resolveEmployeeScopedHolderIds(userId: string, session?: ClientSession) {
+  const employee = await resolveCurrentEmployeeForUser(userId, session);
+  if (!employee) {
+    throw createHttpError(403, 'Employee profile is required');
+  }
+  return {
+    employeeId: String(employee._id),
+    subLocationIds: resolveEmployeeAllowedSubLocationIds(employee),
+  };
+}
+
+function buildEmployeeScopedBalanceFilter(scope: { employeeId: string; subLocationIds: string[] }) {
+  const filters: any[] = [{ holder_type: 'EMPLOYEE', holder_id: scope.employeeId }];
+  if (scope.subLocationIds.length > 0) {
+    filters.push({ holder_type: 'SUB_LOCATION', holder_id: { $in: scope.subLocationIds } });
+  }
+  return { $or: filters };
+}
+
+function buildEmployeeScopedLedgerFilter(scope: { employeeId: string; subLocationIds: string[] }) {
+  const filters: any[] = [
+    { from_holder_type: 'EMPLOYEE', from_holder_id: scope.employeeId },
+    { to_holder_type: 'EMPLOYEE', to_holder_id: scope.employeeId },
+  ];
+  if (scope.subLocationIds.length > 0) {
+    filters.push({ from_holder_type: 'SUB_LOCATION', from_holder_id: { $in: scope.subLocationIds } });
+    filters.push({ to_holder_type: 'SUB_LOCATION', to_holder_id: { $in: scope.subLocationIds } });
+  }
+  return { $or: filters };
+}
+
+function isHolderInEmployeeScope(
+  holderType: HolderType,
+  holderId: string,
+  scope: { employeeId: string; subLocationIds: string[] }
+) {
+  if (holderType === 'EMPLOYEE') return holderId === scope.employeeId;
+  if (holderType === 'SUB_LOCATION') return scope.subLocationIds.includes(holderId);
   return false;
 }
 
@@ -604,7 +687,7 @@ async function ensureContainerMatchesItem(containerId: string, itemId: string, s
 }
 
 async function ensureLocationAccess(user: AuthUser, locationId: string, session?: ClientSession) {
-  if (isGlobalConsumableRole(user.role)) {
+  if (isGlobalConsumableRole(user.role, user.isOrgAdmin)) {
     return;
   }
   const userContext = await getUserContext(user.userId, session);
@@ -644,7 +727,7 @@ async function isCentralStoreCaretaker(user: AuthUser, session?: ClientSession) 
 }
 
 async function hasCentralStoreAuthority(user: AuthUser, session?: ClientSession) {
-  if (user.role === 'org_admin') return true;
+  if (isGlobalConsumableRole(user.role, user.isOrgAdmin)) return true;
   return isCentralStoreCaretaker(user, session);
 }
 
@@ -764,6 +847,7 @@ export const inventoryService = {
         await ensureReceiveCategory(item, categoryId, txSession);
         const storeHolder = await getCentralStoreHolder(txSession as ClientSession);
         const unitLookup = await getUnitLookup({ session: txSession });
+        await ensureLabOnlyHolder(item, storeHolder, 'Receiving holder', txSession as ClientSession);
         ensureChemicalsHolder(item, storeHolder, 'Receiving holder');
 
         const qtyBase = convertToBaseQty(payload.qty, payload.uom, item.base_uom, unitLookup);
@@ -894,6 +978,21 @@ export const inventoryService = {
     } finally {
       session.endSession();
     }
+    const receiveRows = Array.isArray(result) ? result : result ? [result] : [];
+    if (receiveRows.length > 0) {
+      const officeIds = await resolveOfficeIdsFromTransactions(receiveRows);
+      await dispatchConsumableWorkflowNotifications({
+        officeIds,
+        consumableItemIds: receiveRows.map((row: any) =>
+          row?.consumable_item_id ? String(row.consumable_item_id) : null
+        ),
+        type: 'CONSUMABLE_RECEIVED',
+        title: 'Consumable Received',
+        message: 'Consumable stock was received.',
+        includeUserIds: [user.userId],
+        excludeUserIds: [user.userId],
+      });
+    }
     return result;
   },
 
@@ -937,6 +1036,7 @@ export const inventoryService = {
         const categoryId = String(payload.categoryId || '').trim();
         await ensureReceiveCategory(item, categoryId, txSession);
         const unitLookup = await getUnitLookup({ session: txSession });
+        await ensureLabOnlyHolder(item, officeHolder, 'Receiving holder', txSession as ClientSession);
         ensureChemicalsHolder(item, officeHolder, 'Receiving holder');
 
         const qtyBase = convertToBaseQty(payload.qty, payload.uom, item.base_uom, unitLookup);
@@ -1073,6 +1173,21 @@ export const inventoryService = {
     } finally {
       session.endSession();
     }
+    const receiveOfficeRows = Array.isArray(result) ? result : result ? [result] : [];
+    if (receiveOfficeRows.length > 0) {
+      const officeIds = await resolveOfficeIdsFromTransactions(receiveOfficeRows);
+      await dispatchConsumableWorkflowNotifications({
+        officeIds,
+        consumableItemIds: receiveOfficeRows.map((row: any) =>
+          row?.consumable_item_id ? String(row.consumable_item_id) : null
+        ),
+        type: 'CONSUMABLE_RECEIVED',
+        title: 'Consumable Received',
+        message: 'Consumable stock was received into office inventory.',
+        includeUserIds: [user.userId],
+        excludeUserIds: [user.userId],
+      });
+    }
     return result;
   },
 
@@ -1092,6 +1207,8 @@ export const inventoryService = {
         const fromHolder = await resolveHolder(fromHolderId, payload.fromHolderType || 'OFFICE', session);
         const toHolder = await resolveHolder(toHolderId, payload.toHolderType || 'OFFICE', session);
         const unitLookup = await getUnitLookup({ session });
+        await ensureLabOnlyHolder(item, fromHolder, 'From holder', session as ClientSession);
+        await ensureLabOnlyHolder(item, toHolder, 'To holder', session as ClientSession);
         ensureChemicalsHolder(item, fromHolder, 'From holder');
         ensureChemicalsHolder(item, toHolder, 'To holder');
 
@@ -1286,6 +1403,21 @@ export const inventoryService = {
     } finally {
       session.endSession();
     }
+    const transferRows = Array.isArray(result) ? result : result ? [result] : [];
+    if (transferRows.length > 0) {
+      const officeIds = await resolveOfficeIdsFromTransactions(transferRows);
+      await dispatchConsumableWorkflowNotifications({
+        officeIds,
+        consumableItemIds: transferRows.map((row: any) =>
+          row?.consumable_item_id ? String(row.consumable_item_id) : null
+        ),
+        type: 'CONSUMABLE_TRANSFERRED',
+        title: 'Consumable Transfer',
+        message: 'Consumable stock was transferred between holders.',
+        includeUserIds: [user.userId],
+        excludeUserIds: [user.userId],
+      });
+    }
     return result;
   },
   async consume(user: AuthUser, payload: any) {
@@ -1303,12 +1435,29 @@ export const inventoryService = {
         });
         const holder = await resolveHolder(holderId, holderType, session);
         const unitLookup = await getUnitLookup({ session });
+        await ensureLabOnlyHolder(item, holder, 'Consumption holder', session as ClientSession);
         ensureChemicalsHolder(item, holder, 'Consumption holder');
         await ensureOfficeHolderAccess(user, holder, session);
-        if (user.role === 'employee' && holder.holderType === 'EMPLOYEE') {
+        if (user.role === 'employee') {
           const selfEmployee = await resolveCurrentEmployeeForUser(user.userId, session);
-          if (!selfEmployee || String(selfEmployee._id) !== holder.holderId) {
-            throw createHttpError(403, 'Employees can only consume from their own holder');
+          if (!selfEmployee) {
+            throw createHttpError(403, 'Employee profile is required for consume operations');
+          }
+          if (holder.holderType === 'EMPLOYEE') {
+            if (String(selfEmployee._id) !== holder.holderId) {
+              throw createHttpError(403, 'Employees can only consume from their own holder');
+            }
+          } else if (holder.holderType === 'SUB_LOCATION') {
+            const employeeOfficeId = selfEmployee.location_id ? String(selfEmployee.location_id) : '';
+            if (!employeeOfficeId || employeeOfficeId !== String(holder.officeId || '')) {
+              throw createHttpError(403, 'Employees can only consume from sections in their own office');
+            }
+            const allowedSubLocationIds = resolveEmployeeAllowedSubLocationIds(selfEmployee);
+            if (!allowedSubLocationIds.includes(holder.holderId)) {
+              throw createHttpError(403, 'Employees can only consume from assigned sections');
+            }
+          } else {
+            throw createHttpError(403, 'Employees can only consume from own holder or assigned sections');
           }
         }
 
@@ -1464,6 +1613,21 @@ export const inventoryService = {
     } finally {
       session.endSession();
     }
+    const consumeRows = Array.isArray(result) ? result : result ? [result] : [];
+    if (consumeRows.length > 0) {
+      const officeIds = await resolveOfficeIdsFromTransactions(consumeRows);
+      await dispatchConsumableWorkflowNotifications({
+        officeIds,
+        consumableItemIds: consumeRows.map((row: any) =>
+          row?.consumable_item_id ? String(row.consumable_item_id) : null
+        ),
+        type: 'CONSUMABLE_CONSUMED',
+        title: 'Consumable Consumed',
+        message: 'Consumable stock was consumed.',
+        includeUserIds: [user.userId],
+        excludeUserIds: [user.userId],
+      });
+    }
     return result;
   },
 
@@ -1482,6 +1646,7 @@ export const inventoryService = {
         });
         const holder = await resolveHolder(holderId, holderType, session);
         const unitLookup = await getUnitLookup({ session });
+        await ensureLabOnlyHolder(item, holder, 'Adjustment holder', session as ClientSession);
         ensureChemicalsHolder(item, holder, 'Adjustment holder');
         await ensureOfficeHolderAccess(user, holder, session);
 
@@ -1569,6 +1734,21 @@ export const inventoryService = {
     } finally {
       session.endSession();
     }
+    const adjustRows = Array.isArray(result) ? result : result ? [result] : [];
+    if (adjustRows.length > 0) {
+      const officeIds = await resolveOfficeIdsFromTransactions(adjustRows);
+      await dispatchConsumableWorkflowNotifications({
+        officeIds,
+        consumableItemIds: adjustRows.map((row: any) =>
+          row?.consumable_item_id ? String(row.consumable_item_id) : null
+        ),
+        type: 'CONSUMABLE_ADJUSTED',
+        title: 'Consumable Adjusted',
+        message: 'Consumable stock was adjusted.',
+        includeUserIds: [user.userId],
+        excludeUserIds: [user.userId],
+      });
+    }
     return result;
   },
   async dispose(user: AuthUser, payload: any) {
@@ -1586,6 +1766,7 @@ export const inventoryService = {
         });
         const holder = await resolveHolder(holderId, holderType, session);
         const unitLookup = await getUnitLookup({ session });
+        await ensureLabOnlyHolder(item, holder, 'Disposal holder', session as ClientSession);
         ensureChemicalsHolder(item, holder, 'Disposal holder');
         await ensureOfficeHolderAccess(user, holder, session);
 
@@ -1678,6 +1859,21 @@ export const inventoryService = {
     } finally {
       session.endSession();
     }
+    const disposeRows = Array.isArray(result) ? result : result ? [result] : [];
+    if (disposeRows.length > 0) {
+      const officeIds = await resolveOfficeIdsFromTransactions(disposeRows);
+      await dispatchConsumableWorkflowNotifications({
+        officeIds,
+        consumableItemIds: disposeRows.map((row: any) =>
+          row?.consumable_item_id ? String(row.consumable_item_id) : null
+        ),
+        type: 'CONSUMABLE_DISPOSED',
+        title: 'Consumable Disposed',
+        message: 'Consumable stock was disposed.',
+        includeUserIds: [user.userId],
+        excludeUserIds: [user.userId],
+      });
+    }
     return result;
   },
 
@@ -1714,6 +1910,8 @@ export const inventoryService = {
         }
 
         const unitLookup = await getUnitLookup({ session });
+        await ensureLabOnlyHolder(item, fromHolder, 'Return source holder', session as ClientSession);
+        await ensureLabOnlyHolder(item, toHolder, 'Return destination holder', session as ClientSession);
         ensureChemicalsHolder(item, fromHolder, 'Return source holder');
         ensureChemicalsHolder(item, toHolder, 'Return destination holder');
 
@@ -1887,6 +2085,21 @@ export const inventoryService = {
     } finally {
       session.endSession();
     }
+    const returnRows = Array.isArray(result) ? result : result ? [result] : [];
+    if (returnRows.length > 0) {
+      const officeIds = await resolveOfficeIdsFromTransactions(returnRows);
+      await dispatchConsumableWorkflowNotifications({
+        officeIds,
+        consumableItemIds: returnRows.map((row: any) =>
+          row?.consumable_item_id ? String(row.consumable_item_id) : null
+        ),
+        type: 'CONSUMABLE_RETURNED',
+        title: 'Consumable Returned',
+        message: 'Consumable stock was returned to Central Store.',
+        includeUserIds: [user.userId],
+        excludeUserIds: [user.userId],
+      });
+    }
     return result;
   },
   async openingBalance(user: AuthUser, payload: any) {
@@ -1906,6 +2119,7 @@ export const inventoryService = {
             holderTypeKey: 'holderType',
           });
           const holder = await resolveHolder(holderArgs.holderId, holderArgs.holderType, session);
+          await ensureLabOnlyHolder(item, holder, 'Opening balance holder', session as ClientSession);
           ensureChemicalsHolder(item, holder, 'Opening balance holder');
           await ensureOfficeHolderAccess(user, holder, session);
           const qtyBase = convertToBaseQty(entry.qty, entry.uom, item.base_uom, unitLookup);
@@ -1966,6 +2180,21 @@ export const inventoryService = {
     } finally {
       session.endSession();
     }
+    const openingBalanceRows = Array.isArray(result) ? result : result ? [result] : [];
+    if (openingBalanceRows.length > 0) {
+      const officeIds = await resolveOfficeIdsFromTransactions(openingBalanceRows);
+      await dispatchConsumableWorkflowNotifications({
+        officeIds,
+        consumableItemIds: openingBalanceRows.map((row: any) =>
+          row?.consumable_item_id ? String(row.consumable_item_id) : null
+        ),
+        type: 'CONSUMABLE_OPENING_BALANCE',
+        title: 'Opening Balance Posted',
+        message: 'Opening balance entries were posted for consumable inventory.',
+        includeUserIds: [user.userId],
+        excludeUserIds: [user.userId],
+      });
+    }
     return result;
   },
 
@@ -1977,14 +2206,29 @@ export const inventoryService = {
       holderIdKey: 'holderId',
       holderTypeKey: 'holderType',
     });
-    const allowedLocationId = await resolveAccessibleLocationId(user.userId, user.role);
-    if (allowedLocationId) {
+    const allowedLocationId = await resolveAccessibleLocationId(user.userId, user.role, user.isOrgAdmin);
+    const restrictedLabOnlyItemIds = await resolveLabOnlyRestrictionForLocation(allowedLocationId);
+    if (user.role === 'employee') {
+      const scope = await resolveEmployeeScopedHolderIds(user.userId);
+      if (holderArgs.holderType === 'STORE' || holderArgs.holderType === 'OFFICE') {
+        throw createHttpError(403, 'Employees do not have access to this holder type');
+      }
+      if (!isHolderInEmployeeScope(holderArgs.holderType, holderArgs.holderId, scope)) {
+        throw createHttpError(403, 'User does not have access to this holder');
+      }
+    } else if (allowedLocationId) {
       const scope = await resolveOfficeScopedHolderIds(allowedLocationId);
       if (holderArgs.holderType === 'STORE') {
         throw createHttpError(403, 'User does not have access to this store');
       }
       if (!isHolderInOfficeScope(holderArgs.holderType, holderArgs.holderId, scope)) {
         throw createHttpError(403, 'User does not have access to this holder');
+      }
+    }
+    if (restrictedLabOnlyItemIds?.length) {
+      const itemScope = await resolveConsumableCategoryScopeForItem(String(query.itemId || ''));
+      if (itemScope === 'LAB_ONLY') {
+        throw createHttpError(403, 'LAB_ONLY consumables are restricted to lab-enabled offices');
       }
     }
 
@@ -2000,7 +2244,8 @@ export const inventoryService = {
     ensureAllowed(permissions.canViewReports, 'Not permitted to view balances');
 
     const role = user.role;
-    const allowedLocationId = await resolveAccessibleLocationId(user.userId, role);
+    const allowedLocationId = await resolveAccessibleLocationId(user.userId, role, user.isOrgAdmin);
+    const restrictedLabOnlyItemIds = await resolveLabOnlyRestrictionForLocation(allowedLocationId);
 
     let filter: any = {};
     let holderArgs: { holderType: HolderType; holderId: string } | null = null;
@@ -2013,8 +2258,25 @@ export const inventoryService = {
     }
     if (query.itemId) filter.consumable_item_id = query.itemId;
     if (query.lotId) filter.lot_id = query.lotId;
+    if (query.itemId && restrictedLabOnlyItemIds?.length) {
+      const itemScope = await resolveConsumableCategoryScopeForItem(String(query.itemId || ''));
+      if (itemScope === 'LAB_ONLY') {
+        throw createHttpError(403, 'LAB_ONLY consumables are restricted to lab-enabled offices');
+      }
+    }
 
-    if (allowedLocationId) {
+    if (user.role === 'employee') {
+      const scope = await resolveEmployeeScopedHolderIds(user.userId);
+      if (holderArgs) {
+        if (holderArgs.holderType === 'STORE' || holderArgs.holderType === 'OFFICE') {
+          throw createHttpError(403, 'Employees do not have access to this holder type');
+        }
+        if (!isHolderInEmployeeScope(holderArgs.holderType, holderArgs.holderId, scope)) {
+          throw createHttpError(403, 'User does not have access to this holder');
+        }
+      }
+      filter = withAnd(filter, buildEmployeeScopedBalanceFilter(scope));
+    } else if (allowedLocationId) {
       const scope = await resolveOfficeScopedHolderIds(allowedLocationId);
       if (holderArgs) {
         if (holderArgs.holderType === 'STORE') {
@@ -2025,6 +2287,9 @@ export const inventoryService = {
         }
       }
       filter = withAnd(filter, buildOfficeScopedBalanceFilter(scope));
+    }
+    if (restrictedLabOnlyItemIds?.length) {
+      filter = withAnd(filter, { consumable_item_id: { $nin: restrictedLabOnlyItemIds } });
     }
 
     const limit = clampInt(query.limit, 500, 2000);
@@ -2121,8 +2386,26 @@ export const inventoryService = {
       match = withAnd(match, balanceHolderFilter(holderArgs.holderType, holderArgs.holderId));
     }
 
-    const allowedLocationId = await resolveAccessibleLocationId(user.userId, user.role);
-    if (allowedLocationId) {
+    const allowedLocationId = await resolveAccessibleLocationId(user.userId, user.role, user.isOrgAdmin);
+    const restrictedLabOnlyItemIds = await resolveLabOnlyRestrictionForLocation(allowedLocationId);
+    if (query.itemId && restrictedLabOnlyItemIds?.length) {
+      const itemScope = await resolveConsumableCategoryScopeForItem(String(query.itemId || ''));
+      if (itemScope === 'LAB_ONLY') {
+        throw createHttpError(403, 'LAB_ONLY consumables are restricted to lab-enabled offices');
+      }
+    }
+    if (user.role === 'employee') {
+      const scope = await resolveEmployeeScopedHolderIds(user.userId);
+      if (holderArgs) {
+        if (holderArgs.holderType === 'STORE' || holderArgs.holderType === 'OFFICE') {
+          throw createHttpError(403, 'Employees do not have access to this holder type');
+        }
+        if (!isHolderInEmployeeScope(holderArgs.holderType, holderArgs.holderId, scope)) {
+          throw createHttpError(403, 'User does not have access to this holder');
+        }
+      }
+      match = withAnd(match, buildEmployeeScopedBalanceFilter(scope));
+    } else if (allowedLocationId) {
       const scope = await resolveOfficeScopedHolderIds(allowedLocationId);
       if (holderArgs) {
         if (holderArgs.holderType === 'STORE') {
@@ -2133,6 +2416,9 @@ export const inventoryService = {
         }
       }
       match = withAnd(match, buildOfficeScopedBalanceFilter(scope));
+    }
+    if (restrictedLabOnlyItemIds?.length) {
+      match = withAnd(match, { consumable_item_id: { $nin: restrictedLabOnlyItemIds } });
     }
 
     const pipeline = [
@@ -2194,8 +2480,26 @@ export const inventoryService = {
       filter = withAnd(filter, txAnySideHolderFilter(holderArgs.holderType, holderArgs.holderId));
     }
 
-    const allowedLocationId = await resolveAccessibleLocationId(user.userId, user.role);
-    if (allowedLocationId) {
+    const allowedLocationId = await resolveAccessibleLocationId(user.userId, user.role, user.isOrgAdmin);
+    const restrictedLabOnlyItemIds = await resolveLabOnlyRestrictionForLocation(allowedLocationId);
+    if (query.itemId && restrictedLabOnlyItemIds?.length) {
+      const itemScope = await resolveConsumableCategoryScopeForItem(String(query.itemId || ''));
+      if (itemScope === 'LAB_ONLY') {
+        throw createHttpError(403, 'LAB_ONLY consumables are restricted to lab-enabled offices');
+      }
+    }
+    if (user.role === 'employee') {
+      const scope = await resolveEmployeeScopedHolderIds(user.userId);
+      if (holderArgs) {
+        if (holderArgs.holderType === 'STORE' || holderArgs.holderType === 'OFFICE') {
+          throw createHttpError(403, 'Employees do not have access to this holder type');
+        }
+        if (!isHolderInEmployeeScope(holderArgs.holderType, holderArgs.holderId, scope)) {
+          throw createHttpError(403, 'User does not have access to this holder');
+        }
+      }
+      filter = withAnd(filter, buildEmployeeScopedLedgerFilter(scope));
+    } else if (allowedLocationId) {
       const scope = await resolveOfficeScopedHolderIds(allowedLocationId);
       if (holderArgs) {
         if (holderArgs.holderType === 'STORE') {
@@ -2206,6 +2510,9 @@ export const inventoryService = {
         }
       }
       filter = withAnd(filter, buildOfficeScopedLedgerFilter(scope));
+    }
+    if (restrictedLabOnlyItemIds?.length) {
+      filter = withAnd(filter, { consumable_item_id: { $nin: restrictedLabOnlyItemIds } });
     }
 
     const limit = clampInt(query.limit, 200, 1000);
@@ -2234,8 +2541,20 @@ export const inventoryService = {
       });
       balanceFilter = withAnd(balanceFilter, balanceHolderFilter(holderArgs.holderType, holderArgs.holderId));
     }
-    const allowedLocationId = await resolveAccessibleLocationId(user.userId, user.role);
-    if (allowedLocationId) {
+    const allowedLocationId = await resolveAccessibleLocationId(user.userId, user.role, user.isOrgAdmin);
+    const restrictedLabOnlyItemIds = await resolveLabOnlyRestrictionForLocation(allowedLocationId);
+    if (user.role === 'employee') {
+      const scope = await resolveEmployeeScopedHolderIds(user.userId);
+      if (holderArgs) {
+        if (holderArgs.holderType === 'STORE' || holderArgs.holderType === 'OFFICE') {
+          throw createHttpError(403, 'Employees do not have access to this holder type');
+        }
+        if (!isHolderInEmployeeScope(holderArgs.holderType, holderArgs.holderId, scope)) {
+          throw createHttpError(403, 'User does not have access to this holder');
+        }
+      }
+      balanceFilter = withAnd(balanceFilter, buildEmployeeScopedBalanceFilter(scope));
+    } else if (allowedLocationId) {
       const scope = await resolveOfficeScopedHolderIds(allowedLocationId);
       if (holderArgs) {
         if (holderArgs.holderType === 'STORE') {
@@ -2246,6 +2565,9 @@ export const inventoryService = {
         }
       }
       balanceFilter = withAnd(balanceFilter, buildOfficeScopedBalanceFilter(scope));
+    }
+    if (restrictedLabOnlyItemIds?.length) {
+      balanceFilter = withAnd(balanceFilter, { consumable_item_id: { $nin: restrictedLabOnlyItemIds } });
     }
 
     const balanceLimit = clampInt(query.limit, 1000, 5000);

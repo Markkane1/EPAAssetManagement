@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { formatDistanceToNow } from "date-fns";
 import { Bell, CheckCheck, Loader2 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -26,6 +27,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import {
   useMarkAllNotificationsRead,
   useMarkNotificationRead,
+  useNotificationAction,
   useNotifications,
 } from "@/hooks/useNotifications";
 import { useSystemSettings } from "@/hooks/useSettings";
@@ -33,6 +35,7 @@ import {
   NOTIFICATION_AREA_DEFINITIONS,
   NOTIFICATION_TOGGLE_LABELS,
 } from "@/config/notificationAreas";
+import { toast } from "sonner";
 
 function toTitleCase(value: string) {
   return value
@@ -45,6 +48,7 @@ function toTitleCase(value: string) {
 
 export default function NotificationDetails() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const pageSearch = usePageSearch();
   const searchTerm = (pageSearch?.term || "").trim().toLowerCase();
   const [readFilter, setReadFilter] = useState<"all" | "unread">("all");
@@ -70,6 +74,7 @@ export default function NotificationDetails() {
   });
   const markAllRead = useMarkAllNotificationsRead();
   const markRead = useMarkNotificationRead();
+  const runNotificationAction = useNotificationAction();
 
   const notifications = useMemo(() => data?.data || [], [data?.data]);
   const total = data?.total || 0;
@@ -185,14 +190,98 @@ export default function NotificationDetails() {
                             </div>
                           </TableCell>
                           <TableCell className="text-right">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => markRead.mutate(notification.id)}
-                              disabled={notification.is_read || markRead.isPending}
-                            >
-                              Mark read
-                            </Button>
+                            <div className="flex justify-end gap-2">
+                              {!notification.is_read && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => markRead.mutate(notification.id)}
+                                  disabled={markRead.isPending}
+                                >
+                                  Mark read
+                                </Button>
+                              )}
+                              {(notification.available_actions || []).includes("ACKNOWLEDGE") && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() =>
+                                    runNotificationAction.mutate(
+                                      { id: notification.id, action: "ACKNOWLEDGE" },
+                                      {
+                                        onError: (error) => toast.error(error.message),
+                                      }
+                                    )
+                                  }
+                                  disabled={runNotificationAction.isPending}
+                                >
+                                  Acknowledge
+                                </Button>
+                              )}
+                              {(notification.available_actions || []).includes("APPROVE") && (
+                                <Button
+                                  size="sm"
+                                  onClick={() =>
+                                    runNotificationAction.mutate(
+                                      { id: notification.id, action: "APPROVE" },
+                                      {
+                                        onSuccess: () => toast.success("Approved"),
+                                        onError: (error) => toast.error(error.message),
+                                      }
+                                    )
+                                  }
+                                  disabled={runNotificationAction.isPending}
+                                >
+                                  Approve
+                                </Button>
+                              )}
+                              {(notification.available_actions || []).includes("REJECT") && (
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  onClick={() =>
+                                    runNotificationAction.mutate(
+                                      { id: notification.id, action: "REJECT" },
+                                      {
+                                        onSuccess: () => toast.success("Rejected"),
+                                        onError: (error) => toast.error(error.message),
+                                      }
+                                    )
+                                  }
+                                  disabled={runNotificationAction.isPending}
+                                >
+                                  Reject
+                                </Button>
+                              )}
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => {
+                                  runNotificationAction.mutate(
+                                    { id: notification.id, action: "OPEN_RECORD" },
+                                    {
+                                      onSuccess: (result) => {
+                                        if (result.openPath) {
+                                          navigate(result.openPath);
+                                          return;
+                                        }
+                                        if (notification.open_path) navigate(notification.open_path);
+                                      },
+                                      onError: (error) => {
+                                        if (notification.open_path) {
+                                          navigate(notification.open_path);
+                                          return;
+                                        }
+                                        toast.error(error.message);
+                                      },
+                                    }
+                                  );
+                                }}
+                                disabled={runNotificationAction.isPending}
+                              >
+                                Open record
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))

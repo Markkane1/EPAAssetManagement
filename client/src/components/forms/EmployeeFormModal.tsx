@@ -29,8 +29,10 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Employee, Directorate, Location } from "@/types";
 import { isHeadOfficeLocation } from "@/lib/locationUtils";
+import { useOfficeSubLocations } from "@/hooks/useOfficeSubLocations";
 
 const employeeSchema = z.object({
   firstName: z.string().min(1, "First name is required").max(50),
@@ -41,6 +43,8 @@ const employeeSchema = z.object({
   jobTitle: z.string().max(100).optional(),
   directorateId: z.string().optional(),
   locationId: z.string().min(1, "Office is required"),
+  defaultSubLocationId: z.string().optional(),
+  allowedSubLocationIds: z.array(z.string()).default([]),
 });
 
 type EmployeeFormData = z.infer<typeof employeeSchema>;
@@ -61,7 +65,7 @@ interface EmployeeFormModalProps {
   locations: Location[];
   locationLocked?: boolean;
   fixedLocationId?: string | null;
-  onSubmit: (data: EmployeeFormData) => Promise<void>;
+  onSubmit: (data: EmployeeFormData & { defaultSubLocationId?: string | null; allowedSubLocationIds?: string[] }) => Promise<void>;
 }
 
 export function EmployeeFormModal({
@@ -88,12 +92,18 @@ export function EmployeeFormModal({
       jobTitle: employee?.job_title || "",
       directorateId: employee?.directorate_id || "",
       locationId: employee?.location_id || fixedLocationId || "",
+      defaultSubLocationId: employee?.default_sub_location_id || "",
+      allowedSubLocationIds: employee?.allowed_sub_location_ids || [],
     },
   });
 
   const selectedLocationId = form.watch("locationId");
   const selectedDirectorateId = form.watch("directorateId");
   const selectedLocation = locations.find((loc) => loc.id === selectedLocationId);
+  const { data: subLocations = [] } = useOfficeSubLocations(
+    selectedLocationId ? { officeId: selectedLocationId } : undefined
+  );
+  const activeSubLocations = subLocations.filter((entry) => entry.is_active !== false);
   const [officeTypeFilter, setOfficeTypeFilter] = useState<OfficeTypeFilter>(
     resolveOfficeTypeFilter(selectedLocation || locations[0])
   );
@@ -115,6 +125,8 @@ export function EmployeeFormModal({
         jobTitle: employee.job_title || "",
         directorateId: employee.directorate_id || "",
         locationId: fixedLocationId || employee.location_id || "",
+        defaultSubLocationId: employee.default_sub_location_id || "",
+        allowedSubLocationIds: employee.allowed_sub_location_ids || [],
       });
       setOfficeTypeFilter(resolveOfficeTypeFilter(locations.find((loc) => loc.id === (fixedLocationId || employee.location_id || ""))));
     } else {
@@ -127,6 +139,8 @@ export function EmployeeFormModal({
         jobTitle: "",
         directorateId: "",
         locationId: fixedLocationId || "",
+        defaultSubLocationId: "",
+        allowedSubLocationIds: [],
       });
       setOfficeTypeFilter(resolveOfficeTypeFilter(locations.find((loc) => loc.id === (fixedLocationId || "")) || locations[0]));
     }
@@ -149,6 +163,19 @@ export function EmployeeFormModal({
     }
   }, [filteredLocations, form]);
 
+  useEffect(() => {
+    const validIds = new Set(activeSubLocations.map((section) => section.id));
+    const selectedAllowed = form.getValues("allowedSubLocationIds") || [];
+    const nextAllowed = selectedAllowed.filter((id) => validIds.has(id));
+    if (nextAllowed.length !== selectedAllowed.length) {
+      form.setValue("allowedSubLocationIds", nextAllowed, { shouldValidate: true });
+    }
+    const defaultId = form.getValues("defaultSubLocationId");
+    if (defaultId && !validIds.has(defaultId)) {
+      form.setValue("defaultSubLocationId", "", { shouldValidate: true });
+    }
+  }, [activeSubLocations, form]);
+
   const handleSubmit = async (data: EmployeeFormData) => {
     setIsSubmitting(true);
     try {
@@ -162,6 +189,8 @@ export function EmployeeFormModal({
         userPassword: data.userPassword ? data.userPassword : undefined,
         directorateId: isHeadOffice ? data.directorateId : undefined,
         locationId: fixedLocationId || data.locationId,
+        defaultSubLocationId: data.defaultSubLocationId || null,
+        allowedSubLocationIds: data.allowedSubLocationIds || [],
       };
 
       await onSubmit(payload);
@@ -305,6 +334,78 @@ export function EmployeeFormModal({
               <p className="text-sm text-destructive">{form.formState.errors.locationId.message}</p>
             )}
           </div>
+
+          <div className="space-y-2">
+            <Label>Allowed Room/Sections</Label>
+            {activeSubLocations.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                No active room/sections found for this office.
+              </p>
+            ) : (
+              <div className="max-h-40 space-y-2 overflow-y-auto rounded-md border p-3">
+                {activeSubLocations.map((section) => {
+                  const selectedIds = form.watch("allowedSubLocationIds") || [];
+                  const checked = selectedIds.includes(section.id);
+                  return (
+                    <label key={section.id} className="flex items-center gap-2 text-sm">
+                      <Checkbox
+                        checked={checked}
+                        onCheckedChange={(value) => {
+                          const current = form.getValues("allowedSubLocationIds") || [];
+                          if (value) {
+                            if (!current.includes(section.id)) {
+                              form.setValue("allowedSubLocationIds", [...current, section.id], { shouldValidate: true });
+                            }
+                            return;
+                          }
+                          const next = current.filter((id) => id !== section.id);
+                          form.setValue("allowedSubLocationIds", next, { shouldValidate: true });
+                          if (form.getValues("defaultSubLocationId") === section.id) {
+                            form.setValue("defaultSubLocationId", "", { shouldValidate: true });
+                          }
+                        }}
+                      />
+                      <span>{section.name}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground">
+              Employees can consume from selected room/sections only.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Default Room/Section</Label>
+            <Select
+              value={form.watch("defaultSubLocationId") || ""}
+              onValueChange={(value) => {
+                form.setValue("defaultSubLocationId", value, { shouldValidate: true });
+                const selectedIds = form.getValues("allowedSubLocationIds") || [];
+                if (value && !selectedIds.includes(value)) {
+                  form.setValue("allowedSubLocationIds", [...selectedIds, value], { shouldValidate: true });
+                }
+              }}
+              disabled={(form.watch("allowedSubLocationIds") || []).length === 0}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select default room/section" />
+              </SelectTrigger>
+              <SelectContent>
+                {(form.watch("allowedSubLocationIds") || []).map((id) => {
+                  const section = activeSubLocations.find((entry) => entry.id === id);
+                  if (!section) return null;
+                  return (
+                    <SelectItem key={section.id} value={section.id}>
+                      {section.name}
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+          </div>
+
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
               Cancel

@@ -3,6 +3,7 @@ import { createHttpError } from '../utils/httpError';
 import { NotificationModel } from '../models/notification.model';
 import { UserModel } from '../models/user.model';
 import { SystemSettingsModel } from '../models/systemSettings.model';
+import { buildUserRoleMatchFilter } from '../utils/roles';
 
 const NOTIFICATION_TYPES = new Set([
   'ASSIGNMENT_DRAFT_CREATED',
@@ -11,15 +12,19 @@ const NOTIFICATION_TYPES = new Set([
   'RETURN_REQUESTED',
   'RETURN_SLIP_READY',
   'ASSIGNMENT_RETURNED',
+  'ASSIGNMENT_CANCELLED',
   'TRANSFER_REQUESTED',
   'TRANSFER_APPROVED',
   'TRANSFER_REJECTED',
   'TRANSFER_DISPATCHED',
   'TRANSFER_RECEIVED',
+  'TRANSFER_CANCELLED',
   'MAINTENANCE_SCHEDULED',
   'MAINTENANCE_DUE',
   'MAINTENANCE_OVERDUE',
   'MAINTENANCE_COMPLETED',
+  'MAINTENANCE_UPDATED',
+  'MAINTENANCE_REMOVED',
   'LOW_STOCK_ALERT',
   'WARRANTY_EXPIRY_ALERT',
   'REQUISITION_SUBMITTED',
@@ -28,6 +33,28 @@ const NOTIFICATION_TYPES = new Set([
   'REQUISITION_STATUS_CHANGED',
   'REQUISITION_VERIFIED',
   'REQUISITION_REJECTED',
+  'REQUISITION_ADJUSTED',
+  'REQUISITION_LINE_MAPPED',
+  'REQUISITION_ISSUANCE_SIGNED',
+  'RETURN_REQUEST_SUBMITTED',
+  'RETURN_REQUEST_RECEIVED',
+  'RETURN_REQUEST_CLOSED',
+  'CONSUMABLE_RECEIVED',
+  'CONSUMABLE_TRANSFERRED',
+  'CONSUMABLE_CONSUMED',
+  'CONSUMABLE_ADJUSTED',
+  'CONSUMABLE_DISPOSED',
+  'CONSUMABLE_RETURNED',
+  'CONSUMABLE_OPENING_BALANCE',
+  'CONSUMABLE_ISSUED',
+  'APPROVAL_REQUESTED',
+  'APPROVAL_DECIDED',
+  'PURCHASE_ORDER_CREATED',
+  'PURCHASE_ORDER_STATUS_CHANGED',
+  'PURCHASE_ORDER_REMOVED',
+  'EMPLOYEE_TRANSFERRED',
+  'ROLE_DELEGATED',
+  'ROLE_DELEGATION_REVOKED',
 ]);
 
 const NOTIFICATION_ENTITY_TYPES = new Set([
@@ -37,6 +64,11 @@ const NOTIFICATION_ENTITY_TYPES = new Set([
   'MaintenanceRecord',
   'AssetItem',
   'ConsumableItem',
+  'ReturnRequest',
+  'Record',
+  'PurchaseOrder',
+  'Employee',
+  'RoleDelegation',
 ]);
 
 type NotificationPreferenceKey =
@@ -66,21 +98,47 @@ const NOTIFICATION_TYPE_TO_PREFERENCE: Record<string, NotificationPreferenceKey>
   RETURN_REQUESTED: 'assignment_notifications',
   RETURN_SLIP_READY: 'assignment_notifications',
   ASSIGNMENT_RETURNED: 'assignment_notifications',
+  ASSIGNMENT_CANCELLED: 'assignment_notifications',
   REQUISITION_SUBMITTED: 'assignment_notifications',
   REQUISITION_APPROVED: 'assignment_notifications',
   REQUISITION_FULFILLED: 'assignment_notifications',
   REQUISITION_STATUS_CHANGED: 'assignment_notifications',
   REQUISITION_VERIFIED: 'assignment_notifications',
   REQUISITION_REJECTED: 'assignment_notifications',
+  REQUISITION_ADJUSTED: 'assignment_notifications',
+  REQUISITION_LINE_MAPPED: 'assignment_notifications',
+  REQUISITION_ISSUANCE_SIGNED: 'assignment_notifications',
   TRANSFER_REQUESTED: 'assignment_notifications',
   TRANSFER_APPROVED: 'assignment_notifications',
   TRANSFER_REJECTED: 'assignment_notifications',
   TRANSFER_DISPATCHED: 'assignment_notifications',
   TRANSFER_RECEIVED: 'assignment_notifications',
+  TRANSFER_CANCELLED: 'assignment_notifications',
+  RETURN_REQUEST_SUBMITTED: 'assignment_notifications',
+  RETURN_REQUEST_RECEIVED: 'assignment_notifications',
+  RETURN_REQUEST_CLOSED: 'assignment_notifications',
+  CONSUMABLE_RECEIVED: 'assignment_notifications',
+  CONSUMABLE_TRANSFERRED: 'assignment_notifications',
+  CONSUMABLE_CONSUMED: 'assignment_notifications',
+  CONSUMABLE_ADJUSTED: 'assignment_notifications',
+  CONSUMABLE_DISPOSED: 'assignment_notifications',
+  CONSUMABLE_RETURNED: 'assignment_notifications',
+  CONSUMABLE_OPENING_BALANCE: 'assignment_notifications',
+  CONSUMABLE_ISSUED: 'assignment_notifications',
+  APPROVAL_REQUESTED: 'assignment_notifications',
+  APPROVAL_DECIDED: 'assignment_notifications',
+  PURCHASE_ORDER_CREATED: 'assignment_notifications',
+  PURCHASE_ORDER_STATUS_CHANGED: 'assignment_notifications',
+  PURCHASE_ORDER_REMOVED: 'assignment_notifications',
+  EMPLOYEE_TRANSFERRED: 'assignment_notifications',
+  ROLE_DELEGATED: 'assignment_notifications',
+  ROLE_DELEGATION_REVOKED: 'assignment_notifications',
   MAINTENANCE_SCHEDULED: 'maintenance_reminders',
   MAINTENANCE_DUE: 'maintenance_reminders',
   MAINTENANCE_OVERDUE: 'maintenance_reminders',
   MAINTENANCE_COMPLETED: 'maintenance_reminders',
+  MAINTENANCE_UPDATED: 'maintenance_reminders',
+  MAINTENANCE_REMOVED: 'maintenance_reminders',
   LOW_STOCK_ALERT: 'low_stock_alerts',
   WARRANTY_EXPIRY_ALERT: 'warranty_expiry_alerts',
 };
@@ -248,12 +306,12 @@ export async function resolveNotificationRecipientsByOffice(input: {
   const roleFilters: Record<string, unknown>[] = [];
   if (includeRoles.length > 0 && officeIds.length > 0) {
     roleFilters.push({
-      role: { $in: includeRoles },
+      ...buildUserRoleMatchFilter(includeRoles),
       location_id: { $in: officeIds },
     });
   }
   if (includeOrgAdmins) {
-    roleFilters.push({ role: 'org_admin' });
+    roleFilters.push(buildUserRoleMatchFilter(['org_admin']));
   }
   if (includeUserIds.length > 0) {
     roleFilters.push({ _id: { $in: includeUserIds } });

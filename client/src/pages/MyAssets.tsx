@@ -1,16 +1,27 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTable } from "@/components/shared/DataTable";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { AlertCircle } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useEmployees } from "@/hooks/useEmployees";
 import { useAssignments } from "@/hooks/useAssignments";
 import { useAssetItems } from "@/hooks/useAssetItems";
 import { useAssets } from "@/hooks/useAssets";
-import { useConsumableBalances } from "@/hooks/useConsumableInventory";
+import { useConsumableBalances, useConsumeConsumables } from "@/hooks/useConsumableInventory";
 import { useConsumableItems } from "@/hooks/useConsumableItems";
 import { useConsumableLots } from "@/hooks/useConsumableLots";
 
@@ -26,6 +37,17 @@ function asId(value: unknown): string {
   return "";
 }
 
+type ConsumableRow = {
+  id: string;
+  itemId: string;
+  lotId: string | null;
+  itemName: string;
+  lot: string;
+  onHand: number;
+  reserved: number;
+  uom: string;
+};
+
 export default function MyAssets() {
   const { user } = useAuth();
   const { data: employees } = useEmployees();
@@ -34,6 +56,10 @@ export default function MyAssets() {
   const { data: assets } = useAssets();
   const { data: consumableItems } = useConsumableItems();
   const { data: lots } = useConsumableLots();
+  const consumeMutation = useConsumeConsumables();
+  const [consumeTarget, setConsumeTarget] = useState<ConsumableRow | null>(null);
+  const [consumeQty, setConsumeQty] = useState("1");
+  const [consumeNotes, setConsumeNotes] = useState("");
 
   const employeeList = useMemo(() => employees || [], [employees]);
   const assignmentList = useMemo(() => assignments || [], [assignments]);
@@ -83,7 +109,7 @@ export default function MyAssets() {
       });
   }, [assetItemList, assetList, assignmentList, currentEmployeeId]);
 
-  const consumableRows = useMemo(() => {
+  const consumableRows = useMemo<ConsumableRow[]>(() => {
     if (!currentEmployeeId) return [];
     const balances = consumableBalances || [];
     return balances
@@ -98,8 +124,11 @@ export default function MyAssets() {
           (entry) => asId(entry.id) === asId(balance.consumable_item_id)
         );
         const lot = (lots || []).find((entry) => asId(entry.id) === asId(balance.lot_id));
+        const lotId = asId(balance.lot_id);
         return {
           id: `${asId(balance.consumable_item_id)}-${asId(balance.lot_id) || "none"}`,
+          itemId: asId(balance.consumable_item_id),
+          lotId: lotId || null,
           itemName: item?.name || "Unknown Consumable",
           lot: lot?.batch_no || "N/A",
           onHand: Number(balance.qty_on_hand_base || 0),
@@ -142,6 +171,35 @@ export default function MyAssets() {
     },
   ];
 
+  const openConsumeDialog = (row: ConsumableRow) => {
+    setConsumeTarget(row);
+    setConsumeQty("1");
+    setConsumeNotes("");
+  };
+
+  const closeConsumeDialog = () => {
+    if (consumeMutation.isPending) return;
+    setConsumeTarget(null);
+    setConsumeQty("1");
+    setConsumeNotes("");
+  };
+
+  const submitConsume = async () => {
+    if (!consumeTarget || !currentEmployeeId) return;
+    const qty = Number(consumeQty);
+    if (!Number.isFinite(qty) || qty <= 0) return;
+    await consumeMutation.mutateAsync({
+      holderType: "EMPLOYEE",
+      holderId: currentEmployeeId,
+      itemId: consumeTarget.itemId,
+      lotId: consumeTarget.lotId || undefined,
+      qty,
+      uom: consumeTarget.uom || "EA",
+      notes: consumeNotes.trim() || "Consumed from My Assets",
+    });
+    closeConsumeDialog();
+  };
+
   return (
     <MainLayout title="My Assets" description="Assets assigned to your profile">
       <PageHeader
@@ -182,10 +240,68 @@ export default function MyAssets() {
               columns={consumableColumns}
               data={consumableRows}
               searchPlaceholder="Search assigned consumables..."
+              actions={(row) => (
+                <Button
+                  size="sm"
+                  onClick={() => openConsumeDialog(row)}
+                  disabled={consumeMutation.isPending}
+                >
+                  Mark Consumed
+                </Button>
+              )}
             />
           </CardContent>
         </Card>
       </div>
+
+      <Dialog open={Boolean(consumeTarget)} onOpenChange={(open) => (open ? undefined : closeConsumeDialog())}>
+        <DialogContent className="sm:max-w-[460px]">
+          <DialogHeader>
+            <DialogTitle>Mark Consumable as Consumed</DialogTitle>
+            <DialogDescription>
+              {consumeTarget
+                ? `${consumeTarget.itemName}${consumeTarget.lot !== "N/A" ? ` | Lot ${consumeTarget.lot}` : ""}`
+                : ""}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="my-assets-consume-qty">Quantity</Label>
+              <Input
+                id="my-assets-consume-qty"
+                type="number"
+                min="0.01"
+                step="0.01"
+                value={consumeQty}
+                onChange={(event) => setConsumeQty(event.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Available: {Number(consumeTarget?.onHand || 0).toLocaleString()} {consumeTarget?.uom || ""}
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="my-assets-consume-notes">Notes</Label>
+              <Input
+                id="my-assets-consume-notes"
+                value={consumeNotes}
+                onChange={(event) => setConsumeNotes(event.target.value)}
+                placeholder="Optional notes"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={closeConsumeDialog} disabled={consumeMutation.isPending}>
+              Cancel
+            </Button>
+            <Button onClick={() => void submitConsume()} disabled={consumeMutation.isPending}>
+              {consumeMutation.isPending ? "Saving..." : "Confirm Consumption"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </MainLayout>
   );
 }

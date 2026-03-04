@@ -66,6 +66,18 @@ type HolderOption = {
   label: string;
 };
 
+function asId(value: unknown): string {
+  if (!value) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'object') {
+    const record = value as { id?: unknown; _id?: unknown; $oid?: unknown };
+    if (typeof record.id === 'string') return record.id;
+    if (typeof record._id === 'string') return record._id;
+    if (typeof record.$oid === 'string') return record.$oid;
+  }
+  return '';
+}
+
 export default function ConsumableConsume() {
   const { user, locationId, role } = useAuth();
   const [itemPickerOpen, setItemPickerOpen] = useState(false);
@@ -139,15 +151,33 @@ export default function ConsumableConsume() {
     [filteredLocations, selectedLocationId]
   );
 
+  const employeeAllowedSubLocationIds = useMemo(() => {
+    if (role !== 'employee' || !currentEmployee) return [];
+    const unique = new Set<string>();
+    const defaultSubLocationId = asId((currentEmployee as any).default_sub_location_id);
+    if (defaultSubLocationId) unique.add(defaultSubLocationId);
+    const allowed = Array.isArray((currentEmployee as any).allowed_sub_location_ids)
+      ? ((currentEmployee as any).allowed_sub_location_ids as unknown[])
+      : [];
+    for (const entry of allowed) {
+      const id = asId(entry);
+      if (id) unique.add(id);
+    }
+    return Array.from(unique);
+  }, [currentEmployee, role]);
+
   const holderTypeOptions = useMemo(() => {
     const base: ConsumeHolderType[] = role === 'employee' ? ['EMPLOYEE', 'SUB_LOCATION'] : ['OFFICE', 'SUB_LOCATION', 'EMPLOYEE'];
     return base.filter((holderType) => {
       if (holderType === 'OFFICE') return Boolean(selectedLocationId);
-      if (holderType === 'SUB_LOCATION') return subLocations.length > 0;
+      if (holderType === 'SUB_LOCATION') {
+        if (role === 'employee') return employeeAllowedSubLocationIds.length > 0;
+        return subLocations.length > 0;
+      }
       if (holderType === 'EMPLOYEE') return role === 'employee' ? Boolean(currentEmployee) : locationEmployees.length > 0;
       return false;
     });
-  }, [role, selectedLocationId, subLocations.length, currentEmployee, locationEmployees.length]);
+  }, [role, selectedLocationId, subLocations.length, currentEmployee, locationEmployees.length, employeeAllowedSubLocationIds.length]);
 
   const officeOption = useMemo<HolderOption[]>(
     () =>
@@ -164,13 +194,18 @@ export default function ConsumableConsume() {
   );
 
   const sectionOptions = useMemo<HolderOption[]>(
-    () =>
-      subLocations.map((section) => ({
+    () => {
+      const scopedSections =
+        role === 'employee'
+          ? subLocations.filter((section) => employeeAllowedSubLocationIds.includes(section.id))
+          : subLocations;
+      return scopedSections.map((section) => ({
         id: section.id,
         holderType: 'SUB_LOCATION',
         label: `${section.name} (Section)`,
-      })),
-    [subLocations]
+      }));
+    },
+    [subLocations, role, employeeAllowedSubLocationIds]
   );
 
   const employeeOptions = useMemo<HolderOption[]>(() => {

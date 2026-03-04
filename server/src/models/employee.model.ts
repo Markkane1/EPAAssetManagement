@@ -12,6 +12,8 @@ const EmployeeSchema = new Schema<any>(
     hire_date: { type: String, default: null },
     directorate_id: { type: Schema.Types.ObjectId, ref: 'Office', default: null },
     location_id: { type: Schema.Types.ObjectId, ref: 'Office', default: null },
+    default_sub_location_id: { type: Schema.Types.ObjectId, ref: 'OfficeSubLocation', default: null },
+    allowed_sub_location_ids: { type: [{ type: Schema.Types.ObjectId, ref: 'OfficeSubLocation' }], default: [] },
     transferred_at: { type: Date, default: null },
     transferred_from_office_id: { type: Schema.Types.ObjectId, ref: 'Office', default: null },
     transferred_to_office_id: { type: Schema.Types.ObjectId, ref: 'Office', default: null },
@@ -22,6 +24,7 @@ const EmployeeSchema = new Schema<any>(
 );
 
 EmployeeSchema.index({ location_id: 1, created_at: -1 });
+EmployeeSchema.index({ location_id: 1, default_sub_location_id: 1 });
 EmployeeSchema.index({ directorate_id: 1, location_id: 1, created_at: -1 });
 EmployeeSchema.index({ transferred_to_office_id: 1, transferred_at: -1 });
 EmployeeSchema.index({ transferred_from_office_id: 1, transferred_at: -1 });

@@ -7,10 +7,12 @@ import { UserModel } from '../models/user.model';
 import { mapFields } from '../utils/mapFields';
 import { EmployeeModel } from '../models/employee.model';
 import { OfficeModel } from '../models/office.model';
+import { OfficeSubLocationModel } from '../models/officeSubLocation.model';
 import { AuthRequest } from '../middleware/auth';
-import { normalizeRole } from '../utils/roles';
+import { hasRoleCapability, normalizeRoles, resolveActiveRole } from '../utils/roles';
 import { getRequestContext } from '../utils/scope';
 import { logAudit } from '../modules/records/services/audit.service';
+import { createBulkNotifications, resolveNotificationRecipientsByOffice } from '../services/notification.service';
 
 const fieldMap = {
   firstName: 'first_name',
@@ -19,6 +21,8 @@ const fieldMap = {
   hireDate: 'hire_date',
   directorateId: 'directorate_id',
   locationId: 'location_id',
+  defaultSubLocationId: 'default_sub_location_id',
+  allowedSubLocationIds: 'allowed_sub_location_ids',
   isActive: 'is_active',
 };
 
@@ -32,6 +36,8 @@ const baseController = createCrudController({
     hireDate: 'hire_date',
     directorateId: 'directorate_id',
     locationId: 'location_id',
+    defaultSubLocationId: 'default_sub_location_id',
+    allowedSubLocationIds: 'allowed_sub_location_ids',
     isActive: 'is_active',
   },
 });
@@ -60,6 +66,75 @@ function buildPayload(body: Record<string, unknown>) {
   });
   if (body.email !== undefined) payload.email = body.email;
   return payload;
+}
+
+function normalizeObjectIdValue(value: unknown) {
+  if (value === null || value === undefined || value === '') return null;
+  const id = String(value).trim();
+  if (!id) return null;
+  if (!/^[0-9a-fA-F]{24}$/.test(id)) {
+    throw new Error('Invalid ObjectId');
+  }
+  return id;
+}
+
+function normalizeSubLocationIdList(value: unknown): string[] {
+  if (value === null || value === undefined || value === '') return [];
+  if (!Array.isArray(value)) {
+    throw new Error('allowedSubLocationIds must be an array');
+  }
+  const unique = new Set<string>();
+  for (const entry of value) {
+    const normalized = normalizeObjectIdValue(entry);
+    if (normalized) unique.add(normalized);
+  }
+  return Array.from(unique);
+}
+
+async function resolveValidatedSectionScope(params: {
+  locationId: string | null;
+  defaultSubLocationId: unknown;
+  allowedSubLocationIds: unknown;
+}) {
+  const { locationId } = params;
+  const defaultSubLocationId = normalizeObjectIdValue(params.defaultSubLocationId);
+  const allowedSubLocationIds = normalizeSubLocationIdList(params.allowedSubLocationIds);
+
+  if (!locationId) {
+    if (defaultSubLocationId || allowedSubLocationIds.length > 0) {
+      throw new Error('locationId is required when assigning room/section scope');
+    }
+    return {
+      defaultSubLocationId: null as string | null,
+      allowedSubLocationIds: [] as string[],
+    };
+  }
+
+  const mergedAllowed = new Set<string>(allowedSubLocationIds);
+  if (defaultSubLocationId) mergedAllowed.add(defaultSubLocationId);
+  const mergedIds = Array.from(mergedAllowed);
+
+  if (mergedIds.length === 0) {
+    return {
+      defaultSubLocationId: null,
+      allowedSubLocationIds: [],
+    };
+  }
+
+  const matchedRows = await OfficeSubLocationModel.find(
+    { _id: { $in: mergedIds }, office_id: locationId, is_active: { $ne: false } },
+    { _id: 1 }
+  )
+    .lean();
+  const matchedIdSet = new Set(matchedRows.map((row: any) => String(row._id)));
+  if (matchedIdSet.size !== mergedIds.length) {
+    throw new Error('Selected room/section is not valid for this office');
+  }
+
+  return {
+    defaultSubLocationId,
+    allowedSubLocationIds: mergedIds,
+  };
 }
 
 function readParam(req: Request, key: string) {
@@ -148,6 +223,18 @@ export const employeeController = {
         }
         payload.location_id = authUser.locationId;
       }
+      try {
+        const sectionScope = await resolveValidatedSectionScope({
+          locationId: payload.location_id ? String(payload.location_id) : null,
+          defaultSubLocationId: payload.default_sub_location_id,
+          allowedSubLocationIds: payload.allowed_sub_location_ids,
+        });
+        payload.default_sub_location_id = sectionScope.defaultSubLocationId;
+        payload.allowed_sub_location_ids = sectionScope.allowedSubLocationIds;
+      } catch (validationError) {
+        return res.status(400).json({ message: (validationError as Error).message });
+      }
+
       const providedPassword =
         typeof req.body.userPassword === 'string' && req.body.userPassword.trim()
           ? req.body.userPassword.trim()
@@ -157,14 +244,16 @@ export const employeeController = {
       let tempPassword: string | undefined;
 
       if (user) {
-        const normalizedRole = normalizeRole(user.role);
-        if (normalizedRole === 'org_admin') {
+        const normalizedRoles = normalizeRoles(user.roles, user.role);
+        if (hasRoleCapability(normalizedRoles, ['org_admin'])) {
           return res.status(400).json({ message: 'Cannot link employee to org admin account' });
         }
-        if (normalizedRole === 'employee') {
-          user.role = 'employee';
-        }
-        if (!user.location_id || user.role === 'employee') {
+        const mergedRoles = normalizeRoles([...normalizedRoles, 'employee'], 'employee');
+        const activeRole = resolveActiveRole(user.active_role || user.role, mergedRoles);
+        user.role = activeRole;
+        user.roles = mergedRoles;
+        user.active_role = activeRole;
+        if (!user.location_id || hasRoleCapability(mergedRoles, ['employee'])) {
           user.location_id = locationId;
         }
         if (!user.first_name && firstName) user.first_name = firstName;
@@ -179,6 +268,8 @@ export const employeeController = {
           first_name: firstName,
           last_name: lastName,
           role: 'employee',
+          roles: ['employee'],
+          active_role: 'employee',
           location_id: locationId,
         });
         if (!providedPassword) {
@@ -229,6 +320,35 @@ export const employeeController = {
           return res.status(403).json({ message: 'Access restricted to assigned office' });
         }
         payload.location_id = user.locationId;
+      }
+
+      const previousLocationId = existing.location_id ? String(existing.location_id) : null;
+      const nextLocationId = payload.location_id ? String(payload.location_id) : previousLocationId;
+      const locationChanged = previousLocationId !== nextLocationId;
+
+      if (locationChanged && payload.default_sub_location_id === undefined) {
+        payload.default_sub_location_id = null;
+      }
+      if (locationChanged && payload.allowed_sub_location_ids === undefined) {
+        payload.allowed_sub_location_ids = [];
+      }
+
+      try {
+        const sectionScope = await resolveValidatedSectionScope({
+          locationId: nextLocationId,
+          defaultSubLocationId:
+            payload.default_sub_location_id !== undefined
+              ? payload.default_sub_location_id
+              : existing.default_sub_location_id,
+          allowedSubLocationIds:
+            payload.allowed_sub_location_ids !== undefined
+              ? payload.allowed_sub_location_ids
+              : existing.allowed_sub_location_ids,
+        });
+        payload.default_sub_location_id = sectionScope.defaultSubLocationId;
+        payload.allowed_sub_location_ids = sectionScope.allowedSubLocationIds;
+      } catch (validationError) {
+        return res.status(400).json({ message: (validationError as Error).message });
       }
 
       const updated = await employeeRepository.updateById(employeeId, payload);
@@ -314,6 +434,8 @@ export const employeeController = {
       }
 
       employee.location_id = newOfficeId;
+      employee.default_sub_location_id = null;
+      employee.allowed_sub_location_ids = [];
       employee.transferred_at = new Date();
       employee.transferred_from_office_id = previousOfficeId;
       employee.transferred_to_office_id = newOfficeId;
@@ -339,6 +461,34 @@ export const employeeController = {
           linked_user_id: employee.user_id ? String(employee.user_id) : null,
         },
       });
+
+      const officeIds = [previousOfficeId, newOfficeId]
+        .map((officeId) => String(officeId || '').trim())
+        .filter((officeId) => /^[0-9a-fA-F]{24}$/.test(officeId));
+      const recipients = await resolveNotificationRecipientsByOffice({
+        officeIds,
+        includeOrgAdmins: true,
+        includeRoles: ['office_head', 'caretaker'],
+        includeUserIds: employee.user_id ? [String(employee.user_id)] : [],
+        excludeUserIds: [user.userId],
+      });
+      if (recipients.length > 0) {
+        await createBulkNotifications(
+          recipients.map((recipientUserId) => ({
+            recipientUserId,
+            officeId: newOfficeId,
+            type: 'EMPLOYEE_TRANSFERRED',
+            title: 'Employee Transferred',
+            message: `${String(employee.first_name || '')} ${String(employee.last_name || '')}`.trim()
+              ? `${String(employee.first_name || '')} ${String(employee.last_name || '')}`.trim() +
+                ' was transferred to a new office.'
+              : `Employee ${employee.id} was transferred to a new office.`,
+            entityType: 'Employee',
+            entityId: employee.id,
+            dedupeWindowHours: 12,
+          }))
+        );
+      }
 
       return res.json(employee);
     } catch (error) {

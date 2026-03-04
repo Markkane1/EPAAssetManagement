@@ -69,6 +69,10 @@ export enum UserRole {
   OfficeHead = "office_head",
   Caretaker = "caretaker",
   Employee = "employee",
+  Storekeeper = "storekeeper",
+  InventoryController = "inventory_controller",
+  ProcurementOfficer = "procurement_officer",
+  ComplianceAuditor = "compliance_auditor",
 }
 
 export type CategoryScope = "GENERAL" | "LAB_ONLY";
@@ -174,6 +178,8 @@ export interface Employee {
   hire_date: string | null;
   directorate_id: string | null;
   location_id: string | null;
+  default_sub_location_id?: string | null;
+  allowed_sub_location_ids?: string[] | null;
   transferred_at?: string | null;
   transferred_from_office_id?: string | null;
   transferred_to_office_id?: string | null;

@@ -86,6 +86,10 @@ const CORE_ROLE_OPTIONS: Array<{ id: string; label: string }> = [
   { id: "office_head", label: "Office Head" },
   { id: "caretaker", label: "Caretaker" },
   { id: "employee", label: "Employee" },
+  { id: "storekeeper", label: "Storekeeper" },
+  { id: "inventory_controller", label: "Inventory Controller" },
+  { id: "procurement_officer", label: "Procurement Officer" },
+  { id: "compliance_auditor", label: "Compliance Auditor" },
 ];
 
 const CORE_ROLE_COLORS: Record<string, string> = {
@@ -93,6 +97,10 @@ const CORE_ROLE_COLORS: Record<string, string> = {
   office_head: "bg-sky-500 text-white",
   caretaker: "bg-teal-600 text-white",
   employee: "bg-emerald-500 text-white",
+  storekeeper: "bg-cyan-600 text-white",
+  inventory_controller: "bg-blue-600 text-white",
+  procurement_officer: "bg-orange-500 text-white",
+  compliance_auditor: "bg-slate-600 text-white",
 };
 
 function toRoleLabel(role?: string | null, roleNameMap?: Map<string, string>) {
@@ -108,6 +116,17 @@ function toRoleLabel(role?: string | null, roleNameMap?: Map<string, string>) {
     .join(" ");
 }
 
+function parseRoleList(text: string) {
+  return Array.from(
+    new Set(
+      String(text || "")
+        .split(",")
+        .map((entry) => entry.trim().toLowerCase())
+        .filter(Boolean)
+    )
+  );
+}
+
 export default function UserManagement() {
   const queryClient = useQueryClient();
   const pageSearch = usePageSearch();
@@ -116,6 +135,7 @@ export default function UserManagement() {
   const [pageSize, setPageSize] = useState(50);
   const [editingUser, setEditingUser] = useState<UserWithDetails | null>(null);
   const [selectedRole, setSelectedRole] = useState<AppRole | "">("");
+  const [selectedExtraRoles, setSelectedExtraRoles] = useState("");
   const [selectedLocation, setSelectedLocation] = useState<string>("");
   const [roleFilter, setRoleFilter] = useState<string>("all");
   const [locationFilter, setLocationFilter] = useState<string>("all");
@@ -131,6 +151,7 @@ export default function UserManagement() {
   const [newUserFirstName, setNewUserFirstName] = useState("");
   const [newUserLastName, setNewUserLastName] = useState("");
   const [newUserRole, setNewUserRole] = useState<AppRole | "">("");
+  const [newUserExtraRoles, setNewUserExtraRoles] = useState("");
   const [newUserLocation, setNewUserLocation] = useState<string>("");
   const [newUserLocationPickerOpen, setNewUserLocationPickerOpen] = useState(false);
 
@@ -158,8 +179,8 @@ export default function UserManagement() {
 
   // Update user role mutation
   const updateRoleMutation = useMutation({
-    mutationFn: ({ userId, role }: { userId: string; role: AppRole }) =>
-      userService.updateRole(userId, role),
+    mutationFn: ({ userId, payload }: { userId: string; payload: { role?: AppRole; roles?: AppRole[]; activeRole?: AppRole } }) =>
+      userService.updateRole(userId, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["users-management"] });
       toast.success("User role updated successfully");
@@ -190,6 +211,8 @@ export default function UserManagement() {
       firstName?: string; 
       lastName?: string;
       role?: string;
+      roles?: string[];
+      activeRole?: string;
       locationId?: string;
     }) =>
       userService.create({
@@ -198,6 +221,8 @@ export default function UserManagement() {
         firstName: data.firstName,
         lastName: data.lastName,
         role: data.role as AppRole,
+        roles: (data.roles || []) as AppRole[],
+        activeRole: data.activeRole as AppRole,
         locationId: data.locationId,
       }),
     onSuccess: () => {
@@ -245,6 +270,7 @@ export default function UserManagement() {
     setNewUserFirstName("");
     setNewUserLastName("");
     setNewUserRole("");
+    setNewUserExtraRoles("");
     setNewUserLocation("");
     setNewUserLocationPickerOpen(false);
   };
@@ -263,12 +289,18 @@ export default function UserManagement() {
       return;
     }
     
+    const allRoles = Array.from(
+      new Set([newUserRole, ...parseRoleList(newUserExtraRoles)])
+    ).filter(Boolean) as AppRole[];
+
     await createUserMutation.mutateAsync({
       email: newUserEmail.trim(),
       password: newUserPassword,
       firstName: newUserFirstName.trim(),
       lastName: newUserLastName.trim(),
       role: newUserRole as AppRole,
+      roles: allRoles,
+      activeRole: newUserRole as AppRole,
       locationId: newUserLocation,
     });
   };
@@ -285,7 +317,11 @@ export default function UserManagement() {
 
   const handleEditUser = (user: UserWithDetails) => {
     setEditingUser(user);
-    setSelectedRole(user.role || "");
+    setSelectedRole((user.activeRole || user.role || "") as AppRole | "");
+    const otherRoles = (user.roles || [])
+      .map((entry) => String(entry || "").trim().toLowerCase())
+      .filter((entry) => entry && entry !== String(user.activeRole || user.role || "").trim().toLowerCase());
+    setSelectedExtraRoles(otherRoles.join(", "));
     setSelectedLocation(user.location_id || "none");
   };
 
@@ -293,10 +329,24 @@ export default function UserManagement() {
     if (!editingUser) return;
 
     try {
-      if (selectedRole && selectedRole !== editingUser.role) {
+      const allRoles = Array.from(
+        new Set([selectedRole, ...parseRoleList(selectedExtraRoles)])
+      ).filter(Boolean) as AppRole[];
+      const currentActiveRole = String(editingUser.activeRole || editingUser.role || "").trim().toLowerCase();
+      const currentRoles = (editingUser.roles || [editingUser.role || ""])
+        .map((entry) => String(entry || "").trim().toLowerCase())
+        .filter(Boolean)
+        .sort()
+        .join(",");
+      const nextRoles = [...allRoles].map((entry) => String(entry).trim().toLowerCase()).sort().join(",");
+      if (selectedRole && (selectedRole !== currentActiveRole || currentRoles !== nextRoles)) {
         await updateRoleMutation.mutateAsync({ 
           userId: editingUser.user_id, 
-          role: selectedRole as AppRole 
+          payload: {
+            role: selectedRole as AppRole,
+            activeRole: selectedRole as AppRole,
+            roles: allRoles,
+          },
         });
       }
 
@@ -644,13 +694,31 @@ export default function UserManagement() {
                   ))}
                 </SelectContent>
               </Select>
+              <Input
+                value={selectedExtraRoles}
+                onChange={(event) => setSelectedExtraRoles(event.target.value)}
+                placeholder="Additional roles (comma separated)"
+              />
               <p className="text-xs text-muted-foreground">
                 {selectedRole === "org_admin" && "Global access across all offices."}
                 {selectedRole === "office_head" && "Office-scoped management access."}
                 {selectedRole === "caretaker" && "Office-scoped custody and workflow operations."}
                 {selectedRole === "employee" && "Basic office-scoped access."}
+                {selectedRole === "storekeeper" && "Central-store stock operations role."}
+                {selectedRole === "inventory_controller" && "Office inventory counts and reconciliation role."}
+                {selectedRole === "procurement_officer" && "Purchase order lifecycle role."}
+                {selectedRole === "compliance_auditor" && "Read-only compliance and audit visibility."}
                 {selectedRole &&
-                  !["org_admin", "office_head", "caretaker", "employee"].includes(selectedRole) &&
+                  ![
+                    "org_admin",
+                    "office_head",
+                    "caretaker",
+                    "employee",
+                    "storekeeper",
+                    "inventory_controller",
+                    "procurement_officer",
+                    "compliance_auditor",
+                  ].includes(selectedRole) &&
                   "Access is controlled by dynamic role permissions."}
               </p>
             </div>
@@ -777,6 +845,11 @@ export default function UserManagement() {
                   ))}
                 </SelectContent>
               </Select>
+              <Input
+                value={newUserExtraRoles}
+                onChange={(event) => setNewUserExtraRoles(event.target.value)}
+                placeholder="Additional roles (comma separated)"
+              />
             </div>
 
             <div className="space-y-2">

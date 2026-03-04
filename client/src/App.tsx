@@ -59,6 +59,7 @@ const FinancialSummaryReport = lazy(() => import("./pages/reports/FinancialSumma
 const EmployeeAssetsReport = lazy(() => import("./pages/reports/EmployeeAssetsReport"));
 const Settings = lazy(() => import("./pages/Settings"));
 const NotificationDetails = lazy(() => import("./pages/NotificationDetails"));
+const RoleDelegations = lazy(() => import("./pages/RoleDelegations"));
 const Profile = lazy(() => import("./pages/Profile"));
 const Login = lazy(() => import("./pages/Login"));
 const ForgotPassword = lazy(() => import("./pages/ForgotPassword"));
@@ -153,7 +154,15 @@ const App = () => {
                     element={
                       <ProtectedRoute
                         page="inventory"
-                        allowedRoles={["org_admin", "office_head", "caretaker"]}
+                        allowedRoles={[
+                          "org_admin",
+                          "office_head",
+                          "caretaker",
+                          "storekeeper",
+                          "inventory_controller",
+                          "procurement_officer",
+                          "compliance_auditor",
+                        ]}
                       >
                         <InventoryHub />
                       </ProtectedRoute>
@@ -169,7 +178,7 @@ const App = () => {
                   <Route
                     path="/reports/asset-summary"
                     element={
-                      <ProtectedRoute page="reports" allowedRoles={["org_admin", "office_head", "caretaker"]}>
+                      <ProtectedRoute page="reports" allowedRoles={["org_admin", "office_head", "caretaker", "procurement_officer", "compliance_auditor"]}>
                         <AssetSummaryReport />
                       </ProtectedRoute>
                     }
@@ -177,7 +186,7 @@ const App = () => {
                   <Route
                     path="/reports/asset-items-inventory"
                     element={
-                      <ProtectedRoute page="reports" allowedRoles={["org_admin", "office_head", "caretaker"]}>
+                      <ProtectedRoute page="reports" allowedRoles={["org_admin", "office_head", "caretaker", "procurement_officer", "compliance_auditor"]}>
                         <AssetItemsInventoryReport />
                       </ProtectedRoute>
                     }
@@ -186,7 +195,7 @@ const App = () => {
                   <Route
                     path="/reports/status-distribution"
                     element={
-                      <ProtectedRoute page="reports" allowedRoles={["org_admin", "office_head", "caretaker"]}>
+                      <ProtectedRoute page="reports" allowedRoles={["org_admin", "office_head", "caretaker", "procurement_officer", "compliance_auditor"]}>
                         <StatusDistributionReport />
                       </ProtectedRoute>
                     }
@@ -194,7 +203,7 @@ const App = () => {
                   <Route
                     path="/reports/maintenance-report"
                     element={
-                      <ProtectedRoute page="reports" allowedRoles={["org_admin", "office_head", "caretaker"]}>
+                      <ProtectedRoute page="reports" allowedRoles={["org_admin", "office_head", "caretaker", "procurement_officer", "compliance_auditor"]}>
                         <MaintenanceReport />
                       </ProtectedRoute>
                     }
@@ -202,7 +211,7 @@ const App = () => {
                   <Route
                     path="/reports/location-inventory"
                     element={
-                      <ProtectedRoute page="reports" allowedRoles={["org_admin", "office_head", "caretaker"]}>
+                      <ProtectedRoute page="reports" allowedRoles={["org_admin", "office_head", "caretaker", "procurement_officer", "compliance_auditor"]}>
                         <LocationInventoryReport />
                       </ProtectedRoute>
                     }
@@ -210,14 +219,15 @@ const App = () => {
                   <Route
                     path="/reports/financial-summary"
                     element={
-                      <ProtectedRoute page="reports" allowedRoles={["org_admin", "office_head", "caretaker"]}>
+                      <ProtectedRoute page="reports" allowedRoles={["org_admin", "office_head", "caretaker", "procurement_officer", "compliance_auditor"]}>
                         <FinancialSummaryReport />
                       </ProtectedRoute>
                     }
                   />
                   <Route path="/reports/employee-assets" element={<ProtectedRoute page="reports"><EmployeeAssetsReport /></ProtectedRoute>} />
                   <Route path="/settings" element={<ProtectedRoute page="settings" allowedRoles={["org_admin", "office_head"]}><Settings /></ProtectedRoute>} />
-                  <Route path="/settings/notifications" element={<ProtectedRoute page="settings" allowedRoles={["org_admin", "office_head"]}><NotificationDetails /></ProtectedRoute>} />
+                  <Route path="/settings/notifications" element={<ProtectedRoute page="profile"><NotificationDetails /></ProtectedRoute>} />
+                  <Route path="/settings/delegations" element={<ProtectedRoute page="profile" allowedRoles={["org_admin", "office_head", "caretaker"]}><RoleDelegations /></ProtectedRoute>} />
                   <Route path="/audit-logs" element={<ProtectedRoute page="audit-logs"><AuditLogs /></ProtectedRoute>} />
                   <Route path="/user-permissions" element={<ProtectedRoute page="user-permissions"><UserPermissions /></ProtectedRoute>} />
                   <Route path="/user-management" element={<ProtectedRoute page="user-management"><UserManagement /></ProtectedRoute>} />

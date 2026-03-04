@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
+import { Response, NextFunction } from 'express';
 import { ConsumableItemModel } from '../models/consumableItem.model';
 import { CategoryModel } from '../../../models/category.model';
 import { mapFields, pickDefined } from '../../../utils/mapFields';
@@ -6,6 +6,13 @@ import type { AuthRequest } from '../../../middleware/auth';
 import { createHttpError } from '../utils/httpError';
 import { getUnitLookup } from '../services/consumableUnit.service';
 import { normalizeUom } from '../utils/unitConversion';
+import {
+  ensureScopeCategoryAccess,
+  ensureScopeItemAccess,
+  resolveConsumableRequestScope,
+  resolveScopeLabOnlyRestrictions,
+} from '../utils/accessScope';
+import { resolveConsumableCategoryScopeByCategoryId } from '../utils/labScope';
 
 const fieldMap = {
   casNumber: 'cas_number',
@@ -61,15 +68,31 @@ async function ensureConsumableCategoryType(categoryId: unknown) {
   }
 }
 
+async function syncChemicalFlagWithCategoryScope(payload: Record<string, unknown>, fallbackCategoryId?: unknown) {
+  const categoryId = payload.category_id !== undefined ? payload.category_id : fallbackCategoryId;
+  if (!categoryId) return;
+  const scope = await resolveConsumableCategoryScopeByCategoryId(categoryId);
+  if (scope === 'LAB_ONLY') {
+    payload.is_chemical = true;
+  }
+}
+
 export const consumableItemController = {
-  list: async (req: Request, res: Response, next: NextFunction) => {
+  list: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
+      const scope = await resolveConsumableRequestScope(req);
       const query = req.query as Record<string, unknown>;
       const filter: Record<string, unknown> = {};
       const search = String(query.search || '').trim();
       if (search) {
         const regex = new RegExp(escapeRegex(search), 'i');
         filter.$or = [{ name: regex }, { cas_number: regex }];
+      }
+      if (!scope.canAccessLabOnly) {
+        const { labOnlyCategoryIds } = await resolveScopeLabOnlyRestrictions(scope);
+        if (labOnlyCategoryIds.length > 0) {
+          filter.category_id = { $nin: labOnlyCategoryIds };
+        }
       }
       const limit = clampInt(query.limit, 1000, 1, 2000);
       const page = clampInt(query.page, 1, 1, 100000);
@@ -84,10 +107,12 @@ export const consumableItemController = {
       next(error);
     }
   },
-  getById: async (req: Request, res: Response, next: NextFunction) => {
+  getById: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
+      const scope = await resolveConsumableRequestScope(req);
       const item = await ConsumableItemModel.findById(req.params.id).lean();
       if (!item) return res.status(404).json({ message: 'Not found' });
+      await ensureScopeItemAccess(scope, { category_id: (item as any).category_id });
       return res.json(item);
     } catch (error) {
       next(error);
@@ -95,14 +120,17 @@ export const consumableItemController = {
   },
   create: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
+      const scope = await resolveConsumableRequestScope(req);
       const payload = buildPayload(req.body);
       await ensureConsumableCategoryType(payload.category_id);
+      await ensureScopeCategoryAccess(scope, payload.category_id);
       if (payload.base_uom) {
         const lookup = await getUnitLookup({ activeOnly: true });
         payload.base_uom = normalizeUom(String(payload.base_uom), lookup);
       } else {
         throw createHttpError(400, 'Base UoM is required');
       }
+      await syncChemicalFlagWithCategoryScope(payload);
       if (!payload.created_by && req.user?.userId) {
         payload.created_by = req.user.userId;
       }
@@ -112,16 +140,23 @@ export const consumableItemController = {
       next(error);
     }
   },
-  update: async (req: Request, res: Response, next: NextFunction) => {
+  update: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
+      const scope = await resolveConsumableRequestScope(req);
+      const existing = await ConsumableItemModel.findById(req.params.id).lean();
+      if (!existing) return res.status(404).json({ message: 'Not found' });
+      await ensureScopeItemAccess(scope, { category_id: (existing as any).category_id });
+
       const payload = buildPayload(req.body);
       if (payload.category_id !== undefined) {
         await ensureConsumableCategoryType(payload.category_id);
+        await ensureScopeCategoryAccess(scope, payload.category_id);
       }
       if (payload.base_uom) {
         const lookup = await getUnitLookup({ activeOnly: true });
         payload.base_uom = normalizeUom(String(payload.base_uom), lookup);
       }
+      await syncChemicalFlagWithCategoryScope(payload, existing.category_id);
       const item = await ConsumableItemModel.findByIdAndUpdate(req.params.id, payload, { new: true });
       if (!item) return res.status(404).json({ message: 'Not found' });
       return res.json(item);
@@ -129,10 +164,13 @@ export const consumableItemController = {
       next(error);
     }
   },
-  remove: async (req: Request, res: Response, next: NextFunction) => {
+  remove: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
-      const item = await ConsumableItemModel.findByIdAndDelete(req.params.id);
-      if (!item) return res.status(404).json({ message: 'Not found' });
+      const scope = await resolveConsumableRequestScope(req);
+      const existing = await ConsumableItemModel.findById(req.params.id).lean();
+      if (!existing) return res.status(404).json({ message: 'Not found' });
+      await ensureScopeItemAccess(scope, { category_id: (existing as any).category_id });
+      await ConsumableItemModel.findByIdAndDelete(req.params.id);
       return res.status(204).send();
     } catch (error) {
       next(error);

@@ -8,6 +8,6 @@ router.use(requireAuth);
 router.get('/', notificationController.list);
 router.post('/read-all', notificationController.markAllRead);
 router.post('/:id/read', notificationController.markRead);
+router.post('/:id/action', notificationController.action);
 
 export default router;
-

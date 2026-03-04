@@ -1,13 +1,17 @@
 import fs from 'fs/promises';
 import path from 'path';
 import type { Express, NextFunction, Request, Response } from 'express';
+import type { AuthRequest } from '../middleware/auth';
 import { PurchaseOrderModel } from '../models/purchaseOrder.model';
 import { VendorModel } from '../models/vendor.model';
 import { ProjectModel } from '../models/project.model';
 import { SchemeModel } from '../models/scheme.model';
+import { OfficeModel } from '../models/office.model';
 import { mapFields } from '../utils/mapFields';
 import { createHttpError } from '../utils/httpError';
 import { assertUploadedFileIntegrity } from '../utils/uploadValidation';
+import { getRequestContext } from '../utils/scope';
+import { createBulkNotifications, resolveNotificationRecipientsByOffice } from '../services/notification.service';
 
 type RequestWithFile = Request & {
   file?: Express.Multer.File;
@@ -189,6 +193,69 @@ async function cleanupUpload(file?: Express.Multer.File) {
   }
 }
 
+function isObjectId(value: unknown) {
+  return /^[0-9a-fA-F]{24}$/.test(String(value || '').trim());
+}
+
+async function resolvePurchaseOrderOfficeId(orderLike: any, fallbackOfficeId: string | null) {
+  const vendorId = String(orderLike?.vendor_id || '').trim();
+  if (isObjectId(vendorId)) {
+    const vendor: any = await VendorModel.findById(vendorId, { office_id: 1 }).lean();
+    const officeId = vendor?.office_id ? String(vendor.office_id) : null;
+    if (officeId && isObjectId(officeId)) return officeId;
+  }
+  if (fallbackOfficeId && isObjectId(fallbackOfficeId)) return fallbackOfficeId;
+  return null;
+}
+
+async function dispatchPurchaseOrderNotifications(input: {
+  officeId: string | null;
+  purchaseOrderId: string;
+  type: 'PURCHASE_ORDER_CREATED' | 'PURCHASE_ORDER_STATUS_CHANGED' | 'PURCHASE_ORDER_REMOVED';
+  title: string;
+  message: string;
+  excludeUserIds?: string[];
+}) {
+  if (!input.officeId || !isObjectId(input.officeId) || !isObjectId(input.purchaseOrderId)) return;
+
+  const recipients = await resolveNotificationRecipientsByOffice({
+    officeIds: [input.officeId],
+    includeOrgAdmins: true,
+    includeRoles: ['office_head', 'caretaker'],
+    excludeUserIds: input.excludeUserIds || [],
+  });
+  if (recipients.length === 0) return;
+
+  await createBulkNotifications(
+    recipients.map((recipientUserId) => ({
+      recipientUserId,
+      officeId: input.officeId as string,
+      type: input.type,
+      title: input.title,
+      message: input.message,
+      entityType: 'PurchaseOrder',
+      entityId: input.purchaseOrderId,
+      dedupeWindowHours: 12,
+    }))
+  );
+}
+
+async function assertProcurementScope(ctx: { role: string; isOrgAdmin: boolean; locationId: string | null }) {
+  if (ctx.isOrgAdmin) return;
+  if (ctx.role !== 'office_head' && ctx.role !== 'procurement_officer') return;
+  if (!ctx.locationId || !isObjectId(ctx.locationId)) {
+    throw createHttpError(403, 'Procurement role requires an assigned office');
+  }
+  const office: any = await OfficeModel.findById(ctx.locationId, { _id: 1, type: 1, is_active: 1 }).lean();
+  const officeType = String(office?.type || '').trim().toUpperCase();
+  if (!office?._id || office?.is_active === false) {
+    throw createHttpError(403, 'Assigned office is inactive');
+  }
+  if (officeType === 'DIRECTORATE') {
+    throw createHttpError(403, 'Procurement actions are not allowed for directorate offices');
+  }
+}
+
 export const purchaseOrderController = {
   list: async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -255,6 +322,8 @@ export const purchaseOrderController = {
     const uploadedFile = req.file;
     try {
       await ensurePdfUpload(uploadedFile);
+      const ctx = await getRequestContext(req as AuthRequest);
+      await assertProcurementScope(ctx);
       const body = parseRequestBody(req);
       const payload = buildPayload(body);
       if (!payload.order_number) {
@@ -276,6 +345,15 @@ export const purchaseOrderController = {
         ...payload,
         ...buildAttachmentPayload(uploadedFile),
       });
+      const officeId = await resolvePurchaseOrderOfficeId(order, ctx.locationId);
+      await dispatchPurchaseOrderNotifications({
+        officeId,
+        purchaseOrderId: order.id,
+        type: 'PURCHASE_ORDER_CREATED',
+        title: 'Purchase Order Created',
+        message: `Purchase order ${String(order.order_number || order.id)} was created.`,
+        excludeUserIds: [ctx.userId],
+      });
       res.status(201).json(order);
     } catch (error) {
       await cleanupUpload(uploadedFile);
@@ -286,6 +364,8 @@ export const purchaseOrderController = {
     const uploadedFile = req.file;
     try {
       await ensurePdfUpload(uploadedFile);
+      const ctx = await getRequestContext(req as AuthRequest);
+      await assertProcurementScope(ctx);
       const body = parseRequestBody(req);
       const payload = buildPayload(body);
 
@@ -293,6 +373,13 @@ export const purchaseOrderController = {
       if (payload.source_type || payload.source_name || payload.vendor_id || payload.project_id || payload.scheme_id) {
         await validateSourceRelations(payload);
       }
+
+      const existingOrder = await PurchaseOrderModel.findById(req.params.id);
+      if (!existingOrder) {
+        await cleanupUpload(uploadedFile);
+        return res.status(404).json({ message: 'Not found' });
+      }
+      const previousStatus = String(existingOrder.status || '');
 
       const updatePayload = {
         ...payload,
@@ -304,6 +391,18 @@ export const purchaseOrderController = {
         await cleanupUpload(uploadedFile);
         return res.status(404).json({ message: 'Not found' });
       }
+      const nextStatus = String(order.status || '');
+      if (previousStatus !== nextStatus) {
+        const officeId = await resolvePurchaseOrderOfficeId(order, ctx.locationId);
+        await dispatchPurchaseOrderNotifications({
+          officeId,
+          purchaseOrderId: order.id,
+          type: 'PURCHASE_ORDER_STATUS_CHANGED',
+          title: 'Purchase Order Status Updated',
+          message: `Purchase order ${String(order.order_number || order.id)} changed from ${previousStatus || 'Unknown'} to ${nextStatus || 'Unknown'}.`,
+          excludeUserIds: [ctx.userId],
+        });
+      }
       return res.json(order);
     } catch (error) {
       await cleanupUpload(uploadedFile);
@@ -312,8 +411,19 @@ export const purchaseOrderController = {
   },
   remove: async (req: Request, res: Response, next: NextFunction) => {
     try {
+      const ctx = await getRequestContext(req as AuthRequest);
+      await assertProcurementScope(ctx);
       const order = await PurchaseOrderModel.findByIdAndDelete(req.params.id);
       if (!order) return res.status(404).json({ message: 'Not found' });
+      const officeId = await resolvePurchaseOrderOfficeId(order, ctx.locationId);
+      await dispatchPurchaseOrderNotifications({
+        officeId,
+        purchaseOrderId: order.id,
+        type: 'PURCHASE_ORDER_REMOVED',
+        title: 'Purchase Order Removed',
+        message: `Purchase order ${String(order.order_number || order.id)} was removed.`,
+        excludeUserIds: [ctx.userId],
+      });
       return res.status(204).send();
     } catch (error) {
       next(error);

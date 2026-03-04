@@ -24,6 +24,7 @@ import { generateAndStoreReturnReceipt } from '../services/returnRequestReceipt.
 import { officeAssetItemFilter } from '../utils/assetHolder';
 import { assertUploadedFileIntegrity } from '../utils/uploadValidation';
 import { escapeRegex } from '../utils/requestParsing';
+import { createBulkNotifications, resolveNotificationRecipientsByOffice } from '../services/notification.service';
 
 import {
   RECEIVE_ALLOWED_STATUSES,
@@ -68,6 +69,59 @@ async function resolveRequesterEmployeeId(req: AuthRequest) {
     throw createHttpError(403, 'Employee mapping not found for user');
   }
   return String(requesterEmployee._id);
+}
+
+function uniqueObjectIdStrings(list: Array<string | null | undefined>) {
+  return Array.from(
+    new Set(
+      list
+        .map((entry) => String(entry || '').trim())
+        .filter((entry) => Types.ObjectId.isValid(entry))
+    )
+  );
+}
+
+async function dispatchReturnRequestNotifications(input: {
+  officeId: string;
+  returnRequestId: string;
+  employeeId: string;
+  type: 'RETURN_REQUEST_SUBMITTED' | 'RETURN_REQUEST_RECEIVED' | 'RETURN_REQUEST_CLOSED';
+  title: string;
+  message: string;
+  includeUserIds?: Array<string | null | undefined>;
+  excludeUserIds?: Array<string | null | undefined>;
+}) {
+  if (!Types.ObjectId.isValid(input.officeId) || !Types.ObjectId.isValid(input.returnRequestId)) return;
+
+  const [officeRecipients, employee]: [string[], any] = await Promise.all([
+    resolveNotificationRecipientsByOffice({
+      officeIds: [input.officeId],
+      includeOrgAdmins: true,
+      includeRoles: ['office_head', 'caretaker'],
+      includeUserIds: uniqueObjectIdStrings(input.includeUserIds || []),
+      excludeUserIds: uniqueObjectIdStrings(input.excludeUserIds || []),
+    }),
+    Types.ObjectId.isValid(input.employeeId)
+      ? EmployeeModel.findById(input.employeeId, { user_id: 1 }).lean()
+      : Promise.resolve(null),
+  ]);
+
+  const employeeUserId = employee?.user_id ? String(employee.user_id) : null;
+  const recipients = uniqueObjectIdStrings([...officeRecipients, employeeUserId]);
+  if (recipients.length === 0) return;
+
+  await createBulkNotifications(
+    recipients.map((recipientUserId) => ({
+      recipientUserId,
+      officeId: input.officeId,
+      type: input.type,
+      title: input.title,
+      message: input.message,
+      entityType: 'ReturnRequest',
+      entityId: input.returnRequestId,
+      dedupeWindowHours: 12,
+    }))
+  );
 }
 
 export const returnRequestController = {
@@ -552,6 +606,17 @@ export const returnRequestController = {
         },
       });
 
+      await dispatchReturnRequestNotifications({
+        officeId,
+        returnRequestId: returnRequest.id,
+        employeeId,
+        type: 'RETURN_REQUEST_SUBMITTED',
+        title: 'Return Request Submitted',
+        message: `Return request ${returnRequest.id} was submitted.`,
+        includeUserIds: [ctx.userId],
+        excludeUserIds: [ctx.userId],
+      });
+
       return res.status(201).json(returnRequest);
     } catch (error) {
       return next(error);
@@ -571,6 +636,11 @@ export const returnRequestController = {
         receiptDocument: unknown;
         receiptVersion: unknown;
         closedAssignmentIds: string[];
+      } | null = null;
+      let receiveNotification: {
+        officeId: string;
+        returnRequestId: string;
+        employeeId: string;
       } | null = null;
 
       await session.withTransaction(async () => {
@@ -695,6 +765,11 @@ export const returnRequestController = {
         returnRequest.receipt_document_id = receipt.document._id as any;
         returnRequest.status = 'CLOSED_PENDING_SIGNATURE';
         await returnRequest.save({ session });
+        receiveNotification = {
+          officeId,
+          returnRequestId: returnRequest.id,
+          employeeId,
+        };
 
         await logAudit({
           ctx,
@@ -725,6 +800,18 @@ export const returnRequestController = {
       if (!responsePayload) {
         throw createHttpError(500, 'Failed to receive return request');
       }
+      if (receiveNotification) {
+        await dispatchReturnRequestNotifications({
+          officeId: receiveNotification.officeId,
+          returnRequestId: receiveNotification.returnRequestId,
+          employeeId: receiveNotification.employeeId,
+          type: 'RETURN_REQUEST_RECEIVED',
+          title: 'Return Request Received',
+          message: `Return request ${receiveNotification.returnRequestId} was received and awaits signed return upload.`,
+          includeUserIds: [ctx.userId],
+          excludeUserIds: [ctx.userId],
+        });
+      }
       return res.json(responsePayload);
     } catch (error) {
       return next(error);
@@ -751,6 +838,11 @@ export const returnRequestController = {
         record: unknown;
         document: unknown;
         documentVersion: unknown;
+      } | null = null;
+      let closeNotification: {
+        officeId: string;
+        returnRequestId: string;
+        employeeId: string;
       } | null = null;
 
       await session.withTransaction(async () => {
@@ -862,6 +954,11 @@ export const returnRequestController = {
 
         returnRequest.status = 'CLOSED';
         await returnRequest.save({ session });
+        closeNotification = {
+          officeId,
+          returnRequestId: returnRequest.id,
+          employeeId: String(returnRequest.employee_id || ''),
+        };
 
         await logAudit({
           ctx,
@@ -890,6 +987,18 @@ export const returnRequestController = {
 
       if (!responsePayload) {
         throw createHttpError(500, 'Failed to upload signed return');
+      }
+      if (closeNotification) {
+        await dispatchReturnRequestNotifications({
+          officeId: closeNotification.officeId,
+          returnRequestId: closeNotification.returnRequestId,
+          employeeId: closeNotification.employeeId,
+          type: 'RETURN_REQUEST_CLOSED',
+          title: 'Return Request Closed',
+          message: `Return request ${closeNotification.returnRequestId} has been closed.`,
+          includeUserIds: [ctx.userId],
+          excludeUserIds: [ctx.userId],
+        });
       }
       return res.json(responsePayload);
     } catch (error) {

@@ -1,13 +1,59 @@
 import { ApprovalRequestModel } from '../../../models/approvalRequest.model';
 import { RecordModel } from '../../../models/record.model';
+import { UserModel } from '../../../models/user.model';
+import { createBulkNotifications, resolveNotificationRecipientsByOffice } from '../../../services/notification.service';
 import { createHttpError } from '../../../utils/httpError';
 import { RequestContext } from '../../../utils/scope';
+import { buildUserRoleMatchFilter, hasRoleCapability } from '../../../utils/roles';
 import { logAudit } from './audit.service';
 
 export interface ApprovalRequestInput {
   approverUserId?: string;
   approverRole?: string;
   notes?: string;
+}
+
+function uniqueObjectIdStrings(list: Array<string | null | undefined>) {
+  return Array.from(
+    new Set(
+      list
+        .map((entry) => String(entry || '').trim())
+        .filter((entry) => /^[0-9a-fA-F]{24}$/.test(entry))
+    )
+  );
+}
+
+async function dispatchApprovalNotifications(input: {
+  officeId: string;
+  recordId: string;
+  type: 'APPROVAL_REQUESTED' | 'APPROVAL_DECIDED';
+  title: string;
+  message: string;
+  includeRoles?: string[];
+  includeUserIds?: Array<string | null | undefined>;
+  excludeUserIds?: Array<string | null | undefined>;
+}) {
+  const recipients = await resolveNotificationRecipientsByOffice({
+    officeIds: [input.officeId],
+    includeOrgAdmins: true,
+    includeRoles: input.includeRoles || ['office_head', 'caretaker'],
+    includeUserIds: uniqueObjectIdStrings(input.includeUserIds || []),
+    excludeUserIds: uniqueObjectIdStrings(input.excludeUserIds || []),
+  });
+  if (recipients.length === 0) return;
+
+  await createBulkNotifications(
+    recipients.map((recipientUserId) => ({
+      recipientUserId,
+      officeId: input.officeId,
+      type: input.type,
+      title: input.title,
+      message: input.message,
+      entityType: 'Record',
+      entityId: input.recordId,
+      dedupeWindowHours: 12,
+    }))
+  );
 }
 
 export async function requestApproval(ctx: RequestContext, recordId: string, input: ApprovalRequestInput) {
@@ -41,6 +87,32 @@ export async function requestApproval(ctx: RequestContext, recordId: string, inp
     diff: { approvalId: approval.id },
   });
 
+  let approverUserIds: string[] = [];
+  if (input.approverUserId && /^[0-9a-fA-F]{24}$/.test(input.approverUserId)) {
+    approverUserIds = [input.approverUserId];
+  } else if (input.approverRole) {
+    const roleUsers = await UserModel.find(
+      {
+        ...buildUserRoleMatchFilter([String(input.approverRole).trim().toLowerCase()]),
+        location_id: record.office_id,
+        is_active: true,
+      },
+      { _id: 1 }
+    )
+      .lean()
+      .exec();
+    approverUserIds = roleUsers.map((user) => String(user._id));
+  }
+  await dispatchApprovalNotifications({
+    officeId: record.office_id.toString(),
+    recordId: record.id,
+    type: 'APPROVAL_REQUESTED',
+    title: 'Approval Requested',
+    message: `Approval has been requested for record ${record.reference_no}.`,
+    includeUserIds: [ctx.userId, ...approverUserIds],
+    excludeUserIds: [ctx.userId],
+  });
+
   return approval;
 }
 
@@ -64,7 +136,12 @@ export async function decideApproval(ctx: RequestContext, approvalId: string, in
     throw createHttpError(403, 'Not authorized to decide this approval');
   }
 
-  if (!approval.approver_user_id && approval.approver_role && approval.approver_role !== ctx.role && !ctx.isOrgAdmin) {
+  if (
+    !approval.approver_user_id
+    && approval.approver_role
+    && !hasRoleCapability(ctx.roles || [ctx.role], [String(approval.approver_role)])
+    && !ctx.isOrgAdmin
+  ) {
     throw createHttpError(403, 'Not authorized to decide this approval');
   }
 
@@ -90,6 +167,16 @@ export async function decideApproval(ctx: RequestContext, approvalId: string, in
     entityId: record.id,
     officeId: record.office_id.toString(),
     diff: { approvalId: approval.id, decision: input.decision },
+  });
+
+  await dispatchApprovalNotifications({
+    officeId: record.office_id.toString(),
+    recordId: record.id,
+    type: 'APPROVAL_DECIDED',
+    title: 'Approval Decision',
+    message: `Approval for record ${record.reference_no} was marked as ${input.decision}.`,
+    includeUserIds: [String(approval.requested_by_user_id || ''), ctx.userId],
+    excludeUserIds: [ctx.userId],
   });
 
   return approval;

@@ -2,11 +2,13 @@ import { Request, Response, NextFunction } from 'express';
 import { ActivityLogModel } from '../models/activityLog.model';
 import { UserModel } from '../models/user.model';
 import type { AuthRequest } from '../middleware/auth';
-import { ADMIN_ROLES } from '../middleware/authorize';
+import { hasRoleCapability } from '../utils/roles';
 import { escapeRegex } from '../utils/requestParsing';
 
-function isAdmin(role?: string | null) {
-  return Boolean(role && ADMIN_ROLES.has(role));
+function canViewGlobalActivity(user?: AuthRequest['user']) {
+  if (!user) return false;
+  if (user.isOrgAdmin) return true;
+  return hasRoleCapability(user.roles || [user.role], ['org_admin', 'compliance_auditor']);
 }
 
 function clampInt(value: unknown, fallback: number, max: number) {
@@ -24,7 +26,7 @@ export const activityController = {
       const skip = (page - 1) * limit;
       const search = String(req.query.search || '').trim();
       const activityType = String(req.query.activityType || '').trim();
-      const query: Record<string, unknown> = isAdmin(req.user.role) ? {} : { user_id: req.user.userId };
+      const query: Record<string, unknown> = canViewGlobalActivity(req.user) ? {} : { user_id: req.user.userId };
       if (activityType) {
         query.activity_type = activityType;
       }
@@ -91,7 +93,7 @@ export const activityController = {
     try {
       if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
       const requestedUserId = req.params.userId;
-      if (!isAdmin(req.user.role) && requestedUserId !== req.user.userId) {
+      if (!canViewGlobalActivity(req.user) && requestedUserId !== req.user.userId) {
         return res.status(403).json({ message: 'Forbidden' });
       }
       const limit = clampInt(req.query.limit, 20, 200);

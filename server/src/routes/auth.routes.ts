@@ -38,6 +38,7 @@ router.post('/forgot-password', forgotPasswordLimiter, authController.requestPas
 router.post('/reset-password', resetPasswordLimiter, authController.resetPassword);
 router.get('/me', requireAuth, authController.me);
 router.post('/change-password', requireAuth, requireCsrf, authController.changePassword);
+router.post('/active-role', requireAuth, requireCsrf, authController.setActiveRole);
 router.post('/logout', requireAuth, requireCsrf, authController.logout);
 
 export default router;

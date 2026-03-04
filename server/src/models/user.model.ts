@@ -8,6 +8,8 @@ const UserSchema = new Schema<any>(
     first_name: { type: String, default: null },
     last_name: { type: String, default: null },
     role: { type: String, default: 'employee', trim: true, lowercase: true },
+    roles: { type: [String], default: [], lowercase: true, trim: true },
+    active_role: { type: String, default: null, trim: true, lowercase: true },
     location_id: { type: Schema.Types.ObjectId, ref: 'Office', default: null },
     last_login_at: { type: String, default: null },
     last_password_change_at: { type: String, default: null },

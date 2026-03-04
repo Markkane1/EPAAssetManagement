@@ -4,11 +4,15 @@ import { UserModel } from '../models/user.model';
 import { EmployeeModel } from '../models/employee.model';
 import { OfficeModel } from '../models/office.model';
 import type { AuthRequest } from '../middleware/auth';
-import { normalizeRole } from '../utils/roles';
+import {
+  hasRoleCapability,
+  normalizeRoles,
+  resolveActiveRole,
+} from '../utils/roles';
 import { validateStrongPassword } from '../utils/passwordPolicy';
 import { escapeRegex, readPagination } from '../utils/requestParsing';
 
-const isAdminRole = (role?: string | null) => role === 'org_admin';
+const isAdminUser = (user?: AuthRequest['user']) => Boolean(user?.isOrgAdmin || hasRoleCapability(user?.roles || [], ['org_admin']));
 
 async function ensureEmployeeProfileForUser(input: {
   userId: string;
@@ -97,7 +101,7 @@ async function ensureEmployeeProfileForUser(input: {
 export const userController = {
   list: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
-      if (!isAdminRole(req.user?.role)) {
+      if (!isAdminUser(req.user)) {
         return res.status(403).json({ message: 'Forbidden' });
       }
 
@@ -123,6 +127,8 @@ export const userController = {
           location_id: 1,
           created_at: 1,
           role: 1,
+          roles: 1,
+          active_role: 1,
         }
       )
         .sort({ created_at: -1 })
@@ -140,17 +146,23 @@ export const userController = {
         locations.map((location) => [String((location as { _id: unknown })._id), location.name])
       );
 
-      const mapped = users.map((user) => ({
-        id: String((user as { _id: unknown })._id),
-        user_id: String((user as { _id: unknown })._id),
-        email: user.email,
-        first_name: user.first_name,
-        last_name: user.last_name,
-        location_id: user.location_id,
-        created_at: user.created_at,
-        role: normalizeRole(user.role),
-        location_name: user.location_id ? locationMap.get(user.location_id.toString()) || null : null,
-      }));
+      const mapped = users.map((user) => {
+        const normalizedRoles = normalizeRoles(user.roles, user.role);
+        const activeRole = resolveActiveRole(user.active_role || user.role, normalizedRoles);
+        return {
+          id: String((user as { _id: unknown })._id),
+          user_id: String((user as { _id: unknown })._id),
+          email: user.email,
+          first_name: user.first_name,
+          last_name: user.last_name,
+          location_id: user.location_id,
+          created_at: user.created_at,
+          role: activeRole,
+          activeRole,
+          roles: normalizedRoles,
+          location_name: user.location_id ? locationMap.get(user.location_id.toString()) || null : null,
+        };
+      });
 
       if (!wantsMeta) {
         res.json(mapped);
@@ -171,19 +183,22 @@ export const userController = {
   },
   create: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
-      if (!isAdminRole(req.user?.role)) {
+      if (!isAdminUser(req.user)) {
         return res.status(403).json({ message: 'Forbidden' });
       }
-      const { email, password, firstName, lastName, role, locationId } = req.body as {
+      const { email, password, firstName, lastName, role, roles, activeRole, locationId } = req.body as {
         email: string;
         password: string;
         firstName?: string;
         lastName?: string;
         role?: string;
+        roles?: string[];
+        activeRole?: string;
         locationId?: string;
       };
 
-      const normalizedRole = normalizeRole(role || 'employee');
+      const normalizedRoles = normalizeRoles(roles, role || 'employee');
+      const normalizedActiveRole = resolveActiveRole(activeRole || role || normalizedRoles[0], normalizedRoles);
       const existing = await UserModel.findOne({ email: email.toLowerCase() });
       if (existing) return res.status(409).json({ message: 'Email already in use' });
 
@@ -193,11 +208,13 @@ export const userController = {
         password_hash: passwordHash,
         first_name: firstName || null,
         last_name: lastName || null,
-        role: normalizedRole,
+        role: normalizedActiveRole,
+        roles: normalizedRoles,
+        active_role: normalizedActiveRole,
         location_id: locationId || null,
       });
 
-      if (normalizedRole === 'employee') {
+      if (hasRoleCapability(normalizedRoles, ['employee'])) {
         await ensureEmployeeProfileForUser({
           userId: user.id,
           email: user.email,
@@ -215,7 +232,9 @@ export const userController = {
         last_name: user.last_name,
         location_id: user.location_id,
         created_at: user.created_at,
-        role: normalizeRole(user.role),
+        role: normalizedActiveRole,
+        activeRole: normalizedActiveRole,
+        roles: normalizedRoles,
       });
     } catch (error) {
       next(error);
@@ -223,17 +242,29 @@ export const userController = {
   },
   updateRole: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
-      const { role } = req.body as { role: string };
-      if (!isAdminRole(req.user?.role)) {
+      const { role, roles, activeRole } = req.body as {
+        role?: string;
+        roles?: string[];
+        activeRole?: string;
+      };
+      if (!isAdminUser(req.user)) {
         return res.status(403).json({ message: 'Forbidden' });
       }
       const existing = await UserModel.findById(req.params.id);
       if (!existing) return res.status(404).json({ message: 'Not found' });
-      const normalizedRole = normalizeRole(role);
+      const normalizedRoles = normalizeRoles(roles, role || existing.role);
+      const normalizedActiveRole = resolveActiveRole(
+        activeRole || role || existing.active_role || existing.role,
+        normalizedRoles
+      );
 
-      const user = await UserModel.findByIdAndUpdate(req.params.id, { role: normalizedRole }, { new: true });
+      const user = await UserModel.findByIdAndUpdate(
+        req.params.id,
+        { role: normalizedActiveRole, roles: normalizedRoles, active_role: normalizedActiveRole },
+        { new: true }
+      );
       if (!user) return res.status(404).json({ message: 'Not found' });
-      if (normalizedRole === 'employee') {
+      if (hasRoleCapability(normalizedRoles, ['employee'])) {
         await ensureEmployeeProfileForUser({
           userId: user.id,
           email: user.email,
@@ -242,14 +273,18 @@ export const userController = {
           locationId: user.location_id ? String(user.location_id) : null,
         });
       }
-      res.json({ role: normalizeRole(user.role) });
+      res.json({
+        role: normalizedActiveRole,
+        activeRole: normalizedActiveRole,
+        roles: normalizedRoles,
+      });
     } catch (error) {
       next(error);
     }
   },
   updateLocation: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
-      if (!isAdminRole(req.user?.role)) {
+      if (!isAdminUser(req.user)) {
         return res.status(403).json({ message: 'Forbidden' });
       }
       const existing = await UserModel.findById(req.params.id);
@@ -257,7 +292,8 @@ export const userController = {
       const { locationId } = req.body as { locationId: string | null };
       const user = await UserModel.findByIdAndUpdate(req.params.id, { location_id: locationId }, { new: true });
       if (!user) return res.status(404).json({ message: 'Not found' });
-      if (normalizeRole(user.role) === 'employee') {
+      const normalizedRoles = normalizeRoles(user.roles, user.role);
+      if (hasRoleCapability(normalizedRoles, ['employee'])) {
         await ensureEmployeeProfileForUser({
           userId: user.id,
           email: user.email,
@@ -273,7 +309,7 @@ export const userController = {
   },
   resetPassword: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
-      if (!isAdminRole(req.user?.role)) {
+      if (!isAdminUser(req.user)) {
         return res.status(403).json({ message: 'Forbidden' });
       }
       const existing = await UserModel.findById(req.params.id);
@@ -308,7 +344,7 @@ export const userController = {
   },
   remove: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
-      if (!isAdminRole(req.user?.role)) {
+      if (!isAdminUser(req.user)) {
         return res.status(403).json({ message: 'Forbidden' });
       }
       const existing = await UserModel.findById(req.params.id);

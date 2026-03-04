@@ -30,6 +30,7 @@ import { generateHandoverSlip } from '../services/assignmentSlip.service';
 import { createBulkNotifications } from '../services/notification.service';
 import { isAssetItemHeldByOffice } from '../utils/assetHolder';
 import { assertUploadedFileIntegrity } from '../utils/uploadValidation';
+import { buildUserRoleMatchFilter } from '../utils/roles';
 import {
   hasPermissionAction,
   loadStoredRolePermissionsContext,
@@ -123,7 +124,7 @@ async function resolveActiveUserIdsByOfficeAndRoles(officeId: string, roles: str
     {
       is_active: true,
       location_id: officeId,
-      role: { $in: roles },
+      ...buildUserRoleMatchFilter(roles),
     },
     { _id: 1 }
   )
@@ -136,7 +137,7 @@ async function resolveActiveOrgAdminUserIds() {
   const users = await UserModel.find(
     {
       is_active: true,
-      role: 'org_admin',
+      ...buildUserRoleMatchFilter(['org_admin']),
     },
     { _id: 1 }
   )
@@ -153,7 +154,10 @@ async function dispatchRequisitionNotifications(input: {
     | 'REQUISITION_APPROVED'
     | 'REQUISITION_REJECTED'
     | 'REQUISITION_FULFILLED'
-    | 'REQUISITION_STATUS_CHANGED';
+    | 'REQUISITION_STATUS_CHANGED'
+    | 'REQUISITION_ADJUSTED'
+    | 'REQUISITION_LINE_MAPPED'
+    | 'REQUISITION_ISSUANCE_SIGNED';
   title: string;
   message: string;
   recipientUserIds: Array<string | null | undefined>;
@@ -516,6 +520,25 @@ export const requisitionController = {
       const mappingSummary = buildRequisitionMappingSummary(enrichedLines as Array<Record<string, unknown>>);
       const lineId = String(line._id);
       const enrichedLine = enrichedLines.find((entry) => String(entry._id) === lineId) || line.toJSON();
+
+      const [officeHeadUserIds, caretakerUserIds, orgAdminUserIds] = await Promise.all([
+        resolveActiveUserIdsByOfficeAndRoles(officeId, ['office_head']),
+        resolveActiveUserIdsByOfficeAndRoles(officeId, ['caretaker']),
+        resolveActiveOrgAdminUserIds(),
+      ]);
+      await dispatchRequisitionNotifications({
+        officeId,
+        requisitionId: String(requisition._id),
+        type: 'REQUISITION_LINE_MAPPED',
+        title: 'Requisition Line Mapped',
+        message: `A requisition line was mapped for ${String(requisition.file_number || requisition._id)}.`,
+        recipientUserIds: [
+          String(requisition.submitted_by_user_id || ''),
+          ...officeHeadUserIds,
+          ...caretakerUserIds,
+          ...orgAdminUserIds,
+        ],
+      });
 
       return res.json({
         requisition: {
@@ -941,6 +964,12 @@ export const requisitionController = {
         newRecord: unknown;
         archivedIssueSlipDocumentIds: string[];
       } | null = null;
+      let adjustNotification: {
+        officeId: string;
+        requisitionId: string;
+        fileNumber: string;
+        submittedByUserId: string | null;
+      } | null = null;
 
       await session.withTransaction(async () => {
         const requisition = await RequisitionModel.findById(readParam(req, 'id')).session(session);
@@ -1037,6 +1066,14 @@ export const requisitionController = {
         requisition.signed_issuance_document_id = null;
         requisition.signed_issuance_uploaded_at = null;
         await requisition.save({ session });
+        adjustNotification = {
+          officeId: issuingOfficeId,
+          requisitionId: requisition.id,
+          fileNumber: String(requisition.file_number || requisition.id),
+          submittedByUserId: requisition.submitted_by_user_id
+            ? String(requisition.submitted_by_user_id)
+            : null,
+        };
 
         await logAudit({
           ctx,
@@ -1067,6 +1104,26 @@ export const requisitionController = {
       if (!responsePayload) {
         throw createHttpError(500, 'Failed to adjust requisition');
       }
+      if (adjustNotification) {
+        const [officeHeadUserIds, caretakerUserIds, orgAdminUserIds] = await Promise.all([
+          resolveActiveUserIdsByOfficeAndRoles(adjustNotification.officeId, ['office_head']),
+          resolveActiveUserIdsByOfficeAndRoles(adjustNotification.officeId, ['caretaker']),
+          resolveActiveOrgAdminUserIds(),
+        ]);
+        await dispatchRequisitionNotifications({
+          officeId: adjustNotification.officeId,
+          requisitionId: adjustNotification.requisitionId,
+          type: 'REQUISITION_ADJUSTED',
+          title: 'Requisition Adjusted',
+          message: `Requisition ${adjustNotification.fileNumber} was adjusted and moved back to fulfillment.`,
+          recipientUserIds: [
+            adjustNotification.submittedByUserId,
+            ...officeHeadUserIds,
+            ...caretakerUserIds,
+            ...orgAdminUserIds,
+          ],
+        });
+      }
 
       return res.json(responsePayload);
     } catch (error) {
@@ -1091,6 +1148,12 @@ export const requisitionController = {
         record: unknown;
         document: unknown;
         documentVersion: unknown;
+      } | null = null;
+      let signedUploadNotification: {
+        officeId: string;
+        requisitionId: string;
+        fileNumber: string;
+        submittedByUserId: string | null;
       } | null = null;
 
       await session.withTransaction(async () => {
@@ -1238,6 +1301,14 @@ export const requisitionController = {
         requisition.signed_issuance_document_id = issueSlipDoc._id as any;
         requisition.signed_issuance_uploaded_at = new Date();
         await requisition.save({ session });
+        signedUploadNotification = {
+          officeId: issuingOfficeId,
+          requisitionId: requisition.id,
+          fileNumber: String(requisition.file_number || requisition.id),
+          submittedByUserId: requisition.submitted_by_user_id
+            ? String(requisition.submitted_by_user_id)
+            : null,
+        };
 
         await logAudit({
           ctx,
@@ -1264,6 +1335,26 @@ export const requisitionController = {
 
       if (!responsePayload) {
         throw createHttpError(500, 'Failed to finalize requisition');
+      }
+      if (signedUploadNotification) {
+        const [officeHeadUserIds, caretakerUserIds, orgAdminUserIds] = await Promise.all([
+          resolveActiveUserIdsByOfficeAndRoles(signedUploadNotification.officeId, ['office_head']),
+          resolveActiveUserIdsByOfficeAndRoles(signedUploadNotification.officeId, ['caretaker']),
+          resolveActiveOrgAdminUserIds(),
+        ]);
+        await dispatchRequisitionNotifications({
+          officeId: signedUploadNotification.officeId,
+          requisitionId: signedUploadNotification.requisitionId,
+          type: 'REQUISITION_ISSUANCE_SIGNED',
+          title: 'Signed Issuance Uploaded',
+          message: `Signed issuance for requisition ${signedUploadNotification.fileNumber} was uploaded.`,
+          recipientUserIds: [
+            signedUploadNotification.submittedByUserId,
+            ...officeHeadUserIds,
+            ...caretakerUserIds,
+            ...orgAdminUserIds,
+          ],
+        });
       }
       return res.json(responsePayload);
     } catch (error) {

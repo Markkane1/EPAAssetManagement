@@ -9,12 +9,15 @@ import { setRuntimeRolePermissions } from '@/config/pagePermissions';
 interface AuthContextType {
   user: User | null;
   role: AppRole | null;
+  activeRole: AppRole | null;
+  roles: AppRole[];
   isOrgAdmin: boolean;
   locationId: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, firstName?: string, lastName?: string) => Promise<void>;
+  switchActiveRole: (nextRole: AppRole) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -35,6 +38,8 @@ interface AuthProviderProps {
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [role, setRole] = useState<AppRole | null>(null);
+  const [activeRole, setActiveRole] = useState<AppRole | null>(null);
+  const [roles, setRoles] = useState<AppRole[]>([]);
   const [isOrgAdmin, setIsOrgAdmin] = useState(false);
   const [locationId, setLocationId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -47,20 +52,30 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         firstName?: string | null;
         lastName?: string | null;
         role: string;
+        activeRole?: string | null;
+        roles?: string[];
         locationId?: string | null;
       }>('/auth/me');
       const normalizedRole = normalizeRole(me.role);
+      const normalizedRoles = Array.isArray(me.roles) && me.roles.length > 0
+        ? me.roles.map((entry) => normalizeRole(entry))
+        : [normalizedRole];
+      const normalizedActiveRole = normalizeRole(me.activeRole || me.role);
       const normalizedUser = {
         id: me.id,
         email: me.email,
         firstName: me.firstName || null,
         lastName: me.lastName || null,
         role: normalizedRole,
+        activeRole: normalizedActiveRole,
+        roles: normalizedRoles,
       };
       localStorage.setItem('user', JSON.stringify(normalizedUser));
       setUser(normalizedUser);
       setRole(normalizedRole);
-      setIsOrgAdmin(normalizedRole === 'org_admin');
+      setActiveRole(normalizedActiveRole);
+      setRoles(normalizedRoles);
+      setIsOrgAdmin(normalizedRoles.includes('org_admin') || normalizedRole === 'org_admin');
       setLocationId(me.locationId || null);
 
       try {
@@ -79,6 +94,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       authService.logout();
       setUser(null);
       setRole(null);
+      setActiveRole(null);
+      setRoles([]);
       setIsOrgAdmin(false);
       setLocationId(null);
       setRuntimeRolePermissions(null);
@@ -101,6 +118,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     await loadCurrentUser();
   };
 
+  const switchActiveRole = async (nextRole: AppRole) => {
+    await authService.setActiveRole(nextRole);
+    await loadCurrentUser();
+  };
+
   const logout = async () => {
     try {
       await activityService.logLogout();
@@ -115,6 +137,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     authService.logout();
     setUser(null);
     setRole(null);
+    setActiveRole(null);
+    setRoles([]);
     setIsOrgAdmin(false);
     setLocationId(null);
     setRuntimeRolePermissions(null);
@@ -125,12 +149,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       value={{ 
         user,
         role,
+        activeRole,
+        roles,
         isOrgAdmin,
         locationId,
         isAuthenticated: !!user, 
         isLoading,
         login,
         register,
+        switchActiveRole,
         logout,
       }}
     >

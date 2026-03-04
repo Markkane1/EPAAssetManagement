@@ -57,7 +57,15 @@ const mainNavItems: NavItem[] = [
     href: "/inventory",
     icon: Layers,
     page: "inventory",
-    allowedRoles: ["org_admin", "office_head", "caretaker"],
+    allowedRoles: [
+      "org_admin",
+      "office_head",
+      "caretaker",
+      "storekeeper",
+      "inventory_controller",
+      "procurement_officer",
+      "compliance_auditor",
+    ],
   },
 ];
 
@@ -74,6 +82,13 @@ const managementNavItems: NavItem[] = [
 
 const systemNavItems: NavItem[] = [
   { label: "Audit Logs", href: "/audit-logs", icon: Shield, page: "audit-logs" },
+  {
+    label: "Delegations",
+    href: "/settings/delegations",
+    icon: UserCog,
+    page: "profile",
+    allowedRoles: ["org_admin", "office_head", "caretaker"],
+  },
   {
     label: "Settings",
     href: "/settings",
@@ -195,7 +210,7 @@ const employeeServicesNavItems: NavItem[] = [
     href: "/returns",
     icon: ArrowRightLeft,
     page: "returns",
-    allowedRoles: ["org_admin", "office_head", "caretaker"],
+    allowedRoles: ["org_admin", "office_head", "caretaker", "inventory_controller"],
   },
   {
     label: "New Return Request",

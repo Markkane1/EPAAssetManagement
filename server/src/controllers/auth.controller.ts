@@ -8,7 +8,13 @@ import { ActivityLogModel } from '../models/activityLog.model';
 import { env } from '../config/env';
 import type { AuthRequest } from '../middleware/auth';
 import { ADMIN_ROLES } from '../middleware/authorize';
-import { normalizeRole } from '../utils/roles';
+import {
+  buildUserRoleMatchFilter,
+  hasRoleCapability,
+  normalizeRoles,
+  resolveActiveRole,
+  resolveRuntimeRole,
+} from '../utils/roles';
 import { validateStrongPassword } from '../utils/passwordPolicy';
 
 type RequestWithCookies = Request & { cookies?: Record<string, string> };
@@ -16,17 +22,24 @@ type RequestWithCookies = Request & { cookies?: Record<string, string> };
 function signToken(user: {
   id: string;
   email: string;
-  role: string;
+  role?: string;
+  activeRole?: string;
+  roles?: string[];
   locationId?: string | null;
   tokenVersion: number;
 }) {
+  const normalizedRoles = normalizeRoles(user.roles, user.activeRole || user.role || 'employee');
+  const activeRole = resolveActiveRole(user.activeRole || user.role || 'employee', normalizedRoles);
+  const runtimeRole = resolveRuntimeRole(activeRole);
   return jwt.sign(
     {
       userId: user.id,
       email: user.email,
-      role: user.role,
+      role: runtimeRole,
+      activeRole,
+      roles: normalizedRoles,
       locationId: user.locationId || null,
-      isOrgAdmin: user.role === 'org_admin',
+      isOrgAdmin: hasRoleCapability(normalizedRoles, ['org_admin']),
       tokenVersion: Number(user.tokenVersion || 0),
     },
     env.jwtSecret as jwt.Secret,
@@ -130,12 +143,14 @@ export const authController = {
       if (!req.user || !ADMIN_ROLES.has(req.user.role)) {
         return res.status(403).json({ message: 'Self-registration is disabled' });
       }
-      const { email, password, firstName, lastName, role, locationId } = req.body as {
+      const { email, password, firstName, lastName, role, roles, activeRole, locationId } = req.body as {
         email: string;
         password: string;
         firstName?: string;
         lastName?: string;
         role?: string;
+        roles?: string[];
+        activeRole?: string;
         locationId?: string;
       };
 
@@ -151,8 +166,9 @@ export const authController = {
       if (existing) return res.status(409).json({ message: 'Email already in use' });
 
       const passwordHash = await bcrypt.hash(password, 10);
-      const normalizedRole = normalizeRole(role || 'employee');
-      if (normalizedRole === 'org_admin' && req.user.role !== 'org_admin') {
+      const normalizedRoles = normalizeRoles(roles, role || 'employee');
+      const normalizedActiveRole = resolveActiveRole(activeRole || role || normalizedRoles[0], normalizedRoles);
+      if (hasRoleCapability(normalizedRoles, ['org_admin']) && !req.user.isOrgAdmin) {
         return res.status(403).json({ message: 'Forbidden' });
       }
       const user = await UserModel.create({
@@ -160,7 +176,9 @@ export const authController = {
         password_hash: passwordHash,
         first_name: firstName || null,
         last_name: lastName || null,
-        role: normalizedRole,
+        role: normalizedActiveRole,
+        roles: normalizedRoles,
+        active_role: normalizedActiveRole,
         location_id: locationId || null,
       });
 
@@ -170,7 +188,9 @@ export const authController = {
           email: user.email,
           firstName: user.first_name,
           lastName: user.last_name,
-          role: normalizedRole,
+          role: resolveRuntimeRole(normalizedActiveRole),
+          activeRole: normalizedActiveRole,
+          roles: normalizedRoles,
         },
       });
     } catch (error) {
@@ -207,9 +227,20 @@ export const authController = {
         return res.status(401).json({ message: 'Invalid credentials' });
       }
 
-      const normalizedRole = normalizeRole(user.role);
-      if (user.role !== normalizedRole) {
-        user.role = normalizedRole;
+      const normalizedRoles = normalizeRoles(user.roles, user.role);
+      const activeRole = resolveActiveRole(user.active_role || user.role, normalizedRoles);
+      if (user.role !== activeRole) {
+        user.role = activeRole;
+      }
+      const currentRoles = normalizeRoles(user.roles, user.role, { allowEmpty: true });
+      const hasRolesChanged =
+        currentRoles.length !== normalizedRoles.length
+        || currentRoles.some((entry) => !normalizedRoles.includes(entry));
+      if (hasRolesChanged) {
+        user.roles = normalizedRoles;
+      }
+      if (user.active_role !== activeRole) {
+        user.active_role = activeRole;
       }
       user.last_login_at = new Date().toISOString();
       user.failed_login_attempts = 0;
@@ -219,7 +250,8 @@ export const authController = {
       const token = signToken({
         id: user.id,
         email: user.email,
-        role: normalizedRole,
+        activeRole,
+        roles: normalizedRoles,
         locationId: user.location_id ? user.location_id.toString() : null,
         tokenVersion: Number(user.token_version || 0),
       });
@@ -231,7 +263,9 @@ export const authController = {
           email: user.email,
           firstName: user.first_name,
           lastName: user.last_name,
-          role: normalizedRole,
+          role: resolveRuntimeRole(activeRole),
+          activeRole,
+          roles: normalizedRoles,
         },
       });
     } catch (error) {
@@ -247,12 +281,16 @@ export const authController = {
       if (!user) return res.status(404).json({ message: 'Not found' });
 
       ensureCsrfCookie(req, res);
+      const normalizedRoles = normalizeRoles(user.roles, user.role);
+      const activeRole = resolveActiveRole(user.active_role || user.role, normalizedRoles);
       res.json({
         id: user.id,
         email: user.email,
         firstName: user.first_name,
         lastName: user.last_name,
-        role: normalizeRole(user.role),
+        role: resolveRuntimeRole(activeRole),
+        activeRole,
+        roles: normalizedRoles,
         locationId: user.location_id,
       });
     } catch (error) {
@@ -285,8 +323,8 @@ export const authController = {
       const requesterLocationId = requester?.location_id || employee?.location_id || null;
       const requesterDirectorateId = employee?.directorate_id || null;
 
-      const adminUsers = await UserModel.find({ role: 'org_admin' });
-      const locationAdminUsers = await UserModel.find({ role: 'office_head' });
+      const adminUsers = await UserModel.find(buildUserRoleMatchFilter(['org_admin']));
+      const locationAdminUsers = await UserModel.find(buildUserRoleMatchFilter(['office_head']));
       const globalAdmins = adminUsers.filter((admin) => !admin.location_id);
       const locationAdmins = requesterLocationId
         ? [
@@ -296,7 +334,7 @@ export const authController = {
         : [];
 
       const directorateHeads = requesterDirectorateId
-        ? await UserModel.find({ role: 'office_head' })
+        ? await UserModel.find(buildUserRoleMatchFilter(['office_head']))
         : [];
 
       let matchedDirectorateHeads: typeof directorateHeads = [];
@@ -448,17 +486,60 @@ export const authController = {
       user.password_reset_requested_at = null;
       await user.save();
 
-      const normalizedRole = normalizeRole(user.role);
+      const normalizedRoles = normalizeRoles(user.roles, user.role);
+      const activeRole = resolveActiveRole(user.active_role || user.role, normalizedRoles);
       const token = signToken({
         id: user.id,
         email: user.email,
-        role: normalizedRole,
+        activeRole,
+        roles: normalizedRoles,
         locationId: user.location_id ? user.location_id.toString() : null,
         tokenVersion: nextTokenVersion,
       });
       setSessionCookies(res, token);
 
       res.json({ message: 'Password updated' });
+    } catch (error) {
+      next(error);
+    }
+  },
+  setActiveRole: async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const userId = req.user?.userId;
+      if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+      const requestedRole = String(req.body?.activeRole || '').trim().toLowerCase();
+      if (!requestedRole) {
+        return res.status(400).json({ message: 'activeRole is required' });
+      }
+
+      const user = await UserModel.findById(userId);
+      if (!user) return res.status(404).json({ message: 'Not found' });
+
+      const availableRoles = normalizeRoles(req.user?.roles, user.role);
+      const activeRole = resolveActiveRole(requestedRole, availableRoles);
+      const isDelegatedRole = !normalizeRoles(user.roles, user.role, { allowEmpty: true }).includes(activeRole);
+      if (!isDelegatedRole) {
+        user.active_role = activeRole;
+        user.role = activeRole;
+        user.roles = normalizeRoles(user.roles, user.role);
+        await user.save();
+      }
+
+      const token = signToken({
+        id: user.id,
+        email: user.email,
+        activeRole,
+        roles: availableRoles,
+        locationId: user.location_id ? user.location_id.toString() : null,
+        tokenVersion: Number(user.token_version || 0),
+      });
+      setSessionCookies(res, token);
+
+      return res.json({
+        role: resolveRuntimeRole(activeRole),
+        activeRole,
+        roles: availableRoles,
+      });
     } catch (error) {
       next(error);
     }

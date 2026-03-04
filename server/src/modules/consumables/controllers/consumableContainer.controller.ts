@@ -1,6 +1,14 @@
-import { Request, Response, NextFunction } from 'express';
+import { Response, NextFunction } from 'express';
 import { ConsumableContainerModel } from '../models/consumableContainer.model';
+import { ConsumableLotModel } from '../models/consumableLot.model';
 import { mapFields, pickDefined } from '../../../utils/mapFields';
+import type { AuthRequest } from '../../../middleware/auth';
+import { createHttpError } from '../utils/httpError';
+import {
+  ensureScopeItemAccess,
+  resolveConsumableRequestScope,
+  resolveScopeLabOnlyRestrictions,
+} from '../utils/accessScope';
 
 const fieldMap = {
   lotId: 'lot_id',
@@ -29,11 +37,43 @@ function buildPayload(body: Record<string, unknown>) {
 }
 
 export const consumableContainerController = {
-  list: async (req: Request, res: Response, next: NextFunction) => {
+  list: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
+      const scope = await resolveConsumableRequestScope(req);
       const filter: Record<string, unknown> = {};
-      if (req.query.lotId) filter.lot_id = req.query.lotId;
-      if (req.query.locationId) filter.current_location_id = req.query.locationId;
+      const requestedLotId = req.query.lotId ? String(req.query.lotId).trim() : '';
+      const requestedLocationId = req.query.locationId ? String(req.query.locationId).trim() : '';
+
+      if (requestedLotId) {
+        filter.lot_id = requestedLotId;
+        const lot = await ConsumableLotModel.findById(requestedLotId, { consumable_id: 1 }).lean();
+        if (lot?.consumable_id) {
+          await ensureScopeItemAccess(scope, String(lot.consumable_id));
+        }
+      } else if (!scope.canAccessLabOnly) {
+        const { labOnlyItemIds } = await resolveScopeLabOnlyRestrictions(scope);
+        if (labOnlyItemIds.length > 0) {
+          const blockedLots = await ConsumableLotModel.find(
+            { consumable_id: { $in: labOnlyItemIds } },
+            { _id: 1 }
+          ).lean();
+          if (blockedLots.length > 0) {
+            filter.lot_id = { $nin: blockedLots.map((lot) => lot._id) };
+          }
+        }
+      }
+
+      if (!scope.isGlobal) {
+        if (!scope.locationId) {
+          throw createHttpError(403, 'User is not assigned to an office');
+        }
+        if (requestedLocationId && requestedLocationId !== scope.locationId) {
+          throw createHttpError(403, 'User does not have access to this location');
+        }
+        filter.current_location_id = scope.locationId;
+      } else if (requestedLocationId) {
+        filter.current_location_id = requestedLocationId;
+      }
       if (req.query.status) filter.status = req.query.status;
       const limit = clampInt((req.query as Record<string, unknown>).limit, 500, 1, 2000);
       const page = clampInt((req.query as Record<string, unknown>).page, 1, 1, 100000);
@@ -48,27 +88,89 @@ export const consumableContainerController = {
       next(error);
     }
   },
-  getById: async (req: Request, res: Response, next: NextFunction) => {
+  getById: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
+      const scope = await resolveConsumableRequestScope(req);
       const container = await ConsumableContainerModel.findById(req.params.id).lean();
       if (!container) return res.status(404).json({ message: 'Not found' });
+      if (!scope.isGlobal) {
+        if (!scope.locationId) {
+          throw createHttpError(403, 'User is not assigned to an office');
+        }
+        if (String(container.current_location_id || '') !== scope.locationId) {
+          throw createHttpError(403, 'User does not have access to this container');
+        }
+      }
+      const lot = await ConsumableLotModel.findById(container.lot_id, { consumable_id: 1 }).lean();
+      if (!lot) {
+        throw createHttpError(404, 'Lot not found');
+      }
+      await ensureScopeItemAccess(scope, String(lot.consumable_id || ''));
       return res.json(container);
     } catch (error) {
       next(error);
     }
   },
-  create: async (req: Request, res: Response, next: NextFunction) => {
+  create: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
+      const scope = await resolveConsumableRequestScope(req);
       const payload = buildPayload(req.body);
+      const lotId = payload.lot_id ? String(payload.lot_id) : '';
+      if (!lotId) {
+        throw createHttpError(400, 'lot_id is required');
+      }
+      const lot = await ConsumableLotModel.findById(lotId, { consumable_id: 1 }).lean();
+      if (!lot) {
+        throw createHttpError(404, 'Lot not found');
+      }
+      await ensureScopeItemAccess(scope, String(lot.consumable_id || ''));
+      if (!scope.isGlobal) {
+        if (!scope.locationId) {
+          throw createHttpError(403, 'User is not assigned to an office');
+        }
+        if (payload.current_location_id && String(payload.current_location_id) !== scope.locationId) {
+          throw createHttpError(403, 'User does not have access to this location');
+        }
+        payload.current_location_id = scope.locationId;
+      }
       const container = await ConsumableContainerModel.create(payload);
       res.status(201).json(container);
     } catch (error) {
       next(error);
     }
   },
-  update: async (req: Request, res: Response, next: NextFunction) => {
+  update: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
+      const scope = await resolveConsumableRequestScope(req);
+      const existing = await ConsumableContainerModel.findById(req.params.id).lean();
+      if (!existing) return res.status(404).json({ message: 'Not found' });
+      if (!scope.isGlobal) {
+        if (!scope.locationId) {
+          throw createHttpError(403, 'User is not assigned to an office');
+        }
+        if (String(existing.current_location_id || '') !== scope.locationId) {
+          throw createHttpError(403, 'User does not have access to this container');
+        }
+      }
+      const existingLot = await ConsumableLotModel.findById(existing.lot_id, { consumable_id: 1 }).lean();
+      if (!existingLot) {
+        throw createHttpError(404, 'Lot not found');
+      }
+      await ensureScopeItemAccess(scope, String(existingLot.consumable_id || ''));
+
       const payload = buildPayload(req.body);
+      if (payload.lot_id) {
+        const updatedLot = await ConsumableLotModel.findById(payload.lot_id, { consumable_id: 1 }).lean();
+        if (!updatedLot) {
+          throw createHttpError(404, 'Lot not found');
+        }
+        await ensureScopeItemAccess(scope, String(updatedLot.consumable_id || ''));
+      }
+      if (!scope.isGlobal) {
+        if (payload.current_location_id && String(payload.current_location_id) !== scope.locationId) {
+          throw createHttpError(403, 'User does not have access to this location');
+        }
+      }
       const container = await ConsumableContainerModel.findByIdAndUpdate(req.params.id, payload, { new: true });
       if (!container) return res.status(404).json({ message: 'Not found' });
       return res.json(container);
@@ -76,10 +178,25 @@ export const consumableContainerController = {
       next(error);
     }
   },
-  remove: async (req: Request, res: Response, next: NextFunction) => {
+  remove: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
-      const container = await ConsumableContainerModel.findByIdAndDelete(req.params.id);
-      if (!container) return res.status(404).json({ message: 'Not found' });
+      const scope = await resolveConsumableRequestScope(req);
+      const existing = await ConsumableContainerModel.findById(req.params.id).lean();
+      if (!existing) return res.status(404).json({ message: 'Not found' });
+      if (!scope.isGlobal) {
+        if (!scope.locationId) {
+          throw createHttpError(403, 'User is not assigned to an office');
+        }
+        if (String(existing.current_location_id || '') !== scope.locationId) {
+          throw createHttpError(403, 'User does not have access to this container');
+        }
+      }
+      const lot = await ConsumableLotModel.findById(existing.lot_id, { consumable_id: 1 }).lean();
+      if (!lot) {
+        throw createHttpError(404, 'Lot not found');
+      }
+      await ensureScopeItemAccess(scope, String(lot.consumable_id || ''));
+      await ConsumableContainerModel.findByIdAndDelete(req.params.id);
       return res.status(204).send();
     } catch (error) {
       next(error);

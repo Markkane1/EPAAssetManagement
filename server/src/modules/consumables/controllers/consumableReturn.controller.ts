@@ -11,6 +11,10 @@ import { ConsumableItemModel } from '../models/consumableItem.model';
 import { ConsumableLotModel } from '../models/consumableLot.model';
 import { ConsumableReturnModel } from '../models/consumableReturn.model';
 import { addIn, addOut, roundQty, validateQtyInput } from '../services/balance.service';
+import {
+  dispatchConsumableWorkflowNotifications,
+  resolveOfficeIdsFromHolders,
+} from '../services/workflowNotification.service';
 
 type ReturnMode = 'USER_TO_OFFICE' | 'OFFICE_TO_STORE_LOT';
 
@@ -131,6 +135,11 @@ export const consumableReturnController = {
   create: async (req: AuthRequest, res: Response, next: NextFunction) => {
     const session = await mongoose.startSession();
     let responseBody: any;
+    let notificationMeta: {
+      consumableId: string;
+      holders: Array<{ holderType: string; holderId: string }>;
+      actorUserId: string;
+    } | null = null;
     try {
       await session.withTransaction(async () => {
         const authUser = ensureUser(req);
@@ -210,6 +219,14 @@ export const consumableReturnController = {
             destination_balance: inResult.balance,
             source_ledger_txn: outResult.txn,
             destination_ledger_txn: inResult.txn,
+          };
+          notificationMeta = {
+            consumableId,
+            holders: [
+              { holderType: 'USER', holderId: fromUserId },
+              { holderType: 'OFFICE', holderId: toOfficeId },
+            ],
+            actorUserId: authUser.userId,
           };
           return;
         }
@@ -296,7 +313,28 @@ export const consumableReturnController = {
           source_ledger_txn: outResult.txn,
           lot: updatedLot,
         };
+        notificationMeta = {
+          consumableId,
+          holders: [
+            { holderType: 'OFFICE', holderId: fromOfficeId },
+            { holderType: 'STORE', holderId: String((headOfficeStore as any)._id) },
+          ],
+          actorUserId: authUser.userId,
+        };
       });
+
+      if (notificationMeta) {
+        const officeIds = await resolveOfficeIdsFromHolders(notificationMeta.holders);
+        await dispatchConsumableWorkflowNotifications({
+          officeIds,
+          consumableItemIds: [notificationMeta.consumableId],
+          type: 'CONSUMABLE_RETURNED',
+          title: 'Consumable Returned',
+          message: 'Consumable return transaction was recorded.',
+          includeUserIds: [notificationMeta.actorUserId],
+          excludeUserIds: [notificationMeta.actorUserId],
+        });
+      }
 
       return res.status(201).json(responseBody);
     } catch (error) {

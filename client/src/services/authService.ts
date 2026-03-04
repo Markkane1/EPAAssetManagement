@@ -5,6 +5,10 @@ export type AppRole =
   | 'office_head'
   | 'caretaker'
   | 'employee'
+  | 'storekeeper'
+  | 'inventory_controller'
+  | 'procurement_officer'
+  | 'compliance_auditor'
   | (string & {});
 
 export const normalizeRole = (role?: string | null): AppRole => {
@@ -18,9 +22,37 @@ export const normalizeRole = (role?: string | null): AppRole => {
       return 'caretaker';
     case 'employee':
       return 'employee';
+    case 'storekeeper':
+      return 'storekeeper';
+    case 'inventory_controller':
+      return 'inventory_controller';
+    case 'procurement_officer':
+      return 'procurement_officer';
+    case 'compliance_auditor':
+      return 'compliance_auditor';
     default:
       return (normalized || 'employee') as AppRole;
   }
+};
+
+const normalizeRoles = (roles: unknown, fallbackRole?: string | null): AppRole[] => {
+  const out = new Set<AppRole>();
+  if (Array.isArray(roles)) {
+    roles.forEach((entry) => {
+      const normalized = normalizeRole(String(entry || ''));
+      if (normalized) out.add(normalized);
+    });
+  }
+  const fallback = normalizeRole(fallbackRole || undefined);
+  if (fallback) out.add(fallback);
+  if (out.size === 0) out.add('employee');
+  return Array.from(out);
+};
+
+const resolveActiveRole = (activeRole: unknown, roles: AppRole[]) => {
+  const normalized = normalizeRole(String(activeRole || ''));
+  if (roles.includes(normalized)) return normalized;
+  return roles[0] || 'employee';
 };
 
 export interface LoginDto {
@@ -45,6 +77,8 @@ export interface AuthResponse {
     firstName?: string | null;
     lastName?: string | null;
     role: AppRole;
+    activeRole?: AppRole;
+    roles?: AppRole[];
   };
 }
 
@@ -54,6 +88,8 @@ export interface User {
   firstName?: string | null;
   lastName?: string | null;
   role: AppRole;
+  activeRole?: AppRole;
+  roles?: AppRole[];
 }
 
 export interface ResetPasswordDto {
@@ -67,6 +103,8 @@ export const authService = {
     const normalizedUser = {
       ...response.user,
       role: normalizeRole(response.user.role),
+      roles: normalizeRoles(response.user.roles, response.user.role),
+      activeRole: resolveActiveRole(response.user.activeRole || response.user.role, normalizeRoles(response.user.roles, response.user.role)),
     };
     localStorage.setItem('user', JSON.stringify(normalizedUser));
     return { ...response, user: normalizedUser };
@@ -77,6 +115,8 @@ export const authService = {
     const normalizedUser = {
       ...response.user,
       role: normalizeRole(response.user.role),
+      roles: normalizeRoles(response.user.roles, response.user.role),
+      activeRole: resolveActiveRole(response.user.activeRole || response.user.role, normalizeRoles(response.user.roles, response.user.role)),
     };
     localStorage.setItem('user', JSON.stringify(normalizedUser));
     return { ...response, user: normalizedUser };
@@ -93,13 +133,36 @@ export const authService = {
   resetPassword: async (data: ResetPasswordDto): Promise<{ message: string }> => {
     return api.post<{ message: string }>('/auth/reset-password', data);
   },
+
+  setActiveRole: async (activeRole: AppRole): Promise<{ role: AppRole; activeRole: AppRole; roles: AppRole[] }> => {
+    const response = await api.post<{ role: string; activeRole: string; roles: string[] }>('/auth/active-role', { activeRole });
+    const roles = normalizeRoles(response.roles, response.role);
+    const next = {
+      role: normalizeRole(response.role),
+      activeRole: resolveActiveRole(response.activeRole, roles),
+      roles,
+    };
+    const current = authService.getCurrentUser();
+    if (current) {
+      localStorage.setItem(
+        'user',
+        JSON.stringify({
+          ...current,
+          ...next,
+        })
+      );
+    }
+    return next;
+  },
   
   getCurrentUser: (): User | null => {
     const userStr = localStorage.getItem('user');
     if (!userStr) return null;
     const parsed = JSON.parse(userStr) as User;
-    const normalized = { ...parsed, role: normalizeRole(parsed.role) };
-    if (normalized.role !== parsed.role) {
+    const roles = normalizeRoles(parsed.roles, parsed.role);
+    const activeRole = resolveActiveRole(parsed.activeRole || parsed.role, roles);
+    const normalized = { ...parsed, role: normalizeRole(parsed.role), roles, activeRole };
+    if (JSON.stringify(normalized) !== JSON.stringify(parsed)) {
       localStorage.setItem('user', JSON.stringify(normalized));
     }
     return normalized;

@@ -1,17 +1,21 @@
 import type { NextFunction, Response } from 'express';
 import type { AuthRequest } from './auth';
 import { OfficeModel } from '../models/office.model';
+import { hasRoleCapability } from '../utils/roles';
 
 export const ADMIN_ROLES = new Set(['org_admin']);
 
 export function requireRoles(roles: string[]) {
-  const roleSet = new Set(roles);
   return (req: AuthRequest, res: Response, next: NextFunction) => {
-    const role = req.user?.role;
-    if (!role) {
+    const user = req.user;
+    if (!user) {
       return res.status(401).json({ message: 'Unauthorized' });
     }
-    if (roleSet.has(role)) {
+    const effectiveRoles =
+      Array.isArray(user.roles) && user.roles.length > 0
+        ? user.roles
+        : [String(user.activeRole || user.role || '').trim().toLowerCase()];
+    if (hasRoleCapability(effectiveRoles, roles)) {
       return next();
     }
     return res.status(403).json({ message: 'Forbidden' });

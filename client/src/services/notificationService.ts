@@ -10,6 +10,11 @@ export interface NotificationRecord {
   entity_type: string;
   entity_id: string;
   is_read: boolean;
+  acknowledged_at?: string | null;
+  last_action?: string | null;
+  last_action_at?: string | null;
+  available_actions?: string[];
+  open_path?: string;
   created_at: string;
   updated_at: string;
 }
@@ -44,6 +49,13 @@ export const notificationService = {
   },
   markRead: (id: string) => api.post<NotificationRecord>(`/notifications/${id}/read`),
   markAllRead: () => api.post<{ matched: number; modified: number }>('/notifications/read-all'),
+  action: (id: string, payload: { action: 'APPROVE' | 'REJECT' | 'ACKNOWLEDGE' | 'OPEN_RECORD'; decisionNotes?: string }) =>
+    api.post<{
+      notification: NotificationRecord;
+      action: string;
+      openPath?: string;
+      approval?: unknown;
+    }>(`/notifications/${id}/action`, payload),
 };
 
 export default notificationService;

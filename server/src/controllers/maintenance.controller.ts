@@ -117,7 +117,13 @@ function toIsoDateLabel(value: unknown) {
 async function notifyMaintenanceEvent(input: {
   maintenanceRecord: any;
   officeId: string;
-  type: 'MAINTENANCE_SCHEDULED' | 'MAINTENANCE_DUE' | 'MAINTENANCE_OVERDUE' | 'MAINTENANCE_COMPLETED';
+  type:
+    | 'MAINTENANCE_SCHEDULED'
+    | 'MAINTENANCE_DUE'
+    | 'MAINTENANCE_OVERDUE'
+    | 'MAINTENANCE_COMPLETED'
+    | 'MAINTENANCE_UPDATED'
+    | 'MAINTENANCE_REMOVED';
   title: string;
   message: string;
   excludeUserIds?: string[];
@@ -705,6 +711,15 @@ export const maintenanceController = {
           { upsert: true }
         );
       }
+      await notifyMaintenanceEvent({
+        maintenanceRecord: current,
+        officeId: targetOfficeId,
+        type: 'MAINTENANCE_UPDATED',
+        title: 'Maintenance Updated',
+        message: `Maintenance record was updated for scheduled date ${toIsoDateLabel(current.scheduled_date)}.`,
+        excludeUserIds: [access.userId],
+        dedupeWindowHours: 12,
+      });
       return res.json(current);
     } catch (error) {
       next(error);
@@ -824,9 +839,18 @@ export const maintenanceController = {
       }
       const record = await MaintenanceRecordModel.findById(req.params.id);
       if (!record) return res.status(404).json({ message: 'Not found' });
-      await ensureMaintenanceScope(access, record);
+      const officeId = await ensureMaintenanceScope(access, record);
       record.is_active = false;
       await record.save();
+      await notifyMaintenanceEvent({
+        maintenanceRecord: record,
+        officeId,
+        type: 'MAINTENANCE_REMOVED',
+        title: 'Maintenance Removed',
+        message: 'A maintenance record was removed from active workflow.',
+        excludeUserIds: [access.userId],
+        dedupeWindowHours: 12,
+      });
       return res.status(204).send();
     } catch (error) {
       next(error);

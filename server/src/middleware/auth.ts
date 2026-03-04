@@ -2,12 +2,21 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { env } from '../config/env';
 import { UserModel } from '../models/user.model';
-import { normalizeRole } from '../utils/roles';
+import { RoleDelegationModel } from '../models/roleDelegation.model';
+import {
+  hasRoleCapability,
+  normalizeRole,
+  normalizeRoles,
+  resolveActiveRole,
+  resolveRuntimeRole,
+} from '../utils/roles';
 
 export interface AuthPayload {
   userId: string;
   email: string;
   role: string;
+  activeRole: string;
+  roles: string[];
   locationId: string | null;
   isOrgAdmin: boolean;
   tokenVersion: number;
@@ -64,19 +73,50 @@ async function attachUserContext(req: AuthRequest) {
     return;
   }
 
+  const now = new Date();
+
+  const storedRoles = normalizeRoles(userDoc.roles, userDoc.role);
+  const activeDelegations = await RoleDelegationModel.find(
+    {
+      delegate_user_id: userDoc._id,
+      status: 'ACTIVE',
+      starts_at: { $lte: now },
+      ends_at: { $gte: now },
+    },
+    { delegated_roles: 1, office_id: 1 }
+  )
+    .lean()
+    .exec();
+  const locationId = userDoc.location_id ? userDoc.location_id.toString() : null;
+  const delegatedRoles = normalizeRoles(
+    activeDelegations
+      .filter((entry: any) => {
+        const officeId = String(entry?.office_id || '').trim();
+        if (!officeId) return false;
+        if (!locationId) return false;
+        return officeId === locationId;
+      })
+      .flatMap((entry: any) => (Array.isArray(entry?.delegated_roles) ? entry.delegated_roles : [])),
+    null,
+    { allowEmpty: true }
+  );
+
+  const mergedRoles = normalizeRoles([...storedRoles, ...delegatedRoles], req.user?.activeRole || userDoc.active_role);
+  const activeRole = resolveActiveRole(req.user?.activeRole || userDoc.active_role, mergedRoles);
   let normalizedRole: string;
   try {
-    normalizedRole = normalizeRole(userDoc.role);
+    normalizedRole = resolveRuntimeRole(activeRole);
   } catch {
     req.user = undefined;
     return;
   }
-  const locationId = userDoc.location_id ? userDoc.location_id.toString() : null;
-  const isOrgAdmin = normalizedRole === 'org_admin';
+  const isOrgAdmin = hasRoleCapability(mergedRoles, ['org_admin']);
 
   req.user = {
     ...req.user,
     role: normalizedRole,
+    activeRole,
+    roles: mergedRoles,
     locationId,
     isOrgAdmin,
     tokenVersion: dbTokenVersion,
@@ -96,12 +136,15 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
     if (isTokenInvalidatedByCutoff(payload)) {
       return res.status(401).json({ message: 'Unauthorized' });
     }
-    let normalizedRole: string;
+    let normalizedTokenRole: string;
     try {
-      normalizedRole = normalizeRole(payload.role);
+      normalizedTokenRole = normalizeRole(payload.activeRole || payload.role);
     } catch {
       return res.status(401).json({ message: 'Unauthorized' });
     }
+    const normalizedRoles = normalizeRoles(payload.roles, normalizedTokenRole);
+    const activeRole = resolveActiveRole(payload.activeRole || normalizedTokenRole, normalizedRoles);
+    const normalizedRole = resolveRuntimeRole(activeRole);
     const tokenVersion = Number(payload.tokenVersion);
     if (!Number.isFinite(tokenVersion) || tokenVersion < 0) {
       return res.status(401).json({ message: 'Unauthorized' });
@@ -109,8 +152,10 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
     req.user = {
       ...payload,
       role: normalizedRole,
+      activeRole,
+      roles: normalizedRoles,
       locationId: payload.locationId ?? null,
-      isOrgAdmin: payload.isOrgAdmin ?? normalizedRole === 'org_admin',
+      isOrgAdmin: payload.isOrgAdmin ?? hasRoleCapability(normalizedRoles, ['org_admin']),
       tokenVersion,
     };
     await attachUserContext(req);
@@ -135,13 +180,16 @@ export async function optionalAuth(req: AuthRequest, _res: Response, next: NextF
       req.user = undefined;
       return next();
     }
-    let normalizedRole: string;
+    let normalizedTokenRole: string;
     try {
-      normalizedRole = normalizeRole(payload.role);
+      normalizedTokenRole = normalizeRole(payload.activeRole || payload.role);
     } catch {
       req.user = undefined;
       return next();
     }
+    const normalizedRoles = normalizeRoles(payload.roles, normalizedTokenRole);
+    const activeRole = resolveActiveRole(payload.activeRole || normalizedTokenRole, normalizedRoles);
+    const normalizedRole = resolveRuntimeRole(activeRole);
     const tokenVersion = Number(payload.tokenVersion);
     if (!Number.isFinite(tokenVersion) || tokenVersion < 0) {
       req.user = undefined;
@@ -150,8 +198,10 @@ export async function optionalAuth(req: AuthRequest, _res: Response, next: NextF
     req.user = {
       ...payload,
       role: normalizedRole,
+      activeRole,
+      roles: normalizedRoles,
       locationId: payload.locationId ?? null,
-      isOrgAdmin: payload.isOrgAdmin ?? normalizedRole === 'org_admin',
+      isOrgAdmin: payload.isOrgAdmin ?? hasRoleCapability(normalizedRoles, ['org_admin']),
       tokenVersion,
     };
     await attachUserContext(req);

@@ -11,7 +11,16 @@ const MAX_PERMISSION_ROLES = 50;
 
 const PERMISSION_ACTIONS = ['view', 'create', 'edit', 'delete'] as const;
 const PERMISSION_ACTION_SET = new Set<string>(PERMISSION_ACTIONS);
-const PERMISSION_ROLE_SET = new Set(['org_admin', 'office_head', 'caretaker', 'employee']);
+const PERMISSION_ROLE_SET = new Set([
+  'org_admin',
+  'office_head',
+  'caretaker',
+  'employee',
+  'storekeeper',
+  'inventory_controller',
+  'procurement_officer',
+  'compliance_auditor',
+]);
 const PERMISSION_PAGE_KEYS = [
   'dashboard',
   'profile',
@@ -74,38 +83,38 @@ const CENTRAL_CARETAKER_ONLY_PAGE_KEYS = [
   'schemes',
 ] as const;
 const DEFAULT_ALLOWED_ROLES_BY_PAGE: Record<string, string[]> = {
-  dashboard: ['org_admin', 'office_head', 'caretaker', 'employee'],
-  inventory: ['org_admin', 'office_head', 'caretaker', 'employee'],
+  dashboard: ['org_admin', 'office_head', 'caretaker', 'employee', 'procurement_officer', 'compliance_auditor'],
+  inventory: ['org_admin', 'office_head', 'caretaker', 'employee', 'procurement_officer', 'compliance_auditor'],
   assets: ['org_admin', 'office_head', 'caretaker'],
   'asset-items': ['org_admin', 'office_head', 'caretaker'],
-  consumables: ['org_admin', 'caretaker'],
+  consumables: ['org_admin', 'caretaker', 'storekeeper', 'inventory_controller'],
   'office-assets': [],
   'office-asset-items': [],
   'office-consumables': ['office_head'],
   employees: ['org_admin', 'office_head', 'caretaker'],
   assignments: ['org_admin', 'office_head', 'caretaker', 'employee'],
   transfers: ['org_admin', 'office_head', 'caretaker'],
-  maintenance: ['org_admin', 'office_head', 'caretaker', 'employee'],
-  'purchase-orders': ['org_admin', 'office_head', 'caretaker'],
+  maintenance: ['org_admin', 'office_head', 'caretaker', 'employee', 'compliance_auditor'],
+  'purchase-orders': ['org_admin', 'office_head', 'caretaker', 'procurement_officer'],
   offices: ['org_admin'],
   'rooms-sections': ['org_admin', 'office_head', 'caretaker'],
-  categories: ['org_admin', 'caretaker'],
-  vendors: ['org_admin', 'office_head', 'caretaker'],
-  projects: ['org_admin', 'caretaker'],
-  schemes: ['org_admin', 'caretaker'],
-  reports: ['org_admin', 'office_head', 'caretaker', 'employee'],
-  compliance: ['org_admin', 'office_head', 'caretaker', 'employee'],
-  requisitions: ['org_admin', 'office_head', 'caretaker', 'employee'],
+  categories: ['org_admin', 'caretaker', 'storekeeper', 'inventory_controller'],
+  vendors: ['org_admin', 'office_head', 'caretaker', 'procurement_officer'],
+  projects: ['org_admin', 'caretaker', 'procurement_officer'],
+  schemes: ['org_admin', 'caretaker', 'procurement_officer'],
+  reports: ['org_admin', 'office_head', 'caretaker', 'employee', 'procurement_officer', 'compliance_auditor'],
+  compliance: ['org_admin', 'office_head', 'caretaker', 'employee', 'compliance_auditor'],
+  requisitions: ['org_admin', 'office_head', 'caretaker', 'employee', 'inventory_controller'],
   'requisitions-new': ['employee'],
-  returns: ['org_admin', 'office_head', 'caretaker', 'employee'],
+  returns: ['org_admin', 'office_head', 'caretaker', 'employee', 'inventory_controller'],
   'returns-new': ['employee'],
-  'returns-detail': ['org_admin', 'office_head', 'caretaker', 'employee'],
+  'returns-detail': ['org_admin', 'office_head', 'caretaker', 'employee', 'inventory_controller'],
   settings: ['org_admin', 'office_head'],
-  'audit-logs': ['org_admin', 'office_head', 'caretaker', 'employee'],
+  'audit-logs': ['org_admin', 'office_head', 'caretaker', 'employee', 'compliance_auditor'],
   'user-permissions': ['org_admin'],
   'user-management': ['org_admin'],
-  'user-activity': ['org_admin'],
-  profile: ['org_admin', 'office_head', 'caretaker', 'employee'],
+  'user-activity': ['org_admin', 'compliance_auditor'],
+  profile: ['org_admin', 'office_head', 'caretaker', 'employee', 'procurement_officer', 'compliance_auditor'],
 };
 
 type PermissionAction = (typeof PERMISSION_ACTIONS)[number];

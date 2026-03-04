@@ -5,6 +5,8 @@ import { createHttpError } from './httpError';
 export type RequestContext = {
   userId: string;
   role: string;
+  activeRole?: string;
+  roles?: string[];
   locationId: string | null;
   isOrgAdmin: boolean;
 };
@@ -33,6 +35,8 @@ export async function getRequestContext(req: AuthRequest): Promise<RequestContex
   const context: RequestContext = {
     userId: req.user.userId,
     role: req.user.role,
+    activeRole: req.user.activeRole,
+    roles: req.user.roles || [req.user.activeRole || req.user.role],
     locationId,
     isOrgAdmin,
   };

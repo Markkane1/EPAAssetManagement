@@ -1,11 +1,13 @@
 import { MainLayout } from "@/components/layout/MainLayout";
 import { useAuth } from "@/contexts/AuthContext";
+import type { AppRole } from "@/services/authService";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Mail, Shield, Calendar, LogOut, KeyRound } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useState } from "react";
@@ -13,12 +15,13 @@ import api from "@/lib/api";
 import { toast } from "sonner";
 
 export default function Profile() {
-  const { user, logout } = useAuth();
+  const { user, roles, activeRole, switchActiveRole, logout } = useAuth();
   const navigate = useNavigate();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
+  const [isSwitchingRole, setIsSwitchingRole] = useState(false);
 
   const handleLogout = () => {
     logout();
@@ -66,8 +69,8 @@ export default function Profile() {
   const initials = user.email
     ? user.email.substring(0, 2).toUpperCase()
     : "U";
-  const roleLabel = (() => {
-    const normalized = String(user.role || "").trim().toLowerCase();
+  const toRoleLabel = (value?: string | null) => {
+    const normalized = String(value || "").trim().toLowerCase();
     switch (normalized) {
       case "org_admin":
         return "Administrator";
@@ -77,6 +80,14 @@ export default function Profile() {
         return "Caretaker";
       case "employee":
         return "Employee";
+      case "storekeeper":
+        return "Storekeeper";
+      case "inventory_controller":
+        return "Inventory Controller";
+      case "procurement_officer":
+        return "Procurement Officer";
+      case "compliance_auditor":
+        return "Compliance Auditor";
       default:
         return normalized
           ? normalized
@@ -86,7 +97,9 @@ export default function Profile() {
               .join(" ")
           : "User";
     }
-  })();
+  };
+  const roleLabel = toRoleLabel(activeRole || user.role);
+  const availableRoles = (roles && roles.length > 0 ? roles : user.roles || [user.role]).filter(Boolean);
 
   return (
     <MainLayout title="My Profile" description="View and manage your account">
@@ -130,9 +143,48 @@ export default function Profile() {
 
             <div className="flex items-center gap-4 p-4 rounded-lg bg-muted/50">
               <Shield className="h-5 w-5 text-muted-foreground" />
-              <div>
-                <p className="text-sm text-muted-foreground">Role</p>
+              <div className="w-full space-y-2">
+                <p className="text-sm text-muted-foreground">Active Role</p>
                 <p className="font-medium">{roleLabel}</p>
+                {availableRoles.length > 1 && (
+                  <Select
+                    value={String(activeRole || user.role)}
+                    onValueChange={async (value) => {
+                      if (value === String(activeRole || user.role)) return;
+                      setIsSwitchingRole(true);
+                      try {
+                        await switchActiveRole(value as AppRole);
+                        toast.success("Active role switched");
+                      } catch (error: any) {
+                        toast.error(error?.message || "Failed to switch active role");
+                      } finally {
+                        setIsSwitchingRole(false);
+                      }
+                    }}
+                    disabled={isSwitchingRole}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select active role" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableRoles.map((entry) => (
+                        <SelectItem key={entry} value={String(entry)}>
+                          {toRoleLabel(entry)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+                <div className="flex flex-wrap gap-2">
+                  {availableRoles.map((entry) => (
+                    <Badge
+                      key={`role-${entry}`}
+                      variant={String(entry) === String(activeRole || user.role) ? "default" : "outline"}
+                    >
+                      {toRoleLabel(entry)}
+                    </Badge>
+                  ))}
+                </div>
               </div>
             </div>
 

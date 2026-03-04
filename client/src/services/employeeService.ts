@@ -13,6 +13,8 @@ export interface EmployeeCreateDto {
   hireDate?: string;
   directorateId?: string;
   locationId?: string;
+  defaultSubLocationId?: string;
+  allowedSubLocationIds?: string[];
 }
 
 export interface EmployeeUpdateDto {
@@ -24,6 +26,8 @@ export interface EmployeeUpdateDto {
   hireDate?: string;
   directorateId?: string;
   locationId?: string;
+  defaultSubLocationId?: string | null;
+  allowedSubLocationIds?: string[];
   isActive?: boolean;
 }
 

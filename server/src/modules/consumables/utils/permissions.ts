@@ -1,4 +1,12 @@
-export type ConsumableRole = 'org_admin' | 'office_head' | 'caretaker' | 'employee';
+export type ConsumableRole =
+  | 'org_admin'
+  | 'office_head'
+  | 'caretaker'
+  | 'employee'
+  | 'storekeeper'
+  | 'inventory_controller'
+  | 'procurement_officer'
+  | 'compliance_auditor';
 
 export type ConsumablePermissions = {
   canManageItems: boolean;
@@ -59,7 +67,7 @@ export function resolveConsumablePermissions(role?: string | null): ConsumablePe
     };
   }
 
-  if (role === 'caretaker') {
+  if (role === 'caretaker' || role === 'storekeeper' || role === 'inventory_controller') {
     return {
       ...basePermissions,
       canManageItems: true,
@@ -94,6 +102,13 @@ export function resolveConsumablePermissions(role?: string | null): ConsumablePe
     return {
       ...basePermissions,
       canConsume: true,
+      canViewReports: true,
+    };
+  }
+
+  if (role === 'compliance_auditor') {
+    return {
+      ...basePermissions,
       canViewReports: true,
     };
   }

@@ -41,3 +41,14 @@ export const useMarkAllNotificationsRead = () => {
     },
   });
 };
+
+export const useNotificationAction = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { id: string; action: 'APPROVE' | 'REJECT' | 'ACKNOWLEDGE' | 'OPEN_RECORD'; decisionNotes?: string }) =>
+      notificationService.action(payload.id, { action: payload.action, decisionNotes: payload.decisionNotes }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.notifications });
+    },
+  });
+};

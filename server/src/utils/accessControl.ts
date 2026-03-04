@@ -12,6 +12,8 @@ export type AccessContext = {
 const OFFICE_MANAGER_ROLES = new Set([
   'office_head',
   'caretaker',
+  'inventory_controller',
+  'storekeeper',
 ]);
 
 export function isOfficeManager(role: string) {

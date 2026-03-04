@@ -34,7 +34,7 @@ export function Header({
   searchPlaceholder,
   onMenuClick,
 }: HeaderProps) {
-  const { user, role, isOrgAdmin, logout } = useAuth();
+  const { user, role, activeRole, isOrgAdmin, logout } = useAuth();
   const navigate = useNavigate();
   const canAccessSettings = canAccessPage({
     page: "settings",
@@ -62,7 +62,7 @@ export function Header({
           : "User";
     }
   };
-  const roleLabel = formatRoleLabel(role);
+  const roleLabel = formatRoleLabel(activeRole || role);
 
   const handleLogout = () => {
     logout();

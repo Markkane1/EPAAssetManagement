@@ -859,7 +859,7 @@ export const assignmentController = {
       }
       const assignment = await AssignmentModel.findById(readParam(req, 'id'));
       if (!assignment) return res.status(404).json({ message: 'Not found' });
-      await ensureAssignmentAssetScope(access, assignment);
+      const { officeId } = await ensureAssignmentAssetScope(access, assignment);
       await AssignmentModel.updateOne(
         { _id: assignment._id },
         {
@@ -870,6 +870,13 @@ export const assignmentController = {
           },
         }
       );
+      await notifyAssignmentEvent({
+        assignment,
+        officeId,
+        type: 'ASSIGNMENT_CANCELLED',
+        title: 'Assignment Cancelled',
+        message: `Assignment ${assignment.id} was cancelled.`,
+      });
       return res.status(204).send();
     } catch (error) {
       return next(error);

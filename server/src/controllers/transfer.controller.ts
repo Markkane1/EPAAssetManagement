@@ -69,7 +69,13 @@ function toTransferId(transfer: any) {
 
 async function notifyTransferLifecycle(input: {
   transfer: any;
-  type: 'TRANSFER_REQUESTED' | 'TRANSFER_APPROVED' | 'TRANSFER_REJECTED' | 'TRANSFER_DISPATCHED' | 'TRANSFER_RECEIVED';
+  type:
+    | 'TRANSFER_REQUESTED'
+    | 'TRANSFER_APPROVED'
+    | 'TRANSFER_REJECTED'
+    | 'TRANSFER_DISPATCHED'
+    | 'TRANSFER_RECEIVED'
+    | 'TRANSFER_CANCELLED';
   title: string;
   message: string;
   excludeUserIds?: string[];
@@ -740,6 +746,15 @@ export const transferController = {
         }
 
         await updateTransferRecordStatus(access, transfer.id, 'Cancelled', transfer.notes || undefined, txSession);
+      });
+
+      const transferContext = await resolveTransferNotificationContext(transfer);
+      await notifyTransferLifecycle({
+        transfer,
+        type: 'TRANSFER_CANCELLED',
+        title: 'Transfer Cancelled',
+        message: `Transfer from ${transferContext.fromLabel} to ${transferContext.toLabel} was cancelled.`,
+        excludeUserIds: [access.userId],
       });
 
       res.json(normalizeTransferForResponse(transfer));

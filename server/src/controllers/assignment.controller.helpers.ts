@@ -192,7 +192,8 @@ async function notifyAssignmentEvent(input: {
     | 'ASSIGNMENT_ISSUED'
     | 'RETURN_REQUESTED'
     | 'RETURN_SLIP_READY'
-    | 'ASSIGNMENT_RETURNED';
+    | 'ASSIGNMENT_RETURNED'
+    | 'ASSIGNMENT_CANCELLED';
   title: string;
   message: string;
 }) {

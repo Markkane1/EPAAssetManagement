@@ -25,6 +25,7 @@ import requisitionRoutes from './requisition.routes';
 import returnRequestRoutes from './returnRequest.routes';
 import reportRoutes from './report.routes';
 import notificationRoutes from './notification.routes';
+import roleDelegationRoutes from './roleDelegation.routes';
 import metricsRoutes from './metrics.routes';
 import openApiRoutes from './openapi.routes';
 
@@ -36,6 +37,7 @@ router.use('/activities', activityRoutes);
 router.use('/dashboard', dashboardRoutes);
 router.use('/settings', settingsRoutes);
 router.use('/notifications', notificationRoutes);
+router.use('/role-delegations', roleDelegationRoutes);
 
 router.use('/categories', categoryRoutes);
 router.use('/divisions', divisionRoutes);

@@ -10,6 +10,8 @@ export interface UserWithDetails {
   location_id: string | null;
   created_at: string;
   role: AppRole | null;
+  activeRole?: AppRole | null;
+  roles?: AppRole[] | null;
   location_name: string | null;
 }
 
@@ -19,6 +21,8 @@ export interface CreateUserDto {
   firstName?: string;
   lastName?: string;
   role?: AppRole;
+  roles?: AppRole[];
+  activeRole?: AppRole;
   locationId?: string;
 }
 
@@ -54,7 +58,8 @@ export const userService = {
     return api.get<PagedUsersResponse>(`/users?${params.toString()}`);
   },
   create: (data: CreateUserDto) => api.post<UserWithDetails>('/users', data),
-  updateRole: (userId: string, role: AppRole) => api.put(`/users/${userId}/role`, { role }),
+  updateRole: (userId: string, payload: { role?: AppRole; roles?: AppRole[]; activeRole?: AppRole }) =>
+    api.put(`/users/${userId}/role`, payload),
   updateLocation: (userId: string, locationId: string | null) =>
     api.put(`/users/${userId}/location`, { locationId }),
   resetPassword: (userId: string, newPassword: string) =>
