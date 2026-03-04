@@ -122,7 +122,7 @@ export default function InventoryHub() {
               <span className="text-sm font-medium">Filter:</span>
             </div>
             <Select value={typeFilter} onValueChange={setTypeFilter}>
-              <SelectTrigger className="w-[180px]">
+              <SelectTrigger className="w-full sm:w-[180px]">
                 <SelectValue placeholder="Type" />
               </SelectTrigger>
               <SelectContent>
@@ -132,7 +132,7 @@ export default function InventoryHub() {
               </SelectContent>
             </Select>
             <Select value={assignmentFilter} onValueChange={setAssignmentFilter}>
-              <SelectTrigger className="w-[180px]">
+              <SelectTrigger className="w-full sm:w-[180px]">
                 <SelectValue placeholder="Assignment" />
               </SelectTrigger>
               <SelectContent>

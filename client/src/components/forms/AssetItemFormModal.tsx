@@ -327,8 +327,8 @@ export function AssetItemFormModal({ open, onOpenChange, assets, locations, onSu
 
           <div className="space-y-2">
             <Label>Items *</Label>
-            <div className="rounded-md border">
-              <table className="w-full text-sm">
+            <div className="overflow-x-auto rounded-md border">
+              <table className="w-full min-w-[560px] text-sm">
                 <thead className="bg-muted/50">
                   <tr>
                     <th className="text-left px-3 py-2">Serial Number</th>

@@ -177,7 +177,7 @@ export default function Offices() {
         description="Manage all offices, divisions, and districts"
         action={{ label: "Add Office", onClick: handleAddOffice }}
         extra={
-          <div className="flex gap-2">
+          <div className="flex w-full flex-wrap gap-2 sm:w-auto">
             <ViewModeToggle mode={viewMode} onModeChange={setViewMode} />
             {isOrgAdmin ? (
               <>
@@ -194,7 +194,7 @@ export default function Offices() {
       />
 
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as OfficeType)} className="mb-6">
-        <TabsList>
+        <TabsList className="w-full justify-start overflow-x-auto whitespace-nowrap">
           {OFFICE_VIEW_TABS.map((tab) => (
             <TabsTrigger key={tab.value} value={tab.value}>
               {tab.label}

@@ -195,8 +195,8 @@ export default function ReturnRequestNew() {
               <span className="text-sm font-medium">Return all assigned assets</span>
             </label>
 
-            <div className="rounded-md border">
-              <table className="w-full text-sm">
+            <div className="overflow-x-auto rounded-md border">
+              <table className="w-full min-w-[680px] text-sm">
                 <thead>
                   <tr className="border-b bg-muted/30">
                     <th className="w-[50px] px-3 py-2 text-left">Select</th>

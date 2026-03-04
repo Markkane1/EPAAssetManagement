@@ -221,7 +221,7 @@ export default function UserActivity() {
         title="User Activity"
         description="Track user logins, actions, and system activity"
         extra={
-          <div className="flex items-center gap-2">
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
             <Button variant="outline" size="sm" onClick={() => void handleExportExcel()}>
               <Download className="h-4 w-4 mr-2" />
               Excel
@@ -292,7 +292,7 @@ export default function UserActivity() {
         <CardContent>
           {/* Filters */}
           <div className="flex flex-wrap items-center gap-4 mb-6">
-            <div className="relative flex-1 max-w-sm">
+            <div className="relative w-full sm:max-w-sm sm:flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="Search activities..."
@@ -302,7 +302,7 @@ export default function UserActivity() {
               />
             </div>
             <Select value={activityFilter} onValueChange={setActivityFilter}>
-              <SelectTrigger className="w-[200px]">
+              <SelectTrigger className="w-full sm:w-[200px]">
                 <SelectValue placeholder="Filter by type" />
               </SelectTrigger>
               <SelectContent>
@@ -315,7 +315,7 @@ export default function UserActivity() {
               </SelectContent>
             </Select>
             <Select value={userFilter} onValueChange={setUserFilter}>
-              <SelectTrigger className="w-[220px]">
+              <SelectTrigger className="w-full sm:w-[220px]">
                 <SelectValue placeholder="Filter by user" />
               </SelectTrigger>
               <SelectContent>
@@ -328,7 +328,7 @@ export default function UserActivity() {
               </SelectContent>
             </Select>
             <Select value={deviceFilter} onValueChange={setDeviceFilter}>
-              <SelectTrigger className="w-[180px]">
+              <SelectTrigger className="w-full sm:w-[180px]">
                 <SelectValue placeholder="Filter by device" />
               </SelectTrigger>
               <SelectContent>
@@ -417,13 +417,13 @@ export default function UserActivity() {
             </div>
           )}
           {!isLoading && totalActivities > 0 && (
-            <div className="mt-4 flex items-center justify-between">
+            <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-sm text-muted-foreground">
                 Showing {filteredActivities.length} on this page ({totalActivities} total)
               </p>
-              <div className="flex items-center gap-2">
+              <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:flex-nowrap">
                 <Select value={String(pageSize)} onValueChange={(value) => setPageSize(Number(value))}>
-                  <SelectTrigger className="w-[130px]">
+                  <SelectTrigger className="w-full sm:w-[130px]">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>

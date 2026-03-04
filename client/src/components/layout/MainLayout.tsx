@@ -33,7 +33,7 @@ export function MainLayout({ children, title, description, searchPlaceholder }: 
   }, [location.pathname]);
 
   return (
-    <div className="h-screen overflow-hidden bg-background flex">
+    <div className="flex h-dvh min-h-dvh overflow-hidden bg-background">
       <div className="hidden md:block">
         <Sidebar />
       </div>

@@ -258,9 +258,10 @@ export default function Requisitions() {
             </div>
           </div>
 
-          <div className="mt-4 flex gap-2">
+          <div className="mt-4 flex flex-wrap gap-2">
             <Button
               type="button"
+              className="w-full sm:w-auto"
               onClick={() =>
                 setAppliedFilters({
                   status,
@@ -275,6 +276,7 @@ export default function Requisitions() {
             <Button
               type="button"
               variant="outline"
+              className="w-full sm:w-auto"
               onClick={() => {
                 setStatus("ALL");
                 setFileNumber("");

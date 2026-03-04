@@ -143,7 +143,7 @@ export default function FinancialSummaryReport() {
         title="Financial Summary"
         description="Asset value totals by category"
         extra={
-          <div className="flex items-center gap-2">
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
             <Button variant="outline" className="gap-2" onClick={handleExportCSV}>
               <Download className="h-4 w-4" />
               CSV

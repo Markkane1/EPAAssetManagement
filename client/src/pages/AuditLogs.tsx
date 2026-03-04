@@ -188,7 +188,7 @@ export default function AuditLogs() {
         title="Audit Logs"
         description="Track all user actions and security events"
         extra={
-          <div className="flex gap-2">
+          <div className="flex w-full flex-wrap gap-2 sm:w-auto">
             <Button variant="outline" size="sm" onClick={() => void handleExportExcel()}>
               <Download className="h-4 w-4 mr-2" />
               Excel
@@ -265,7 +265,7 @@ export default function AuditLogs() {
       <Card className="mb-6">
         <CardContent className="pt-6">
           <div className="flex flex-wrap gap-4">
-            <div className="flex-1 min-w-[200px]">
+            <div className="w-full sm:min-w-[220px] sm:flex-1">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
@@ -277,7 +277,7 @@ export default function AuditLogs() {
               </div>
             </div>
             <Select value={actionFilter} onValueChange={setActionFilter}>
-              <SelectTrigger className="w-[150px]">
+              <SelectTrigger className="w-full sm:w-[150px]">
                 <SelectValue placeholder="Action" />
               </SelectTrigger>
               <SelectContent>
@@ -288,7 +288,7 @@ export default function AuditLogs() {
               </SelectContent>
             </Select>
             <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-              <SelectTrigger className="w-[150px]">
+              <SelectTrigger className="w-full sm:w-[150px]">
                 <SelectValue placeholder="Category" />
               </SelectTrigger>
               <SelectContent>
@@ -299,7 +299,7 @@ export default function AuditLogs() {
               </SelectContent>
             </Select>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[130px]">
+              <SelectTrigger className="w-full sm:w-[130px]">
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
               <SelectContent>
@@ -312,13 +312,13 @@ export default function AuditLogs() {
               type="date"
               value={startDate}
               onChange={(event) => setStartDate(event.target.value)}
-              className="w-[170px]"
+              className="w-full sm:w-[170px]"
             />
             <Input
               type="date"
               value={endDate}
               onChange={(event) => setEndDate(event.target.value)}
-              className="w-[170px]"
+              className="w-full sm:w-[170px]"
             />
           </div>
         </CardContent>

@@ -476,7 +476,7 @@ export default function UserManagement() {
           onClick: () => setIsCreateDialogOpen(true),
         }}
         extra={
-          <div className="flex items-center gap-2">
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
             <Button variant="outline" size="sm" onClick={() => void handleExportExcel()}>
               <Download className="h-4 w-4 mr-2" />
               Excel
@@ -493,7 +493,7 @@ export default function UserManagement() {
         <CardContent className="pt-6">
           {/* Search */}
           <div className="flex flex-wrap items-center gap-4 mb-6">
-            <div className="relative flex-1 max-w-sm">
+            <div className="relative w-full sm:max-w-sm sm:flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="Search users..."
@@ -503,7 +503,7 @@ export default function UserManagement() {
               />
             </div>
             <Select value={roleFilter} onValueChange={setRoleFilter}>
-              <SelectTrigger className="w-[190px]">
+              <SelectTrigger className="w-full sm:w-[190px]">
                 <SelectValue placeholder="Filter by role" />
               </SelectTrigger>
               <SelectContent>
@@ -515,7 +515,7 @@ export default function UserManagement() {
                 ))}
               </SelectContent>
             </Select>
-            <div className="w-[230px]">
+            <div className="w-full sm:w-[230px]">
               <SearchableSelect
                 value={locationFilter}
                 onValueChange={setLocationFilter}
@@ -631,13 +631,13 @@ export default function UserManagement() {
             </div>
           )}
           {!usersLoading && totalUsers > 0 && (
-            <div className="mt-4 flex items-center justify-between">
+            <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-sm text-muted-foreground">
                 Showing {(page - 1) * pageSize + 1} to {Math.min(page * pageSize, totalUsers)} of {totalUsers}
               </p>
-              <div className="flex items-center gap-2">
+              <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:flex-nowrap">
                 <Select value={String(pageSize)} onValueChange={(value) => setPageSize(Number(value))}>
-                  <SelectTrigger className="w-[130px]">
+                  <SelectTrigger className="w-full sm:w-[130px]">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -781,7 +781,7 @@ export default function UserManagement() {
           </DialogHeader>
 
           <div className="space-y-4 py-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="firstName">First Name *</Label>
                 <Input

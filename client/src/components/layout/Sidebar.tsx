@@ -485,7 +485,7 @@ export function Sidebar({ className, isMobileDrawer = false, onNavigate }: Sideb
     <aside
       className={cn(
         "shrink-0 bg-sidebar border-r border-sidebar-border transition-all duration-300",
-        isMobileDrawer ? "h-full w-full border-r-0" : "h-screen",
+        isMobileDrawer ? "h-full w-full border-r-0" : "h-dvh",
         isMobileDrawer ? "w-full" : effectiveCollapsed ? "w-16" : "w-64",
         className
       )}

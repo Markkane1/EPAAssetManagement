@@ -155,7 +155,7 @@ export default function RoleDelegations() {
         description="Office head and caretaker authority can be delegated for defined dates with audit trail."
         action={{ label: "New Delegation", onClick: () => setIsCreateDialogOpen(true) }}
         extra={
-          <div className="flex items-center gap-2">
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
             <Label htmlFor="include-inactive" className="text-xs">Include inactive</Label>
             <Switch
               id="include-inactive"
@@ -322,7 +322,7 @@ export default function RoleDelegations() {
             </div>
             <div className="space-y-2">
               <Label>Delegated roles</Label>
-              <div className="grid grid-cols-2 gap-2 rounded-md border p-3">
+              <div className="grid grid-cols-1 gap-2 rounded-md border p-3 sm:grid-cols-2">
                 {DELEGABLE_ROLES.map((role) => {
                   const checked = selectedRoles.includes(role);
                   return (

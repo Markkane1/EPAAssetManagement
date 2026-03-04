@@ -227,7 +227,7 @@ export default function Assignments() {
         }
         extra={
           isLimitedRole ? undefined : (
-            <div className="flex gap-2">
+            <div className="flex w-full flex-wrap gap-2 sm:w-auto">
               <Button variant="outline" onClick={() => setIsReturnOpen(true)}>
                 <PackageCheck className="h-4 w-4 mr-2" />
                 Request Return

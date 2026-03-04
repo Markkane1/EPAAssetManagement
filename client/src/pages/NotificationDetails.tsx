@@ -133,7 +133,7 @@ export default function NotificationDetails() {
                 value={readFilter}
                 onValueChange={(value) => setReadFilter(value === "unread" ? "unread" : "all")}
               >
-                <SelectTrigger className="w-[180px]">
+                <SelectTrigger className="w-full sm:w-[180px]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -190,7 +190,7 @@ export default function NotificationDetails() {
                             </div>
                           </TableCell>
                           <TableCell className="text-right">
-                            <div className="flex justify-end gap-2">
+                            <div className="flex flex-wrap justify-end gap-2">
                               {!notification.is_read && (
                                 <Button
                                   size="sm"

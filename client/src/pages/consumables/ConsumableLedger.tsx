@@ -281,7 +281,7 @@ export default function ConsumableLedger() {
         title="Ledger"
         description="Filterable transaction history"
         extra={
-          <div className="flex items-center gap-2">
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
             <ConsumableModeToggle mode={mode} onChange={setMode} />
             <Button variant="outline" onClick={handleExport}>Export CSV</Button>
           </div>

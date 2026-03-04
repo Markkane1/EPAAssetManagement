@@ -845,7 +845,7 @@ export default function Reports() {
     const isGeneratingCSV = generatingReport === `${row.id}-csv`;
     const isGeneratingPDF = generatingReport === `${row.id}-pdf`;
     return (
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <Button
           variant="outline"
           size="sm"
@@ -924,7 +924,7 @@ export default function Reports() {
                     <p className="text-sm text-muted-foreground mb-4">
                       {report.description}
                     </p>
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap gap-2">
                       <Button
                         variant="outline"
                         className="flex-1 gap-2"

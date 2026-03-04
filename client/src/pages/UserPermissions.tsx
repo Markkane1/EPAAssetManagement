@@ -546,7 +546,7 @@ export default function UserPermissions() {
         title="User Permissions"
         description="Configure page-wise access permissions for user roles"
         extra={
-          <div className="flex items-center gap-2">
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
             <Button variant="outline" onClick={() => void handleExportExcel()} disabled={!currentRole}>
               <Download className="h-4 w-4 mr-2" />
               Excel

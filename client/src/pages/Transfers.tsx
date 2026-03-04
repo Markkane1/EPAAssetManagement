@@ -366,7 +366,7 @@ export default function Transfers() {
         row.status === "DISPATCHED_TO_DEST");
 
     return (
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Button variant="outline" size="sm" onClick={() => navigate(`/transfers/${row.id}`)}>
           <Eye className="mr-2 h-3.5 w-3.5" />
           Details
