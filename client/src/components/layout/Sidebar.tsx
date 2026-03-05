@@ -82,6 +82,7 @@ const managementNavItems: NavItem[] = [
 
 const systemNavItems: NavItem[] = [
   { label: "Audit Logs", href: "/audit-logs", icon: Shield, page: "audit-logs" },
+  { label: "Approvals Queue", href: "/approval-matrix", icon: ClipboardList, page: "approval-matrix" },
   {
     label: "Delegations",
     href: "/settings/delegations",

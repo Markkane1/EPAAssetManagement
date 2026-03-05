@@ -21,6 +21,7 @@
     "test:requisition": "node scripts/run-test-suites.js requisition",
     "test:returns": "node scripts/run-test-suites.js returns",
     "test:reports": "node scripts/run-test-suites.js reports",
+    "test:transfers": "node scripts/run-test-suites.js transfers",
     "test:employees": "node scripts/run-test-suites.js employees",
     "test:office": "node scripts/run-test-suites.js office",
     "test:asset-items": "node scripts/run-test-suites.js assetItems",

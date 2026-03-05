@@ -29,6 +29,7 @@ export type AppPageKey =
   | "returns-detail"
   | "settings"
   | "audit-logs"
+  | "approval-matrix"
   | "user-permissions"
   | "user-management"
   | "user-activity"
@@ -82,6 +83,15 @@ export const PAGE_ALLOWED_ROLES: Record<AppPageKey, AppRole[]> = {
   "returns-detail": ["org_admin", "office_head", "caretaker", "employee", "inventory_controller"],
   settings: ["org_admin", "office_head"],
   "audit-logs": ["org_admin", "office_head", "caretaker", "employee", "compliance_auditor"],
+  "approval-matrix": [
+    "org_admin",
+    "office_head",
+    "caretaker",
+    "storekeeper",
+    "inventory_controller",
+    "procurement_officer",
+    "compliance_auditor",
+  ],
   "user-permissions": ["org_admin"],
   "user-management": ["org_admin"],
   "user-activity": ["org_admin", "compliance_auditor"],

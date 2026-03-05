@@ -15,6 +15,7 @@ import {
   dispatchConsumableWorkflowNotifications,
   resolveOfficeIdsFromHolders,
 } from '../services/workflowNotification.service';
+import { enforceAccessPolicy } from '../../../services/policyEngine.service';
 
 type SourceType = 'OFFICE' | 'USER';
 
@@ -62,38 +63,49 @@ async function ensureSourceExists(sourceType: SourceType, sourceId: string, sess
 }
 
 async function ensureCanRecordForSource(
-  authUser: { userId: string; role: string; locationId?: string | null },
+  authUser: { userId: string; role: string; roles?: string[]; isOrgAdmin?: boolean; locationId?: string | null },
   sourceType: SourceType,
   sourceId: string,
   session: mongoose.ClientSession
 ) {
-  if (authUser.role === 'org_admin') return;
+  const actor = {
+    userId: authUser.userId,
+    role: authUser.role,
+    roles: authUser.roles || [authUser.role],
+    officeId: authUser.locationId || null,
+    isOrgAdmin: Boolean(authUser.isOrgAdmin),
+  };
 
-  if (authUser.role === 'employee') {
-    if (sourceType === 'USER' && String(sourceId) === String(authUser.userId)) return;
-    throw createHttpError(403, 'Forbidden');
-  }
-
-  if (authUser.role !== 'office_head' && authUser.role !== 'caretaker') {
-    throw createHttpError(403, 'Forbidden');
-  }
-
-  const actorOfficeId = String(authUser.locationId || '').trim();
-  if (!actorOfficeId) {
-    throw createHttpError(403, 'Forbidden');
+  if (sourceType === 'USER' && String(sourceId) === String(authUser.userId)) {
+    await enforceAccessPolicy({
+      action: 'consumables.consume.self_user',
+      actor,
+      subjectUserId: sourceId,
+      errorMessage: 'Forbidden',
+    });
+    return;
   }
 
   if (sourceType === 'OFFICE') {
-    if (String(sourceId) === actorOfficeId) return;
-    throw createHttpError(403, 'Forbidden');
+    await enforceAccessPolicy({
+      action: 'consumables.consume.source_office',
+      actor,
+      targetOfficeId: sourceId,
+      errorMessage: 'Forbidden',
+    });
+    return;
   }
 
   const sourceUser = await UserModel.findById(sourceId).session(session).lean();
   if (!sourceUser) throw createHttpError(404, 'Source user not found');
   const sourceUserOfficeId = String((sourceUser as any).location_id || '').trim();
-  if (!sourceUserOfficeId || sourceUserOfficeId !== actorOfficeId) {
-    throw createHttpError(403, 'Forbidden');
-  }
+  if (!sourceUserOfficeId) throw createHttpError(403, 'Forbidden');
+  await enforceAccessPolicy({
+    action: 'consumables.consume.source_user',
+    actor,
+    targetOfficeId: sourceUserOfficeId,
+    errorMessage: 'Forbidden',
+  });
 }
 
 async function resolveIssueLot(

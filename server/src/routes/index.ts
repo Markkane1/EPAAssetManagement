@@ -28,6 +28,7 @@ import notificationRoutes from './notification.routes';
 import roleDelegationRoutes from './roleDelegation.routes';
 import metricsRoutes from './metrics.routes';
 import openApiRoutes from './openapi.routes';
+import approvalMatrixRoutes from './approvalMatrix.routes';
 
 const router = Router();
 
@@ -38,6 +39,7 @@ router.use('/dashboard', dashboardRoutes);
 router.use('/settings', settingsRoutes);
 router.use('/notifications', notificationRoutes);
 router.use('/role-delegations', roleDelegationRoutes);
+router.use('/approval-matrix', approvalMatrixRoutes);
 
 router.use('/categories', categoryRoutes);
 router.use('/divisions', divisionRoutes);

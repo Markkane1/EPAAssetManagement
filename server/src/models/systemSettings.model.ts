@@ -37,6 +37,9 @@ const SystemSettingsSchema = new Schema<any>(
     notifications: { type: NotificationSchema, default: () => ({}) },
     security: { type: SecuritySchema, default: () => ({}) },
     role_permissions: { type: Schema.Types.Mixed, default: null },
+    access_policies: { type: Schema.Types.Mixed, default: null },
+    approval_matrix: { type: Schema.Types.Mixed, default: null },
+    scheduler: { type: Schema.Types.Mixed, default: null },
     last_backup_at: { type: String, default: null },
   },
   baseSchemaOptions

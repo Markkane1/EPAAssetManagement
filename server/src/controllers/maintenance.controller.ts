@@ -7,7 +7,7 @@ import { EmployeeModel } from '../models/employee.model';
 import { AssignmentModel } from '../models/assignment.model';
 import { mapFields } from '../utils/mapFields';
 import type { AuthRequest } from '../middleware/auth';
-import { resolveAccessContext, ensureOfficeScope, isOfficeManager } from '../utils/accessControl';
+import { resolveAccessContext, ensureOfficeScope } from '../utils/accessControl';
 import { createHttpError } from '../utils/httpError';
 import { createRecord, updateRecordStatus } from '../modules/records/services/record.service';
 import { RecordModel } from '../models/record.model';
@@ -17,6 +17,7 @@ import { DocumentModel } from '../models/document.model';
 import { DocumentVersionModel } from '../models/documentVersion.model';
 import { getAssetItemOfficeId, officeAssetItemFilter } from '../utils/assetHolder';
 import { createBulkNotifications, resolveNotificationRecipientsByOffice } from '../services/notification.service';
+import { enforceAccessPolicy } from '../services/policyEngine.service';
 
 function clampInt(value: unknown, fallback: number, max: number) {
   const parsed = Number(value);
@@ -154,63 +155,6 @@ async function notifyMaintenanceEvent(input: {
   );
 }
 
-async function dispatchDueAndOverdueMaintenanceReminders(records: any[]) {
-  if (!Array.isArray(records) || records.length === 0) return;
-  const now = Date.now();
-  const threeDaysMs = 3 * 24 * 60 * 60 * 1000;
-  const assetItemIds = Array.from(
-    new Set(records.map((record) => String(record.asset_item_id || '')).filter(Boolean))
-  );
-  if (assetItemIds.length === 0) return;
-
-  const items = await AssetItemModel.find(
-    { _id: { $in: assetItemIds } },
-    { _id: 1, holder_type: 1, holder_id: 1, location_id: 1 }
-  )
-    .lean()
-    .exec();
-  const officeByAssetItemId = new Map<string, string>();
-  items.forEach((item: any) => {
-    const officeId = getAssetItemOfficeId(item);
-    if (officeId) {
-      officeByAssetItemId.set(String(item._id), officeId);
-    }
-  });
-
-  await Promise.all(
-    records.map(async (record) => {
-      const officeId = officeByAssetItemId.get(String(record.asset_item_id || ''));
-      if (!officeId) return;
-      const scheduledDateRaw = record?.scheduled_date;
-      const scheduledDate = scheduledDateRaw ? new Date(String(scheduledDateRaw)).getTime() : Number.NaN;
-      if (!Number.isFinite(scheduledDate)) return;
-
-      if (scheduledDate < now) {
-        await notifyMaintenanceEvent({
-          maintenanceRecord: record,
-          officeId,
-          type: 'MAINTENANCE_OVERDUE',
-          title: 'Maintenance Overdue',
-          message: `Maintenance is overdue since ${toIsoDateLabel(scheduledDateRaw)}.`,
-          dedupeWindowHours: 24,
-        });
-        return;
-      }
-
-      if (scheduledDate - now <= threeDaysMs) {
-        await notifyMaintenanceEvent({
-          maintenanceRecord: record,
-          officeId,
-          type: 'MAINTENANCE_DUE',
-          title: 'Maintenance Due Soon',
-          message: `Maintenance is due on ${toIsoDateLabel(scheduledDateRaw)}.`,
-          dedupeWindowHours: 24,
-        });
-      }
-    })
-  );
-}
-
 async function ensureMaintenanceScope(
   access: Awaited<ReturnType<typeof resolveAccessContext>>,
   maintenanceRecord: { asset_item_id?: unknown }
@@ -224,6 +168,16 @@ async function ensureMaintenanceScope(
     ensureOfficeScope(access, officeId);
   }
   return officeId;
+}
+
+function toPolicyActor(access: Awaited<ReturnType<typeof resolveAccessContext>>, req: AuthRequest) {
+  return {
+    userId: access.userId,
+    role: access.role,
+    roles: req.user?.roles || [access.role],
+    officeId: access.officeId,
+    isOrgAdmin: access.isOrgAdmin,
+  };
 }
 
 async function resolveMaintenanceVendor(params: {
@@ -444,7 +398,6 @@ export const maintenanceController = {
         .sort({ created_at: -1 })
         .skip((page - 1) * limit)
         .limit(limit);
-      await dispatchDueAndOverdueMaintenanceReminders(records);
       res.json(records);
     } catch (error) {
       next(error);
@@ -512,9 +465,6 @@ export const maintenanceController = {
     try {
       const access = await resolveAccessContext(req.user);
       const isEmployeeRequester = access.role === 'employee';
-      if (!access.isOrgAdmin && !isOfficeManager(access.role) && !isEmployeeRequester) {
-        throw createHttpError(403, 'Not permitted to create maintenance records');
-      }
       const payload = buildPayload(req.body);
       if (!payload.maintenance_type) payload.maintenance_type = 'Preventive';
       if (!payload.maintenance_status) payload.maintenance_status = 'Scheduled';
@@ -526,6 +476,12 @@ export const maintenanceController = {
         throw createHttpError(400, 'Cannot create maintenance for an inactive asset item');
       }
       const assetItemOfficeId = requireAssetItemOfficeId(assetItem, 'Maintenance is allowed only for office-held assets');
+      await enforceAccessPolicy({
+        action: 'maintenance.create',
+        actor: toPolicyActor(access, req),
+        targetOfficeId: assetItemOfficeId,
+        errorMessage: 'Not permitted to create maintenance records',
+      });
       if (!access.isOrgAdmin) {
         ensureOfficeScope(access, assetItemOfficeId);
       }
@@ -642,9 +598,11 @@ export const maintenanceController = {
   update: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const access = await resolveAccessContext(req.user);
-      if (!access.isOrgAdmin && !isOfficeManager(access.role)) {
-        throw createHttpError(403, 'Not permitted to update maintenance records');
-      }
+      await enforceAccessPolicy({
+        action: 'maintenance.manage',
+        actor: toPolicyActor(access, req),
+        errorMessage: 'Not permitted to update maintenance records',
+      });
       const current = await MaintenanceRecordModel.findById(req.params.id);
       if (!current) return res.status(404).json({ message: 'Not found' });
       await ensureMaintenanceScope(access, current);
@@ -729,9 +687,11 @@ export const maintenanceController = {
     const session = await mongoose.startSession();
     try {
       const access = await resolveAccessContext(req.user);
-      if (!access.isOrgAdmin && !isOfficeManager(access.role)) {
-        throw createHttpError(403, 'Not permitted to complete maintenance');
-      }
+      await enforceAccessPolicy({
+        action: 'maintenance.manage',
+        actor: toPolicyActor(access, req),
+        errorMessage: 'Not permitted to complete maintenance',
+      });
       const { completedDate } = req.body as { completedDate?: string };
       const record = await MaintenanceRecordModel.findById(req.params.id);
       if (!record) return res.status(404).json({ message: 'Not found' });
@@ -834,9 +794,11 @@ export const maintenanceController = {
   remove: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const access = await resolveAccessContext(req.user);
-      if (!access.isOrgAdmin && !isOfficeManager(access.role)) {
-        throw createHttpError(403, 'Not permitted to remove maintenance records');
-      }
+      await enforceAccessPolicy({
+        action: 'maintenance.manage',
+        actor: toPolicyActor(access, req),
+        errorMessage: 'Not permitted to remove maintenance records',
+      });
       const record = await MaintenanceRecordModel.findById(req.params.id);
       if (!record) return res.status(404).json({ message: 'Not found' });
       const officeId = await ensureMaintenanceScope(access, record);

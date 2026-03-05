@@ -150,6 +150,7 @@ export const API_CONFIG = {
     dashboard: ['dashboard'] as const,
     settings: ['settings'] as const,
     notifications: ['notifications'] as const,
+    approvalMatrix: ['approvalMatrix'] as const,
     consumableItems: ['consumableItems'] as const,
     consumableLots: ['consumableLots'] as const,
     consumableUnits: ['consumableUnits'] as const,

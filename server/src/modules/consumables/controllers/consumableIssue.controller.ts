@@ -13,37 +13,48 @@ import {
   dispatchConsumableWorkflowNotifications,
   resolveOfficeIdsFromHolders,
 } from '../services/workflowNotification.service';
-
-const HEAD_OFFICE_ROLE = 'org_admin';
+import { enforceAccessPolicy, assertLabOnlyOfficeType } from '../../../services/policyEngine.service';
+import { enforceApprovalMatrix, markApprovalWorkflowExecuted } from '../../../services/approvalMatrix.service';
 
 function ensureUser(req: AuthRequest) {
   if (!req.user) throw createHttpError(401, 'Unauthorized');
   return req.user;
 }
 
-function ensureIssuePermission(
-  user: { role: string; locationId?: string | null },
+async function ensureIssuePermission(
+  user: { userId: string; role: string; roles?: string[]; isOrgAdmin?: boolean; locationId?: string | null },
   lot: { holder_type: 'STORE' | 'OFFICE'; holder_id: unknown }
 ) {
-  if (user.role === HEAD_OFFICE_ROLE) return;
-  if (user.role === 'employee') {
-    throw createHttpError(403, 'Forbidden');
-  }
-  if (user.role === 'caretaker' || user.role === 'office_head') {
-    if (lot.holder_type === 'OFFICE' && user.locationId && String(lot.holder_id) === String(user.locationId)) {
-      return;
-    }
-    throw createHttpError(403, 'Forbidden');
-  }
-  throw createHttpError(403, 'Forbidden');
+  await enforceAccessPolicy({
+    action: lot.holder_type === 'STORE'
+      ? 'consumables.issue.from_store'
+      : 'consumables.issue.from_office',
+    actor: {
+      userId: user.userId,
+      role: user.role,
+      roles: user.roles || [user.role],
+      officeId: user.locationId || null,
+      isOrgAdmin: Boolean(user.isOrgAdmin),
+    },
+    targetOfficeId: lot.holder_type === 'OFFICE' ? String(lot.holder_id || '') : null,
+    errorMessage: 'Forbidden',
+  });
 }
 
-async function resolveCategoryScope(consumableId: string, session: mongoose.ClientSession) {
-  const moduleItem = await ConsumableItemModel.findById(consumableId).session(session).lean();
+async function resolveCategoryScope(consumableId: string, session?: mongoose.ClientSession) {
+  let query = ConsumableItemModel.findById(consumableId).lean();
+  if (session) {
+    query = query.session(session);
+  }
+  const moduleItem = await query;
   if (!moduleItem) throw createHttpError(404, 'Consumable item not found');
   const categoryId = (moduleItem as any).category_id;
   if (!categoryId) return 'GENERAL';
-  const category = await CategoryModel.findById(categoryId).session(session).lean();
+  let categoryQuery = CategoryModel.findById(categoryId).lean();
+  if (session) {
+    categoryQuery = categoryQuery.session(session);
+  }
+  const category = await categoryQuery;
   return ((category as any)?.scope || 'GENERAL') as 'GENERAL' | 'LAB_ONLY';
 }
 
@@ -55,9 +66,7 @@ async function enforceLabOnlyDestination(
   if (toType === 'OFFICE') {
     const office = await OfficeModel.findById(toId).session(session).lean();
     if (!office) throw createHttpError(404, 'Destination office not found');
-    if ((office as any).type !== 'DISTRICT_LAB') {
-      throw createHttpError(400, 'LAB_ONLY consumables can only be issued to DISTRICT_LAB offices');
-    }
+    await assertLabOnlyOfficeType((office as any).type, false);
     return;
   }
 
@@ -68,9 +77,7 @@ async function enforceLabOnlyDestination(
   }
   const office = await OfficeModel.findById((user as any).location_id).session(session).lean();
   if (!office) throw createHttpError(404, 'Destination user office not found');
-  if ((office as any).type !== 'DISTRICT_LAB') {
-    throw createHttpError(400, 'LAB_ONLY consumables can only be issued to users in DISTRICT_LAB offices');
-  }
+  await assertLabOnlyOfficeType((office as any).type, true);
 }
 
 async function ensureDestinationExists(toType: 'OFFICE' | 'USER', toId: string, session: mongoose.ClientSession) {
@@ -83,19 +90,96 @@ async function ensureDestinationExists(toType: 'OFFICE' | 'USER', toId: string, 
   if (!user) throw createHttpError(404, 'Destination user not found');
 }
 
+async function resolveIssueApprovalGate(input: {
+  authUser: { userId: string; role: string; roles?: string[]; isOrgAdmin?: boolean; locationId?: string | null };
+  body: Record<string, unknown>;
+}) {
+  const lotId = String(input.body?.lot_id || '').trim();
+  const toType = String(input.body?.to_type || '').trim().toUpperCase();
+  const toId = String(input.body?.to_id || '').trim();
+  if (!lotId || !toId || (toType !== 'OFFICE' && toType !== 'USER')) {
+    return null;
+  }
+  const quantity = roundQty(validateQtyInput(Number(input.body?.quantity)));
+  const lot: any = await ConsumableLotModel.findById(lotId, {
+    _id: 1,
+    holder_type: 1,
+    holder_id: 1,
+    consumable_id: 1,
+  })
+    .lean()
+    .exec();
+  if (!lot?._id) return null;
+
+  const rawHolderType = String(lot.holder_type || '').trim().toUpperCase();
+  if (rawHolderType !== 'STORE' && rawHolderType !== 'OFFICE') return null;
+  const fromHolderType = rawHolderType as 'STORE' | 'OFFICE';
+  const fromHolderId = String(lot.holder_id || '').trim();
+  await ensureIssuePermission(input.authUser, {
+    holder_type: fromHolderType,
+    holder_id: fromHolderId,
+  });
+
+  const consumableId = String(lot.consumable_id || '').trim();
+  if (!consumableId) return null;
+  const [scope, consumableItem] = await Promise.all([
+    resolveCategoryScope(consumableId),
+    ConsumableItemModel.findById(consumableId, { _id: 1, is_chemical: 1 }).lean().exec(),
+  ]);
+  const riskTags: string[] = [];
+  if (scope === 'LAB_ONLY') riskTags.push('LAB_ONLY');
+  if (Boolean((consumableItem as any)?.is_chemical)) riskTags.push('CHEMICAL');
+
+  const approvalWorkflowId = String(
+    input.body.approval_workflow_id || input.body.approvalWorkflowId || ''
+  ).trim();
+  return enforceApprovalMatrix({
+    transactionType: 'CONSUMABLE_ISSUE',
+    makerUserId: input.authUser.userId,
+    makerRoles: input.authUser.roles || [input.authUser.role],
+    makerOfficeId: fromHolderType === 'OFFICE' ? fromHolderId : input.authUser.locationId || null,
+    amount: quantity,
+    riskTags,
+    entityType: 'ConsumableItem',
+    entityId: consumableId,
+    payloadDigestInput: {
+      lotId,
+      toType,
+      toId,
+      quantity,
+      riskTags,
+    },
+    approvalWorkflowId: approvalWorkflowId || null,
+  });
+}
+
 export const consumableIssueController = {
   create: async (req: AuthRequest, res: Response, next: NextFunction) => {
     const session = await mongoose.startSession();
     let responseBody: any;
+    let approvalWorkflowToExecute: string | null = null;
     let notificationMeta: {
       consumableId: string;
       holders: Array<{ holderType: string; holderId: string }>;
       actorUserId: string;
     } | null = null;
     try {
-      await session.withTransaction(async () => {
-        const authUser = ensureUser(req);
+      const authUser = ensureUser(req);
+      const approvalGate = await resolveIssueApprovalGate({
+        authUser,
+        body: (req.body || {}) as Record<string, unknown>,
+      });
+      if (approvalGate?.status === 'pending') {
+        return res.status(409).json({
+          message: 'Approval workflow is required before issuing this consumable',
+          details: { approval_request: approvalGate.request },
+        });
+      }
+      if (approvalGate?.status === 'approved') {
+        approvalWorkflowToExecute = approvalGate.workflowIdToExecute;
+      }
 
+      await session.withTransaction(async () => {
         const lotId = String(req.body?.lot_id || '').trim();
         const toType = String(req.body?.to_type || '').trim().toUpperCase();
         const toId = String(req.body?.to_id || '').trim();
@@ -123,7 +207,7 @@ export const consumableIssueController = {
           throw createHttpError(400, 'Lot consumable is not configured');
         }
 
-        ensureIssuePermission(authUser, {
+        await ensureIssuePermission(authUser, {
           holder_type: fromHolderType,
           holder_id: fromHolderId,
         });
@@ -217,6 +301,9 @@ export const consumableIssueController = {
           includeUserIds: [notificationMeta.actorUserId],
           excludeUserIds: [notificationMeta.actorUserId],
         });
+      }
+      if (approvalWorkflowToExecute) {
+        await markApprovalWorkflowExecuted(approvalWorkflowToExecute);
       }
 
       return res.status(201).json(responseBody);

@@ -480,7 +480,6 @@ export const dashboardController = {
   getStats: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const access = await resolveAccessContext(req.user);
-      void dispatchThresholdNotifications(access).catch(() => undefined);
       res.json(await getStatsInternal(access));
     } catch (error) {
       next(error);
@@ -513,7 +512,6 @@ export const dashboardController = {
   getDashboardData: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const access = await resolveAccessContext(req.user);
-      void dispatchThresholdNotifications(access).catch(() => undefined);
       const [stats, assetsByCategory, assetsByStatus, recentActivity] = await Promise.all([
         getStatsInternal(access),
         getAssetsByCategoryInternal(access),

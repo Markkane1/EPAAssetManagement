@@ -35,7 +35,8 @@ export const transferService = {
   getByOffice: (officeId: string) =>
     api.get<Transfer[]>(`/transfers/office/${officeId}?limit=${LIST_LIMIT}`),
   create: (data: TransferCreateDto) => api.post<Transfer>('/transfers', data),
-  approve: (id: string) => api.post<Transfer>(`/transfers/${id}/approve`, {}),
+  approve: (id: string, approvalWorkflowId?: string) =>
+    api.post<Transfer>(`/transfers/${id}/approve`, approvalWorkflowId ? { approvalWorkflowId } : {}),
   dispatchToStore: (id: string, handoverDocumentId: string) =>
     api.post<Transfer>(`/transfers/${id}/dispatch-to-store`, { handoverDocumentId }),
   receiveAtStore: (id: string) => api.post<Transfer>(`/transfers/${id}/receive-at-store`, {}),

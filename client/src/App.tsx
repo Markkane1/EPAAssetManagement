@@ -64,6 +64,7 @@ const Profile = lazy(() => import("./pages/Profile"));
 const Login = lazy(() => import("./pages/Login"));
 const ForgotPassword = lazy(() => import("./pages/ForgotPassword"));
 const AuditLogs = lazy(() => import("./pages/AuditLogs"));
+const ApprovalMatrix = lazy(() => import("./pages/ApprovalMatrix"));
 const UserPermissions = lazy(() => import("./pages/UserPermissions"));
 const UserManagement = lazy(() => import("./pages/UserManagement"));
 const UserActivity = lazy(() => import("./pages/UserActivity"));
@@ -229,6 +230,7 @@ const App = () => {
                   <Route path="/settings/notifications" element={<ProtectedRoute page="profile"><NotificationDetails /></ProtectedRoute>} />
                   <Route path="/settings/delegations" element={<ProtectedRoute page="profile" allowedRoles={["org_admin", "office_head", "caretaker"]}><RoleDelegations /></ProtectedRoute>} />
                   <Route path="/audit-logs" element={<ProtectedRoute page="audit-logs"><AuditLogs /></ProtectedRoute>} />
+                  <Route path="/approval-matrix" element={<ProtectedRoute page="approval-matrix"><ApprovalMatrix /></ProtectedRoute>} />
                   <Route path="/user-permissions" element={<ProtectedRoute page="user-permissions"><UserPermissions /></ProtectedRoute>} />
                   <Route path="/user-management" element={<ProtectedRoute page="user-management"><UserManagement /></ProtectedRoute>} />
                   <Route path="/user-activity" element={<ProtectedRoute page="user-activity"><UserActivity /></ProtectedRoute>} />

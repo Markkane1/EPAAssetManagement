@@ -89,6 +89,7 @@ const appPages: PermissionPage[] = [
   { id: "schemes", name: "Schemes", category: "Management" },
   { id: "reports", name: "Reports", category: "System" },
   { id: "compliance", name: "Compliance", category: "System" },
+  { id: "approval-matrix", name: "Approvals Queue", category: "System" },
   { id: "settings", name: "Settings", category: "System" },
   { id: "audit-logs", name: "Audit Logs", category: "System" },
   { id: "user-permissions", name: "User Permissions", category: "System" },

@@ -34,6 +34,8 @@ import {
   dispatchConsumableWorkflowNotifications,
   resolveOfficeIdsFromTransactions,
 } from './workflowNotification.service';
+import { enforceAccessPolicy } from '../../../services/policyEngine.service';
+import { enforceApprovalMatrix, markApprovalWorkflowExecuted } from '../../../services/approvalMatrix.service';
 
 const HEAD_OFFICE_STORE_CODE = 'HEAD_OFFICE_STORE';
 const HOLDER_TYPES = ['OFFICE', 'STORE', 'EMPLOYEE', 'SUB_LOCATION'] as const;
@@ -42,7 +44,9 @@ type HolderType = (typeof HOLDER_TYPES)[number];
 type AuthUser = {
   userId: string;
   role: string;
+  roles?: string[];
   email: string;
+  locationId?: string | null;
   isOrgAdmin?: boolean;
 };
 
@@ -1754,11 +1758,10 @@ export const inventoryService = {
   async dispose(user: AuthUser, payload: any) {
     const session = await mongoose.startSession();
     let result: any;
+    let approvalWorkflowToExecute: string | null = null;
+    let pendingApprovalRequest: any = null;
     try {
       await session.withTransaction(async () => {
-        const permissions = resolveConsumablePermissions(user.role);
-        ensureAllowed(permissions.canDispose, 'Not permitted to dispose inventory');
-
         const item = await getItem(payload.itemId, session);
         const { holderId, holderType } = extractHolderArgs(payload, {
           holderIdKey: 'holderId',
@@ -1766,6 +1769,18 @@ export const inventoryService = {
         });
         const holder = await resolveHolder(holderId, holderType, session);
         const unitLookup = await getUnitLookup({ session });
+        await enforceAccessPolicy({
+          action: 'consumables.dispose',
+          actor: {
+            userId: user.userId,
+            role: user.role,
+            roles: user.roles || [user.role],
+            officeId: user.locationId || null,
+            isOrgAdmin: Boolean(user.isOrgAdmin),
+          },
+          targetOfficeId: resolveHolderOfficeId(holder),
+          errorMessage: 'Not permitted to dispose inventory',
+        });
         await ensureLabOnlyHolder(item, holder, 'Disposal holder', session as ClientSession);
         ensureChemicalsHolder(item, holder, 'Disposal holder');
         await ensureOfficeHolderAccess(user, holder, session);
@@ -1776,8 +1791,43 @@ export const inventoryService = {
         if (qtyBase <= 0) throw createHttpError(400, 'Quantity must be greater than zero');
 
         const allowNegative = normalizeAllowNegative(payload.allowNegative, payload.overrideNote);
+        const permissions = resolveConsumablePermissions(user.role);
         if (allowNegative && !permissions.canOverrideNegative) {
           throw createHttpError(403, 'Not permitted to override negative stock');
+        }
+
+        const categoryScope = await resolveConsumableCategoryScopeForItem(item, session);
+        const riskTags: string[] = [];
+        if (categoryScope === 'LAB_ONLY') riskTags.push('LAB_ONLY');
+        if (Boolean(item?.is_chemical)) riskTags.push('CHEMICAL');
+        const approvalWorkflowId = String(payload.approval_workflow_id || payload.approvalWorkflowId || '').trim();
+        const approvalGate = await enforceApprovalMatrix({
+          transactionType: 'CONSUMABLE_DISPOSAL',
+          makerUserId: user.userId,
+          makerRoles: user.roles || [user.role],
+          makerOfficeId: resolveHolderOfficeId(holder) || user.locationId || null,
+          amount: qtyBase,
+          riskTags,
+          entityType: 'ConsumableItem',
+          entityId: item.id,
+          payloadDigestInput: {
+            itemId: item.id,
+            holderType: holder.holderType,
+            holderId: holder.holderId,
+            lotId: payload.lotId || null,
+            containerId: payload.containerId || null,
+            qtyBase,
+            reasonCodeId: payload.reasonCodeId,
+            riskTags,
+          },
+          approvalWorkflowId: approvalWorkflowId || null,
+        });
+        if (approvalGate.status === 'pending') {
+          pendingApprovalRequest = approvalGate.request;
+          return;
+        }
+        if (approvalGate.workflowIdToExecute) {
+          approvalWorkflowToExecute = approvalGate.workflowIdToExecute;
         }
 
         const needsContainer = requiresContainer(item);
@@ -1858,6 +1908,16 @@ export const inventoryService = {
       });
     } finally {
       session.endSession();
+    }
+    if (pendingApprovalRequest) {
+      throw createHttpError(
+        409,
+        'Approval workflow is required before disposal',
+        { approval_request: pendingApprovalRequest }
+      );
+    }
+    if (approvalWorkflowToExecute) {
+      await markApprovalWorkflowExecuted(approvalWorkflowToExecute);
     }
     const disposeRows = Array.isArray(result) ? result : result ? [result] : [];
     if (disposeRows.length > 0) {

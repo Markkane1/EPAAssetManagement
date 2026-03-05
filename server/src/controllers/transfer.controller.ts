@@ -2,17 +2,20 @@ import mongoose from 'mongoose';
 import { Response, NextFunction } from 'express';
 import { TransferModel } from '../models/transfer.model';
 import { AssetItemModel } from '../models/assetItem.model';
+import { AssetModel } from '../models/asset.model';
 import { OfficeModel } from '../models/office.model';
 import { StoreModel } from '../models/store.model';
 import { DocumentModel } from '../models/document.model';
 import type { AuthRequest } from '../middleware/auth';
-import { resolveAccessContext, ensureOfficeScope, isOfficeManager } from '../utils/accessControl';
+import { resolveAccessContext, ensureOfficeScope } from '../utils/accessControl';
 import { createHttpError } from '../utils/httpError';
 import { createRecord, updateRecordStatus } from '../modules/records/services/record.service';
 import { logAudit } from '../modules/records/services/audit.service';
 import { RecordModel } from '../models/record.model';
 import { enforceAssetCategoryScopeForOffice } from '../utils/categoryScope';
 import { createBulkNotifications, resolveNotificationRecipientsByOffice } from '../services/notification.service';
+import { enforceAccessPolicy } from '../services/policyEngine.service';
+import { enforceApprovalMatrix, markApprovalWorkflowExecuted } from '../services/approvalMatrix.service';
 import {
   isAssetItemHeldByOffice,
   officeAssetItemFilter,
@@ -33,9 +36,6 @@ import {
   ensureOfficeExists,
   resolveHeadOfficeStore,
   ensureDocumentExists,
-  canApproveTransfer,
-  canOperateSourceOffice,
-  canOperateDestinationOffice,
   loadTransferAssetItems,
   updateTransferRecordStatus,
   assertTransition,
@@ -115,6 +115,60 @@ async function runWithTransaction(
   await session.withTransaction(async () => {
     await handler(session);
   });
+}
+
+function toPolicyActor(access: Awaited<ReturnType<typeof resolveAccessContext>>, req: AuthRequest) {
+  return {
+    userId: access.userId,
+    role: access.role,
+    roles: req.user?.roles || [access.role],
+    officeId: access.officeId,
+    isOrgAdmin: access.isOrgAdmin,
+  };
+}
+
+async function resolveTransferApprovalRiskProfile(transfer: any) {
+  const assetItemIds = getTransferLineAssetIds(transfer);
+  const lineCount = assetItemIds.length;
+  if (lineCount === 0) {
+    return {
+      amount: 0,
+      lineCount: 0,
+      riskTags: [] as string[],
+    };
+  }
+
+  const items = await AssetItemModel.find(
+    { _id: { $in: assetItemIds } },
+    { _id: 1, asset_id: 1 }
+  )
+    .lean()
+    .exec();
+  const assetIds = Array.from(
+    new Set(items.map((item: any) => String(item.asset_id || '')).filter(Boolean))
+  );
+  const assets = assetIds.length > 0
+    ? await AssetModel.find({ _id: { $in: assetIds } }, { _id: 1, unit_price: 1 }).lean().exec()
+    : [];
+  const valueByAssetId = new Map(
+    assets.map((asset: any) => [String(asset._id), Number(asset.unit_price || 0)])
+  );
+
+  let amount = 0;
+  items.forEach((item: any) => {
+    const assetId = String(item.asset_id || '');
+    amount += Number(valueByAssetId.get(assetId) || 0);
+  });
+  const riskTags: string[] = [];
+  if (lineCount >= 10) riskTags.push('BULK');
+  if (String(transfer.from_office_id || '') !== String(transfer.to_office_id || '')) {
+    riskTags.push('INTER_OFFICE');
+  }
+  return {
+    amount,
+    lineCount,
+    riskTags,
+  };
 }
 
 export const transferController = {
@@ -216,9 +270,6 @@ export const transferController = {
     const session = await mongoose.startSession();
     try {
       const access = await resolveAccessContext(req.user);
-      if (!access.isOrgAdmin && !isOfficeManager(access.role)) {
-        throw createHttpError(403, 'Not permitted to create transfers');
-      }
 
       const body = req.body as Record<string, unknown>;
       const requestedFromOfficeId = readId(body as Record<string, any>, [
@@ -244,6 +295,15 @@ export const transferController = {
       await ensureDocumentExists(approvalOrderDocumentId, 'Approval order document');
       const isFromCentralStore = requestedFromOfficeId === HEAD_OFFICE_STORE_CODE;
       const isToCentralStore = requestedToOfficeId === HEAD_OFFICE_STORE_CODE;
+
+      const policyScopeOfficeId = isFromCentralStore ? requestedToOfficeId : requestedFromOfficeId;
+      await enforceAccessPolicy({
+        action: 'transfer.create',
+        actor: toPolicyActor(access, req),
+        targetOfficeId: policyScopeOfficeId,
+        errorMessage: 'Not permitted to create transfers',
+      });
+
       if (isFromCentralStore && !access.isOrgAdmin) {
         throw createHttpError(403, 'Only org_admin can transfer from Central Store');
       }
@@ -394,10 +454,45 @@ export const transferController = {
       if (!transfer) return res.status(404).json({ message: 'Not found' });
 
       const fromOfficeId = String(transfer.from_office_id || '');
-      if (!canApproveTransfer(access, fromOfficeId)) {
-        throw createHttpError(403, 'Not permitted to approve this transfer');
-      }
+      await enforceAccessPolicy({
+        action: 'transfer.approve',
+        actor: toPolicyActor(access, req),
+        targetOfficeId: fromOfficeId,
+        errorMessage: 'Not permitted to approve this transfer',
+      });
       await assertTransition(transfer, 'APPROVED');
+
+      const approvalWorkflowId = readId(req.body as Record<string, any>, [
+        'approvalWorkflowId',
+        'approval_workflow_id',
+      ]);
+      const riskProfile = await resolveTransferApprovalRiskProfile(transfer);
+      const approvalGate = await enforceApprovalMatrix({
+        transactionType: 'TRANSFER_APPROVAL',
+        makerUserId: access.userId,
+        makerRoles: req.user?.roles || [access.role],
+        makerOfficeId: fromOfficeId,
+        amount: riskProfile.amount,
+        riskTags: riskProfile.riskTags,
+        entityType: 'Transfer',
+        entityId: transfer.id,
+        payloadDigestInput: {
+          transferId: transfer.id,
+          fromOfficeId,
+          toOfficeId: String(transfer.to_office_id || ''),
+          lineCount: riskProfile.lineCount,
+          amount: riskProfile.amount,
+        },
+        approvalWorkflowId,
+      });
+      if (approvalGate.status === 'pending') {
+        return res.status(409).json({
+          message: 'Approval workflow is required before approving this transfer',
+          details: {
+            approval_request: approvalGate.request,
+          },
+        });
+      }
 
       await runWithTransaction(session, async (txSession) => {
         transfer.status = 'APPROVED';
@@ -408,6 +503,9 @@ export const transferController = {
 
         await updateTransferRecordStatus(access, transfer.id, 'Approved', transfer.notes || undefined, txSession);
       });
+      if (approvalGate.workflowIdToExecute) {
+        await markApprovalWorkflowExecuted(approvalGate.workflowIdToExecute);
+      }
 
       const transferContext = await resolveTransferNotificationContext(transfer);
       await notifyTransferLifecycle({
@@ -434,9 +532,12 @@ export const transferController = {
       if (!transfer) return res.status(404).json({ message: 'Not found' });
 
       const fromOfficeId = String(transfer.from_office_id || '');
-      if (!canOperateSourceOffice(access, fromOfficeId)) {
-        throw createHttpError(403, 'Not permitted to dispatch this transfer');
-      }
+      await enforceAccessPolicy({
+        action: 'transfer.operate_source',
+        actor: toPolicyActor(access, req),
+        targetOfficeId: fromOfficeId,
+        errorMessage: 'Not permitted to dispatch this transfer',
+      });
       await assertTransition(transfer, 'DISPATCHED_TO_STORE');
 
       const handoverDocumentId = readId(req.body as Record<string, any>, [
@@ -487,9 +588,11 @@ export const transferController = {
     const session = await mongoose.startSession();
     try {
       const access = await resolveAccessContext(req.user);
-      if (!access.isOrgAdmin) {
-        throw createHttpError(403, 'Only org_admin can receive transfers at system store');
-      }
+      await enforceAccessPolicy({
+        action: 'transfer.central_store_receive',
+        actor: toPolicyActor(access, req),
+        errorMessage: 'Not permitted to receive transfers at system store',
+      });
 
       const transfer = await TransferModel.findById(readParam(req, 'id'));
       if (!transfer) return res.status(404).json({ message: 'Not found' });
@@ -541,9 +644,11 @@ export const transferController = {
     const session = await mongoose.startSession();
     try {
       const access = await resolveAccessContext(req.user);
-      if (!access.isOrgAdmin) {
-        throw createHttpError(403, 'Only org_admin can dispatch from system store');
-      }
+      await enforceAccessPolicy({
+        action: 'transfer.central_store_dispatch',
+        actor: toPolicyActor(access, req),
+        errorMessage: 'Not permitted to dispatch from system store',
+      });
 
       const transfer = await TransferModel.findById(readParam(req, 'id'));
       if (!transfer) return res.status(404).json({ message: 'Not found' });
@@ -583,9 +688,12 @@ export const transferController = {
       if (!transfer) return res.status(404).json({ message: 'Not found' });
 
       const toOfficeId = String(transfer.to_office_id || '');
-      if (!canOperateDestinationOffice(access, toOfficeId)) {
-        throw createHttpError(403, 'Not permitted to receive this transfer');
-      }
+      await enforceAccessPolicy({
+        action: 'transfer.operate_destination',
+        actor: toPolicyActor(access, req),
+        targetOfficeId: toOfficeId,
+        errorMessage: 'Not permitted to receive this transfer',
+      });
       await assertTransition(transfer, 'RECEIVED_AT_DEST');
 
       const takeoverDocumentId = readId(req.body as Record<string, any>, [
@@ -653,9 +761,12 @@ export const transferController = {
       if (!transfer) return res.status(404).json({ message: 'Not found' });
 
       const fromOfficeId = String(transfer.from_office_id || '');
-      if (!canApproveTransfer(access, fromOfficeId)) {
-        throw createHttpError(403, 'Not permitted to reject this transfer');
-      }
+      await enforceAccessPolicy({
+        action: 'transfer.approve',
+        actor: toPolicyActor(access, req),
+        targetOfficeId: fromOfficeId,
+        errorMessage: 'Not permitted to reject this transfer',
+      });
       await assertTransition(transfer, 'REJECTED');
 
       const rollbackStatuses = new Set(['DISPATCHED_TO_STORE', 'RECEIVED_AT_STORE', 'DISPATCHED_TO_DEST']);
@@ -713,8 +824,26 @@ export const transferController = {
       if (!transfer) return res.status(404).json({ message: 'Not found' });
 
       const fromOfficeId = String(transfer.from_office_id || '');
-      if (!canOperateSourceOffice(access, fromOfficeId) && !canApproveTransfer(access, fromOfficeId)) {
-        throw createHttpError(403, 'Not permitted to cancel this transfer');
+      const policyActor = toPolicyActor(access, req);
+      let canCancel = false;
+      try {
+        await enforceAccessPolicy({
+          action: 'transfer.operate_source',
+          actor: policyActor,
+          targetOfficeId: fromOfficeId,
+          errorMessage: 'Not permitted to cancel this transfer',
+        });
+        canCancel = true;
+      } catch {
+        canCancel = false;
+      }
+      if (!canCancel) {
+        await enforceAccessPolicy({
+          action: 'transfer.approve',
+          actor: policyActor,
+          targetOfficeId: fromOfficeId,
+          errorMessage: 'Not permitted to cancel this transfer',
+        });
       }
       await assertTransition(transfer, 'CANCELLED');
 
@@ -768,9 +897,11 @@ export const transferController = {
   remove: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const access = await resolveAccessContext(req.user);
-      if (!access.isOrgAdmin) {
-        throw createHttpError(403, 'Only org_admin can retire transfers');
-      }
+      await enforceAccessPolicy({
+        action: 'transfer.retire',
+        actor: toPolicyActor(access, req),
+        errorMessage: 'Not permitted to retire transfers',
+      });
       const transfer = await TransferModel.findById(readParam(req, 'id'));
       if (!transfer) return res.status(404).json({ message: 'Not found' });
       transfer.is_active = false;

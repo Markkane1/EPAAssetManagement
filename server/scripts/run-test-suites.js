@@ -10,10 +10,11 @@ const SUITES = {
   requisition: ['requisition'],
   returns: ['return-requests'],
   reports: ['reports'],
+  transfers: ['transfers'],
   employees: ['employees'],
   office: ['office-sub-locations'],
   assetItems: ['asset-items'],
-  runtime: ['asset-items', 'employees', 'office-sub-locations', 'requisition', 'return-requests', 'reports'],
+  runtime: ['asset-items', 'employees', 'office-sub-locations', 'requisition', 'return-requests', 'reports', 'transfers'],
   all: [
     'security',
     'consumables',
@@ -23,6 +24,7 @@ const SUITES = {
     'requisition',
     'return-requests',
     'reports',
+    'transfers',
   ],
 };
 

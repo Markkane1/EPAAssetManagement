@@ -3,6 +3,7 @@ import { transferService } from '@/services/transferService';
 import type { TransferCreateDto } from '@/services/transferService';
 import { toast } from 'sonner';
 import { API_CONFIG } from '@/config/api.config';
+import { ApiError } from '@/lib/api';
 
 const { queryKeys, messages, query } = API_CONFIG;
 
@@ -57,15 +58,17 @@ export const useTransferAction = () => {
       action,
       handoverDocumentId,
       takeoverDocumentId,
+      approvalWorkflowId,
     }: {
       id: string;
       action: TransferActionType;
       handoverDocumentId?: string;
       takeoverDocumentId?: string;
+      approvalWorkflowId?: string;
     }) => {
       switch (action) {
         case 'approve':
-          return transferService.approve(id);
+          return transferService.approve(id, approvalWorkflowId);
         case 'dispatch_to_store':
           if (!handoverDocumentId) throw new Error('Handover document is required');
           return transferService.dispatchToStore(id, handoverDocumentId);
@@ -90,6 +93,19 @@ export const useTransferAction = () => {
       toast.success(messages.transferUpdated);
     },
     onError: (error: Error) => {
+      if (error instanceof ApiError && error.status === 409) {
+        const approvalRequest =
+          (error.details as Record<string, unknown> | undefined)?.approval_request as
+            | Record<string, unknown>
+            | undefined;
+        const approvalRequestId = String(approvalRequest?.id || approvalRequest?._id || '').trim();
+        if (approvalRequestId) {
+          toast.error(
+            `Approval required before this transfer step. Workflow id: ${approvalRequestId}`
+          );
+          return;
+        }
+      }
       toast.error(`${messages.transferError}: ${error.message}`);
     },
   });

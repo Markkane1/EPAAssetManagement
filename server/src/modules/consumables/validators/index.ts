@@ -67,6 +67,8 @@ export const consumableIssueCreateSchema = z.object({
   quantity: qty2dpSchema,
   notes: z.string().max(500).optional(),
   document_id: objectId.optional(),
+  approval_workflow_id: objectId.optional(),
+  approvalWorkflowId: objectId.optional(),
 });
 
 export const consumableConsumptionCreateSchema = z.object({
@@ -252,6 +254,8 @@ export const disposeSchema = z.object({
   metadata: z.record(z.any()).optional(),
   allowNegative: z.boolean().optional(),
   overrideNote: z.string().max(500).optional(),
+  approval_workflow_id: objectId.optional(),
+  approvalWorkflowId: objectId.optional(),
 });
 
 export const returnSchema = z.object({

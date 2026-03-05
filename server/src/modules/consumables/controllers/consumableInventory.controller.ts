@@ -17,7 +17,10 @@ function getAuthUser(req: AuthRequest) {
   return {
     userId: req.user.userId,
     role: req.user.role,
+    roles: req.user.roles || [req.user.role],
     email: req.user.email,
+    locationId: req.user.locationId ?? null,
+    isOrgAdmin: Boolean(req.user.isOrgAdmin),
   };
 }
 

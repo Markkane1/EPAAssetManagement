@@ -15,6 +15,7 @@ import {
   dispatchConsumableWorkflowNotifications,
   resolveOfficeIdsFromHolders,
 } from '../services/workflowNotification.service';
+import { enforceAccessPolicy } from '../../../services/policyEngine.service';
 
 type ReturnMode = 'USER_TO_OFFICE' | 'OFFICE_TO_STORE_LOT';
 
@@ -93,41 +94,60 @@ function ensureOfficeScopedActorForOffice(
 }
 
 async function ensureUserToOfficePermission(
-  authUser: { userId: string; role: string; locationId?: string | null },
+  authUser: { userId: string; role: string; roles?: string[]; isOrgAdmin?: boolean; locationId?: string | null },
   fromUser: any,
   toOfficeId: string
 ) {
-  if (authUser.role === 'org_admin') return;
-
-  if (authUser.role === 'employee') {
-    ensureEmployeeUserToOfficeScope(authUser, String(fromUser._id), toOfficeId);
-    const fromUserOfficeId = String(fromUser.location_id || '').trim();
-    if (!fromUserOfficeId || fromUserOfficeId !== toOfficeId) {
-      throw createHttpError(403, 'Forbidden');
-    }
-    return;
-  }
-
-  if (authUser.role !== 'office_head' && authUser.role !== 'caretaker') {
+  const actor = {
+    userId: authUser.userId,
+    role: authUser.role,
+    roles: authUser.roles || [authUser.role],
+    officeId: authUser.locationId || null,
+    isOrgAdmin: Boolean(authUser.isOrgAdmin),
+  };
+  const fromUserOfficeId = String(fromUser.location_id || '').trim();
+  if (!fromUserOfficeId) {
     throw createHttpError(403, 'Forbidden');
   }
+  if (String(fromUser._id || '') === String(authUser.userId)) {
+    ensureEmployeeUserToOfficeScope(authUser, String(fromUser._id), toOfficeId);
+    await enforceAccessPolicy({
+      action: 'consumables.return.user_to_office.self',
+      actor,
+      subjectUserId: String(fromUser._id),
+      errorMessage: 'Forbidden',
+    });
+  } else {
+    await enforceAccessPolicy({
+      action: 'consumables.return.user_to_office.manage',
+      actor,
+      targetOfficeId: toOfficeId,
+      errorMessage: 'Forbidden',
+    });
+    ensureOfficeScopedActorForOffice(authUser, toOfficeId);
+  }
 
-  ensureOfficeScopedActorForOffice(authUser, toOfficeId);
-  const fromUserOfficeId = String(fromUser.location_id || '').trim();
-  if (!fromUserOfficeId || fromUserOfficeId !== toOfficeId) {
+  if (fromUserOfficeId !== toOfficeId) {
     throw createHttpError(403, 'Forbidden');
   }
 }
 
-function ensureOfficeToStoreLotPermission(
-  authUser: { role: string; locationId?: string | null },
+async function ensureOfficeToStoreLotPermission(
+  authUser: { userId: string; role: string; roles?: string[]; isOrgAdmin?: boolean; locationId?: string | null },
   fromOfficeId: string
 ) {
-  if (authUser.role === 'org_admin') return;
-  if (authUser.role === 'employee') throw createHttpError(403, 'Forbidden');
-  if (authUser.role !== 'office_head' && authUser.role !== 'caretaker') {
-    throw createHttpError(403, 'Forbidden');
-  }
+  await enforceAccessPolicy({
+    action: 'consumables.return.office_to_store_lot',
+    actor: {
+      userId: authUser.userId,
+      role: authUser.role,
+      roles: authUser.roles || [authUser.role],
+      officeId: authUser.locationId || null,
+      isOrgAdmin: Boolean(authUser.isOrgAdmin),
+    },
+    targetOfficeId: fromOfficeId,
+    errorMessage: 'Forbidden',
+  });
   ensureOfficeScopedActorForOffice(authUser, fromOfficeId);
 }
 
@@ -236,7 +256,7 @@ export const consumableReturnController = {
         if (!fromOfficeId) throw createHttpError(400, 'from_office_id is required for OFFICE_TO_STORE_LOT');
         if (!toLotId) throw createHttpError(400, 'to_lot_id is required for OFFICE_TO_STORE_LOT');
 
-        ensureOfficeToStoreLotPermission(authUser, fromOfficeId);
+        await ensureOfficeToStoreLotPermission(authUser, fromOfficeId);
 
         const [fromOffice, targetLot, headOfficeStore] = await Promise.all([
           OfficeModel.findById(fromOfficeId).session(session).lean(),

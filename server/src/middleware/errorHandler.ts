@@ -1,6 +1,6 @@
 import { NextFunction, Request, Response } from 'express';
 
-type ErrorShape = Error & { status?: number; message?: string };
+type ErrorShape = Error & { status?: number; message?: string; details?: unknown };
 type MongoDuplicateKeyError = ErrorShape & {
   code?: number;
   keyPattern?: Record<string, unknown>;
@@ -34,5 +34,9 @@ export function errorHandler(err: Error, _req: Request, res: Response, _next: Ne
   const message = status >= 500 && isProd
     ? 'Internal Server Error'
     : typed.message || 'Internal Server Error';
-  res.status(status).json({ message });
+  const body: Record<string, unknown> = { message };
+  if (status < 500 && typed.details !== undefined) {
+    body.details = typed.details;
+  }
+  res.status(status).json(body);
 }

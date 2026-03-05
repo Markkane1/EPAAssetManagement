@@ -1,6 +1,20 @@
 // API Configuration
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
 
+export class ApiError extends Error {
+  status: number;
+  details?: unknown;
+  payload?: Record<string, unknown> | null;
+
+  constructor(message: string, status: number, details?: unknown, payload?: Record<string, unknown> | null) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.details = details;
+    this.payload = payload || null;
+  }
+}
+
 function getCookieValue(name: string): string | null {
   if (typeof document === 'undefined') return null;
   const encodedName = `${encodeURIComponent(name)}=`;
@@ -111,9 +125,13 @@ function formatValidationIssueSummary(issues: string[]) {
   return visible.join(' | ') + suffix;
 }
 
-function extractApiErrorMessage(errorText: string, status: number): string {
+function extractApiErrorPayload(errorText: string, status: number): {
+  message: string;
+  details?: unknown;
+  payload?: Record<string, unknown> | null;
+} {
   if (!errorText) {
-    return `HTTP error! status: ${status}`;
+    return { message: `HTTP error! status: ${status}` };
   }
 
   try {
@@ -124,24 +142,25 @@ function extractApiErrorMessage(errorText: string, status: number): string {
       const issueSummary = formatValidationIssueSummary(validationIssues);
 
       if (issueSummary && isValidationPayload(parsed, message)) {
-        return issueSummary;
+        return { message: issueSummary, details: parsed.details, payload: parsed };
       }
 
-      if (message) return message;
-      if (issueSummary) return issueSummary;
+      if (message) return { message, details: parsed.details, payload: parsed };
+      if (issueSummary) return { message: issueSummary, details: parsed.details, payload: parsed };
     }
   } catch {
     // Ignore JSON parse failures and fall back to raw text.
   }
 
-  return errorText;
+  return { message: errorText };
 }
 
 // Generic API response handler
 async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
-    const error = await response.text();
-    throw new Error(extractApiErrorMessage(error, response.status));
+    const errorText = await response.text();
+    const parsed = extractApiErrorPayload(errorText, response.status);
+    throw new ApiError(parsed.message, response.status, parsed.details, parsed.payload || null);
   }
   
   const text = await response.text();

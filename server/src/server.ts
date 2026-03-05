@@ -3,6 +3,7 @@ import { connectDatabase } from './config/db';
 import { env } from './config/env';
 import { ensureSuperAdmin } from './services/seedAdmin';
 import { ensureConsumableUnits } from './services/seedConsumableUnits';
+import { startBackgroundScheduler } from './services/backgroundScheduler.service';
 
 async function start() {
   await connectDatabase();
@@ -13,6 +14,7 @@ async function start() {
     });
   }
   await ensureConsumableUnits();
+  await startBackgroundScheduler();
   const app = createApp();
   app.listen(env.port, () => {
     console.log(`Server listening on port ${env.port}`);

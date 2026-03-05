@@ -4,6 +4,7 @@ import { SystemSettingsModel } from '../models/systemSettings.model';
 import { OfficeModel } from '../models/office.model';
 import type { AuthRequest } from '../middleware/auth';
 import { createHttpError } from '../utils/httpError';
+import { invalidateWorkflowConfigCache } from '../services/workflowConfig.service';
 
 const STORAGE_LIMIT_BYTES = Number(process.env.STORAGE_LIMIT_GB || 10) * 1024 * 1024 * 1024;
 const APP_VERSION = process.env.APP_VERSION || '1.0.0';
@@ -49,6 +50,7 @@ const PERMISSION_PAGE_KEYS = [
   'schemes',
   'reports',
   'compliance',
+  'approval-matrix',
   'settings',
   'audit-logs',
   'user-permissions',
@@ -104,6 +106,15 @@ const DEFAULT_ALLOWED_ROLES_BY_PAGE: Record<string, string[]> = {
   schemes: ['org_admin', 'caretaker', 'procurement_officer'],
   reports: ['org_admin', 'office_head', 'caretaker', 'employee', 'procurement_officer', 'compliance_auditor'],
   compliance: ['org_admin', 'office_head', 'caretaker', 'employee', 'compliance_auditor'],
+  'approval-matrix': [
+    'org_admin',
+    'office_head',
+    'caretaker',
+    'storekeeper',
+    'inventory_controller',
+    'procurement_officer',
+    'compliance_auditor',
+  ],
   requisitions: ['org_admin', 'office_head', 'caretaker', 'employee', 'inventory_controller'],
   'requisitions-new': ['employee'],
   returns: ['org_admin', 'office_head', 'caretaker', 'employee', 'inventory_controller'],
@@ -134,6 +145,13 @@ const getOrCreateSettings = async () => {
   }
   return settings;
 };
+
+function ensurePlainObject(value: unknown, field: string) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw createHttpError(400, `${field} must be an object`);
+  }
+  return value as Record<string, unknown>;
+}
 
 function asTrimmedString(value: unknown, field: string, maxLength: number) {
   const parsed = String(value ?? '').trim();
@@ -356,7 +374,11 @@ export const settingsController = {
   updateSettings: async (req: Request, res: Response, next: NextFunction) => {
     try {
       const settings = await getOrCreateSettings();
-      const { organization, notifications, security } = req.body || {};
+      const body = req.body || {};
+      const { organization, notifications, security } = body;
+      const accessPolicies = body.accessPolicies ?? body.access_policies;
+      const approvalMatrix = body.approvalMatrix ?? body.approval_matrix;
+      const scheduler = body.scheduler;
 
       if (organization) {
         settings.organization = {
@@ -376,8 +398,30 @@ export const settingsController = {
           ...security,
         };
       }
+      if (accessPolicies !== undefined) {
+        settings.access_policies = {
+          ...ensurePlainObject(accessPolicies, 'accessPolicies'),
+          updated_at: new Date().toISOString(),
+          updated_by_user_id: (req as AuthRequest).user?.userId || null,
+        };
+      }
+      if (approvalMatrix !== undefined) {
+        settings.approval_matrix = {
+          ...ensurePlainObject(approvalMatrix, 'approvalMatrix'),
+          updated_at: new Date().toISOString(),
+          updated_by_user_id: (req as AuthRequest).user?.userId || null,
+        };
+      }
+      if (scheduler !== undefined) {
+        settings.scheduler = {
+          ...ensurePlainObject(scheduler, 'scheduler'),
+          updated_at: new Date().toISOString(),
+          updated_by_user_id: (req as AuthRequest).user?.userId || null,
+        };
+      }
 
       await settings.save();
+      invalidateWorkflowConfigCache();
       const systemInfo = await buildSystemInfo(req, settings.last_backup_at || null);
       res.json({ settings, systemInfo });
     } catch (error) {
@@ -472,6 +516,7 @@ export const settingsController = {
         updated_by_user_id: req.user?.userId || null,
       };
       await settings.save();
+      invalidateWorkflowConfigCache();
       res.json(readStoredRolePermissions(settings));
     } catch (error) {
       next(error);
