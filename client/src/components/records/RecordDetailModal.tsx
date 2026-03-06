@@ -4,15 +4,11 @@ import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, FileText, AlertTriangle } from "lucide-react";
 import { useRecordDetail, useRecordLookup } from "@/hooks/useRecords";
+import { buildApiUrl } from "@/lib/api";
 import type { RecordDetailResponse } from "@/types";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000/api";
-const FILE_BASE_URL = API_BASE_URL.replace(/\/api\/?$/, "");
-
 function buildFileUrl(fileUrl?: string | null) {
-  if (!fileUrl) return null;
-  if (fileUrl.startsWith("http://") || fileUrl.startsWith("https://")) return fileUrl;
-  return `${FILE_BASE_URL}${fileUrl}`;
+  return buildApiUrl(fileUrl || null);
 }
 
 function formatDate(value?: string | null) {

@@ -1,7 +1,7 @@
 <!-- gitnexus:start -->
 # GitNexus MCP
 
-This project is indexed by GitNexus as **AMS With Backend** (2785 symbols, 9642 relationships, 206 execution flows).
+This project is indexed by GitNexus as **AMS With Backend** (2860 symbols, 10005 relationships, 210 execution flows).
 
 ## Always Start Here
 

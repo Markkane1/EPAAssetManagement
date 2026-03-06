@@ -468,8 +468,6 @@ export {
   FULFILL_ALLOWED_STATUSES,
   ADJUST_ALLOWED_STATUSES,
   OPEN_ASSIGNMENT_STATUSES,
-  AuthRequestWithFiles,
-  ParsedLine,
   readParam,
   asNonEmptyString,
   asNullableString,
@@ -479,7 +477,6 @@ export {
   isHqDirectorateOffice,
   parseVerifyDecision,
   getSignedIssuanceFile,
-  FulfillLineInput,
   parseFulfillLinesInput,
   parseAdjustRequest,
   summarizeAdjustmentsForNotes,
@@ -492,4 +489,10 @@ export {
   enrichLinesWithMappingMetadata,
   buildRequisitionMappingSummary,
   dispatchDraftAssignmentNotifications,
+};
+
+export type {
+  AuthRequestWithFiles,
+  ParsedLine,
+  FulfillLineInput,
 };

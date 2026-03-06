@@ -6,11 +6,17 @@ import { API_CONFIG } from '@/config/api.config';
 
 const { queryKeys, messages, query } = API_CONFIG;
 
-export const useLocations = () => {
+type QueryToggleOptions = {
+  enabled?: boolean;
+};
+
+export const useLocations = (options: QueryToggleOptions = {}) => {
+  const { enabled = true } = options;
   return useQuery({
     queryKey: queryKeys.locations,
     queryFn: locationService.getAll,
     staleTime: query.staleTime,
+    enabled,
   });
 };
 
@@ -68,4 +74,3 @@ export const useDeleteLocation = () => {
     },
   });
 };
-

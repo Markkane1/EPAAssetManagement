@@ -3,7 +3,9 @@ import { defineConfig, devices } from "@playwright/test";
 export default defineConfig({
   testDir: "./tests/e2e",
   fullyParallel: false,
+  workers: 1,
   timeout: 30_000,
+  testIgnore: ["**/start-server.mjs", "**/seed.ts"],
   expect: {
     timeout: 5_000,
   },
@@ -12,27 +14,31 @@ export default defineConfig({
     ["html", { open: "never" }],
   ],
   use: {
-    baseURL: "http://127.0.0.1:8080",
+    baseURL: "http://localhost:8080",
     trace: "on-first-retry",
     screenshot: "only-on-failure",
     video: "retain-on-failure",
   },
   projects: [
     {
-      name: "chromium",
+      name: "desktop-chromium",
       use: { ...devices["Desktop Chrome"] },
+    },
+    {
+      name: "mobile-chromium",
+      use: { ...devices["iPhone 14"], browserName: "chromium" },
     },
   ],
   webServer: [
     {
       command: "node ./tests/e2e/start-server.mjs",
-      url: "http://127.0.0.1:5000/health",
+      url: "http://localhost:5000/health",
       timeout: 120_000,
       reuseExistingServer: !process.env.CI,
     },
     {
       command: "npm run dev:client",
-      url: "http://127.0.0.1:8080",
+      url: "http://localhost:8080",
       timeout: 120_000,
       reuseExistingServer: !process.env.CI,
     },

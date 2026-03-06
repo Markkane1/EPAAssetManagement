@@ -34,7 +34,7 @@ export function Header({
   searchPlaceholder,
   onMenuClick,
 }: HeaderProps) {
-  const { user, role, activeRole, isOrgAdmin, logout } = useAuth();
+  const { user, role, activeRole, isOrgAdmin, isAuthenticated, isLoading, logout } = useAuth();
   const navigate = useNavigate();
   const canAccessSettings = canAccessPage({
     page: "settings",
@@ -77,7 +77,7 @@ export function Header({
     page: 1,
     limit: 20,
     scopeKey: user?.id || "anon",
-    enabled: Boolean(user?.id),
+    enabled: !isLoading && isAuthenticated && Boolean(user?.id),
   });
   const notifications = useMemo(
     () => notificationResponse?.data || [],
@@ -250,3 +250,4 @@ export function Header({
     </header>
   );
 }
+

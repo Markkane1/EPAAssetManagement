@@ -4,6 +4,13 @@ import { PageHeader } from "@/components/shared/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { FolderKanban, Calendar, MoreHorizontal, Pencil, Trash2, Eye, Loader2 } from "lucide-react";
 import {
   DropdownMenu,
@@ -11,8 +18,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { toast } from "sonner";
-import { useProjects, useCreateProject, useUpdateProject, useDeleteProject } from "@/hooks/useProjects";
+import {
+  useProjects,
+  useProject,
+  useCreateProject,
+  useUpdateProject,
+  useDeleteProject,
+} from "@/hooks/useProjects";
 import { ProjectFormModal } from "@/components/forms/ProjectFormModal";
 import { Project } from "@/types";
 import { usePageSearch } from "@/contexts/PageSearchContext";
@@ -28,9 +40,15 @@ export default function Projects() {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
+  const [viewingProjectId, setViewingProjectId] = useState<string | null>(null);
   const { mode: viewMode, setMode: setViewMode } = useViewMode("projects");
   const pageSearch = usePageSearch();
   const searchTerm = (pageSearch?.term || "").trim().toLowerCase();
+  const {
+    data: viewingProject,
+    isLoading: isViewingProject,
+    isError: isViewingProjectError,
+  } = useProject(viewingProjectId || "");
 
   const filteredProjects = useMemo(
     () =>
@@ -52,6 +70,10 @@ export default function Projects() {
   const handleEdit = (project: Project) => {
     setEditingProject(project);
     setIsModalOpen(true);
+  };
+
+  const handleView = (projectId: string) => {
+    setViewingProjectId(projectId);
   };
 
   const handleSubmit = async (data: any) => {
@@ -104,7 +126,7 @@ export default function Projects() {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={() => toast.info("View details would open")}>
+        <DropdownMenuItem onClick={() => handleView(project.id)}>
           <Eye className="h-4 w-4 mr-2" /> View Details
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => handleEdit(project)}>
@@ -165,7 +187,7 @@ export default function Projects() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => toast.info("View details would open")}>
+                          <DropdownMenuItem onClick={() => handleView(project.id)}>
                             <Eye className="h-4 w-4 mr-2" /> View Details
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => handleEdit(project)}>
@@ -207,6 +229,96 @@ export default function Projects() {
         project={editingProject}
         onSubmit={handleSubmit}
       />
+
+      <Dialog open={Boolean(viewingProjectId)} onOpenChange={(open) => (!open ? setViewingProjectId(null) : null)}>
+        <DialogContent className="sm:max-w-[560px]">
+          <DialogHeader>
+            <DialogTitle>{viewingProject?.name || "Project details"}</DialogTitle>
+            <DialogDescription>
+              Review the project record, timeline, and operational status.
+            </DialogDescription>
+          </DialogHeader>
+          {isViewingProject ? (
+            <div className="flex items-center justify-center py-10">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : isViewingProjectError || !viewingProject ? (
+            <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+              Unable to load project details.
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center gap-2">
+                {viewingProject.code ? (
+                  <Badge variant="outline" className="font-mono text-xs">
+                    {viewingProject.code}
+                  </Badge>
+                ) : null}
+                <Badge
+                  variant={viewingProject.is_active ? "default" : "secondary"}
+                  className={viewingProject.is_active ? "bg-success" : ""}
+                >
+                  {viewingProject.is_active ? "Active" : "Inactive"}
+                </Badge>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="rounded-lg border p-4">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Start Date</p>
+                  <p className="mt-1 text-sm font-medium">
+                    {viewingProject.start_date
+                      ? new Date(viewingProject.start_date).toLocaleDateString()
+                      : "Not set"}
+                  </p>
+                </div>
+                <div className="rounded-lg border p-4">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">End Date</p>
+                  <p className="mt-1 text-sm font-medium">
+                    {viewingProject.end_date
+                      ? new Date(viewingProject.end_date).toLocaleDateString()
+                      : "Not set"}
+                  </p>
+                </div>
+                <div className="rounded-lg border p-4">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Budget</p>
+                  <p className="mt-1 text-sm font-medium">
+                    {typeof viewingProject.budget === "number"
+                      ? `PKR ${viewingProject.budget.toLocaleString("en-PK")}`
+                      : "Not recorded"}
+                  </p>
+                </div>
+                <div className="rounded-lg border p-4">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Created</p>
+                  <p className="mt-1 text-sm font-medium">
+                    {new Date(viewingProject.created_at).toLocaleDateString()}
+                  </p>
+                </div>
+              </div>
+
+              <div className="rounded-lg border p-4">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Description</p>
+                <p className="mt-1 text-sm leading-6 text-foreground">
+                  {viewingProject.description || "No description provided."}
+                </p>
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setViewingProjectId(null)}>
+                  Close
+                </Button>
+                <Button
+                  onClick={() => {
+                    setViewingProjectId(null);
+                    handleEdit(viewingProject);
+                  }}
+                >
+                  Edit Project
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </MainLayout>
   );
 }

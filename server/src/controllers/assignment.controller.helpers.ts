@@ -268,8 +268,6 @@ export {
   RETURN_SLIP_ALLOWED_STATUSES,
   ASSIGNED_TO_TYPES,
   fieldMap,
-  AuthRequestWithFiles,
-  AccessContext,
   readParam,
   clampInt,
   asNonEmptyString,
@@ -286,4 +284,9 @@ export {
   resolveNotificationRecipients,
   notifyAssignmentEvent,
   resolveGeneratedSlipFile,
+};
+
+export type {
+  AuthRequestWithFiles,
+  AccessContext,
 };

@@ -31,6 +31,7 @@ import { useBackupData, useSystemSettings, useTestEmail, useUpdateSystemSettings
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { SystemSettings } from "@/types";
+import { API_BASE_URL } from "@/lib/api";
 import {
   NOTIFICATION_AREA_DEFINITIONS,
   NOTIFICATION_TOGGLE_LABELS,
@@ -519,7 +520,7 @@ export default function Settings() {
             </div>
             <div className="space-y-1">
               <Label>Client API URL</Label>
-              <Input value={import.meta.env.VITE_API_BASE_URL || "http://localhost:5000/api"} readOnly />
+              <Input value={API_BASE_URL} readOnly />
             </div>
             <div className="space-y-1">
               <Label>Database Status</Label>

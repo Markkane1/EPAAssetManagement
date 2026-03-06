@@ -18,7 +18,7 @@ import {
 import { AlertCircle } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useEmployees } from "@/hooks/useEmployees";
-import { useAssignments } from "@/hooks/useAssignments";
+import { useAssignmentsByEmployee } from "@/hooks/useAssignments";
 import { useAssetItems } from "@/hooks/useAssetItems";
 import { useAssets } from "@/hooks/useAssets";
 import { useConsumableBalances, useConsumeConsumables } from "@/hooks/useConsumableInventory";
@@ -51,7 +51,6 @@ type ConsumableRow = {
 export default function MyAssets() {
   const { user } = useAuth();
   const { data: employees } = useEmployees();
-  const { data: assignments } = useAssignments();
   const { data: assetItems } = useAssetItems();
   const { data: assets } = useAssets();
   const { data: consumableItems } = useConsumableItems();
@@ -62,7 +61,6 @@ export default function MyAssets() {
   const [consumeNotes, setConsumeNotes] = useState("");
 
   const employeeList = useMemo(() => employees || [], [employees]);
-  const assignmentList = useMemo(() => assignments || [], [assignments]);
   const assetItemList = useMemo(() => assetItems || [], [assetItems]);
   const assetList = useMemo(() => assets || [], [assets]);
 
@@ -77,6 +75,8 @@ export default function MyAssets() {
   }, [employeeList, user?.email, user?.id]);
   const currentEmployeeId = asId(currentEmployee);
 
+  const { data: employeeAssignments } = useAssignmentsByEmployee(currentEmployeeId || "");
+
   const { data: consumableBalances } = useConsumableBalances(
     currentEmployeeId
       ? {
@@ -88,6 +88,7 @@ export default function MyAssets() {
 
   const movableRows = useMemo(() => {
     if (!currentEmployeeId) return [];
+    const assignmentList = employeeAssignments || [];
     return assignmentList
       .filter(
         (assignment) =>
@@ -107,7 +108,7 @@ export default function MyAssets() {
           status: assignment.status || (assignment.is_active ? "Active" : "Closed"),
         };
       });
-  }, [assetItemList, assetList, assignmentList, currentEmployeeId]);
+  }, [assetItemList, assetList, currentEmployeeId, employeeAssignments]);
 
   const consumableRows = useMemo<ConsumableRow[]>(() => {
     if (!currentEmployeeId) return [];

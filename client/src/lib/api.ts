@@ -1,5 +1,25 @@
 // API Configuration
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
+function trimTrailingSlash(value: string) {
+  return value.replace(/\/+$/, '');
+}
+
+function resolveApiBaseUrl() {
+  const configured = String(import.meta.env.VITE_API_BASE_URL || '').trim();
+  if (configured) {
+    return trimTrailingSlash(configured);
+  }
+  return '/api';
+}
+
+export const API_BASE_URL = resolveApiBaseUrl();
+export const API_ORIGIN = API_BASE_URL.replace(/\/api\/?$/, '') || '';
+
+export function buildApiUrl(path: string | null | undefined) {
+  if (!path) return null;
+  if (/^https?:\/\//i.test(path)) return path;
+  if (path.startsWith('/')) return `${API_ORIGIN}${path}`;
+  return `${API_ORIGIN}/${path}`;
+}
 
 export class ApiError extends Error {
   status: number;

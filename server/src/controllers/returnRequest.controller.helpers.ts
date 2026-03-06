@@ -88,7 +88,6 @@ function getSignedReturnFile(req: AuthRequestWithFiles) {
 export {
   RECEIVE_ALLOWED_STATUSES,
   SIGNED_UPLOAD_ALLOWED_STATUSES,
-  AuthRequestWithFiles,
   asNullableString,
   parseBoolean,
   parseDateInput,
@@ -98,4 +97,8 @@ export {
   uniqueIds,
   displayEmployeeName,
   getSignedReturnFile,
+};
+
+export type {
+  AuthRequestWithFiles,
 };

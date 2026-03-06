@@ -24,11 +24,9 @@ import { assetItemService } from "@/services/assetItemService";
 import { useLocations } from "@/hooks/useLocations";
 import { useOfficeSubLocations } from "@/hooks/useOfficeSubLocations";
 import { useAuth } from "@/contexts/AuthContext";
+import { buildApiUrl } from "@/lib/api";
 import type { AssetItem, Assignment, Asset, ConsumableItem, Office, RequisitionLine } from "@/types";
 import { useIsMobile } from "@/hooks/use-mobile";
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000/api";
-const API_ORIGIN = API_BASE_URL.replace(/\/api\/?$/, "");
 
 const FULFILLABLE_STATUSES = new Set([
   "APPROVED",
@@ -65,13 +63,6 @@ function isHqDirectorateOffice(officeId: string, offices: Office[]) {
   if (!parentId) return false;
   const parent = offices.find((entry) => entry.id === parentId);
   return parent?.type === "HEAD_OFFICE" || parent?.type === "DIRECTORATE";
-}
-
-function buildApiUrl(path: string | null | undefined) {
-  if (!path) return null;
-  if (/^https?:\/\//i.test(path)) return path;
-  if (path.startsWith("/")) return `${API_ORIGIN}${path}`;
-  return `${API_ORIGIN}/${path}`;
 }
 
 async function downloadProtectedFile(fileUrl: string, fallbackName: string) {

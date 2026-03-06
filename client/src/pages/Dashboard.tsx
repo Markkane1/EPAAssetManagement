@@ -28,7 +28,7 @@ import { StatusBadge } from "@/components/shared/StatusBadge";
 import { useDashboardStats } from "@/hooks/useDashboard";
 import { useAssetItems } from "@/hooks/useAssetItems";
 import { useLocations } from "@/hooks/useLocations";
-import { useAssignments } from "@/hooks/useAssignments";
+import { useAssignmentsByEmployee } from "@/hooks/useAssignments";
 import { useEmployees } from "@/hooks/useEmployees";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePageSearch } from "@/contexts/PageSearchContext";
@@ -54,27 +54,17 @@ const OPEN_REQUISITION_STATUSES = new Set([
 export default function Dashboard() {
   const { role, user } = useAuth();
   const isEmployee = role === "employee";
-  const { data: dashboardStats, isLoading: statsLoading } = useDashboardStats();
-  const { data: assetItems } = useAssetItems();
-  const { data: locations } = useLocations();
+  const loadAdminCollections = !isEmployee;
+  const { data: dashboardStats, isLoading: statsLoading } = useDashboardStats({
+    enabled: loadAdminCollections,
+  });
+  const { data: assetItems } = useAssetItems({ enabled: loadAdminCollections });
+  const { data: locations } = useLocations({ enabled: loadAdminCollections });
   const { data: employees, isLoading: employeesLoading } = useEmployees();
-  const { data: assignments, isLoading: assignmentsLoading } = useAssignments();
   const pageSearch = usePageSearch();
   const searchTerm = (pageSearch?.term || "").trim().toLowerCase();
 
-  const employeeRequisitionsQuery = useQuery({
-    queryKey: ["dashboard", "employee", "requisitions"],
-    queryFn: () => requisitionService.list({ limit: 200 }),
-    enabled: isEmployee,
-  });
-  const employeeReturnRequestsQuery = useQuery({
-    queryKey: ["dashboard", "employee", "returns"],
-    queryFn: () => returnRequestService.list({ limit: 200 }),
-    enabled: isEmployee,
-  });
-
   const employeeList = useMemo(() => employees || [], [employees]);
-  const assignmentList = useMemo(() => assignments || [], [assignments]);
   const currentEmployee = useMemo(() => {
     const userId = safeId(user?.id);
     const userEmail = String(user?.email || "").toLowerCase();
@@ -85,6 +75,19 @@ export default function Dashboard() {
     );
   }, [employeeList, user?.email, user?.id]);
   const currentEmployeeId = safeId((currentEmployee as Record<string, unknown> | null)?._id) || safeId((currentEmployee as Record<string, unknown> | null)?.id);
+
+  const employeeRequisitionsQuery = useQuery({
+    queryKey: ["dashboard", "employee", "requisitions"],
+    queryFn: () => requisitionService.list({ limit: 200 }),
+    enabled: isEmployee,
+  });
+  const employeeReturnRequestsQuery = useQuery({
+    queryKey: ["dashboard", "employee", "returns", currentEmployeeId || "unmapped"],
+    queryFn: () => returnRequestService.list({ limit: 200 }),
+    enabled: isEmployee && Boolean(currentEmployeeId),
+  });
+
+  const { data: employeeAssignmentData, isLoading: employeeAssignmentsLoading } = useAssignmentsByEmployee(currentEmployeeId || "");
 
   const employeeConsumableBalancesQuery = useQuery({
     queryKey: ["dashboard", "employee", "consumable-balances", currentEmployeeId],
@@ -98,13 +101,14 @@ export default function Dashboard() {
 
   const employeeAssignments = useMemo(() => {
     if (!isEmployee || !currentEmployeeId) return [];
+    const assignmentList = employeeAssignmentData || [];
     return assignmentList.filter((assignment) => {
       const employeeId = safeId((assignment as Record<string, unknown>).employee_id);
       const targetEmployeeId = safeId((assignment as Record<string, unknown>).assigned_to_id);
       const targetType = String((assignment as Record<string, unknown>).assigned_to_type || "").toUpperCase();
       return employeeId === currentEmployeeId || (targetType === "EMPLOYEE" && targetEmployeeId === currentEmployeeId);
     });
-  }, [assignmentList, currentEmployeeId, isEmployee]);
+  }, [currentEmployeeId, employeeAssignmentData, isEmployee]);
 
   const employeeActiveAssignments = useMemo(
     () =>
@@ -172,7 +176,7 @@ export default function Dashboard() {
   const employeeLoading =
     isEmployee &&
     (employeesLoading ||
-      assignmentsLoading ||
+      employeeAssignmentsLoading ||
       employeeRequisitionsQuery.isLoading ||
       employeeReturnRequestsQuery.isLoading ||
       employeeConsumableBalancesQuery.isLoading);

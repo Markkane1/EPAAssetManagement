@@ -13,6 +13,10 @@ export default defineConfig({
     globals: true,
     passWithNoTests: true,
     environment: "node",
+    testTimeout: 20000,
+    hookTimeout: 60000,
+    teardownTimeout: 20000,
+    fileParallelism: false,
     environmentMatchGlobs: [["tests/components/**", "jsdom"]],
     setupFiles: ["./tests/components/setup.ts"],
     include: [

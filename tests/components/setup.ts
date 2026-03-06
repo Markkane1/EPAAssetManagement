@@ -1,9 +1,19 @@
 import { cleanup } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { afterEach } from "vitest";
+import { mswServer } from "./msw-server";
+
+beforeAll(() => {
+  mswServer.listen({ onUnhandledRequest: "error" });
+});
 
 afterEach(() => {
+  mswServer.resetHandlers();
   cleanup();
+});
+
+afterAll(() => {
+  mswServer.close();
 });
 
 if (typeof window !== "undefined") {

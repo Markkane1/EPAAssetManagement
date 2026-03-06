@@ -16,7 +16,6 @@ export default {
       "ts-jest",
       {
         tsconfig: path.resolve("./server/tsconfig.json"),
-        isolatedModules: true,
       },
     ],
   },

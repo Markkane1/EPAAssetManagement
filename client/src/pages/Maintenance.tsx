@@ -90,11 +90,11 @@ export default function Maintenance() {
     title: "Maintenance File",
   });
 
-  const maintenanceList = maintenanceRecords || [];
-  const assetItemList = assetItems || [];
-  const assetList = assets || [];
-  const assignmentList = assignments || [];
-  const employeeList = employees || [];
+  const maintenanceList = useMemo(() => maintenanceRecords || [], [maintenanceRecords]);
+  const assetItemList = useMemo(() => assetItems || [], [assetItems]);
+  const assetList = useMemo(() => assets || [], [assets]);
+  const assignmentList = useMemo(() => assignments || [], [assignments]);
+  const employeeList = useMemo(() => employees || [], [employees]);
   const isEmployeeView = role === "employee";
 
   const currentEmployee = useMemo(() => {

@@ -3,6 +3,14 @@ import { MainLayout } from "@/components/layout/MainLayout";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTable } from "@/components/shared/DataTable";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
 import { MoreHorizontal, Eye, Pencil, Trash2, Mail, Phone, Loader2 } from "lucide-react";
 import {
   DropdownMenu,
@@ -12,8 +20,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Vendor } from "@/types";
-import { toast } from "sonner";
-import { useVendors, useCreateVendor, useUpdateVendor, useDeleteVendor } from "@/hooks/useVendors";
+import {
+  useVendors,
+  useVendor,
+  useCreateVendor,
+  useUpdateVendor,
+  useDeleteVendor,
+} from "@/hooks/useVendors";
 import { VendorFormModal } from "@/components/forms/VendorFormModal";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLocations } from "@/hooks/useLocations";
@@ -32,6 +45,12 @@ export default function Vendors() {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingVendor, setEditingVendor] = useState<Vendor | null>(null);
+  const [viewingVendorId, setViewingVendorId] = useState<string | null>(null);
+  const {
+    data: viewingVendor,
+    isLoading: isViewingVendor,
+    isError: isViewingVendorError,
+  } = useVendor(viewingVendorId || "");
 
   const vendorList = vendors || [];
 
@@ -69,6 +88,10 @@ export default function Vendors() {
     setIsModalOpen(true);
   };
 
+  const handleView = (vendorId: string) => {
+    setViewingVendorId(vendorId);
+  };
+
   const handleSubmit = async (data: any) => {
     const payload = {
       ...data,
@@ -95,7 +118,7 @@ export default function Vendors() {
         <Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={() => toast.info("View details would open")}>
+        <DropdownMenuItem onClick={() => handleView(row.id)}>
           <Eye className="h-4 w-4 mr-2" /> View Details
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => handleEdit(row)}>
@@ -161,6 +184,80 @@ export default function Vendors() {
         defaultOfficeId={isOrgAdmin ? selectedOfficeId || locationId || null : locationId}
         onSubmit={handleSubmit}
       />
+
+      <Dialog open={Boolean(viewingVendorId)} onOpenChange={(open) => (!open ? setViewingVendorId(null) : null)}>
+        <DialogContent className="sm:max-w-[560px]">
+          <DialogHeader>
+            <DialogTitle>{viewingVendor?.name || "Vendor details"}</DialogTitle>
+            <DialogDescription>
+              Review supplier contact details and office assignment.
+            </DialogDescription>
+          </DialogHeader>
+          {isViewingVendor ? (
+            <div className="flex items-center justify-center py-10">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : isViewingVendorError || !viewingVendor ? (
+            <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+              Unable to load vendor details.
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center gap-2">
+                {viewingVendor.office_id ? (
+                  <Badge variant="outline">
+                    {locationNameById[viewingVendor.office_id] || "Assigned Office"}
+                  </Badge>
+                ) : (
+                  <Badge variant="secondary">Unassigned</Badge>
+                )}
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="rounded-lg border p-4">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Contact Person</p>
+                  <p className="mt-1 text-sm font-medium">{viewingVendor.contact_info || "Not recorded"}</p>
+                </div>
+                <div className="rounded-lg border p-4">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Email</p>
+                  <p className="mt-1 break-all text-sm font-medium">{viewingVendor.email || "Not recorded"}</p>
+                </div>
+                <div className="rounded-lg border p-4">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Phone</p>
+                  <p className="mt-1 text-sm font-medium">{viewingVendor.phone || "Not recorded"}</p>
+                </div>
+                <div className="rounded-lg border p-4">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Created</p>
+                  <p className="mt-1 text-sm font-medium">
+                    {new Date(viewingVendor.created_at).toLocaleDateString()}
+                  </p>
+                </div>
+              </div>
+
+              <div className="rounded-lg border p-4">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Address</p>
+                <p className="mt-1 text-sm leading-6 text-foreground">
+                  {viewingVendor.address || "No address recorded."}
+                </p>
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setViewingVendorId(null)}>
+                  Close
+                </Button>
+                <Button
+                  onClick={() => {
+                    setViewingVendorId(null);
+                    handleEdit(viewingVendor);
+                  }}
+                >
+                  Edit Vendor
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </MainLayout>
   );
 }

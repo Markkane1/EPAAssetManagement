@@ -201,7 +201,9 @@ export function createApp() {
     next();
   });
   app.use(observeRequestMetrics);
-  app.use(morgan('dev'));
+  if (env.nodeEnv !== 'test') {
+    app.use(morgan('dev'));
+  }
   app.use(applyCachePolicy);
   app.use((_req, res, next) => {
     res.setHeader('X-XSS-Protection', '0');

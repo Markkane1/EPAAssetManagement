@@ -17,16 +17,22 @@ const TRACKED_COMMANDS = new Set([
   'update',
 ]);
 
+function shouldLogConnectionLifecycle() {
+  return env.nodeEnv !== 'test';
+}
+
 function bindConnectionListeners() {
   if (listenersBound) return;
   listenersBound = true;
 
   mongoose.connection.on('connected', () => {
+    if (!shouldLogConnectionLifecycle()) return;
     // Keep lightweight connection state logs for operational diagnostics.
     console.log('[db] MongoDB connected');
   });
 
   mongoose.connection.on('disconnected', () => {
+    if (!shouldLogConnectionLifecycle()) return;
     console.warn('[db] MongoDB disconnected');
   });
 

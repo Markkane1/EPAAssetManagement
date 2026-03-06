@@ -6,11 +6,17 @@ import { API_CONFIG } from '@/config/api.config';
 
 const { queryKeys, messages, query } = API_CONFIG;
 
-export const useAssetItems = () => {
+type QueryToggleOptions = {
+  enabled?: boolean;
+};
+
+export const useAssetItems = (options: QueryToggleOptions = {}) => {
+  const { enabled = true } = options;
   return useQuery({
     queryKey: queryKeys.assetItems,
     queryFn: assetItemService.getAll,
     staleTime: query.staleTime,
+    enabled,
   });
 };
 
@@ -94,4 +100,3 @@ export const useDeleteAssetItem = () => {
     },
   });
 };
-

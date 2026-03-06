@@ -17,11 +17,9 @@ import { useLocations } from "@/hooks/useLocations";
 import { useAssetItems } from "@/hooks/useAssetItems";
 import { useAssets } from "@/hooks/useAssets";
 import { useAuth } from "@/contexts/AuthContext";
+import { buildApiUrl } from "@/lib/api";
 import { ReturnRequestStatus } from "@/types";
 import { useIsMobile } from "@/hooks/use-mobile";
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000/api";
-const API_ORIGIN = API_BASE_URL.replace(/\/api\/?$/, "");
 
 const ISSUER_ROLES = new Set([
   "org_admin",
@@ -33,13 +31,6 @@ const RECEIVE_ALLOWED_STATUSES = new Set([
   ReturnRequestStatus.Submitted,
   ReturnRequestStatus.ReceivedConfirmed,
 ]);
-
-function buildApiUrl(path: string | null | undefined) {
-  if (!path) return null;
-  if (/^https?:\/\//i.test(path)) return path;
-  if (path.startsWith("/")) return `${API_ORIGIN}${path}`;
-  return `${API_ORIGIN}/${path}`;
-}
 
 function downloadBlob(blob: Blob, fileName: string) {
   const url = URL.createObjectURL(blob);
