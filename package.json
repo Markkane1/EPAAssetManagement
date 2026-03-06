@@ -19,6 +19,12 @@
     "hooks:install": "git config core.hooksPath .githooks",
     "perf:bundle": "node scripts/check-client-bundle.mjs",
     "preview": "npm run preview -w client",
+    "test:unit": "vitest run --dir tests/unit --passWithNoTests",
+    "test:integration": "jest --testPathPatterns=tests/integration --passWithNoTests",
+    "test:components": "vitest run --dir tests/components --passWithNoTests",
+    "test:e2e": "playwright test --pass-with-no-tests",
+    "test:coverage": "c8 vitest run --passWithNoTests",
+    "test:all": "npm run test:unit && npm run test:integration && npm run test:components && npm run test:e2e && npm run test:coverage",
     "test:security": "npm run test:security -w server",
     "test:consumables": "npm run test:consumables -w server",
     "test:runtime": "npm run test:runtime -w server",
@@ -31,12 +37,28 @@
     "server"
   ],
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/jest": "^30.0.0",
+    "c8": "^11.0.0",
     "concurrently": "^9.2.1",
     "eslint-plugin-security": "^4.0.0",
-    "retire": "^5.4.2"
+    "jest": "^30.2.0",
+    "jsdom": "^28.1.0",
+    "retire": "^5.4.2",
+    "ts-jest": "^29.4.6",
+    "vitest": "^4.0.18"
   },
   "overrides": {
     "glob": "^10.5.0",
     "lodash": "^4.17.23"
+  },
+  "dependencies": {
+    "express-mongo-sanitize": "^2.2.0",
+    "express-rate-limit": "^8.3.0",
+    "helmet": "^8.1.0",
+    "xss-clean": "^0.1.4"
   }
 }

@@ -73,7 +73,7 @@ import { locationService } from "@/services/locationService";
 import { userPermissionService } from "@/services/userPermissionService";
 import { usePageSearch } from "@/contexts/PageSearchContext";
 import { cn } from "@/lib/utils";
-import { exportToCSV, exportToExcel } from "@/lib/exportUtils";
+import { exportToCSV } from "@/lib/exportUtils";
 import { SearchableSelect } from "@/components/shared/SearchableSelect";
 
 interface Location {
@@ -444,28 +444,6 @@ export default function UserManagement() {
     );
   };
 
-  const handleExportExcel = async () => {
-    await exportToExcel(
-      visibleUsers.map((user) => ({
-        name: user.first_name || user.last_name
-          ? `${user.first_name || ""} ${user.last_name || ""}`.trim()
-          : "No Name",
-        email: user.email || "",
-        role: toRoleLabel(user.role, roleNameMap),
-        location: user.location_name || "No Location",
-        joined: new Date(user.created_at).toISOString(),
-      })),
-      [
-        { key: "name", header: "Name" },
-        { key: "email", header: "Email" },
-        { key: "role", header: "Role" },
-        { key: "location", header: "Location" },
-        { key: "joined", header: "Joined" },
-      ],
-      `user-management-${format(new Date(), "yyyy-MM-dd")}`
-    );
-  };
-
   return (
     <MainLayout title="User Management" description="Manage users and permissions">
       <PageHeader
@@ -477,10 +455,6 @@ export default function UserManagement() {
         }}
         extra={
           <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-            <Button variant="outline" size="sm" onClick={() => void handleExportExcel()}>
-              <Download className="h-4 w-4 mr-2" />
-              Excel
-            </Button>
             <Button variant="outline" size="sm" onClick={handleExportCSV}>
               <Download className="h-4 w-4 mr-2" />
               CSV

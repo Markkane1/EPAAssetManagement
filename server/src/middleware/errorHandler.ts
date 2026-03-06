@@ -1,10 +1,14 @@
 import { NextFunction, Request, Response } from 'express';
+import multer from 'multer';
+import { env } from '../config/env';
 
 type ErrorShape = Error & { status?: number; message?: string; details?: unknown };
 type MongoDuplicateKeyError = ErrorShape & {
   code?: number;
   keyPattern?: Record<string, unknown>;
   keyValue?: Record<string, unknown>;
+  name?: string;
+  errors?: Record<string, { message?: string }>;
 };
 
 function formatDuplicateKeyMessage(err: MongoDuplicateKeyError) {
@@ -22,12 +26,37 @@ function formatDuplicateKeyMessage(err: MongoDuplicateKeyError) {
 export function errorHandler(err: Error, _req: Request, res: Response, _next: NextFunction) {
   const typed = err as MongoDuplicateKeyError;
 
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({ message: 'Payload Too Large' });
+    }
+    return res.status(400).json({ message: err.message || 'Invalid upload payload' });
+  }
+
+  if (typed.message && /^Invalid file (type|extension)/i.test(typed.message)) {
+    return res.status(400).json({ message: typed.message });
+  }
+
   if (typed.code === 11000) {
     return res.status(409).json({ message: formatDuplicateKeyMessage(typed) });
   }
 
+  if (typed.name === 'ValidationError') {
+    const validationMessages = Object.values(typed.errors || {})
+      .map((entry) => entry?.message)
+      .filter((message): message is string => Boolean(message));
+    return res.status(400).json({
+      message: validationMessages[0] || typed.message || 'Validation failed',
+      details: validationMessages,
+    });
+  }
+
+  if (typed.name === 'CastError') {
+    return res.status(400).json({ message: typed.message || 'Invalid request value' });
+  }
+
   const status = typed.status || 500;
-  const isProd = process.env.NODE_ENV === 'production';
+  const isProd = env.nodeEnv === 'production';
   if (status >= 500) {
     console.error(err);
   }

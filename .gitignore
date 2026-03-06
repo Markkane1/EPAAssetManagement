@@ -16,6 +16,10 @@ dist-ssr
 server/.env
 uploads/
 server/uploads/
+coverage/
+playwright-report/
+test-results/
+tests/integration/.runtime/
 
 # Editor directories and files
 .vscode/*
@@ -27,3 +31,4 @@ server/uploads/
 *.njsproj
 *.sln
 *.sw?
+.gitnexus

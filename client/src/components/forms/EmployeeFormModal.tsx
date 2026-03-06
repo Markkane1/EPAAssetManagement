@@ -179,6 +179,10 @@ export function EmployeeFormModal({
   const handleSubmit = async (data: EmployeeFormData) => {
     setIsSubmitting(true);
     try {
+      if (!isEditing && !data.userPassword) {
+        form.setError("userPassword", { message: "Initial password is required" });
+        return;
+      }
       if (isHeadOffice && !data.directorateId) {
         form.setError("directorateId", { message: "Division is required for Head Office" });
         return;
@@ -236,19 +240,18 @@ export function EmployeeFormModal({
           </div>
           {!isEditing && (
             <div className="space-y-2">
-              <Label htmlFor="userPassword">Initial Password (optional)</Label>
+              <Label htmlFor="userPassword">Initial Password *</Label>
               <Input
                 id="userPassword"
                 type="password"
                 {...form.register("userPassword")}
-                placeholder="Leave blank to auto-generate"
+                autoComplete="new-password"
+                placeholder="Enter initial password"
               />
               {form.formState.errors.userPassword && (
                 <p className="text-sm text-destructive">{form.formState.errors.userPassword.message}</p>
               )}
-              <p className="text-xs text-muted-foreground">
-                A temporary password will be generated if left blank.
-              </p>
+              <p className="text-xs text-muted-foreground">Set the employee's initial password during creation.</p>
             </div>
           )}
           <div className="grid grid-cols-2 gap-4">

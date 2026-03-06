@@ -42,7 +42,7 @@ import {
 import { activityService } from "@/services/activityService";
 import { format, formatDistanceToNow } from "date-fns";
 import { usePageSearch } from "@/contexts/PageSearchContext";
-import { exportToCSV, exportToExcel } from "@/lib/exportUtils";
+import { exportToCSV } from "@/lib/exportUtils";
 
 const activityIcons: Record<string, React.ElementType> = {
   login: LogIn,
@@ -193,28 +193,6 @@ export default function UserActivity() {
     );
   };
 
-  const handleExportExcel = async () => {
-    await exportToExcel(
-      filteredActivities.map((activity) => ({
-        timestamp: new Date(activity.created_at).toISOString(),
-        activity: formatActivityType(activity.activity_type),
-        userName: activity.user_name || "Unknown User",
-        userEmail: activity.user_email || "",
-        description: activity.description || "",
-        device: getDeviceName(activity.user_agent),
-      })),
-      [
-        { key: "timestamp", header: "Timestamp" },
-        { key: "activity", header: "Activity" },
-        { key: "userName", header: "User Name" },
-        { key: "userEmail", header: "User Email" },
-        { key: "description", header: "Description" },
-        { key: "device", header: "Device" },
-      ],
-      `user-activity-${format(new Date(), "yyyy-MM-dd")}`
-    );
-  };
-
   return (
     <MainLayout title="User Activity" description="Monitor user activity logs">
       <PageHeader
@@ -222,10 +200,6 @@ export default function UserActivity() {
         description="Track user logins, actions, and system activity"
         extra={
           <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-            <Button variant="outline" size="sm" onClick={() => void handleExportExcel()}>
-              <Download className="h-4 w-4 mr-2" />
-              Excel
-            </Button>
             <Button variant="outline" size="sm" onClick={handleExportCSV}>
               <Download className="h-4 w-4 mr-2" />
               CSV

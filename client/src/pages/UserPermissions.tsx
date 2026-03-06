@@ -51,7 +51,7 @@ import {
   type RolePermission,
 } from "@/services/userPermissionService";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { exportToCSV, exportToExcel } from "@/lib/exportUtils";
+import { exportToCSV } from "@/lib/exportUtils";
 
 type PermissionType = "view" | "create" | "edit" | "delete";
 type CoreRole = "org_admin" | "office_head" | "caretaker" | "employee";
@@ -464,31 +464,6 @@ export default function UserPermissions() {
     );
   };
 
-  const handleExportExcel = async () => {
-    if (!currentRole) return;
-    await exportToExcel(
-      filteredPages.map((page) => ({
-        role: currentRole.name,
-        page: page.name,
-        category: page.category,
-        view: hasPermission(page.id, "view") ? "Yes" : "No",
-        create: hasPermission(page.id, "create") ? "Yes" : "No",
-        edit: hasPermission(page.id, "edit") ? "Yes" : "No",
-        delete: hasPermission(page.id, "delete") ? "Yes" : "No",
-      })),
-      [
-        { key: "role", header: "Role" },
-        { key: "page", header: "Page" },
-        { key: "category", header: "Category" },
-        { key: "view", header: "View" },
-        { key: "create", header: "Create" },
-        { key: "edit", header: "Edit" },
-        { key: "delete", header: "Delete" },
-      ],
-      `permissions-${currentRole.id}-${format(new Date(), "yyyy-MM-dd")}`
-    );
-  };
-
   const handleAddRole = () => {
     if (!newRoleName.trim()) {
       toast.error("Role name is required");
@@ -548,10 +523,6 @@ export default function UserPermissions() {
         description="Configure page-wise access permissions for user roles"
         extra={
           <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-            <Button variant="outline" onClick={() => void handleExportExcel()} disabled={!currentRole}>
-              <Download className="h-4 w-4 mr-2" />
-              Excel
-            </Button>
             <Button variant="outline" onClick={handleExportCSV} disabled={!currentRole}>
               <Download className="h-4 w-4 mr-2" />
               CSV

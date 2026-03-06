@@ -1,406 +1,1468 @@
-ï»¿# DISCOVERY
+# DISCOVERY
 
-Generated on: 2026-03-03
-Source references: `server/src/docs/openapi.generated.ts`, `server/src/routes`, `server/src/modules/*/routes`, `client/src/App.tsx`, `server/src/models`, `server/src/config/env.ts`.
+Generated on: 2026-03-06
+Workspace: `d:/web temps/AMS/AMS With Backend`
+Primary sources read: `server/src/routes/*`, `server/src/modules/*/routes/*`, `server/src/controllers/*`, `server/src/models/*`, `server/src/modules/consumables/models/*`, `server/src/config/env.ts`, `server/src/middleware/*`, `client/src/App.tsx`, `client/src/pages/*`, `client/src/components/*`, `client/src/services/*`, `client/src/hooks/*`, `client/src/contexts/AuthContext.tsx`, `client/src/lib/api.ts`, `client/src/config/pagePermissions.ts`, `package.json`, `client/package.json`, `server/package.json`.
+
+Notes:
+- API routes are mounted under `/api` plus public `/health`.
+- With very few exceptions, controller success shape is one of: object/document, array, paginated object, file/blob, or `204` for no-content.
+- Global request hardening happens in `server/src/app.ts`: JSON size limits, URL-encoded limits, NoSQL sanitization, XSS-oriented string cleaning, Helmet headers, CORS restriction, cookie parsing, and compression.
+- Most Mongoose schemas use `baseSchemaOptions`, so they serialize `id`, omit `__v`, and add `created_at` / `updated_at` timestamps.
 
 ## 1. API ROUTES
 
-Notes:
-- This project exposes API routes under `/api` plus `/health`.
-- Public endpoints are limited to auth login/reset, API docs, and health.
-- All other endpoints require authentication (`requireAuth`), then enforce role/scope in controllers/middleware.
-- Request/response schemas and parameter locations are captured in the generated OpenAPI spec.
+### Public and docs
 
-| Method | Path | Auth | Request (high-level) | Success/Error |
+- `GET /health`
+  - What it does: process health probe.
+  - Auth: no.
+  - Request: none.
+  - Success: `200 { status: 'ok' }`.
+  - Error: generic `500` only if app bootstrap is broken.
+
+- `GET /api/docs`
+  - What it does: serves HTML API docs viewer.
+  - Auth: no.
+  - Request: none.
+  - Success: `200 text/html`.
+  - Error: `500`.
+
+- `GET /api/openapi.json`
+  - What it does: serves generated OpenAPI JSON.
+  - Auth: no.
+  - Request: none.
+  - Success: `200 application/json`.
+  - Error: `500`.
+
+- `GET /api/openapi.yaml`
+  - What it does: serves generated OpenAPI YAML.
+  - Auth: no.
+  - Request: none.
+  - Success: `200 text/yaml`.
+  - Error: `500`.
+
+### `/api/auth`
+
+- `POST /api/auth/login`
+  - What it does: authenticates the user, applies auth rate limiting / lockout rules, sets `auth_token` httpOnly cookie and `csrf_token` cookie.
+  - Auth: no.
+  - Body: `email`, `password`.
+  - Success: `200 { token: undefined, user: { id, email, firstName, lastName, role, activeRole, roles } }`.
+  - Error: `400` missing or invalid payload, `401` invalid credentials, `429` rate limited / locked out, `500` generic.
+
+- `POST /api/auth/forgot-password`
+  - What it does: starts password reset flow.
+  - Auth: no.
+  - Body: `email`.
+  - Success: `200 { message }` regardless of user existence.
+  - Error: `400`, `429`, `500`.
+
+- `POST /api/auth/reset-password`
+  - What it does: resets password using reset token.
+  - Auth: no.
+  - Body: `token`, `newPassword`.
+  - Success: `200 { message }`.
+  - Error: `400` invalid/expired/reused token or invalid password, `429`, `500`.
+
+- `GET /api/auth/me`
+  - What it does: returns current authenticated user plus role, active role, role list, and location scope.
+  - Auth: yes.
+  - Request: none.
+  - Success: `200 { id, email, firstName, lastName, role, activeRole, roles, locationId }`.
+  - Error: `401` unauthenticated / invalid token / stale token version, `404` deleted user, `500`.
+
+- `POST /api/auth/register`
+  - What it does: admin-only user creation via auth controller.
+  - Auth: yes + CSRF + `org_admin`.
+  - Body: `email`, `password`, optional `firstName`, `lastName`, `role`, `roles[]`, `activeRole`, `locationId`.
+  - Success: `201 { user }`.
+  - Error: `400` validation / invalid role config, `401`, `403`, `409` duplicate email, `500`.
+
+- `POST /api/auth/change-password`
+  - What it does: changes current user's password.
+  - Auth: yes + CSRF.
+  - Body: `oldPassword`, `newPassword`.
+  - Success: `200 { message }`.
+  - Error: `400`, `401`, `403`, `500`.
+
+- `POST /api/auth/active-role`
+  - What it does: switches active runtime role for multi-role users.
+  - Auth: yes + CSRF.
+  - Body: `activeRole`.
+  - Success: `200 { role, activeRole, roles }`.
+  - Error: `400`, `401`, `403`, `500`.
+
+- `POST /api/auth/logout`
+  - What it does: clears auth/CSRF cookies.
+  - Auth: yes + CSRF.
+  - Body: none.
+  - Success: `204`.
+  - Error: `401`, `403`, `500`.
+
+### `/api/users`
+
+- `GET /api/users`
+  - What it does: lists users for administration.
+  - Auth: yes.
+  - Query: controller supports pagination / filtering in client service layer.
+  - Success: `200` list or paginated user list.
+  - Error: `401`, `403`, `500`.
+
+- `POST /api/users`
+  - What it does: creates a managed user account.
+  - Auth: yes.
+  - Body: identity fields, password, role / roles / activeRole, optional `locationId`.
+  - Success: `201 { user }`.
+  - Error: `400`, `401`, `403`, `409`, `500`.
+
+- `PUT /api/users/:id/role`
+  - What it does: updates role, roles list, and/or active role.
+  - Auth: yes.
+  - Params: `id`.
+  - Body: `role`, optional `roles[]`, optional `activeRole`.
+  - Success: `200 { user }`.
+  - Error: `400`, `401`, `403`, `404`, `500`.
+
+- `PUT /api/users/:id/location`
+  - What it does: updates office assignment for a user.
+  - Auth: yes.
+  - Params: `id`.
+  - Body: `locationId`.
+  - Success: `200 { user }`.
+  - Error: `400`, `401`, `403`, `404`, `500`.
+
+- `PUT /api/users/:id/password`
+  - What it does: admin password reset.
+  - Auth: yes.
+  - Params: `id`.
+  - Body: `newPassword`.
+  - Success: `200 { message }`.
+  - Error: `400`, `401`, `403`, `404`, `500`.
+
+- `DELETE /api/users/:id`
+  - What it does: removes / deactivates a user.
+  - Auth: yes.
+  - Params: `id`.
+  - Success: `204` or delete confirmation.
+  - Error: `401`, `403`, `404`, `500`.
+
+### `/api/activities`
+
+- `GET /api/activities`
+  - What it does: lists activity log entries.
+  - Auth: yes.
+  - Query: pagination/filter fields inferred by controller/client service.
+  - Success: `200` activity list or paginated payload.
+  - Error: `401`, `403`, `500`.
+
+- `GET /api/activities/user/:userId`
+  - What it does: lists activity entries for one user.
+  - Auth: yes.
+  - Params: `userId`.
+  - Success: `200` activity list.
+  - Error: `401`, `403`, `404`, `500`.
+
+- `POST /api/activities`
+  - What it does: writes an activity event.
+  - Auth: yes.
+  - Body: `activityType`, `description`, optional metadata.
+  - Success: `201` created log entry.
+  - Error: `400`, `401`, `500`.
+
+### `/api/dashboard`
+
+- `GET /api/dashboard`
+  - What it does: dashboard composite payload.
+  - Auth: yes.
+  - Query: none.
+  - Success: `200` full dashboard object.
+  - Error: `401`, `403`, `500`.
+
+- `GET /api/dashboard/stats`
+  - What it does: summary counters / KPI cards.
+  - Auth: yes.
+  - Success: `200` stats object.
+  - Error: `401`, `403`, `500`.
+
+- `GET /api/dashboard/activity`
+  - What it does: recent activity feed.
+  - Auth: yes.
+  - Success: `200` recent activity array.
+  - Error: `401`, `403`, `500`.
+
+- `GET /api/dashboard/assets-by-category`
+  - What it does: category distribution aggregate.
+  - Auth: yes.
+  - Success: `200` chart rows.
+  - Error: `401`, `403`, `500`.
+
+- `GET /api/dashboard/assets-by-status`
+  - What it does: item status distribution aggregate.
+  - Auth: yes.
+  - Success: `200` chart rows.
+  - Error: `401`, `403`, `500`.
+
+- `GET /api/dashboard/noncompliance`
+  - What it does: non-compliance aggregate.
+  - Auth: yes.
+  - Success: `200` report/summary data.
+  - Error: `401`, `403`, `500`.
+
+- `GET /api/dashboard/requisitions`
+  - What it does: requisition summary block.
+  - Auth: yes.
+  - Success: `200` requisition summary.
+  - Error: `401`, `403`, `500`.
+
+### `/api/settings`
+
+- `GET /api/settings`
+  - What it does: gets system settings.
+  - Auth: yes, `org_admin` only.
+  - Success: `200` settings document.
+  - Error: `401`, `403`, `500`.
+
+- `PUT /api/settings`
+  - What it does: updates settings.
+  - Auth: yes, `org_admin` only.
+  - Body: security / notification / organization / role permission settings payload.
+  - Success: `200` updated settings.
+  - Error: `400`, `401`, `403`, `500`.
+
+- `GET /api/settings/page-permissions/effective`
+  - What it does: gets runtime effective page permissions for current role.
+  - Auth: yes.
+  - Success: `200 { role, permissions }`.
+  - Error: `401`, `500`.
+
+- `GET /api/settings/page-permissions`
+  - What it does: gets editable role-permission matrix.
+  - Auth: yes, `org_admin` only.
+  - Success: `200` matrix payload.
+  - Error: `401`, `403`, `500`.
+
+- `PUT /api/settings/page-permissions`
+  - What it does: updates role-permission matrix.
+  - Auth: yes, `org_admin` only.
+  - Body: role/page permission matrix.
+  - Success: `200` saved matrix.
+  - Error: `400`, `401`, `403`, `500`.
+
+- `POST /api/settings/backup`
+  - What it does: triggers backup/export workflow.
+  - Auth: yes, `org_admin` only.
+  - Body: optional backup options.
+  - Success: `200` or `201` backup result.
+  - Error: `401`, `403`, `500`.
+
+- `POST /api/settings/test-email`
+  - What it does: tests email settings.
+  - Auth: yes, `org_admin` only.
+  - Body: recipient/config payload.
+  - Success: `200`/`201 { message }`.
+  - Error: `400`, `401`, `403`, `500`.
+
+### `/api/notifications`
+
+- `GET /api/notifications`
+  - What it does: lists in-app notifications for current user.
+  - Auth: yes.
+  - Query: pagination/filter fields handled by service/controller.
+  - Success: `200` paginated notification payload.
+  - Error: `401`, `500`.
+
+- `POST /api/notifications/read-all`
+  - What it does: marks all current-user notifications read.
+  - Auth: yes.
+  - Body: none.
+  - Success: `200 { updatedCount }` or message.
+  - Error: `401`, `500`.
+
+- `POST /api/notifications/:id/read`
+  - What it does: marks a single notification read.
+  - Auth: yes.
+  - Params: `id`.
+  - Success: `200` updated notification or ack payload.
+  - Error: `401`, `404`, `500`.
+
+- `POST /api/notifications/:id/action`
+  - What it does: performs actionable notification workflow (`APPROVE`, `REJECT`, `ACKNOWLEDGE`, `OPEN`).
+  - Auth: yes.
+  - Params: `id`.
+  - Body: action payload, optional notes depending on workflow.
+  - Success: `200 { notification, result }`.
+  - Error: `400`, `401`, `403`, `404`, `500`.
+
+### `/api/role-delegations`
+
+- `GET /api/role-delegations`
+  - What it does: lists delegations visible to current user/office.
+  - Auth: yes.
+  - Query: controller-managed pagination/filter fields.
+  - Success: `200` delegation list.
+  - Error: `401`, `403`, `500`.
+
+- `POST /api/role-delegations`
+  - What it does: creates a delegation / acting-role record.
+  - Auth: yes + CSRF.
+  - Body: `officeId`, `delegateUserId`, `delegatedRoles[]`, `startsAt`, `endsAt`, optional `reason`.
+  - Success: `201` or `200` created delegation.
+  - Error: `400`, `401`, `403`, `409` overlapping/invalid delegation, `500`.
+
+- `POST /api/role-delegations/:id/revoke`
+  - What it does: revokes an active delegation.
+  - Auth: yes + CSRF.
+  - Params: `id`.
+  - Success: `200` updated delegation.
+  - Error: `400`, `401`, `403`, `404`, `500`.
+
+### `/api/approval-matrix`
+
+- `GET /api/approval-matrix/pending`
+  - What it does: lists pending approval-matrix tasks for current approver.
+  - Auth: yes.
+  - Success: `200` list.
+  - Error: `401`, `403`, `500`.
+
+- `POST /api/approval-matrix/:id/decide`
+  - What it does: approves/rejects a pending matrix request.
+  - Auth: yes.
+  - Params: `id`.
+  - Body: decision payload (`decision`, optional `notes`).
+  - Success: `200` updated request.
+  - Error: `400`, `401`, `403`, `404`, `500`.
+
+### Master-data CRUD routes
+
+- `GET /api/categories`
+  - What it does: lists categories.
+  - Auth: yes.
+  - Success: `200 Category[]`.
+  - Error: `401`, `500`.
+
+- `GET /api/categories/:id`
+  - What it does: gets one category.
+  - Auth: yes.
+  - Params: `id`.
+  - Success: `200 Category`.
+  - Error: `401`, `404`, `500`.
+
+- `POST /api/categories`
+  - What it does: creates category.
+  - Auth: yes, `org_admin` or central-store caretaker.
+  - Body: `name`, optional `description`, optional `scope`, optional `assetType`.
+  - Success: `201 Category`.
+  - Error: `400`, `401`, `403`, `409`, `500`.
+
+- `PUT /api/categories/:id`
+  - What it does: updates category.
+  - Auth: yes, `org_admin` or central-store caretaker.
+  - Params: `id`.
+  - Body: category fields.
+  - Success: `200 Category`.
+  - Error: `400`, `401`, `403`, `404`, `500`.
+
+- `DELETE /api/categories/:id`
+  - What it does: deletes category.
+  - Auth: yes, `org_admin` only.
+  - Params: `id`.
+  - Success: `204` or delete ack.
+  - Error: `401`, `403`, `404`, `500`.
+
+- `GET /api/divisions`, `GET /api/divisions/:id`
+  - What they do: list/get divisions.
+  - Auth: yes.
+  - Success: `200` division list/document.
+  - Error: `401`, `404`, `500`.
+
+- `POST /api/divisions`, `PUT /api/divisions/:id`, `DELETE /api/divisions/:id`
+  - What they do: create/update/delete divisions.
+  - Auth: yes, org-admin-only (`requireSuperAdmin` wrapper).
+  - Body: `name`, optional `isActive`.
+  - Success: `201/200/204`.
+  - Error: `400`, `401`, `403`, `404`, `409`, `500`.
+
+- `GET /api/districts`, `GET /api/districts/:id`
+  - What they do: list/get districts.
+  - Auth: yes.
+  - Success: `200` district list/document.
+  - Error: `401`, `404`, `500`.
+
+- `POST /api/districts`, `PUT /api/districts/:id`, `DELETE /api/districts/:id`
+  - What they do: create/update/delete districts.
+  - Auth: yes, org-admin-only.
+  - Body: `name`, `divisionId`, optional `isActive`.
+  - Success: `201/200/204`.
+  - Error: `400`, `401`, `403`, `404`, `409`, `500`.
+
+- `GET /api/offices`, `GET /api/offices/:id`
+  - What they do: list/get offices.
+  - Auth: yes.
+  - Success: `200` office list/document.
+  - Error: `401`, `404`, `500`.
+
+- `POST /api/offices`, `PUT /api/offices/:id`, `DELETE /api/offices/:id`
+  - What they do: create/update/delete offices.
+  - Auth: yes, admin-only.
+  - Body: `name`, `code`, `division`, `district`, `address`, `contactNumber`, `type`, `capabilities`, optional `parentOfficeId`, optional `isActive`.
+  - Success: `201/200/204`.
+  - Error: `400`, `401`, `403`, `404`, `409`, `500`.
+
+- `GET /api/office-sub-locations`
+  - What it does: lists room/section records.
+  - Auth: yes.
+  - Query: office filter supported via service/controller.
+  - Success: `200` list.
+  - Error: `401`, `500`.
+
+- `POST /api/office-sub-locations`
+  - What it does: creates room/section.
+  - Auth: yes.
+  - Body: `officeId`, `name`, optional `isActive`.
+  - Success: `201` created sub-location.
+  - Error: `400`, `401`, `403`, `409`, `500`.
+
+- `PUT /api/office-sub-locations/:id`, `DELETE /api/office-sub-locations/:id`
+  - What they do: update/delete room/section.
+  - Auth: yes.
+  - Body: mutable sub-location fields for update.
+  - Success: `200` / `204`.
+  - Error: `400`, `401`, `403`, `404`, `409`, `500`.
+
+- `GET /api/vendors`, `GET /api/vendors/:id`
+  - What they do: list/get vendors.
+  - Auth: yes.
+  - Success: `200` vendor list/document.
+  - Error: `401`, `404`, `500`.
+
+- `POST /api/vendors`, `PUT /api/vendors/:id`, `DELETE /api/vendors/:id`
+  - What they do: create/update/delete vendors.
+  - Auth: yes.
+  - Body: `name`, contact fields, optional `officeId`.
+  - Success: `201/200/204`.
+  - Error: `400`, `401`, `403`, `404`, `409`, `500`.
+
+- `GET /api/projects`, `GET /api/projects/active`, `GET /api/projects/:id`
+  - What they do: list active/all projects or get one project.
+  - Auth: yes, `org_admin` or central-store caretaker.
+  - Success: `200` list/document.
+  - Error: `401`, `403`, `404`, `500`.
+
+- `POST /api/projects`, `PUT /api/projects/:id`, `DELETE /api/projects/:id`
+  - What they do: create/update/delete projects.
+  - Auth: yes, `org_admin` or central-store caretaker.
+  - Body: `name`, `code`, `description`, `budget`, optional `isActive`.
+  - Success: `201/200/204`.
+  - Error: `400`, `401`, `403`, `404`, `409`, `500`.
+
+- `GET /api/schemes`, `GET /api/schemes/project/:projectId`, `GET /api/schemes/:id`
+  - What they do: list schemes, list by project, or get one scheme.
+  - Auth: yes, `org_admin` or central-store caretaker.
+  - Success: `200` list/document.
+  - Error: `401`, `403`, `404`, `500`.
+
+- `POST /api/schemes`, `PUT /api/schemes/:id`, `DELETE /api/schemes/:id`
+  - What they do: create/update/delete schemes.
+  - Auth: yes, `org_admin` or central-store caretaker.
+  - Body: `projectId`, `name`, optional `description`, optional `isActive`.
+  - Success: `201/200/204`.
+  - Error: `400`, `401`, `403`, `404`, `409`, `500`.
+
+### `/api/assets` and `/api/asset-items`
+
+- `GET /api/assets`, `GET /api/assets/:id`, `GET /api/assets/category/:categoryId`, `GET /api/assets/vendor/:vendorId`
+  - What they do: list/get asset masters and filter by category/vendor.
+  - Auth: yes.
+  - Success: `200` list/document.
+  - Error: `401`, `404`, `500`.
+
+- `POST /api/assets`
+  - What it does: creates asset master; supports attachment upload.
+  - Auth: yes.
+  - Body: multipart form data with asset fields such as `name`, `description`, `specification`, `categoryId`, `vendorId`, `purchaseOrderId`, `projectId`, `schemeId`, `acquisitionDate`, `unitPrice`, `currency`, `quantity`, `assetSource`, optional `assetAttachment`.
+  - Success: `201 Asset`.
+  - Error: `400`, `401`, `403`, `413`, `500`.
+
+- `PUT /api/assets/:id`
+  - What it does: updates asset master and optional attachment.
+  - Auth: yes.
+  - Params: `id`.
+  - Body: multipart asset update fields.
+  - Success: `200 Asset`.
+  - Error: `400`, `401`, `403`, `404`, `413`, `500`.
+
+- `DELETE /api/assets/:id`
+  - What it does: deletes asset master.
+  - Auth: yes.
+  - Success: `204` or ack payload.
+  - Error: `401`, `403`, `404`, `500`.
+
+- `GET /api/asset-items`, `GET /api/asset-items/:id`, `GET /api/asset-items/asset/:assetId`, `GET /api/asset-items/location/:locationId`, `GET /api/asset-items/available`
+  - What they do: list/get asset items, filter by asset/location, or list available assignable items.
+  - Auth: yes.
+  - Success: `200` list/document.
+  - Error: `401`, `404`, `500`.
+
+- `POST /api/asset-items`
+  - What it does: creates a single asset item.
+  - Auth: yes.
+  - Body: `assetId`, holder fields, serial/tag/status/condition/warranty/notes.
+  - Success: `201 AssetItem`.
+  - Error: `400`, `401`, `403`, `409`, `500`.
+
+- `POST /api/asset-items/batch`
+  - What it does: creates multiple asset items in one request.
+  - Auth: yes.
+  - Body: batch payload derived from asset/item form.
+  - Success: `201 AssetItem[]` or batch result.
+  - Error: `400`, `401`, `403`, `500`.
+
+- `PUT /api/asset-items/:id`, `DELETE /api/asset-items/:id`
+  - What they do: update/delete item.
+  - Auth: yes.
+  - Success: `200` / `204`.
+  - Error: `400`, `401`, `403`, `404`, `500`.
+
+### `/api/employees`
+
+- `GET /api/employees`
+  - What it does: lists employees.
+  - Auth: yes.
+  - Query: office/directorate/pagination handled in controller/service.
+  - Success: `200` list or paginated payload.
+  - Error: `401`, `403`, `500`.
+
+- `GET /api/employees/directorate/:directorateId`
+  - What it does: lists employees by directorate.
+  - Auth: yes.
+  - Params: `directorateId`.
+  - Success: `200` employee list.
+  - Error: `401`, `404`, `500`.
+
+- `GET /api/employees/:id`
+  - What it does: gets one employee profile.
+  - Auth: yes.
+  - Success: `200 Employee`.
+  - Error: `401`, `404`, `500`.
+
+- `POST /api/employees`
+  - What it does: creates employee and linked user.
+  - Auth: yes.
+  - Body: `firstName`, `lastName`, `email`, optional `phone`, `jobTitle`, `hireDate`, `directorateId`, `locationId`, `defaultSubLocationId`, `allowedSubLocationIds[]`, `isActive`, and explicit `userPassword`.
+  - Success: `201 Employee`.
+  - Error: `400`, `401`, `403`, `409`, `500`.
+
+- `POST /api/employees/:id/transfer`
+  - What it does: transfers employee to another office.
+  - Auth: yes.
+  - Params: `id`.
+  - Body: `toOfficeId`, optional `reason`, optional supporting fields.
+  - Success: `200` updated employee / transfer result.
+  - Error: `400`, `401`, `403`, `404`, `500`.
+
+- `PUT /api/employees/:id`, `DELETE /api/employees/:id`
+  - What they do: update or deactivate/delete employee.
+  - Auth: yes.
+  - Body: mutable employee fields for update.
+  - Success: `200` / `204`.
+  - Error: `400`, `401`, `403`, `404`, `500`.
+
+### `/api/assignments`
+
+- `GET /api/assignments`
+  - What it does: lists assignments.
+  - Auth: yes.
+  - Query: `page?`, `limit?`.
+  - Success: `200` paginated assignments.
+  - Error: `400`, `401`, `403`, `500`.
+
+- `GET /api/assignments/employee/:employeeId`
+  - What it does: lists assignments for one employee.
+  - Auth: yes.
+  - Params: `employeeId`.
+  - Query: `page?`, `limit?`.
+  - Success: `200` paginated assignments.
+  - Error: `400`, `401`, `403`, `404`, `500`.
+
+- `GET /api/assignments/asset-item/:assetItemId`
+  - What it does: lists assignment history for an asset item.
+  - Auth: yes.
+  - Params: `assetItemId`.
+  - Query: `page?`, `limit?`.
+  - Success: `200` paginated assignments.
+  - Error: `400`, `401`, `403`, `404`, `500`.
+
+- `GET /api/assignments/:id/handover-slip.pdf`, `GET /api/assignments/:id/return-slip.pdf`
+  - What they do: generate assignment/return PDF slips.
+  - Auth: yes.
+  - Params: `id`.
+  - Success: `200 application/pdf`.
+  - Error: `400`, `401`, `403`, `404`, `500`.
+
+- `POST /api/assignments/:id/handover-slip/upload-signed`
+  - What it does: uploads signed handover slip.
+  - Auth: yes.
+  - Params: `id`.
+  - Body: multipart with `signedHandoverFile`.
+  - Success: `200/201` updated assignment/document result.
+  - Error: `400`, `401`, `403`, `404`, `413`, `500`.
+
+- `POST /api/assignments/:id/request-return`
+  - What it does: requests return workflow from assignment.
+  - Auth: yes.
+  - Params: `id`.
+  - Success: `200/201` created return request or updated assignment.
+  - Error: `400`, `401`, `403`, `404`, `500`.
+
+- `POST /api/assignments/:id/return-slip/upload-signed`
+  - What it does: uploads signed return slip.
+  - Auth: yes.
+  - Params: `id`.
+  - Body: multipart with `signedReturnFile`.
+  - Success: `200/201` updated assignment/document result.
+  - Error: `400`, `401`, `403`, `404`, `413`, `500`.
+
+- `GET /api/assignments/:id`, `POST /api/assignments`, `PUT /api/assignments/:id`, `PUT /api/assignments/:id/reassign`, `DELETE /api/assignments/:id`
+  - What they do: get/create/update/reassign/delete assignment.
+  - Auth: yes.
+  - Body: assignment fields including `assetItemId`, assignee target, dates, notes, reassignment details.
+  - Success: `200/201/204`.
+  - Error: `400`, `401`, `403`, `404`, `409`, `500`.
+
+### `/api/transfers`
+
+- `GET /api/transfers`
+  - What it does: lists transfer requests.
+  - Auth: yes.
+  - Query: `page?`, `limit?`.
+  - Success: `200` paginated transfers.
+  - Error: `400`, `401`, `403`, `500`.
+
+- `GET /api/transfers/asset-item/:assetItemId`, `GET /api/transfers/office/:officeId`, `GET /api/transfers/:id`
+  - What they do: filter transfer history by item/office or get detail.
+  - Auth: yes.
+  - Params: `assetItemId` / `officeId` / `id`.
+  - Success: `200` list/detail.
+  - Error: `400`, `401`, `403`, `404`, `500`.
+
+- `POST /api/transfers`
+  - What it does: creates transfer workflow.
+  - Auth: yes.
+  - Body: transfer header fields plus `lines[]`, office/store ids, notes, requisition linkage, document linkage.
+  - Success: `201 Transfer`.
+  - Error: `400`, `401`, `403`, `409`, `500`.
+
+- `POST /api/transfers/:id/approve`
+  - What it does: approves transfer.
+  - Auth: yes.
+  - Params: `id`.
+  - Body: optional approval notes.
+  - Success: `200 Transfer`.
+  - Error: `400`, `401`, `403`, `404`, `500`.
+
+- `POST /api/transfers/:id/dispatch-to-store`, `POST /api/transfers/:id/receive-at-store`, `POST /api/transfers/:id/dispatch-to-dest`, `POST /api/transfers/:id/receive-at-dest`
+  - What they do: advance transfer workflow stages.
+  - Auth: yes.
+  - Params: `id`.
+  - Body: optional workflow notes / document references.
+  - Success: `200 Transfer`.
+  - Error: `400`, `401`, `403`, `404`, `409`, `500`.
+
+- `POST /api/transfers/:id/reject`, `POST /api/transfers/:id/cancel`
+  - What they do: reject/cancel transfer.
+  - Auth: yes.
+  - Params: `id`.
+  - Body: optional / required rejection notes depending on controller rule.
+  - Success: `200 Transfer`.
+  - Error: `400`, `401`, `403`, `404`, `409`, `500`.
+
+- `DELETE /api/transfers/:id`
+  - What it does: deletes transfer.
+  - Auth: yes.
+  - Params: `id`.
+  - Success: `204` or ack payload.
+  - Error: `400`, `401`, `403`, `404`, `500`.
+
+### `/api/purchase-orders`
+
+- `GET /api/purchase-orders`, `GET /api/purchase-orders/:id`, `GET /api/purchase-orders/vendor/:vendorId`, `GET /api/purchase-orders/project/:projectId`, `GET /api/purchase-orders/pending`
+  - What they do: list PO records, get one, filter by vendor/project, list pending POs.
+  - Auth: yes.
+  - Success: `200` list/document.
+  - Error: `401`, `404`, `500`.
+
+- `POST /api/purchase-orders`, `PUT /api/purchase-orders/:id`
+  - What they do: create/update PO with optional attachment upload.
+  - Auth: yes, roles `org_admin | office_head | procurement_officer`.
+  - Body: multipart form with `orderNumber`, dates, source fields, vendor/project/scheme ids, price/tax/status/notes, optional `purchaseOrderAttachment`.
+  - Success: `201/200` PO.
+  - Error: `400`, `401`, `403`, `404`, `413`, `500`.
+
+- `DELETE /api/purchase-orders/:id`
+  - What it does: deletes PO.
+  - Auth: yes, same roles as create/update.
+  - Success: `204` or ack payload.
+  - Error: `401`, `403`, `404`, `500`.
+
+### `/api/maintenance`
+
+- `GET /api/maintenance`, `GET /api/maintenance/:id`, `GET /api/maintenance/asset-item/:assetItemId`, `GET /api/maintenance/scheduled`
+  - What they do: list/get maintenance records, filter by asset item, list scheduled items.
+  - Auth: yes.
+  - Success: `200` list/document.
+  - Error: `401`, `404`, `500`.
+
+- `POST /api/maintenance`
+  - What it does: creates maintenance record.
+  - Auth: yes.
+  - Body: `assetItemId`, `maintenanceType`, `maintenanceStatus`, `description`, cost/vendor fields, schedule/completion dates, notes, document ids if already linked.
+  - Success: `201 MaintenanceRecord`.
+  - Error: `400`, `401`, `403`, `500`.
+
+- `PUT /api/maintenance/:id`, `PUT /api/maintenance/:id/complete`, `DELETE /api/maintenance/:id`
+  - What they do: update/complete/delete maintenance record.
+  - Auth: yes.
+  - Success: `200` / `204`.
+  - Error: `400`, `401`, `403`, `404`, `500`.
+
+### `/api/requisitions`
+
+- `GET /api/requisitions`
+  - What it does: lists requisitions.
+  - Auth: yes.
+  - Query: `page?`, `limit?`, `officeId?`, `status?`, `fileNumber?`, `from?`, `to?`.
+  - Success: `200` paginated requisition list.
+  - Error: `400`, `401`, `403`, `500`.
+
+- `POST /api/requisitions`
+  - What it does: creates requisition with optional uploaded requisition file.
+  - Auth: yes.
+  - Body: multipart payload with requisition header fields (`fileNumber`, `officeId`, `issuingOfficeId`, `targetType`, `targetId`, `linkedSubLocationId`, `remarks`) plus `lines[]` and optional `requisitionFile`.
+  - Success: `201 Requisition`.
+  - Error: `400`, `401`, `403`, `413`, `500`.
+
+- `GET /api/requisitions/:id/issuance-report.pdf`
+  - What it does: downloads issuance report PDF.
+  - Auth: yes.
+  - Params: `id`.
+  - Success: `200 application/pdf`.
+  - Error: `400`, `401`, `403`, `404`, `500`.
+
+- `GET /api/requisitions/:id`
+  - What it does: gets requisition detail with lines and workflow state.
+  - Auth: yes.
+  - Success: `200 RequisitionDetail`.
+  - Error: `400`, `401`, `403`, `404`, `500`.
+
+- `POST /api/requisitions/:id/upload-signed-issuance`
+  - What it does: uploads signed issuance slip.
+  - Auth: yes.
+  - Params: `id`.
+  - Body: multipart with `signedIssuanceFile` or `file`.
+  - Success: `200/201` updated requisition/document result.
+  - Error: `400`, `401`, `403`, `404`, `413`, `500`.
+
+- `POST /api/requisitions/:id/adjust`
+  - What it does: approves or rejects requisition adjustment/verification phase.
+  - Auth: yes.
+  - Params: `id`.
+  - Body: status/remarks payload.
+  - Success: `200 Requisition`.
+  - Error: `400`, `401`, `403`, `404`, `409`, `500`.
+
+- `POST /api/requisitions/:id/fulfill`
+  - What it does: fulfills requisition lines.
+  - Auth: yes.
+  - Params: `id`.
+  - Body: mapped fulfillment payload for lines.
+  - Success: `200 Requisition`.
+  - Error: `400`, `401`, `403`, `404`, `409`, `500`.
+
+- `POST /api/requisitions/:id/lines/:lineId/map`
+  - What it does: maps requisition line to asset item or consumable item.
+  - Auth: yes.
+  - Params: `id`, `lineId`.
+  - Body: line mapping payload.
+  - Success: `200 updated line/requisition`.
+  - Error: `400`, `401`, `403`, `404`, `500`.
+
+- `POST /api/requisitions/:id/verify`
+  - What it does: verify / reject requisition after submission.
+  - Auth: yes.
+  - Params: `id`.
+  - Body: verification action payload.
+  - Success: `200 Requisition`.
+  - Error: `400`, `401`, `403`, `404`, `409`, `500`.
+
+### `/api/return-requests`
+
+- `GET /api/return-requests`
+  - What it does: lists return requests.
+  - Auth: yes.
+  - Query: `page?`, `limit?`, `officeId?`, `employeeId?`, `status?`, `from?`, `to?`.
+  - Success: `200` paginated list.
+  - Error: `400`, `401`, `403`, `500`.
+
+- `GET /api/return-requests/:id/return-receipt.pdf`
+  - What it does: downloads return receipt PDF.
+  - Auth: yes.
+  - Params: `id`.
+  - Success: `200 application/pdf`.
+  - Error: `400`, `401`, `403`, `404`, `500`.
+
+- `GET /api/return-requests/:id`
+  - What it does: gets return request detail.
+  - Auth: yes.
+  - Success: `200 ReturnRequestDetail`.
+  - Error: `400`, `401`, `403`, `404`, `500`.
+
+- `POST /api/return-requests`
+  - What it does: creates return request.
+  - Auth: yes.
+  - Body: `assignmentId` or return-flow fields resolved by controller.
+  - Success: `201 ReturnRequest`.
+  - Error: `400`, `401`, `403`, `404`, `409`, `500`.
+
+- `POST /api/return-requests/:id/receive`
+  - What it does: marks returned item received.
+  - Auth: yes.
+  - Params: `id`.
+  - Body: optional notes.
+  - Success: `200 ReturnRequest`.
+  - Error: `400`, `401`, `403`, `404`, `409`, `500`.
+
+- `POST /api/return-requests/:id/upload-signed-return`
+  - What it does: uploads signed return receipt.
+  - Auth: yes.
+  - Params: `id`.
+  - Body: multipart with `signedReturnFile` or `file`.
+  - Success: `200/201` updated return request/document result.
+  - Error: `400`, `401`, `403`, `404`, `413`, `500`.
+
+### `/api/reports` and `/api/observability/metrics`
+
+- `GET /api/reports/requisitions`
+  - What it does: requisition report dataset.
+  - Auth: yes.
+  - Query: report filter parameters.
+  - Success: `200` report data.
+  - Error: `401`, `403`, `500`.
+
+- `GET /api/reports/noncompliance`
+  - What it does: non-compliance report dataset.
+  - Auth: yes.
+  - Query: report filters.
+  - Success: `200` report data.
+  - Error: `401`, `403`, `500`.
+
+- `GET /api/observability/metrics`
+  - What it does: returns JSON metrics snapshot or Prometheus plaintext depending on `Accept` header.
+  - Auth: yes, org-admin only.
+  - Request: `Accept: text/plain` for Prometheus format.
+  - Success: `200` JSON or plaintext metrics.
+  - Error: `401`, `403`, `500`.
+
+### `/api/records`, `/api/approvals`, `/api/documents`, `/api/document-links`
+
+- `GET /api/records/register/issue`, `GET /api/records/register/transfer`, `GET /api/records/register/maintenance`
+  - What they do: register-style listing views for issue/transfer/maintenance records.
+  - Auth: yes.
+  - Query: `office?`, `from?`, `to?`, `page?`, `limit?`.
+  - Success: `200` paginated register rows.
+  - Error: `400`, `401`, `403`, `500`.
+
+- `POST /api/records`
+  - What it does: creates record entry.
+  - Auth: yes.
+  - Body: `recordType`, optional `officeId`, `status`, `assetItemId`, `employeeId`, `assignmentId`, `transferId`, `maintenanceRecordId`, `notes`.
+  - Success: `201 Record`.
+  - Error: `400`, `401`, `403`, `500`.
+
+- `GET /api/records`
+  - What it does: lists records.
+  - Auth: yes.
+  - Query: `recordType?`, `status?`, `officeId?`, `from?`, `to?`, `assetItemId?`, `employeeId?`, `assignmentId?`, `transferId?`, `maintenanceRecordId?`, `referenceNo?`, `page?`, `limit?`.
+  - Success: `200` paginated records.
+  - Error: `400`, `401`, `403`, `500`.
+
+- `GET /api/records/:id/detail`, `GET /api/records/:id`
+  - What they do: return rich detail or base document for one record.
+  - Auth: yes.
+  - Success: `200` detail/document.
+  - Error: `401`, `403`, `404`, `500`.
+
+- `PATCH /api/records/:id/status`
+  - What it does: updates record status.
+  - Auth: yes.
+  - Body: `status`, optional `notes`.
+  - Success: `200 Record`.
+  - Error: `400`, `401`, `403`, `404`, `409`, `500`.
+
+- `POST /api/records/:id/approval-request`
+  - What it does: creates approval request for a record.
+  - Auth: yes.
+  - Body: `approverUserId?`, `approverRole?`, optional `notes`; one approver field required.
+  - Success: `201 ApprovalRequest`.
+  - Error: `400`, `401`, `403`, `404`, `500`.
+
+- `POST /api/approvals/:id/decide`
+  - What it does: approves/rejects approval request.
+  - Auth: yes.
+  - Body: `decision`, optional `decisionNotes`.
+  - Success: `200 ApprovalRequest`.
+  - Error: `400`, `401`, `403`, `404`, `409`, `500`.
+
+- `POST /api/documents`
+  - What it does: creates document metadata record.
+  - Auth: yes.
+  - Body: `title`, `docType`, optional `status`, optional `officeId`.
+  - Success: `201 Document`.
+  - Error: `400`, `401`, `403`, `500`.
+
+- `GET /api/documents`, `GET /api/documents/:id`
+  - What they do: list/get documents.
+  - Auth: yes.
+  - Query for list: `officeId?`, `docType?`, `status?`, `page?`, `limit?`.
+  - Success: `200` paginated list/document.
+  - Error: `400`, `401`, `403`, `404`, `500`.
+
+- `POST /api/documents/:id/upload`
+  - What it does: uploads a document version.
+  - Auth: yes.
+  - Body: multipart with `file`.
+  - Success: `200/201 DocumentVersion`.
+  - Error: `400`, `401`, `403`, `404`, `413`, `500`.
+
+- `GET /api/documents/versions/:versionId/download`
+  - What it does: downloads stored document version.
+  - Auth: yes.
+  - Success: `200` binary file.
+  - Error: `401`, `403`, `404`, `500`.
+
+- `POST /api/document-links`
+  - What it does: links document to entity/workflow stage.
+  - Auth: yes.
+  - Body: `documentId`, `entityType`, `entityId`, optional `requiredForStatus`.
+  - Success: `201 DocumentLink`.
+  - Error: `400`, `401`, `403`, `404`, `409`, `500`.
+
+### `/api/consumables`
+
+- `GET /api/consumables/items`, `GET /api/consumables/items/:id`
+  - What they do: list/get consumable item master records.
+  - Auth: yes.
+  - Success: `200` item list/document.
+  - Error: `401`, `404`, `500`.
+
+- `POST /api/consumables/items`, `PUT /api/consumables/items/:id`, `DELETE /api/consumables/items/:id`
+  - What they do: create/update/delete item master.
+  - Auth: yes; create/delete require `caretaker`, org-admin bypass; update same route-level role gate.
+  - Body: `name`, `casNumber`, `categoryId`, `baseUom`, `isHazardous`, `isControlled`, `isChemical`, `requiresLotTracking`, `requiresContainerTracking`, `defaultMinStock`, `defaultReorderPoint`, `storageCondition`.
+  - Success: `201/200/204`.
+  - Error: `400`, `401`, `403`, `404`, `409`, `500`.
+
+- `GET /api/consumables/units`, `GET /api/consumables/units/:id`
+  - What they do: list/get unit-of-measure definitions.
+  - Auth: yes.
+  - Query for list: `active?`, `group?`.
+  - Success: `200` list/document.
+  - Error: `400`, `401`, `404`, `500`.
+
+- `POST /api/consumables/units`, `PUT /api/consumables/units/:id`, `DELETE /api/consumables/units/:id`
+  - What they do: create/update/delete units.
+  - Auth: yes; route-gated to caretaker for create/delete and caretaker for update.
+  - Body: `code`, `name`, `group`, `toBase`, `aliases[]`, `isActive`.
+  - Success: `201/200/204`.
+  - Error: `400`, `401`, `403`, `404`, `409`, `500`.
+
+- `GET /api/consumables/lots`, `GET /api/consumables/lots/:id`
+  - What they do: list/get lot records.
+  - Auth: yes.
+  - Query for list: `holder_type?`, `holder_id?`, `consumable_id?`, `include_zero?`, `batch_no?`, `limit?`, `page?`.
+  - Success: `200` list/document.
+  - Error: `400`, `401`, `404`, `500`.
+
+- `POST /api/consumables/issues`
+  - What it does: issues consumables from a lot to holder.
+  - Auth: yes.
+  - Body: `lot_id`, `to_type`, `to_id`, `quantity`, optional `notes`, optional `document_id`, optional approval workflow ids.
+  - Success: `201 Issue`.
+  - Error: `400`, `401`, `403`, `404`, `409`, `500`.
+
+- `POST /api/consumables/consumptions`
+  - What it does: records consumption transaction.
+  - Auth: yes.
+  - Body: source/holder/item/qty/reason payload validated by `consumableConsumptionCreateSchema`.
+  - Success: `201 Consumption`.
+  - Error: `400`, `401`, `403`, `404`, `409`, `500`.
+
+- `POST /api/consumables/returns`
+  - What it does: records consumable return transaction.
+  - Auth: yes.
+  - Body: validated return payload.
+  - Success: `201 Return`.
+  - Error: `400`, `401`, `403`, `404`, `409`, `500`.
+
+- `GET /api/consumables/containers`, `GET /api/consumables/containers/:id`
+  - What they do: list/get container records.
+  - Auth: yes.
+  - Success: `200` list/document.
+  - Error: `401`, `404`, `500`.
+
+- `POST /api/consumables/containers`, `PUT /api/consumables/containers/:id`, `DELETE /api/consumables/containers/:id`
+  - What they do: create/update/delete containers.
+  - Auth: yes; create/delete require caretaker, update allows `office_head` or `caretaker`.
+  - Body: lot/container quantity/location fields.
+  - Success: `201/200/204`.
+  - Error: `400`, `401`, `403`, `404`, `409`, `500`.
+
+- `GET /api/consumables/reason-codes`, `POST /api/consumables/reason-codes`
+  - What they do: list/create reason codes.
+  - Auth: yes; create is caretaker-only.
+  - Query: reason-code filters.
+  - Body: `category`, `code`, `description`.
+  - Success: `200/201`.
+  - Error: `400`, `401`, `403`, `409`, `500`.
+
+- `POST /api/consumables/inventory/receive`, `POST /api/consumables/inventory/receive-office`
+  - What they do: receive stock into central/store or office inventory; parse multipart payload + optional handover document.
+  - Auth: yes.
+  - Body: multipart `payload`, optional `lot`, optional `containers`, optional `handoverDocumentation`; validated by `receiveSchema` after parsing.
+  - Success: `201` inventory transaction/result.
+  - Error: `400` invalid receive payload, `401`, `403`, `404`, `413`, `500`.
+
+- `POST /api/consumables/inventory/transfer`, `POST /api/consumables/inventory/consume`, `POST /api/consumables/inventory/adjust`, `POST /api/consumables/inventory/dispose`, `POST /api/consumables/inventory/return`, `POST /api/consumables/inventory/opening-balance`
+  - What they do: execute inventory transfer, consumption, adjustment, disposal, return-to-central, or opening balance workflows.
+  - Auth: yes.
+  - Body: validated by `transferSchema`, `consumeSchema`, `adjustSchema`, `disposeSchema`, `returnSchema`, `openingBalanceSchema`.
+  - Success: `200/201` inventory result payload.
+  - Error: `400`, `401`, `403`, `404`, `409`, `500`.
+
+- `GET /api/consumables/inventory/balance`, `GET /api/consumables/inventory/balances`, `GET /api/consumables/inventory/rollup`, `GET /api/consumables/ledger`, `GET /api/consumables/expiry`
+  - What they do: inventory lookup endpoints.
+  - Auth: yes.
+  - Query: validated by `balanceQuerySchema`, `balancesQuerySchema`, `rollupQuerySchema`, `ledgerQuerySchema`, `expiryQuerySchema`.
+  - Success: `200` balance list, rollup, ledger, or expiry rows.
+  - Error: `400`, `401`, `403`, `500`.
+
+## 2. REACT PAGES & COMPONENTS
+
+### Routing / auth shell
+
+| Surface | What it renders | API calls | User interactions | Conditional logic |
 |---|---|---|---|---|
-| GET | `/api/activities` | Yes | - | 200, 400, 401, 403, 500 |
-| POST | `/api/activities` | Yes | body | 200, 201, 400, 401, 403, 500 |
-| GET | `/api/activities/user/{userId}` | Yes | path:userId | 200, 400, 401, 403, 404, 500 |
-| POST | `/api/approvals/{id}/decide` | Yes | body; path:id | 200, 201, 400, 401, 403, 404, 500 |
-| GET | `/api/asset-items` | Yes | - | 200, 400, 401, 403, 500 |
-| POST | `/api/asset-items` | Yes | body | 200, 201, 400, 401, 403, 500 |
-| DELETE | `/api/asset-items/{id}` | Yes | path:id | 200, 204, 400, 401, 403, 404, 500 |
-| GET | `/api/asset-items/{id}` | Yes | path:id | 200, 400, 401, 403, 404, 500 |
-| PUT | `/api/asset-items/{id}` | Yes | body; path:id | 200, 400, 401, 403, 404, 500 |
-| GET | `/api/asset-items/asset/{assetId}` | Yes | path:assetId | 200, 400, 401, 403, 404, 500 |
-| GET | `/api/asset-items/available` | Yes | - | 200, 400, 401, 403, 500 |
-| POST | `/api/asset-items/batch` | Yes | body | 200, 201, 400, 401, 403, 500 |
-| GET | `/api/asset-items/location/{locationId}` | Yes | path:locationId | 200, 400, 401, 403, 404, 500 |
-| GET | `/api/assets` | Yes | - | 200, 400, 401, 403, 500 |
-| POST | `/api/assets` | Yes | body | 200, 201, 400, 401, 403, 500 |
-| DELETE | `/api/assets/{id}` | Yes | path:id | 200, 204, 400, 401, 403, 404, 500 |
-| GET | `/api/assets/{id}` | Yes | path:id | 200, 400, 401, 403, 404, 500 |
-| PUT | `/api/assets/{id}` | Yes | body; path:id | 200, 400, 401, 403, 404, 500 |
-| GET | `/api/assets/category/{categoryId}` | Yes | path:categoryId | 200, 400, 401, 403, 404, 500 |
-| GET | `/api/assets/vendor/{vendorId}` | Yes | path:vendorId | 200, 400, 401, 403, 404, 500 |
-| GET | `/api/assignments` | Yes | - | 200, 400, 401, 403, 500 |
-| POST | `/api/assignments` | Yes | body | 200, 201, 400, 401, 403, 500 |
-| DELETE | `/api/assignments/{id}` | Yes | path:id | 200, 204, 400, 401, 403, 404, 500 |
-| GET | `/api/assignments/{id}` | Yes | path:id | 200, 400, 401, 403, 404, 500 |
-| PUT | `/api/assignments/{id}` | Yes | body; path:id | 200, 400, 401, 403, 404, 500 |
-| GET | `/api/assignments/{id}/handover-slip.pdf` | Yes | path:id | 200, 400, 401, 403, 404, 500 |
-| POST | `/api/assignments/{id}/handover-slip/upload-signed` | Yes | body; path:id | 200, 201, 400, 401, 403, 404, 500 |
-| PUT | `/api/assignments/{id}/reassign` | Yes | body; path:id | 200, 400, 401, 403, 404, 500 |
-| POST | `/api/assignments/{id}/request-return` | Yes | body; path:id | 200, 201, 400, 401, 403, 404, 500 |
-| GET | `/api/assignments/{id}/return-slip.pdf` | Yes | path:id | 200, 400, 401, 403, 404, 500 |
-| POST | `/api/assignments/{id}/return-slip/upload-signed` | Yes | body; path:id | 200, 201, 400, 401, 403, 404, 500 |
-| GET | `/api/assignments/asset-item/{assetItemId}` | Yes | path:assetItemId | 200, 400, 401, 403, 404, 500 |
-| GET | `/api/assignments/employee/{employeeId}` | Yes | path:employeeId | 200, 400, 401, 403, 404, 500 |
-| POST | `/api/auth/change-password` | Yes | body | 200, 201, 400, 401, 403, 500 |
-| POST | `/api/auth/forgot-password` | No | body | 200, 201, 400, 500 |
-| POST | `/api/auth/login` | No | body | 200, 201, 400, 500 |
-| POST | `/api/auth/logout` | Yes | body | 200, 201, 400, 401, 403, 500 |
-| GET | `/api/auth/me` | Yes | - | 200, 400, 401, 403, 500 |
-| POST | `/api/auth/register` | Yes | body | 200, 201, 400, 401, 403, 500 |
-| POST | `/api/auth/reset-password` | No | body | 200, 201, 400, 500 |
-| GET | `/api/categories` | Yes | - | 200, 400, 401, 403, 500 |
-| POST | `/api/categories` | Yes | body | 200, 201, 400, 401, 403, 500 |
-| DELETE | `/api/categories/{id}` | Yes | path:id | 200, 204, 400, 401, 403, 404, 500 |
-| GET | `/api/categories/{id}` | Yes | path:id | 200, 400, 401, 403, 404, 500 |
-| PUT | `/api/categories/{id}` | Yes | body; path:id | 200, 400, 401, 403, 404, 500 |
-| POST | `/api/consumables/consumptions` | Yes | body | 200, 201, 400, 401, 403, 500 |
-| GET | `/api/consumables/containers` | Yes | - | 200, 400, 401, 403, 500 |
-| POST | `/api/consumables/containers` | Yes | body | 200, 201, 400, 401, 403, 500 |
-| DELETE | `/api/consumables/containers/{id}` | Yes | path:id | 200, 204, 400, 401, 403, 404, 500 |
-| GET | `/api/consumables/containers/{id}` | Yes | path:id | 200, 400, 401, 403, 404, 500 |
-| PUT | `/api/consumables/containers/{id}` | Yes | body; path:id | 200, 400, 401, 403, 404, 500 |
-| GET | `/api/consumables/expiry` | Yes | - | 200, 400, 401, 403, 500 |
-| POST | `/api/consumables/inventory/adjust` | Yes | body | 200, 201, 400, 401, 403, 500 |
-| GET | `/api/consumables/inventory/balance` | Yes | - | 200, 400, 401, 403, 500 |
-| GET | `/api/consumables/inventory/balances` | Yes | - | 200, 400, 401, 403, 500 |
-| POST | `/api/consumables/inventory/consume` | Yes | body | 200, 201, 400, 401, 403, 500 |
-| POST | `/api/consumables/inventory/dispose` | Yes | body | 200, 201, 400, 401, 403, 500 |
-| POST | `/api/consumables/inventory/opening-balance` | Yes | body | 200, 201, 400, 401, 403, 500 |
-| POST | `/api/consumables/inventory/receive` | Yes | body | 200, 201, 400, 401, 403, 500 |
-| POST | `/api/consumables/inventory/return` | Yes | body | 200, 201, 400, 401, 403, 500 |
-| GET | `/api/consumables/inventory/rollup` | Yes | - | 200, 400, 401, 403, 500 |
-| POST | `/api/consumables/inventory/transfer` | Yes | body | 200, 201, 400, 401, 403, 500 |
-| POST | `/api/consumables/issues` | Yes | body | 200, 201, 400, 401, 403, 500 |
-| GET | `/api/consumables/items` | Yes | - | 200, 400, 401, 403, 500 |
-| POST | `/api/consumables/items` | Yes | body | 200, 201, 400, 401, 403, 500 |
-| DELETE | `/api/consumables/items/{id}` | Yes | path:id | 200, 204, 400, 401, 403, 404, 500 |
-| GET | `/api/consumables/items/{id}` | Yes | path:id | 200, 400, 401, 403, 404, 500 |
-| PUT | `/api/consumables/items/{id}` | Yes | body; path:id | 200, 400, 401, 403, 404, 500 |
-| GET | `/api/consumables/ledger` | Yes | - | 200, 400, 401, 403, 500 |
-| GET | `/api/consumables/lots` | Yes | - | 200, 400, 401, 403, 500 |
-| GET | `/api/consumables/lots/{id}` | Yes | path:id | 200, 400, 401, 403, 404, 500 |
-| GET | `/api/consumables/reason-codes` | Yes | - | 200, 400, 401, 403, 500 |
-| POST | `/api/consumables/reason-codes` | Yes | body | 200, 201, 400, 401, 403, 500 |
-| POST | `/api/consumables/returns` | Yes | body | 200, 201, 400, 401, 403, 500 |
-| GET | `/api/consumables/units` | Yes | - | 200, 400, 401, 403, 500 |
-| POST | `/api/consumables/units` | Yes | body | 200, 201, 400, 401, 403, 500 |
-| DELETE | `/api/consumables/units/{id}` | Yes | path:id | 200, 204, 400, 401, 403, 404, 500 |
-| GET | `/api/consumables/units/{id}` | Yes | path:id | 200, 400, 401, 403, 404, 500 |
-| PUT | `/api/consumables/units/{id}` | Yes | body; path:id | 200, 400, 401, 403, 404, 500 |
-| GET | `/api/dashboard` | Yes | - | 200, 400, 401, 403, 500 |
-| GET | `/api/dashboard/activity` | Yes | - | 200, 400, 401, 403, 500 |
-| GET | `/api/dashboard/assets-by-category` | Yes | - | 200, 400, 401, 403, 500 |
-| GET | `/api/dashboard/assets-by-status` | Yes | - | 200, 400, 401, 403, 500 |
-| GET | `/api/dashboard/stats` | Yes | - | 200, 400, 401, 403, 500 |
-| GET | `/api/districts` | Yes | - | 200, 400, 401, 403, 500 |
-| POST | `/api/districts` | Yes | body | 200, 201, 400, 401, 403, 500 |
-| DELETE | `/api/districts/{id}` | Yes | path:id | 200, 204, 400, 401, 403, 404, 500 |
-| GET | `/api/districts/{id}` | Yes | path:id | 200, 400, 401, 403, 404, 500 |
-| PUT | `/api/districts/{id}` | Yes | body; path:id | 200, 400, 401, 403, 404, 500 |
-| GET | `/api/divisions` | Yes | - | 200, 400, 401, 403, 500 |
-| POST | `/api/divisions` | Yes | body | 200, 201, 400, 401, 403, 500 |
-| DELETE | `/api/divisions/{id}` | Yes | path:id | 200, 204, 400, 401, 403, 404, 500 |
-| GET | `/api/divisions/{id}` | Yes | path:id | 200, 400, 401, 403, 404, 500 |
-| PUT | `/api/divisions/{id}` | Yes | body; path:id | 200, 400, 401, 403, 404, 500 |
-| GET | `/api/docs` | No | - | 200, 400, 500 |
-| POST | `/api/document-links` | Yes | body | 200, 201, 400, 401, 403, 500 |
-| GET | `/api/documents` | Yes | - | 200, 400, 401, 403, 500 |
-| POST | `/api/documents` | Yes | body | 200, 201, 400, 401, 403, 500 |
-| GET | `/api/documents/{id}` | Yes | path:id | 200, 400, 401, 403, 404, 500 |
-| POST | `/api/documents/{id}/upload` | Yes | body; path:id | 200, 201, 400, 401, 403, 404, 500 |
-| GET | `/api/documents/versions/{versionId}/download` | Yes | path:versionId | 200, 400, 401, 403, 404, 500 |
-| GET | `/api/employees` | Yes | - | 200, 400, 401, 403, 500 |
-| POST | `/api/employees` | Yes | body | 200, 201, 400, 401, 403, 500 |
-| DELETE | `/api/employees/{id}` | Yes | path:id | 200, 204, 400, 401, 403, 404, 500 |
-| GET | `/api/employees/{id}` | Yes | path:id | 200, 400, 401, 403, 404, 500 |
-| PUT | `/api/employees/{id}` | Yes | body; path:id | 200, 400, 401, 403, 404, 500 |
-| POST | `/api/employees/{id}/transfer` | Yes | body; path:id | 200, 201, 400, 401, 403, 404, 500 |
-| GET | `/api/employees/directorate/{directorateId}` | Yes | path:directorateId | 200, 400, 401, 403, 404, 500 |
-| GET | `/api/maintenance` | Yes | - | 200, 400, 401, 403, 500 |
-| POST | `/api/maintenance` | Yes | body | 200, 201, 400, 401, 403, 500 |
-| DELETE | `/api/maintenance/{id}` | Yes | path:id | 200, 204, 400, 401, 403, 404, 500 |
-| GET | `/api/maintenance/{id}` | Yes | path:id | 200, 400, 401, 403, 404, 500 |
-| PUT | `/api/maintenance/{id}` | Yes | body; path:id | 200, 400, 401, 403, 404, 500 |
-| PUT | `/api/maintenance/{id}/complete` | Yes | body; path:id | 200, 400, 401, 403, 404, 500 |
-| GET | `/api/maintenance/asset-item/{assetItemId}` | Yes | path:assetItemId | 200, 400, 401, 403, 404, 500 |
-| GET | `/api/maintenance/scheduled` | Yes | - | 200, 400, 401, 403, 500 |
-| GET | `/api/notifications` | Yes | - | 200, 400, 401, 403, 500 |
-| POST | `/api/notifications/{id}/read` | Yes | body; path:id | 200, 201, 400, 401, 403, 404, 500 |
-| POST | `/api/notifications/read-all` | Yes | body | 200, 201, 400, 401, 403, 500 |
-| GET | `/api/observability/metrics` | Yes | - | 200, 400, 401, 403, 500 |
-| GET | `/api/office-sub-locations` | Yes | - | 200, 400, 401, 403, 500 |
-| POST | `/api/office-sub-locations` | Yes | body | 200, 201, 400, 401, 403, 500 |
-| DELETE | `/api/office-sub-locations/{id}` | Yes | path:id | 200, 204, 400, 401, 403, 404, 500 |
-| PUT | `/api/office-sub-locations/{id}` | Yes | body; path:id | 200, 400, 401, 403, 404, 500 |
-| GET | `/api/offices` | Yes | - | 200, 400, 401, 403, 500 |
-| POST | `/api/offices` | Yes | body | 200, 201, 400, 401, 403, 500 |
-| DELETE | `/api/offices/{id}` | Yes | path:id | 200, 204, 400, 401, 403, 404, 500 |
-| GET | `/api/offices/{id}` | Yes | path:id | 200, 400, 401, 403, 404, 500 |
-| PUT | `/api/offices/{id}` | Yes | body; path:id | 200, 400, 401, 403, 404, 500 |
-| GET | `/api/openapi.json` | No | - | 200, 400, 500 |
-| GET | `/api/openapi.yaml` | No | - | 200, 400, 500 |
-| GET | `/api/projects` | Yes | - | 200, 400, 401, 403, 500 |
-| POST | `/api/projects` | Yes | body | 200, 201, 400, 401, 403, 500 |
-| DELETE | `/api/projects/{id}` | Yes | path:id | 200, 204, 400, 401, 403, 404, 500 |
-| GET | `/api/projects/{id}` | Yes | path:id | 200, 400, 401, 403, 404, 500 |
-| PUT | `/api/projects/{id}` | Yes | body; path:id | 200, 400, 401, 403, 404, 500 |
-| GET | `/api/projects/active` | Yes | - | 200, 400, 401, 403, 500 |
-| GET | `/api/purchase-orders` | Yes | - | 200, 400, 401, 403, 500 |
-| POST | `/api/purchase-orders` | Yes | body | 200, 201, 400, 401, 403, 500 |
-| DELETE | `/api/purchase-orders/{id}` | Yes | path:id | 200, 204, 400, 401, 403, 404, 500 |
-| GET | `/api/purchase-orders/{id}` | Yes | path:id | 200, 400, 401, 403, 404, 500 |
-| PUT | `/api/purchase-orders/{id}` | Yes | body; path:id | 200, 400, 401, 403, 404, 500 |
-| GET | `/api/purchase-orders/pending` | Yes | - | 200, 400, 401, 403, 500 |
-| GET | `/api/purchase-orders/project/{projectId}` | Yes | path:projectId | 200, 400, 401, 403, 404, 500 |
-| GET | `/api/purchase-orders/vendor/{vendorId}` | Yes | path:vendorId | 200, 400, 401, 403, 404, 500 |
-| GET | `/api/records` | Yes | - | 200, 400, 401, 403, 500 |
-| POST | `/api/records` | Yes | body | 200, 201, 400, 401, 403, 500 |
-| GET | `/api/records/{id}` | Yes | path:id | 200, 400, 401, 403, 404, 500 |
-| POST | `/api/records/{id}/approval-request` | Yes | body; path:id | 200, 201, 400, 401, 403, 404, 500 |
-| GET | `/api/records/{id}/detail` | Yes | path:id | 200, 400, 401, 403, 404, 500 |
-| PATCH | `/api/records/{id}/status` | Yes | body; path:id | 200, 400, 401, 403, 404, 500 |
-| GET | `/api/records/register/issue` | Yes | - | 200, 400, 401, 403, 500 |
-| GET | `/api/records/register/maintenance` | Yes | - | 200, 400, 401, 403, 500 |
-| GET | `/api/records/register/transfer` | Yes | - | 200, 400, 401, 403, 500 |
-| GET | `/api/reports/noncompliance` | Yes | - | 200, 400, 401, 403, 500 |
-| GET | `/api/reports/requisitions` | Yes | - | 200, 400, 401, 403, 500 |
-| GET | `/api/requisitions` | Yes | - | 200, 400, 401, 403, 500 |
-| POST | `/api/requisitions` | Yes | body | 200, 201, 400, 401, 403, 500 |
-| GET | `/api/requisitions/{id}` | Yes | path:id | 200, 400, 401, 403, 404, 500 |
-| POST | `/api/requisitions/{id}/adjust` | Yes | body; path:id | 200, 201, 400, 401, 403, 404, 500 |
-| POST | `/api/requisitions/{id}/fulfill` | Yes | body; path:id | 200, 201, 400, 401, 403, 404, 500 |
-| GET | `/api/requisitions/{id}/issuance-report.pdf` | Yes | path:id | 200, 400, 401, 403, 404, 500 |
-| POST | `/api/requisitions/{id}/lines/{lineId}/map` | Yes | body; path:id; path:lineId | 200, 201, 400, 401, 403, 404, 500 |
-| POST | `/api/requisitions/{id}/upload-signed-issuance` | Yes | body; path:id | 200, 201, 400, 401, 403, 404, 500 |
-| POST | `/api/requisitions/{id}/verify` | Yes | body; path:id | 200, 201, 400, 401, 403, 404, 500 |
-| GET | `/api/return-requests` | Yes | - | 200, 400, 401, 403, 500 |
-| POST | `/api/return-requests` | Yes | body | 200, 201, 400, 401, 403, 500 |
-| GET | `/api/return-requests/{id}` | Yes | path:id | 200, 400, 401, 403, 404, 500 |
-| POST | `/api/return-requests/{id}/receive` | Yes | body; path:id | 200, 201, 400, 401, 403, 404, 500 |
-| GET | `/api/return-requests/{id}/return-receipt.pdf` | Yes | path:id | 200, 400, 401, 403, 404, 500 |
-| POST | `/api/return-requests/{id}/upload-signed-return` | Yes | body; path:id | 200, 201, 400, 401, 403, 404, 500 |
-| GET | `/api/schemes` | Yes | - | 200, 400, 401, 403, 500 |
-| POST | `/api/schemes` | Yes | body | 200, 201, 400, 401, 403, 500 |
-| DELETE | `/api/schemes/{id}` | Yes | path:id | 200, 204, 400, 401, 403, 404, 500 |
-| GET | `/api/schemes/{id}` | Yes | path:id | 200, 400, 401, 403, 404, 500 |
-| PUT | `/api/schemes/{id}` | Yes | body; path:id | 200, 400, 401, 403, 404, 500 |
-| GET | `/api/schemes/project/{projectId}` | Yes | path:projectId | 200, 400, 401, 403, 404, 500 |
-| GET | `/api/settings` | Yes | - | 200, 400, 401, 403, 500 |
-| PUT | `/api/settings` | Yes | body | 200, 400, 401, 403, 500 |
-| POST | `/api/settings/backup` | Yes | body | 200, 201, 400, 401, 403, 500 |
-| POST | `/api/settings/test-email` | Yes | body | 200, 201, 400, 401, 403, 500 |
-| GET | `/api/transfers` | Yes | - | 200, 400, 401, 403, 500 |
-| POST | `/api/transfers` | Yes | body | 200, 201, 400, 401, 403, 500 |
-| DELETE | `/api/transfers/{id}` | Yes | path:id | 200, 204, 400, 401, 403, 404, 500 |
-| GET | `/api/transfers/{id}` | Yes | path:id | 200, 400, 401, 403, 404, 500 |
-| POST | `/api/transfers/{id}/approve` | Yes | body; path:id | 200, 201, 400, 401, 403, 404, 500 |
-| POST | `/api/transfers/{id}/cancel` | Yes | body; path:id | 200, 201, 400, 401, 403, 404, 500 |
-| POST | `/api/transfers/{id}/dispatch-to-dest` | Yes | body; path:id | 200, 201, 400, 401, 403, 404, 500 |
-| POST | `/api/transfers/{id}/dispatch-to-store` | Yes | body; path:id | 200, 201, 400, 401, 403, 404, 500 |
-| POST | `/api/transfers/{id}/receive-at-dest` | Yes | body; path:id | 200, 201, 400, 401, 403, 404, 500 |
-| POST | `/api/transfers/{id}/receive-at-store` | Yes | body; path:id | 200, 201, 400, 401, 403, 404, 500 |
-| POST | `/api/transfers/{id}/reject` | Yes | body; path:id | 200, 201, 400, 401, 403, 404, 500 |
-| GET | `/api/transfers/asset-item/{assetItemId}` | Yes | path:assetItemId | 200, 400, 401, 403, 404, 500 |
-| GET | `/api/transfers/office/{officeId}` | Yes | path:officeId | 200, 400, 401, 403, 404, 500 |
-| GET | `/api/users` | Yes | - | 200, 400, 401, 403, 500 |
-| POST | `/api/users` | Yes | body | 200, 201, 400, 401, 403, 500 |
-| DELETE | `/api/users/{id}` | Yes | path:id | 200, 204, 400, 401, 403, 404, 500 |
-| PUT | `/api/users/{id}/location` | Yes | body; path:id | 200, 400, 401, 403, 404, 500 |
-| PUT | `/api/users/{id}/password` | Yes | body; path:id | 200, 400, 401, 403, 404, 500 |
-| PUT | `/api/users/{id}/role` | Yes | body; path:id | 200, 400, 401, 403, 404, 500 |
-| GET | `/api/vendors` | Yes | - | 200, 400, 401, 403, 500 |
-| POST | `/api/vendors` | Yes | body | 200, 201, 400, 401, 403, 500 |
-| DELETE | `/api/vendors/{id}` | Yes | path:id | 200, 204, 400, 401, 403, 404, 500 |
-| GET | `/api/vendors/{id}` | Yes | path:id | 200, 400, 401, 403, 404, 500 |
-| PUT | `/api/vendors/{id}` | Yes | body; path:id | 200, 400, 401, 403, 404, 500 |
-| GET | `/health` | No | - | 200, 400, 500 |
+| `client/src/App.tsx` | Full route tree with lazy pages, auth provider, protected/public routes | None directly | Route navigation | Public routes: login/forgot-password. Protected routes wrap everything else. |
+| `client/src/contexts/AuthContext.tsx` | Auth context state | `/auth/me`, `/auth/login`, `/auth/register`, `/auth/active-role`, `/auth/logout`, `/activities` login/logout logging, `/settings/page-permissions/effective` | Login, register, switch role, logout | Clears user state if `/auth/me` fails; loads runtime page permissions by active role. |
+| `client/src/components/auth/ProtectedRoute.tsx` | Route guard | None directly | Redirects to login or unauthorized-safe destinations | Uses auth loading state, current role, runtime permission matrix, `page`/`allowedRoles` props. |
+| `client/src/components/layout/MainLayout.tsx` | Common page shell | None directly | Header/sidebar layout | Adapts title/description/actions and mobile sidebar state. |
+| `client/src/components/layout/Header.tsx` | Top bar with profile/notifications/search shell | Notification hooks/services indirectly | Menu clicks, logout, nav actions | Varies controls by mobile state and auth state. |
+| `client/src/components/layout/Sidebar.tsx` | Navigation/sidebar | Reads auth and page permissions | Nav clicks, collapse/expand | Filters visible navigation by role/page permission and persists some UI state in `sessionStorage`. |
 
-## 2. React Pages & Components
+### Public pages
 
-Primary routing file: `client/src/App.tsx`.
+| Page | What it renders | API calls | User interactions | Conditional logic |
+|---|---|---|---|---|
+| `Login.tsx` | Login form, password toggle, captcha challenge | `authService.login` | Submit login, toggle password visibility | Redirects to prior route on success; challenge may appear based on client-side security util state. |
+| `ForgotPassword.tsx` | Password reset request form | `authService.requestPasswordReset` | Submit email | Shows success/error toast only; always links back to login. |
+| `NotFound.tsx` | 404 page | None | Back/home navigation | Static. |
 
-### Route surfaces
-- Public: `/login`, `/forgot-password`.
-- Protected core pages: dashboard, assets, asset-items, assignments/my-assets, transfers, maintenance, purchase-orders, offices, rooms-sections, categories, vendors, projects, schemes, reports, compliance, requisitions, returns, profile.
-- Consumables pages: master, receive, containers, units, inventory, transfers, assignments, consume, adjustments, disposal, returns, ledger, expiry.
-- Auth/system pages: settings, settings notifications, audit logs, user management/activity/permissions.
+### Core operational pages
 
-### Authorization in UI
-- Uses `<ProtectedRoute>` with `page`, `anyOfPages`, and `allowedRoles`.
-- Employee view is scoped to employee services and does not expose management-only pages by nav.
-- Role/page checks use runtime permissions in `client/src/config/pagePermissions.ts` and auth context from `client/src/contexts/AuthContext.tsx`.
+| Page | What it renders | API calls | User interactions | Conditional logic |
+|---|---|---|---|---|
+| `Dashboard.tsx` | Role-tailored dashboard cards, links, charts | dashboard hooks/services, requisition list, return list, consumable balances | Navigate to linked modules | Employee dashboard shows personal views; management roles see broader inventory widgets. |
+| `Assets.tsx` | Asset master table + create/edit modal | asset/category/vendor/project/scheme hooks | View detail, create, edit, delete, table filtering | Action availability depends on role/page access. |
+| `AssetDetail.tsx` | Asset detail plus related asset items/history | asset item queries, user list | Navigate back, open history modal | Handles missing asset id/data. |
+| `AssetItems.tsx` | Asset item inventory table + create/edit/assign/detail/history/QR modals | asset item/assignment hooks | View details, edit, show history, show QR, assign, create single/batch | Different modal content based on selected item and selected asset source. |
+| `Employees.tsx` | Employee table + employee create/edit/transfer flows | employee hooks, office/directorate/sub-location data | View profile, edit, transfer, mail, activate/deactivate | Row actions vary by employee status and role. |
+| `EmployeeDetail.tsx` | Employee profile card and assigned assets context | employee detail/assignment-related data | Back, transfer, edit, mail | Transfer modal opens only when employee exists. |
+| `Assignments.tsx` | Assignment list with create/reassign/return flows | assignment hooks/services | View details, create assignment, request return, reassign | Modal availability depends on selected assignment. |
+| `Transfers.tsx` | Transfer list, create-transfer workflow, record modal, workflow actions | transfer service, office/asset item/document/document-link services | Create transfer, select items, run approve/reject/cancel/dispatch/receive actions, open detail/record | Workflow buttons depend on transfer status and user scope; file attachment enforced in UI. |
+| `TransferDetail.tsx` | Transfer detail view | transfer detail service | Navigate back | Read-only status view keyed by transfer id. |
+| `Maintenance.tsx` | Maintenance records table, create/edit/complete/cancel and document-link flows | maintenance, assignment, document, document-link, record services | Submit request, upload docs, open record detail, complete/cancel maintenance | Employees are restricted to own assigned items; office-only item checks enforced in UI before request. |
+| `MyAssets.tsx` | Employee-facing assigned movable/consumable/lab-only assets | assignment and consumable inventory/consume services | Open consume dialog, submit consumable/lab-only consumption | Uses employee + assigned room/section scope; lab-only options render only where returned by backend. |
+| `InventoryHub.tsx` | Combined requisition/return/compliance entry hub | requisition/return/report/dashboard hooks | Navigate to workflow pages | Content varies by role and permission. |
+| `Compliance.tsx` | Non-compliance table/cards | `reportService.getNonCompliance` | Navigate to requisition/return records | Row actions depend on entity type. |
+| `PurchaseOrders.tsx` | PO table + create/edit modal | purchase order, vendor, project, scheme services | Create, edit, delete | Mutations gated by role. |
+| `Offices.tsx` | Office management screen + division/district modals | office/division/district hooks | Create/edit/delete office, manage divisions/districts | Admin-only page; modal combinations depend on selected entity. |
+| `RoomsSections.tsx` | Office room/section management | office sub-location service | Create/edit/delete room/section | Filters by selected office; modal opens for create/edit. |
+| `Categories.tsx` | Category list + form modal | category service | Create/edit/delete | Scoped by permission. |
+| `Vendors.tsx` | Vendor list + form modal | vendor service | Edit/delete, mail/call, placeholder “View Details” | “View Details” action is UI-only placeholder right now. |
+| `Projects.tsx` | Project list + form modal | project service | Edit/delete, placeholder “View Details” | “View Details” is placeholder toast only. |
+| `Schemes.tsx` | Scheme list + form modal | scheme/project services | Create/edit/delete | Filters by project when available. |
+| `Reports.tsx` | Report launcher cards/list | report helpers plus local CSV/PDF export logic | Generate CSV/PDF, date range filtering | Employee reports restricted to own employee-linked data. |
+| `Profile.tsx` | Current user profile, password change, role switcher, logout | auth service | Change password, switch active role, logout | Active-role controls render only for multi-role users. |
+| `Settings.tsx` | Settings forms, backup/test email actions | settings service | Save, backup, test email, open API dialog | Admin-only page; some cards are navigation placeholders. |
+| `AuditLogs.tsx` | Audit/activity table with export | audit log data service layer | Filter, export CSV/JSON | Data display changes by active filters. |
+| `UserActivity.tsx` | Activity feed table | `activityService.getPagedActivities` | Filter, paginate, export CSV | Available to org admin/compliance auditor. |
+| `UserManagement.tsx` | User admin console | user, location, permission services | Create/edit/delete user, reset password, change role/location, export CSV | Dialogs depend on selected user and fetched role catalog. |
+| `UserPermissions.tsx` | Role-page permission matrix editor | user service, userPermissionService | Select role, toggle actions, save, export CSV, add role entry | New role creation is currently local/runtime-matrix oriented, not a separate backend role-type system. |
+| `ApprovalMatrix.tsx` | Pending approvals list and decision dialog | approval matrix service | Refresh, approve, reject, submit notes | Dialog opens per selected pending request. |
+| `NotificationDetails.tsx` | Notification center + actionable items | notification service | Mark one/all read, approve/reject/acknowledge/open record, paginate | Action buttons render per notification action set/open path. |
+| `RoleDelegations.tsx` | Delegation list and create dialog | role delegation service, user/office selection data | Create delegation, revoke delegation | Visible actions depend on row status and role permissions. |
 
-### Major layout/components
-- Layout shell: `MainLayout`, `Sidebar`, `Header`.
-- Auth context + route protection: `AuthProvider`, `ProtectedRoute`.
-- Shared table/filter/report components: `DataTable`, report widgets, form modals for CRUD flows.
+### Requisition / return pages
 
-### API interaction pattern
-- Client API wrapper: `client/src/lib/api.ts`.
-- Uses `credentials: 'include'` cookie auth.
-- Adds `x-csrf-token` for mutating requests when CSRF cookie is present.
-- Normalizes Mongo-style ids and extracts validation errors for UI.
+| Page | What it renders | API calls | User interactions | Conditional logic |
+|---|---|---|---|---|
+| `Requisitions.tsx` | Requisition list/table | `requisitionService.list` | Navigate to detail, create new requisition | New button mainly for employee role / permitted roles. |
+| `RequisitionNew.tsx` | Requisition creation form with dynamic lines | requisition service, reference datasets | Add/remove lines, submit requisition, navigate back | Target/line fields vary by selected line type and target type. |
+| `RequisitionDetail.tsx` | Full requisition workflow detail | requisition, asset, consumable item, asset item, assignment services | Verify/reject, map line, fulfill, upload signed issuance, download PDFs, request return, upload signed return | Workflow buttons render based on requisition status, current role, and line mapping state. |
+| `Returns.tsx` | Return request list/table | `returnRequestService.list` | View detail, open linked records | Actions differ for issuer vs employee scope. |
+| `ReturnRequestNew.tsx` | New return request form | `returnRequestService.create` | Submit request, navigate back | Assumes assignment context from selected row/form state. |
+| `ReturnDetail.tsx` | Return request workflow detail | `returnRequestService.getById`, `receive`, `uploadSignedReturn`, receipt download | Receive return, upload signed receipt, download PDFs | Issuer-only actions are hidden for non-issuer users. |
 
-## 3. Mongoose Models
+### Consumables pages
 
-Model sources:
-- Core models: `server/src/models/*.ts`
-- Consumables models: `server/src/modules/consumables/models/*.ts`
+| Page | What it renders | API calls | User interactions | Conditional logic |
+|---|---|---|---|---|
+| `consumables/ConsumableMaster.tsx` | Consumable item master table + modal | consumable item/category services | Create/edit/delete item | Chemical/lab-only flags affect displayed metadata. |
+| `consumables/ConsumableUnits.tsx` | UOM table + modal | consumable unit service | Create/edit/delete units | Uses UOM group filters. |
+| `consumables/ConsumableContainers.tsx` | Container list and edit/create dialog | container, lot, inventory services | Add/edit/delete containers | Container actions depend on selected lot and permission. |
+| `consumables/ConsumableReceive.tsx` | Receive stock form | consumable item/unit/reason/inventory services | Add/remove containers, upload handover doc, submit receive | Form changes depending on office/store receive path and lot-tracking/container flags. |
+| `consumables/ConsumableInventory.tsx` | Inventory rollup/balance dashboards | inventory service | Filter by item/holder | Renders different tables/rollups depending on selected item. |
+| `consumables/ConsumableTransfers.tsx` | Consumable transfer form | inventory, lot, item, office/holder reference services | Submit transfer | Holder type selection controls available destination/source fields. |
+| `consumables/ConsumableAssignments.tsx` | Consumable issue/assignment form | inventory/lots/items/employee/room services | Submit assignment/issue | Target type changes employee vs room/section fields. |
+| `consumables/ConsumableConsume.tsx` | Consumption form | inventory/lots/items/reason code services | Submit consumption | Employee scope and lab-only visibility depend on backend office capability + role. |
+| `consumables/ConsumableAdjustments.tsx` | Inventory adjustment form | inventory/reason/item/holder services | Submit adjustment | Reason code and holder choice drive fields. |
+| `consumables/ConsumableDisposal.tsx` | Disposal form | inventory/reason/item/container services | Submit disposal, jump to containers page | Links to containers when container-specific disposal is needed. |
+| `consumables/ConsumableReturns.tsx` | Return-to-store/central form | inventory services | Submit return | Form changes by return mode and source office. |
+| `consumables/ConsumableLedger.tsx` | Ledger search table + export | inventory ledger service | Filter, export CSV | Query fields control ledger slice shown. |
+| `consumables/ConsumableExpiry.tsx` | Expiry report table | expiry service | Filter and inspect expiring lots | Empty state when no expiry rows. |
 
-Unique constraints found (high-impact):
-- `user.email`
-- `record.reference_no`
-- `requisition.file_number`
-- `store.code`
-- `counter.key`
-- `division.name`
-- `district (name + division_id)`
-- `office_sub_location (office_id + normalized name)`
-- `assignment` active unique indexes for active assignment constraints
-- `document_version (document_id + version_no)`
-- `document_link (document_id + entity_type + entity_id)`
-- `rate_limit_entry (key + window_start)`
-- Consumables: unit code, reason-code composite keys, balance composites, container code
+### Report detail pages
 
-Top-level schema field inventory:
+| Page | What it renders | API calls | User interactions | Conditional logic |
+|---|---|---|---|---|
+| `reports/AssetSummaryReport.tsx` | Asset summary report with export buttons | report helper datasets | Export CSV/PDF | Empty-state toast when no data. |
+| `reports/AssetItemsInventoryReport.tsx` | Asset item inventory report | report helper datasets | Export CSV/PDF | Empty-state handling. |
+| `reports/AssignmentSummaryReport.tsx` | Assignment summary report | report helper datasets | Export CSV/PDF | Empty-state handling. |
+| `reports/StatusDistributionReport.tsx` | Status distribution report | report helper datasets | Export CSV/PDF | Empty-state handling. |
+| `reports/MaintenanceReport.tsx` | Maintenance report | report helper datasets | Export CSV/PDF | Empty-state handling. |
+| `reports/LocationInventoryReport.tsx` | Location inventory report | report helper datasets | Export CSV/PDF | Empty-state handling. |
+| `reports/FinancialSummaryReport.tsx` | Financial summary report | report helper datasets | Export CSV/PDF | Empty-state handling. |
+| `reports/EmployeeAssetsReport.tsx` | Employee asset report | report helper datasets | Export CSV/PDF | Employee-linked scope restrictions applied before generation. |
 
-| Model file | Top-level schema fields |
-|---|---|
-| `server/src/models/activityLog.model.ts` | user_id, activity_type, description, metadata, ip_address, user_agent |
-| `server/src/models/approvalRequest.model.ts` | record_id, requested_by_user_id, approver_user_id, approver_role, status, requested_at, decided_at, decision_notes |
-| `server/src/models/asset.model.ts` | name, description, specification, category_id, vendor_id, purchase_order_id, project_id, asset_source, scheme_id, acquisition_date, unit_price, currency, quantity, attachment_file_name, attachment_mime_type, attachment_size_bytes, attachment_path, is_active |
-| `server/src/models/assetItem.model.ts` | asset_id, holder_type, holder_id, serial_number, tag, assignment_status, item_status, item_condition, functional_status, item_source, purchase_date, warranty_expiry, notes, is_active |
-| `server/src/models/assignment.model.ts` | asset_item_id, status, assigned_to_type, assigned_to_id, employee_id, requisition_id, requisition_line_id, handover_slip_document_id, handover_slip_generated_version_id, handover_slip_signed_version_id, return_slip_document_id, return_slip_generated_version_id, return_slip_signed_version_id, issued_by_user_id, issued_at, return_requested_by_user_id, return_requested_at, returned_by_user_id, returned_at, assigned_date, expected_return_date, returned_date, notes, is_active |
-| `server/src/models/auditLog.model.ts` | actor_user_id, office_id, action, entity_type, entity_id, timestamp, diff |
-| `server/src/models/category.model.ts` | name, description, scope, asset_type |
-| `server/src/models/consumable.model.ts` | name, description, category_id, unit, total_quantity, available_quantity, acquisition_date, is_active |
-| `server/src/models/counter.model.ts` | key, seq |
-| `server/src/models/district.model.ts` | name, division_id, is_active |
-| `server/src/models/division.model.ts` | name, is_active |
-| `server/src/models/document.model.ts` | title, doc_type, status, office_id, created_by_user_id |
-| `server/src/models/documentLink.model.ts` | document_id, entity_type, entity_id, required_for_status |
-| `server/src/models/documentVersion.model.ts` | document_id, version_no, file_name, mime_type, size_bytes, storage_key, file_path, file_url, sha256, uploaded_by_user_id, uploaded_at |
-| `server/src/models/employee.model.ts` | first_name, last_name, email, user_id, phone, job_title, hire_date, directorate_id, location_id, transferred_at, transferred_from_office_id, transferred_to_office_id, transfer_reason, is_active |
-| `server/src/models/maintenanceRecord.model.ts` | asset_item_id, maintenance_type, maintenance_status, description, cost, performed_by, performed_by_vendor_id, estimate_document_id, scheduled_date, completed_date, notes, is_active |
-| `server/src/models/notification.model.ts` | recipient_user_id, office_id, type, title, message, entity_type, entity_id, is_read |
-| `server/src/models/office.model.ts` | name, code, division, district, address, contact_number, capabilities, parent_office_id, is_active |
-| `server/src/models/officeSubLocation.model.ts` | office_id, name, is_active |
-| `server/src/models/project.model.ts` | name, code, description, budget, is_active |
-| `server/src/models/purchaseOrder.model.ts` | order_number, order_date, expected_delivery_date, delivered_date, source_type, source_name, total_amount, unit_price, tax_percentage, tax_amount, vendor_id, project_id, scheme_id, attachment_file_name, attachment_mime_type, attachment_size_bytes, attachment_path, status, notes |
-| `server/src/models/rateLimitEntry.model.ts` | key, window_start, reset_at, expires_at, count |
-| `server/src/models/record.model.ts` | record_type, reference_no, office_id, status, created_by_user_id, asset_item_id, employee_id, assignment_id, transfer_id, maintenance_record_id, notes |
-| `server/src/models/requisition.model.ts` | file_number, office_id, issuing_office_id, requested_by_employee_id, target_type, linked_sub_location_id, submitted_by_user_id, fulfilled_by_user_id, record_id, signed_issuance_document_id, signed_issuance_uploaded_at, attachment_file_name, attachment_mime_type, attachment_size_bytes, attachment_path, status, remarks |
-| `server/src/models/requisitionLine.model.ts` | requisition_id, line_type, asset_id, consumable_id, requested_name, mapped_name, mapped_by_user_id, mapped_at, requested_quantity, approved_quantity, fulfilled_quantity, status, notes |
-| `server/src/models/returnRequest.model.ts` | employee_id, office_id, record_id, receipt_document_id, status |
-| `server/src/models/scheme.model.ts` | project_id, name, description, is_active |
-| `server/src/models/store.model.ts` | name, code, is_system, is_active |
-| `server/src/models/systemSettings.model.ts` | organization, notifications, security, role_permissions, last_backup_at |
-| `server/src/models/transfer.model.ts` | lines, from_office_id, to_office_id, store_id, transfer_date, handled_by, requisition_id, approval_order_document_id, handover_document_id, takeover_document_id, requested_by_user_id, approved_by_user_id, dispatched_by_user_id, received_by_user_id, dispatched_to_store_by_user_id, received_at_store_by_user_id, dispatched_to_dest_by_user_id, received_at_dest_by_user_id, rejected_by_user_id, cancelled_by_user_id, requested_at, approved_at, dispatched_to_store_at, received_at_store_at, dispatched_to_dest_at, received_at_dest_at, rejected_at, cancelled_at, status, notes, is_active |
-| `server/src/models/user.model.ts` | email, password_hash, first_name, last_name, role, location_id, last_login_at, last_password_change_at, is_active, token_version, failed_login_attempts, lockout_until, password_reset_token_hash, password_reset_expires_at, password_reset_requested_at |
-| `server/src/models/vendor.model.ts` | name, contact_info, email, phone, address, office_id |
-| `server/src/modules/consumables/models/consumableBalance.model.ts` | holder_type, consumable_id, qty_in_total, qty_out_total, qty_on_hand, updated_at |
-| `server/src/modules/consumables/models/consumableBalanceTxn.model.ts` | balance_id, event_type, quantity, issue_id, lot_id, consumption_id, performed_by_user_id, performed_at, notes |
-| `server/src/modules/consumables/models/consumableConsumption.model.ts` | source_type, source_id, consumable_id, consumed_at, recorded_by_user_id, issue_id, lot_id, notes |
-| `server/src/modules/consumables/models/consumableContainer.model.ts` | lot_id, container_code, initial_qty_base, current_qty_base, current_location_id, opened_date |
-| `server/src/modules/consumables/models/consumableInventoryBalance.model.ts` | holder_type, holder_id, consumable_item_id, lot_id, qty_on_hand_base, qty_reserved_base |
-| `server/src/modules/consumables/models/consumableInventoryTransaction.model.ts` | tx_time, created_by, from_holder_type, from_holder_id, to_holder_type, to_holder_id, consumable_item_id, lot_id, container_id, qty_base, entered_qty, entered_uom, reason_code_id, reference, notes, metadata |
-| `server/src/modules/consumables/models/consumableIssue.model.ts` | lot_id, from_holder_type, from_holder_id, to_type, to_id, issued_by_user_id, issued_at, notes, document_id |
-| `server/src/modules/consumables/models/consumableItem.model.ts` | name, cas_number, category_id, base_uom, is_hazardous, is_controlled, is_chemical, requires_lot_tracking, requires_container_tracking, default_min_stock, default_reorder_point, storage_condition, created_by |
-| `server/src/modules/consumables/models/consumableLot.model.ts` | consumable_id, holder_type, batch_no, expiry_date, qty_received, qty_available, received_at, received_by_user_id, notes, document_id, source_type, vendor_id, project_id, scheme_id, handover_file_name, handover_mime_type, handover_size_bytes, handover_path, docs |
-| `server/src/modules/consumables/models/consumableReasonCode.model.ts` | category, code, description |
-| `server/src/modules/consumables/models/consumableReturn.model.ts` | mode, consumable_id, from_user_id, to_office_id, from_office_id, to_lot_id, performed_by_user_id, performed_at, notes |
-| `server/src/modules/consumables/models/consumableUnit.model.ts` | code, name, group, to_base, aliases, is_active |
+### Major reusable components
 
-## 4. Authentication Surfaces
+| Component | What it renders | API calls | User interactions | Conditional logic |
+|---|---|---|---|---|
+| `components/auth/CaptchaChallenge.tsx` | Client-side challenge widget used on login | None | Verify challenge | Shows challenge state and validation result. |
+| `components/shared/DataTable.tsx` | Generic paged/filterable responsive table shell | None directly | Sort/filter/paginate/export toolbar interactions passed via props | Optional row click, actions column, mobile wrapping. |
+| `components/shared/PageHeader.tsx` | Standard page title/action header | None | Action buttons | Optional description/action rendering. |
+| `components/shared/SearchableSelect.tsx` | Searchable popover select | None | Search, select option | Placeholder/no-result states. |
+| `components/shared/StatusBadge.tsx` | Status badge | None | None | Variant depends on status value. |
+| `components/shared/ViewModeToggle.tsx` | List/card mode toggle | None | Toggle view mode | Uses persisted view mode hook. |
+| `components/shared/QRCodeModal.tsx` | QR preview/download modal | None | Open/close/download | Only opens when row selected. |
+| `components/shared/AssignmentHistoryModal.tsx` | Assignment history dialog | assignment history data from parent | Open/close | Renders when parent passes selected asset item. |
+| `components/shared/DivisionManagementModal.tsx`, `DistrictManagementModal.tsx`, `OfficeSectionManagementModal.tsx` | CRUD dialogs for admin reference data | respective hooks/services through parent/hooks | Create/edit/delete | Form mode varies by selected entity. |
+| `components/records/RecordDetailModal.tsx` | Record detail dialog | record service through parent/hooks | Open/close | Renders linked record/document details. |
+| `components/reports/DateRangeFilter.tsx` | Shared date range filter UI | None | Select dates | Used by report pages. |
+| `components/consumables/ConsumableModeToggle.tsx` | Toggle between consumable operational modes | None | Mode switch | Shown only on consumables screens that support multiple modes. |
+| `components/dashboard/*` | Stats cards/charts/recent activity/pending PO widgets | dashboard data passed from page | Click through from cards/links | Rendered by dashboard according to role and data availability. |
 
-Backend auth implementation:
-- JWT verification in `server/src/middleware/auth.ts`.
-- Token accepted from `Authorization: Bearer <jwt>` OR `auth_token` cookie.
-- JWT payload includes `userId`, `role`, `locationId`, `tokenVersion`; middleware rehydrates user from DB and enforces token version.
-- Inactive/deleted users and stale token versions are rejected with 401.
+### Major form modal components
 
-Role restriction middleware:
-- `requireAdmin` (`org_admin`)
-- `requireRoles([...])`
-- `requireOrgAdminOrCentralStoreCaretaker` for category/project/scheme central-store governance.
+- `AssetFormModal`, `OfficeAssetFormModal`: asset master creation/edit forms with reference dropdowns and file upload support.
+- `AssetItemFormModal`, `OfficeAssetItemFormModal`, `AssetItemEditModal`, `OfficeAssetItemEditModal`: item create/edit flows for central and office contexts.
+- `AssignmentFormModal`, `ReassignmentFormModal`, `ReturnFormModal`: movable assignment lifecycle forms.
+- `EmployeeFormModal`, `EmployeeTransferModal`: employee creation/edit/transfer forms including room/section assignments.
+- `MaintenanceFormModal`: maintenance creation/edit form with estimate/supporting file inputs.
+- `CategoryFormModal`, `DivisionFormModal`, `DistrictFormModal`, `OfficeFormModal`, `ProjectFormModal`, `SchemeFormModal`, `VendorFormModal`, `PurchaseOrderFormModal`: standard CRUD modals for master data.
+- `ConsumableFormModal`, `ConsumableItemFormModal`, `ConsumableUnitFormModal`, `ConsumableAssignModal`: consumables creation and assignment forms.
+- Each modal relies on parent page hooks/services for actual API calls and supports create/edit modes based on props.
 
-CSRF:
-- `server/src/middleware/csrf.ts` enforces `x-csrf-token` against `csrf_token` cookie for non-safe methods when bearer token is not used.
-- Applied on sensitive auth mutations (`register`, `change-password`, `logout`).
+## 3. MONGOOSE MODELS
 
-Frontend token/storage behavior:
-- Auth token is cookie-based (httpOnly cookie set by backend).
-- Frontend stores non-secret user profile object in `localStorage` (`user` key), not JWT.
-- API calls include credentials (`credentials: 'include'`).
+### Shared schema behavior
 
-Role-restricted route groups (server):
-- Auth register: admin only + CSRF.
-- Settings update/read (except effective page permissions): admin only.
-- Categories/Projects/Schemes: org_admin + central-store caretaker for create/update/list controls.
-- Metrics endpoint: org_admin only (enforced in route handler).
+- Most schemas use `baseSchemaOptions`:
+  - Adds `created_at` and `updated_at` timestamps.
+  - Adds `id` in JSON output and removes `_id` / `__v` from serialized response shape.
+- Most uniqueness rules are implemented via schema indexes rather than custom runtime validators.
 
-## 5. External Dependencies / Services
+### Core models
 
-No external SaaS integrations (Stripe/SendGrid/S3/etc.) detected in runtime code.
-Main external libraries:
-- Backend: Express, Mongoose, JWT, Helmet, CORS, Morgan, compression, Multer, Zod.
-- Frontend: React, React Router, TanStack Query, Radix UI, Recharts, jsPDF, xlsx.
-- Security tooling: eslint-plugin-security, retire, npm audit.
+| Model | Fields / types | Required | Unique / indexed | Validators / hooks |
+|---|---|---|---|---|
+| `User` | `email:String`, `password_hash:String`, `first_name:String?`, `last_name:String?`, `role:String`, `roles:String[]`, `active_role:String?`, `location_id:ObjectId?`, `last_login_at:String?`, `last_password_change_at:String?`, `is_active:Boolean`, `token_version:Number`, `failed_login_attempts:Number`, `lockout_until:Date?`, `password_reset_token_hash:String?`, `password_reset_expires_at:Date?`, `password_reset_requested_at:Date?` | `email`, `password_hash` | `email` unique | No schema hooks; auth middleware enforces token version / role normalization. |
+| `RoleDelegation` | `delegator_user_id:ObjectId`, `delegate_user_id:ObjectId`, `office_id:ObjectId`, `delegated_roles:String[]`, `starts_at:Date`, `ends_at:Date`, `reason:String?`, `status:String`, `revoked_at:Date?`, `revoked_by_user_id:ObjectId?` | delegator, delegate, office, delegated roles, start/end, status | indexes on delegate/delegator/office + status/date windows | No hooks; runtime delegation filtering happens in auth middleware. |
+| `Office` | `name:String`, `code:String?`, `division:String?`, `district:String?`, `address:String?`, `contact_number:String?`, `type:String`, `capabilities:{moveables:Boolean, consumables:Boolean, chemicals:Boolean}`, `parent_office_id:ObjectId?`, `is_active:Boolean` | `name` | indexes on `is_active`, `type`, capability fields | No hooks. |
+| `Division` | `name:String`, `is_active:Boolean` | `name` | `name` unique | No hooks. |
+| `District` | `name:String`, `division_id:ObjectId`, `is_active:Boolean` | `name`, `division_id` | composite unique/index on district+division pattern | No hooks. |
+| `OfficeSubLocation` | `office_id:ObjectId`, `name:String`, normalized name backing index, `is_active:Boolean` | `office_id`, `name` | composite uniqueness per office/name | Name normalization logic/indexing in schema/controller, no complex hook noted. |
+| `Employee` | `first_name:String`, `last_name:String`, `email:String`, `user_id:ObjectId?`, `phone:String?`, `job_title:String?`, `hire_date:String?`, `directorate_id:ObjectId?`, `location_id:ObjectId?`, `default_sub_location_id:ObjectId?`, `allowed_sub_location_ids:ObjectId[]`, `transferred_at:Date?`, `transferred_from_office_id:ObjectId?`, `transferred_to_office_id:ObjectId?`, `transfer_reason:String?`, `is_active:Boolean` | `first_name`, `last_name`, `email` | indexes on location/directorate/transfer fields | No hooks. |
+| `Category` | `name:String`, `description:String?`, `scope:String?`, `asset_type:String?` | `name` | name/index constraints via schema/controller | No hooks. |
+| `Vendor` | `name:String`, `contact_info:String?`, `email:String?`, `phone:String?`, `address:String?`, `office_id:ObjectId?` | `name` | office/name usage indexes | No hooks. |
+| `Project` | `name:String`, `code:String?`, `description:String?`, `budget:Number?`, `is_active:Boolean` | `name` | code/name uniqueness handled by controller/schema indexes | No hooks. |
+| `Scheme` | `project_id:ObjectId`, `name:String`, `description:String?`, `is_active:Boolean` | `project_id`, `name` | project/name style indexing | No hooks. |
+| `Store` | `name:String`, `code:String`, `is_system:Boolean`, `is_active:Boolean` | `name`, `code` | `code` unique | No hooks. |
+| `Asset` | `name:String`, `description:String?`, `specification:String?`, `category_id:ObjectId?`, `vendor_id:ObjectId?`, `purchase_order_id:ObjectId?`, `project_id:ObjectId?`, `asset_source:String?`, `scheme_id:ObjectId?`, `acquisition_date:String?`, `unit_price:Number?`, `currency:String?`, `quantity:Number?`, attachment metadata/path fields, `is_active:Boolean` | `name` plus controller-level business fields | category/vendor/project indexes | No hooks. |
+| `AssetItem` | `asset_id:ObjectId`, `holder_type:String`, `holder_id:ObjectId`, `serial_number:String?`, `tag:String?`, `assignment_status:String`, `item_status:String`, `item_condition:String`, `functional_status:String`, `item_source:String?`, `purchase_date:String?`, `warranty_expiry:String?`, `notes:String?`, `is_active:Boolean` | `asset_id`, holder fields | indexes for holder/state and uniqueness around tag/serial depending on controller | No hooks. |
+| `Assignment` | item/assignee refs, requisition refs, slip document/version ids, issuing/returning user ids and timestamps, assignment/return dates, `status`, `notes`, `is_active` | `asset_item_id`, core assignee/status fields | active-assignment indexes enforce one live assignment per item in valid states | No complex hooks seen. |
+| `Transfer` | `lines:[subdocs]`, `from_office_id`, `to_office_id`, `store_id`, `transfer_date`, workflow user ids/timestamps, requisition and document ids, `status`, `notes`, `is_active` | offices / lines / status depending on workflow stage | indexes on offices, status, timeline refs | No hooks. |
+| `MaintenanceRecord` | `asset_item_id:ObjectId`, `maintenance_type:String`, `maintenance_status:String`, `description:String`, `cost:Number?`, `performed_by:String?`, `performed_by_vendor_id:ObjectId?`, `estimate_document_id:ObjectId?`, `scheduled_date:String?`, `completed_date:String?`, `notes:String?`, `is_active:Boolean` | asset item, type, status, description | status/date indexes | No hooks. |
+| `PurchaseOrder` | `order_number:String`, dates, source fields, amount/tax fields, vendor/project/scheme ids, attachment metadata/path fields, `status`, `notes` | `order_number` and controller-required commercial fields | order number index, vendor/project/status indexes | No hooks. |
+| `Requisition` | `file_number:String`, `office_id:ObjectId`, `issuing_office_id:ObjectId`, `requested_by_employee_id:ObjectId?`, `target_type:'EMPLOYEE'|'SUB_LOCATION'`, `target_id:ObjectId`, `linked_sub_location_id:ObjectId?`, `submitted_by_user_id:ObjectId`, `fulfilled_by_user_id:ObjectId?`, `record_id:ObjectId?`, `signed_issuance_document_id:ObjectId?`, `signed_issuance_uploaded_at:Date?`, attachment metadata/path fields, `status`, `remarks` | `file_number`, `office_id`, `issuing_office_id`, `target_type`, `target_id`, `submitted_by_user_id` | `file_number` unique; indexes on status, office, issuing office, record, signed doc | `pre('validate')` ensures `target_id` is valid ObjectId for employee/sub-location targets. |
+| `RequisitionLine` | `requisition_id:ObjectId`, `line_type:String`, `asset_id:ObjectId?`, `consumable_id:ObjectId?`, `requested_name:String?`, `mapped_name:String?`, `mapped_by_user_id:ObjectId?`, `mapped_at:Date?`, `requested_quantity:Number`, `approved_quantity:Number?`, `fulfilled_quantity:Number?`, `status:String`, `notes:String?` | requisition id, line type, requested qty, status | indexes on requisition and line state | No hooks. |
+| `ReturnRequest` | `employee_id:ObjectId`, `office_id:ObjectId`, `record_id:ObjectId?`, `receipt_document_id:ObjectId?`, `status:String` | employee, office, status | indexes on office/status/record | No hooks. |
+| `Record` | `record_type:String`, `reference_no:String`, `office_id:ObjectId?`, `status:String`, `created_by_user_id:ObjectId`, linked workflow entity ids, `notes:String?` | record type, reference no, created by, status | `reference_no` unique | Status transitions handled in service, not schema hook. |
+| `ApprovalRequest` | `record_id:ObjectId`, requester/approver refs, `approver_role:String?`, `status:String`, `requested_at:Date`, `decided_at:Date?`, `decision_notes:String?` | record, requester, status, requested_at | indexes by record/approver/status | No hooks. |
+| `ApprovalMatrixRequest` | maker/checker workflow snapshot, decision subdocs, status/timestamps, office/role snapshot fields | key workflow fields required | multiple composite indexes for pending approvals | No hooks noted. |
+| `Document` | `title:String`, `doc_type:String`, `status:String`, `office_id:ObjectId?`, `created_by_user_id:ObjectId` | title, doc type, creator | indexes by office/doc type/status | No hooks. |
+| `DocumentVersion` | `document_id:ObjectId`, `version_no:Number`, file metadata/storage fields, `sha256:String?`, `uploaded_by_user_id:ObjectId`, `uploaded_at:Date` | document, version number, uploader, uploaded_at | composite unique on `(document_id, version_no)` | No hooks. |
+| `DocumentLink` | `document_id:ObjectId`, `entity_type:String`, `entity_id:ObjectId`, `required_for_status:String?` | document, entity type/id | composite uniqueness on `(document_id, entity_type, entity_id)` | No hooks. |
+| `Notification` | `recipient_user_id:ObjectId`, `office_id:ObjectId?`, `type:String`, `title:String`, `message:String`, `entity_type:String?`, `entity_id:ObjectId?`, `is_read:Boolean`, action/open-path fields used by controller payloads | recipient, type, title, message | indexes on recipient/read state | No hooks. |
+| `ActivityLog` | `user_id:ObjectId`, `activity_type:String`, `description:String?`, `metadata:Mixed?`, `ip_address:String?`, `user_agent:String?` | user, activity type | indexes on user/activity/timestamps | No hooks. |
+| `AuditLog` | `actor_user_id:ObjectId`, `office_id:ObjectId?`, `action:String`, `entity_type:String`, `entity_id:ObjectId`, `timestamp:Date`, `diff:Mixed?` | actor, action, entity refs, timestamp | indexes on timestamp/entity/office | No hooks. |
+| `SystemSettings` | organization, notifications, security, role_permissions, `last_backup_at:Date?` | one singleton-style document managed in controller | singleton usage, not strict unique key | No hooks. |
+| `RateLimitEntry` | `key:String`, `window_start:Date`, `reset_at:Date`, `expires_at:Date`, `count:Number` | all fields | composite unique/index on key+window | No hooks. |
+| `Counter` | `key:String`, `seq:Number` | both | `key` unique | No hooks. |
+| `Consumable` | legacy/simple consumable model with quantity fields and category/unit refs | name and quantity semantics | category/name indexes | No hooks; superseded operationally by consumables module models. |
 
-## 6. Environment Variables
+### Consumables module models
 
-| Env var | Purpose |
-|---|---|
-| `PORT` | API port |
-| `MONGO_URI` | MongoDB connection string |
-| `MONGO_MAX_POOL_SIZE` | Mongo max pool size |
-| `MONGO_MIN_POOL_SIZE` | Mongo min pool size |
-| `MONGO_MAX_IDLE_TIME_MS` | Mongo max idle time |
-| `MONGO_SERVER_SELECTION_TIMEOUT_MS` | Mongo server selection timeout |
-| `MONGO_SOCKET_TIMEOUT_MS` | Mongo socket timeout |
-| `MONGO_CONNECT_TIMEOUT_MS` | Mongo connect timeout |
-| `MONGO_HEARTBEAT_FREQUENCY_MS` | Mongo heartbeat frequency |
-| `MONGO_CONNECT_RETRIES` | Mongo initial connect retries |
-| `MONGO_CONNECT_RETRY_DELAY_MS` | Delay between mongo connect retries |
-| `MONGO_RETRY_WRITES` | Mongo retry writes toggle |
-| `MONGO_RETRY_READS` | Mongo retry reads toggle |
-| `MONGO_REQUIRE_REPLICA_SET` | Fail boot if not replica set/mongos |
-| `JWT_SECRET` | JWT signing secret (>=32 chars) |
-| `JWT_EXPIRES_IN` | JWT TTL |
-| `JWT_INVALIDATE_BEFORE` | Global JWT invalidate cutoff (unix seconds) |
-| `PASSWORD_RESET_TOKEN_TTL_MINUTES` | Reset token lifetime |
-| `AUTH_LOCKOUT_THRESHOLD` | Failed login attempts before lockout |
-| `AUTH_LOCKOUT_BASE_MINUTES` | Base lockout duration |
-| `AUTH_LOCKOUT_MAX_MINUTES` | Max lockout duration |
-| `TRUST_PROXY` | Express trust proxy setting |
-| `COMPRESSION_THRESHOLD_BYTES` | Response size threshold for compression |
-| `COMPRESSION_LEVEL` | gzip compression level |
-| `HTTP_JSON_LIMIT` | Max JSON payload size |
-| `HTTP_URLENCODED_LIMIT` | Max URL-encoded payload size |
-| `CACHE_REFERENCE_MAX_AGE_SECONDS` | Reference cache max-age |
-| `CACHE_REFERENCE_STALE_WHILE_REVALIDATE_SECONDS` | Reference cache SWR |
-| `RATE_LIMIT_BACKEND` | Rate limiter storage backend (mongo/memory) |
-| `CORS_ORIGIN` | Allowed origins CSV |
-| `SEED_SUPER_ADMIN` | Enable bootstrap super admin seed |
-| `SUPER_ADMIN_EMAIL` | Bootstrap super admin email |
-| `SUPER_ADMIN_PASSWORD` | Bootstrap super admin password |
-| `VITE_API_BASE_URL` | Client API base URL |
+| Model | Fields / types | Required | Unique / indexed | Validators / hooks |
+|---|---|---|---|---|
+| `ConsumableItem` | `name:String`, `cas_number:String?`, `category_id:ObjectId?`, `base_uom:String`, `is_hazardous:Boolean`, `is_controlled:Boolean`, `is_chemical:Boolean`, `requires_lot_tracking:Boolean`, `requires_container_tracking:Boolean`, `default_min_stock:Number?`, `default_reorder_point:Number?`, `storage_condition:String?`, `created_by:ObjectId?` | `name`, `base_uom` | indexes on `name`, `(category_id, name)` | No hooks. |
+| `ConsumableUnit` | `code:String`, `name:String`, `group:String`, `to_base:Number`, `aliases:String[]`, `is_active:Boolean` | `code`, `name`, `group`, `to_base` | `code` unique/indexed | No hooks. |
+| `ConsumableLot` | `consumable_id:ObjectId`, `holder_type:String`, `holder_id:ObjectId`, `batch_no:String`, `expiry_date:Date`, `qty_received:Number`, `qty_available:Number`, `received_at:Date`, `received_by_user_id:ObjectId`, `notes:String?`, `document_id:ObjectId?`, source/vendor/project/scheme refs, handover file metadata/path, docs array | core lot/holder/qty/receiver/source fields | indexes on holder, item, expiry, batch | Update hooks maintain quantity invariants on lot changes. |
+| `ConsumableContainer` | `lot_id:ObjectId`, `container_code:String`, `initial_qty_base:Number`, `current_qty_base:Number`, `current_location_id:ObjectId?`, `opened_date:Date?` | lot, container code, qty fields | container code indexes / uniqueness per lot | No hooks. |
+| `ConsumableIssue` | `lot_id:ObjectId`, `from_holder_type:String`, `from_holder_id:ObjectId`, `to_type:String`, `to_id:ObjectId`, `issued_by_user_id:ObjectId`, `issued_at:Date`, `notes:String?`, `document_id:ObjectId?` | lot, source, destination, issuer, issued_at | source/destination/time indexes | No hooks. |
+| `ConsumableConsumption` | `source_type:String`, `source_id:ObjectId`, `consumable_id:ObjectId`, `consumed_at:Date`, `recorded_by_user_id:ObjectId`, `issue_id:ObjectId?`, `lot_id:ObjectId?`, `notes:String?` | source, item, consumed_at, recorder | indexes on source/item/time | No hooks. |
+| `ConsumableReturn` | `mode:String`, `consumable_id:ObjectId`, `from_user_id:ObjectId?`, `to_office_id:ObjectId?`, `from_office_id:ObjectId?`, `to_lot_id:ObjectId?`, `performed_by_user_id:ObjectId`, `performed_at:Date`, `notes:String?` | mode, item, performer, performed_at | indexes on mode/item/time | No hooks. |
+| `ConsumableBalance` | `holder_type:String`, `consumable_id:ObjectId`, cumulative in/out totals, `qty_on_hand:Number`, `updated_at:Date` | holder type, consumable | holder+item balance indexes | No hooks. |
+| `ConsumableBalanceTxn` | `balance_id:ObjectId`, `event_type:String`, `quantity:Number`, related issue/lot/consumption ids, `performed_by_user_id:ObjectId`, `performed_at:Date`, `notes:String?` | balance, event type, qty, performer, time | balance/time indexes | No hooks. |
+| `ConsumableInventoryBalance` | `holder_type:String`, `holder_id:ObjectId`, `consumable_item_id:ObjectId`, `lot_id:ObjectId?`, `qty_on_hand_base:Number`, `qty_reserved_base:Number` | holder, item, qty fields | composite balance indexes by holder/item/lot | No hooks. |
+| `ConsumableInventoryTransaction` | transaction time, creator, from/to holder refs, `consumable_item_id`, `lot_id`, `container_id`, `qty_base`, `entered_qty`, `entered_uom`, `reason_code_id`, `reference`, `notes`, `metadata` | tx time, creator, item, qty | composite indexes by item, lot, holder, tx_time | No hooks. |
+| `ConsumableReasonCode` | `category:String`, `code:String`, `description:String` | all fields | composite unique on `(category, code)` | No hooks. |
 
-## 7. Unfinished / Risky Code
+## 4. AUTHENTICATION SURFACES
 
-- `server/src/controllers/dashboard.controller.ts:249` contains a TODO comment (`implement properly later`) in dashboard logic.
-- Dependency risk remains from `npm audit` (High):
-  - `rollup` (transitive via Vite) advisory open in current resolved tree.
-  - `xlsx` (direct dependency) advisories open with no fix currently available from npm audit.
-- `xss-clean` package integration required a compatibility wrapper in Express 5 (`server/src/app.ts`) because direct middleware mutation of `req.query` is incompatible.
-- Runtime security tests currently exist in `server/tests/security/security-runtime-tests.ts`; they cover auth bypass, CSRF, role escalation, IDOR-like scope checks, upload spoofing, and rate limiting, but do not yet cover every endpoint automatically.
+### How auth works
 
-## Session Status
+- Backend uses JWTs signed with `HS256`.
+- Token can be supplied in either:
+  - `Authorization: Bearer <token>` header, or
+  - `auth_token` cookie.
+- Current frontend path uses cookie auth, not header token storage.
+- Backend login sets:
+  - `auth_token` cookie for auth.
+  - `csrf_token` cookie used by frontend for mutating requests.
+- `client/src/lib/api.ts` automatically:
+  - sends `credentials: 'include'` on every request.
+  - reads `csrf_token` from `document.cookie` and sends `x-csrf-token` on non-GET/HEAD/OPTIONS requests.
+- `server/src/middleware/auth.ts` verifies:
+  - allowed algorithm is `HS256` only.
+  - token has `exp` claim.
+  - token is not globally invalidated by `JWT_INVALIDATE_BEFORE`.
+  - `tokenVersion` matches current user document.
+  - user still exists and is active.
+  - delegated roles are merged into runtime role list if delegation is active for current office and date window.
 
-- Discovery output completed and saved.
-- Detailed security findings and remediation status are recorded in `SECURITY_AUDIT.md`.
+### Where auth state is stored
+
+- JWT: cookie (`auth_token`), not stored in `localStorage`.
+- CSRF token: cookie (`csrf_token`).
+- Frontend also stores a non-secret normalized user summary in `localStorage` key `user` for UI bootstrap.
+- Other client storage in scope:
+  - `sessionStorage` for sidebar/UI state.
+  - `localStorage` for view mode, consumable mode, audit-log UI data.
+  - No token storage found in `sessionStorage` or URL params.
+
+### Public routes
+
+- `/health`
+- `/api/docs`
+- `/api/openapi.json`
+- `/api/openapi.yaml`
+- `/api/auth/login`
+- `/api/auth/forgot-password`
+- `/api/auth/reset-password`
+
+### Routes requiring authentication
+
+- Everything else under `/api`, including all CRUD, workflow, report, notification, records, and consumables routes.
+- Route files with blanket `router.use(requireAuth)`:
+  - `activity.routes.ts`
+  - `notification.routes.ts`
+  - `roleDelegation.routes.ts`
+  - `user.routes.ts`
+- Route files with per-route `requireAuth`:
+  - dashboard, settings, approval matrix, category, division, district, office, office sub-location, vendor, project, scheme, employee, asset, asset item, assignment, maintenance, transfer, purchase order, requisition, return request, report, metrics, records module, consumables module.
+
+### Role-restricted routes
+
+- `org_admin` only:
+  - `POST /api/auth/register`
+  - `GET/PUT /api/settings`
+  - `GET/PUT /api/settings/page-permissions`
+  - `POST /api/settings/backup`
+  - `POST /api/settings/test-email`
+  - `DELETE /api/categories/:id`
+  - `POST/PUT/DELETE /api/divisions/:id?` and `/api/districts/:id?` via route-local `requireSuperAdmin`
+  - `POST/PUT/DELETE /api/offices/:id?`
+  - `GET /api/observability/metrics` also checks `req.user.isOrgAdmin`
+- `org_admin` or central-store caretaker (`requireOrgAdminOrCentralStoreCaretaker`):
+  - all project routes
+  - all scheme routes
+  - category create/update
+- `org_admin | office_head | procurement_officer`:
+  - `POST/PUT/DELETE /api/purchase-orders`
+- Consumables route-level gates:
+  - caretaker-only for most item/unit/container/reason-code create/delete operations.
+  - container update allows `office_head` and `caretaker`.
+  - inventory access then applies additional service-level scope rules by office capability and holder type.
+- UI page-level restrictions in `client/src/config/pagePermissions.ts`:
+  - `org_admin`, `office_head`, `caretaker`, `employee`, `storekeeper`, `inventory_controller`, `procurement_officer`, `compliance_auditor`.
+  - employee hard-block list includes admin/inventory-master pages.
+  - office_head hard-block list currently includes categories/projects/schemes despite broad allowed role defaults elsewhere.
+
+## 5. EXTERNAL DEPENDENCIES
+
+### Third-party APIs / external services
+
+- No Stripe, SendGrid, Twilio, AWS S3, Cloudinary, Firebase, or other external network SDK integrations were found in runtime code.
+- File handling is local/server-managed via Multer + document models, not object storage.
+- PDF generation is local using `pdf-lib` on server and `jspdf`/`jspdf-autotable` on client.
+
+### Backend libraries / services used
+
+- `express`: HTTP server and routing.
+- `mongoose`: MongoDB ODM.
+- `jsonwebtoken`: JWT issue/verify.
+- `bcryptjs`: password hashing.
+- `helmet`: security headers.
+- `cors`: origin restrictions.
+- `cookie-parser`: cookie parsing.
+- `compression`: response compression.
+- `multer`: multipart uploads.
+- `zod`: request validation.
+- `express-mongo-sanitize`: strips Mongo operator keys from body/query/params.
+- `xss-clean` low-level cleaner functions used through custom sanitization wrapper.
+- `morgan`: request logging.
+- `mongodb-memory-server`, `supertest`, `tsx`: test/dev tooling.
+- `pdf-lib`: server PDF generation for slips/receipts.
+
+### Frontend libraries / SDKs used
+
+- `react`, `react-dom`, `react-router-dom`.
+- `@tanstack/react-query` for data fetching/cache.
+- `react-hook-form`, `@hookform/resolvers`, `zod` for forms.
+- `Radix UI` packages for UI primitives.
+- `recharts` for charts.
+- `jspdf` and `jspdf-autotable` for client-side PDF export.
+- `qrcode.react` for QR rendering.
+- `date-fns`, `lucide-react`, `sonner`, `cmdk`, `vaul`, `input-otp`.
+- Tailwind-related packages for styling.
+
+## 6. ENVIRONMENT VARIABLES
+
+| Env var | Used in | Purpose |
+|---|---|---|
+| `PORT` | server | API port; defaults to `5000`. |
+| `MONGO_URI` | server | MongoDB connection string. |
+| `MONGO_MAX_POOL_SIZE` | server | Mongo connection pool max size. |
+| `MONGO_MIN_POOL_SIZE` | server | Mongo connection pool min size. |
+| `MONGO_MAX_IDLE_TIME_MS` | server | Mongo idle timeout. |
+| `MONGO_SERVER_SELECTION_TIMEOUT_MS` | server | Mongo server selection timeout. |
+| `MONGO_SOCKET_TIMEOUT_MS` | server | Mongo socket timeout. |
+| `MONGO_CONNECT_TIMEOUT_MS` | server | Mongo connection timeout. |
+| `MONGO_HEARTBEAT_FREQUENCY_MS` | server | Mongo heartbeat interval. |
+| `MONGO_CONNECT_RETRIES` | server | Initial Mongo connect retries. |
+| `MONGO_CONNECT_RETRY_DELAY_MS` | server | Delay between Mongo retries. |
+| `MONGO_RETRY_WRITES` | server | Enables Mongo retryable writes. |
+| `MONGO_RETRY_READS` | server | Enables Mongo retryable reads. |
+| `MONGO_REQUIRE_REPLICA_SET` | server | If true, boot expects replica set / mongos behavior. |
+| `JWT_SECRET` | server | Required HS256 signing secret; must be non-default and 32+ chars. |
+| `JWT_EXPIRES_IN` | server | JWT TTL, default `7d`. |
+| `JWT_INVALIDATE_BEFORE` | server | Optional unix timestamp cutoff to invalidate older tokens. |
+| `PASSWORD_RESET_TOKEN_TTL_MINUTES` | server | Reset token lifetime. |
+| `AUTH_LOCKOUT_THRESHOLD` | server | Failed login attempts before lockout. |
+| `AUTH_LOCKOUT_BASE_MINUTES` | server | Base lockout duration. |
+| `AUTH_LOCKOUT_MAX_MINUTES` | server | Max lockout duration. |
+| `TRUST_PROXY` | server | Express `trust proxy` setting. |
+| `COMPRESSION_THRESHOLD_BYTES` | server | Compression threshold. |
+| `COMPRESSION_LEVEL` | server | Gzip compression level 0-9. |
+| `HTTP_JSON_LIMIT` | server | Max JSON request size. |
+| `HTTP_URLENCODED_LIMIT` | server | Max urlencoded request size. |
+| `CACHE_REFERENCE_MAX_AGE_SECONDS` | server | Shared cache header max-age for reference endpoints. |
+| `CACHE_REFERENCE_STALE_WHILE_REVALIDATE_SECONDS` | server | Shared cache stale-while-revalidate value. |
+| `RATE_LIMIT_BACKEND` | server | Rate-limit storage backend, `mongo` or `memory`. |
+| `CORS_ORIGIN` | server/root | Comma-separated allowed origins. |
+| `SEED_SUPER_ADMIN` | server | Whether to seed bootstrap super admin. |
+| `SUPER_ADMIN_EMAIL` | server | Seed email when bootstrap admin is enabled. |
+| `SUPER_ADMIN_PASSWORD` | server | Seed password when bootstrap admin is enabled. |
+| `VITE_API_BASE_URL` | client/root | Frontend API base URL, default `http://localhost:5000/api`. |
+
+## 7. UNFINISHED OR RISKY CODE
+
+### Confirmed TODOs / placeholders
+
+- `server/src/controllers/dashboard.controller.ts`
+  - Contains `TODO: implement properly later` around non-admin consumable alert logic. Non-admin consumable alert behavior is intentionally incomplete/simplified.
+- `client/src/pages/Vendors.tsx`
+  - “View Details” action only shows `toast.info("View details would open")` and has no real detail route/modal.
+- `client/src/pages/Projects.tsx`
+  - Same placeholder “View Details” action, no backing screen.
+- `client/src/pages/Settings.tsx`
+  - Contains navigation/action shells around settings sections, but some cards are organizational rather than full feature modules.
+
+### Hardcoded or policy-heavy logic that may need future scope changes
+
+- `client/src/config/pagePermissions.ts`
+  - Default role-page matrix is hardcoded in frontend and then optionally overridden by runtime permissions.
+  - Also contains hardcoded employee and office-head restricted page sets.
+- `server/src/utils/roles.ts`
+  - Canonical role aliases/capabilities are hardcoded server-side.
+- `server/src/middleware/authorize.ts`
+  - “central-store caretaker” is inferred by office type `HEAD_OFFICE` plus role `caretaker`, not by a separate explicit store assignment model.
+- `server/src/models/office.model.ts`
+  - `division` and `district` are still stored as free-text on office even though normalized division/district models also exist.
+
+### UI that looks functional but depends on indirect backend support or local assumptions
+
+- `client/src/pages/UserPermissions.tsx`
+  - “Create role” is effectively adding a permission profile entry in the UI/runtime permission map, not creating a first-class backend role enum/type. The backend still normalizes against the canonical role system.
+- `client/src/pages/Reports.tsx` and `client/src/pages/reports/*`
+  - Export is client-generated from fetched datasets. There is no dedicated server-side report file-generation API for most report pages.
+- `client/src/pages/AuditLogs.tsx` and `UserActivity.tsx`
+  - Export actions are client-generated from fetched rows.
+
+### Async / error-handling observations
+
+- Overall async error handling is good for page-level mutations because most pages use React Query mutations with toast error paths.
+- Known best-effort-only paths:
+  - `AuthContext.logout()` intentionally ignores logout API errors after local cleanup.
+  - Some document/link creation sequences in maintenance/transfers are multi-step and could leave partial data if a later step fails after an earlier document create/upload succeeds.
+
+### User input reaching MongoDB and sanitization status
+
+- Global sanitization exists in `server/src/app.ts`:
+  - `express-mongo-sanitize` strips operator keys from body, params, query.
+  - custom request sanitizer strips null bytes, CRLF, `javascript:` and inline event handlers from strings and runs `xss-clean`'s cleaner.
+- Request validation exists on many workflow routes via Zod schemas, but not every CRUD route has route-level Zod validation.
+- Mongoose queries are widespread in controllers/services, but direct unsanitized operator injection should be mitigated by the global sanitization layer before controllers run.
+
+### Storage / frontend security observations relevant to scope
+
+- `localStorage['user']` stores normalized non-secret user summary in:
+  - `client/src/contexts/AuthContext.tsx`
+  - `client/src/services/authService.ts`
+- `sessionStorage` is used for UI state in sidebar/security utils, not auth tokens.
+- `client/src/components/ui/chart.tsx` uses `dangerouslySetInnerHTML`, but only to inject internally generated CSS variables for chart theming, not user-provided HTML.
+
+### Other notable implementation risks / coupling points
+
+- Consumables access rules are split across:
+  - route-level role checks in `server/src/modules/consumables/routes/index.ts`
+  - service-level scope checks in `server/src/modules/consumables/services/inventory.service.ts`
+  - office capability helpers under `server/src/modules/consumables/utils/*`
+  This is correct functionally, but it means policy changes need coordinated updates in more than one layer.
+- Employee room/section consumption scope depends on:
+  - employee `default_sub_location_id`
+  - `allowed_sub_location_ids[]`
+  - holder type `SUB_LOCATION`
+  That policy is implemented, but it is business-rule-heavy and should stay documented whenever office scoping changes.
+- Multi-role behavior depends on both stored `roles[]` and `active_role`, plus active delegations. Any future role work needs to account for all three.

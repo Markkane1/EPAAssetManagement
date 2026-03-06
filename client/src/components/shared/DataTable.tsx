@@ -19,7 +19,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Download,
-  FileSpreadsheet,
   FileText,
   Plus,
   Search,
@@ -202,7 +201,6 @@ export function DataTable<T extends { id?: string; _id?: string }>({
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [virtualScrollTop, setVirtualScrollTop] = useState(0);
-  const [isExporting, setIsExporting] = useState(false);
   const useVirtualizedTable = virtualized && !isMobile;
   const availableFilterColumns = useMemo(
     () => columns.filter((column) => Boolean(column.key)),
@@ -374,27 +372,6 @@ export function DataTable<T extends { id?: string; _id?: string }>({
     toast.success(`Exported ${exportRows.length} rows as CSV`);
   };
 
-  const exportExcel = async () => {
-    if (exportRows.length === 0) {
-      toast.error("No rows available for export");
-      return;
-    }
-
-    setIsExporting(true);
-    try {
-      const xlsx = await import("xlsx");
-      const worksheet = xlsx.utils.json_to_sheet(exportRows);
-      const workbook = xlsx.utils.book_new();
-      xlsx.utils.book_append_sheet(workbook, worksheet, "Data");
-      xlsx.writeFile(workbook, `${resolvedExportFileName}.xlsx`);
-      toast.success(`Exported ${exportRows.length} rows as Excel`);
-    } catch {
-      toast.error("Failed to export Excel file");
-    } finally {
-      setIsExporting(false);
-    }
-  };
-
   const rangeStart = filteredData.length === 0 ? 0 : (page - 1) * pageSize + 1;
   const rangeEnd = filteredData.length === 0 ? 0 : Math.min(page * pageSize, filteredData.length);
 
@@ -434,17 +411,13 @@ export function DataTable<T extends { id?: string; _id?: string }>({
           {exportable && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button type="button" variant="outline" size="sm" disabled={isExporting}>
+                <Button type="button" variant="outline" size="sm">
                   <Download className="mr-2 h-4 w-4" />
-                  {isExporting ? "Exporting..." : "Export"}
+                  Export
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => void exportExcel()} disabled={isExporting}>
-                  <FileSpreadsheet className="mr-2 h-4 w-4" />
-                  Export Excel (.xlsx)
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={exportCsv} disabled={isExporting}>
+                <DropdownMenuItem onClick={exportCsv}>
                   <FileText className="mr-2 h-4 w-4" />
                   Export CSV
                 </DropdownMenuItem>

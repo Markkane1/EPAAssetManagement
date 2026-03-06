@@ -1,6 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
 import bcrypt from 'bcryptjs';
-import crypto from 'crypto';
 import { createCrudController } from './crudController';
 import { employeeRepository } from '../repositories/employee.repository';
 import { UserModel } from '../models/user.model';
@@ -41,8 +40,6 @@ const baseController = createCrudController({
     isActive: 'is_active',
   },
 });
-
-const generateTempPassword = () => `Temp-${crypto.randomBytes(6).toString('hex')}`;
 
 function clampInt(value: unknown, fallback: number, min: number, max: number) {
   const parsed = Number.parseInt(String(value ?? ''), 10);
@@ -241,7 +238,6 @@ export const employeeController = {
           : null;
 
       let user = await UserModel.findOne({ email });
-      let tempPassword: string | undefined;
 
       if (user) {
         const normalizedRoles = normalizeRoles(user.roles, user.role);
@@ -260,8 +256,10 @@ export const employeeController = {
         if (!user.last_name && lastName) user.last_name = lastName;
         await user.save();
       } else {
-        const password = providedPassword || generateTempPassword();
-        const passwordHash = await bcrypt.hash(password, 10);
+        if (!providedPassword) {
+          return res.status(400).json({ message: 'Initial password is required' });
+        }
+        const passwordHash = await bcrypt.hash(providedPassword, 10);
         user = await UserModel.create({
           email,
           password_hash: passwordHash,
@@ -272,19 +270,13 @@ export const employeeController = {
           active_role: 'employee',
           location_id: locationId,
         });
-        if (!providedPassword) {
-          tempPassword = password;
-        }
       }
 
       payload.email = email;
       payload.user_id = user.id;
 
       const employee = await employeeRepository.create(payload);
-      return res.status(201).json({
-        ...employee.toObject(),
-        tempPassword,
-      });
+      return res.status(201).json(employee.toObject());
     } catch (error) {
       next(error);
     }

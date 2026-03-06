@@ -44,19 +44,46 @@ function sanitizeXssValue(value: unknown) {
   return cleanXssPayload(value);
 }
 
+function sanitizeStringValue(value: string) {
+  return value
+    .replace(/\u0000/g, '')
+    .replace(/\r\n?/g, ' ')
+    .replace(/\bjavascript\s*:/gi, '')
+    .replace(/\bon[a-z]+\s*=/gi, '')
+    .trim();
+}
+
+function sanitizeRequestValue(value: unknown): unknown {
+  if (typeof value === 'string') {
+    return sanitizeStringValue(sanitizeXssValue(value) as string);
+  }
+  if (Array.isArray(value)) {
+    return value.map((entry) => sanitizeRequestValue(entry));
+  }
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, entry]) => [
+        key,
+        sanitizeRequestValue(entry),
+      ])
+    );
+  }
+  return value;
+}
+
 function sanitizeXssRequest(req: express.Request) {
   if (req.body !== undefined) {
-    req.body = sanitizeXssValue(req.body);
+    req.body = sanitizeRequestValue(req.body);
   }
   if (req.params && typeof req.params === 'object') {
-    const sanitized = sanitizeXssValue(req.params);
+    const sanitized = sanitizeRequestValue(req.params);
     if (sanitized && typeof sanitized === 'object' && !Array.isArray(sanitized)) {
       replaceObjectContents(req.params as Record<string, unknown>, sanitized as Record<string, unknown>);
     }
   }
   if (req.query && typeof req.query === 'object') {
     const queryObject = req.query as Record<string, unknown>;
-    const sanitized = sanitizeXssValue(queryObject);
+    const sanitized = sanitizeRequestValue(queryObject);
     if (sanitized && typeof sanitized === 'object' && !Array.isArray(sanitized)) {
       replaceObjectContents(queryObject, sanitized as Record<string, unknown>);
     }
@@ -126,8 +153,20 @@ export function createApp() {
   );
   app.use(
     helmet({
-      // API-only server, CSP for rendered pages is handled by the frontend host.
-      contentSecurityPolicy: false,
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          baseUri: ["'self'"],
+          connectSrc: ["'self'"],
+          fontSrc: ["'self'", 'data:'],
+          frameAncestors: ["'none'"],
+          imgSrc: ["'self'", 'data:', 'blob:'],
+          objectSrc: ["'none'"],
+          scriptSrc: ["'self'", "'unsafe-inline'"],
+          styleSrc: ["'self'", "'unsafe-inline'"],
+          upgradeInsecureRequests: env.nodeEnv === 'production' ? [] : null,
+        },
+      },
       crossOriginEmbedderPolicy: false,
       crossOriginResourcePolicy: { policy: 'same-site' },
       referrerPolicy: { policy: 'no-referrer' },
@@ -164,12 +203,20 @@ export function createApp() {
   app.use(observeRequestMetrics);
   app.use(morgan('dev'));
   app.use(applyCachePolicy);
+  app.use((_req, res, next) => {
+    res.setHeader('X-XSS-Protection', '0');
+    next();
+  });
 
   app.get('/health', (_req, res) => {
     res.json({ status: 'ok' });
   });
 
   app.use('/api', routes);
+
+  app.use((_req, res) => {
+    res.status(404).json({ message: 'Not found' });
+  });
 
   app.use(errorHandler);
 

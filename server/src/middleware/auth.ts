@@ -29,6 +29,7 @@ export interface AuthRequest extends Request {
 type RequestWithCache = AuthRequest & { __userLoaded?: boolean };
 type RequestWithCookies = Request & { cookies?: Record<string, string> };
 type JwtWithClaims = AuthPayload & jwt.JwtPayload;
+const JWT_ALLOWED_ALGORITHMS: jwt.Algorithm[] = ['HS256'];
 
 function readToken(req: Request) {
   const header = req.headers.authorization;
@@ -48,6 +49,16 @@ function isTokenInvalidatedByCutoff(payload: jwt.JwtPayload) {
       : NaN;
   if (!Number.isFinite(issuedAt)) return true;
   return issuedAt < env.jwtInvalidateBefore;
+}
+
+function hasRequiredClaims(payload: jwt.JwtPayload) {
+  return typeof payload.exp === 'number' && Number.isFinite(payload.exp);
+}
+
+function verifyJwtToken(token: string) {
+  return jwt.verify(token, env.jwtSecret, {
+    algorithms: JWT_ALLOWED_ALGORITHMS,
+  }) as JwtWithClaims;
 }
 
 async function attachUserContext(req: AuthRequest) {
@@ -132,7 +143,10 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
   }
 
   try {
-    const payload = jwt.verify(token, env.jwtSecret) as JwtWithClaims;
+    const payload = verifyJwtToken(token);
+    if (!hasRequiredClaims(payload)) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
     if (isTokenInvalidatedByCutoff(payload)) {
       return res.status(401).json({ message: 'Unauthorized' });
     }
@@ -175,7 +189,11 @@ export async function optionalAuth(req: AuthRequest, _res: Response, next: NextF
   }
 
   try {
-    const payload = jwt.verify(token, env.jwtSecret) as JwtWithClaims;
+    const payload = verifyJwtToken(token);
+    if (!hasRequiredClaims(payload)) {
+      req.user = undefined;
+      return next();
+    }
     if (isTokenInvalidatedByCutoff(payload)) {
       req.user = undefined;
       return next();

@@ -11,6 +11,7 @@ import { ADMIN_ROLES } from '../middleware/authorize';
 import {
   buildUserRoleMatchFilter,
   hasRoleCapability,
+  assertKnownRole,
   normalizeRoles,
   resolveActiveRole,
   resolveRuntimeRole,
@@ -113,6 +114,18 @@ function createResetToken() {
   return crypto.randomBytes(32).toString('hex');
 }
 
+function readStringInput(value: unknown) {
+  return typeof value === 'string' ? value : '';
+}
+
+function readTrimmedString(value: unknown) {
+  return readStringInput(value).trim();
+}
+
+function readNormalizedEmail(value: unknown) {
+  return readTrimmedString(value).toLowerCase();
+}
+
 function resolveLockoutUntil(user: { lockout_until?: Date | string | null } | null) {
   const lockout = user?.lockout_until ? new Date(user.lockout_until) : null;
   if (!lockout || Number.isNaN(lockout.getTime())) {
@@ -154,20 +167,37 @@ export const authController = {
         locationId?: string;
       };
 
-      const normalizedEmail = String(email || '').trim().toLowerCase();
-      if (!normalizedEmail || !password) {
+      const normalizedEmail = readNormalizedEmail(email);
+      const normalizedPassword = readStringInput(password);
+      if (!normalizedEmail || !normalizedPassword) {
         return res.status(400).json({ message: 'Email and password are required' });
       }
-      if (String(password).length < 8) {
+      if (normalizedPassword.length < 8) {
         return res.status(400).json({ message: 'Password must be at least 8 characters' });
       }
 
       const existing = await UserModel.findOne({ email: normalizedEmail });
       if (existing) return res.status(409).json({ message: 'Email already in use' });
 
-      const passwordHash = await bcrypt.hash(password, 10);
-      const normalizedRoles = normalizeRoles(roles, role || 'employee');
-      const normalizedActiveRole = resolveActiveRole(activeRole || role || normalizedRoles[0], normalizedRoles);
+      const passwordHash = await bcrypt.hash(normalizedPassword, 10);
+      const requestedRoleInput = readTrimmedString(role);
+      if (requestedRoleInput) {
+        assertKnownRole(requestedRoleInput);
+      }
+      const requestedRole = requestedRoleInput || 'employee';
+      const requestedRoles = Array.isArray(roles) ? roles.filter((entry): entry is string => typeof entry === 'string') : undefined;
+      if (Array.isArray(requestedRoles) && requestedRoles.some((entry) => !entry || entry.trim().length === 0)) {
+        return res.status(400).json({ message: 'Invalid role list' });
+      }
+      if (Array.isArray(requestedRoles)) {
+        requestedRoles.forEach((entry) => assertKnownRole(entry));
+      }
+      const requestedActiveRole = readTrimmedString(activeRole);
+      if (requestedActiveRole) {
+        assertKnownRole(requestedActiveRole);
+      }
+      const normalizedRoles = normalizeRoles(requestedRoles, requestedRole);
+      const normalizedActiveRole = resolveActiveRole(requestedActiveRole || requestedRole || normalizedRoles[0], normalizedRoles);
       if (hasRoleCapability(normalizedRoles, ['org_admin']) && !req.user.isOrgAdmin) {
         return res.status(403).json({ message: 'Forbidden' });
       }
@@ -200,7 +230,10 @@ export const authController = {
   login: async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { email, password } = req.body as { email: string; password: string };
-      const normalizedEmail = String(email || '').trim().toLowerCase();
+      if (typeof email !== 'string' || typeof password !== 'string') {
+        return res.status(401).json({ message: 'Invalid credentials' });
+      }
+      const normalizedEmail = readNormalizedEmail(email);
       if (!normalizedEmail || !password) {
         return res.status(400).json({ message: 'Email and password are required' });
       }
@@ -300,7 +333,7 @@ export const authController = {
   requestPasswordReset: async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { email } = req.body as { email: string };
-      const normalizedEmail = (email || '').trim().toLowerCase();
+      const normalizedEmail = readNormalizedEmail(email);
 
       if (!normalizedEmail) {
         return res.status(200).json({ message: 'Request received' });
@@ -393,8 +426,8 @@ export const authController = {
   resetPassword: async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { token, newPassword } = req.body as { token?: string; newPassword?: string };
-      const normalizedToken = String(token || '').trim();
-      const normalizedPassword = String(newPassword || '');
+      const normalizedToken = readTrimmedString(token);
+      const normalizedPassword = readStringInput(newPassword);
 
       if (!normalizedToken || !normalizedPassword) {
         return res.status(400).json({ message: 'Token and newPassword are required' });
@@ -455,26 +488,28 @@ export const authController = {
         oldPassword?: string;
         newPassword?: string;
       };
+      const normalizedOldPassword = readStringInput(oldPassword);
+      const normalizedNewPassword = readStringInput(newPassword);
 
-      if (!oldPassword || !newPassword) {
+      if (!normalizedOldPassword || !normalizedNewPassword) {
         return res.status(400).json({ message: 'Missing password fields' });
       }
 
-      const passwordValidationError = validateStrongPassword(newPassword);
+      const passwordValidationError = validateStrongPassword(normalizedNewPassword);
       if (passwordValidationError) {
         return res.status(400).json({ message: passwordValidationError });
       }
-      if (oldPassword === newPassword) {
+      if (normalizedOldPassword === normalizedNewPassword) {
         return res.status(400).json({ message: 'New password must be different from current password' });
       }
 
       const user = await UserModel.findById(userId);
       if (!user) return res.status(404).json({ message: 'Not found' });
 
-      const valid = await bcrypt.compare(oldPassword, user.password_hash);
+      const valid = await bcrypt.compare(normalizedOldPassword, user.password_hash);
       if (!valid) return res.status(400).json({ message: 'Current password is incorrect' });
 
-      const passwordHash = await bcrypt.hash(newPassword, 10);
+      const passwordHash = await bcrypt.hash(normalizedNewPassword, 10);
       const nextTokenVersion = Number(user.token_version || 0) + 1;
       user.password_hash = passwordHash;
       user.last_password_change_at = new Date().toISOString();
@@ -507,7 +542,7 @@ export const authController = {
     try {
       const userId = req.user?.userId;
       if (!userId) return res.status(401).json({ message: 'Unauthorized' });
-      const requestedRole = String(req.body?.activeRole || '').trim().toLowerCase();
+      const requestedRole = readTrimmedString(req.body?.activeRole).toLowerCase();
       if (!requestedRole) {
         return res.status(400).json({ message: 'activeRole is required' });
       }

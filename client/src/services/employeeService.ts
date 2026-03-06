@@ -45,7 +45,7 @@ export const employeeService = {
     api.get<Employee[]>(`/employees/directorate/${directorateId}?limit=${LIST_LIMIT}`),
   
   create: (data: EmployeeCreateDto) =>
-    api.post<Employee & { tempPassword?: string }>('/employees', data),
+    api.post<Employee>('/employees', data),
   
   update: (id: string, data: EmployeeUpdateDto) => api.put<Employee>(`/employees/${id}`, data),
 

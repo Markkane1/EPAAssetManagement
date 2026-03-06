@@ -37,12 +37,9 @@ export const useCreateEmployee = () => {
   
   return useMutation({
     mutationFn: (data: EmployeeCreateDto) => employeeService.create(data),
-    onSuccess: (created) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.employees });
       toast.success(messages.employeeCreated);
-      if (created?.tempPassword) {
-        toast.info(`Temporary password: ${created.tempPassword}`);
-      }
     },
     onError: (error: Error) => {
       toast.error(`${messages.employeeError}: ${error.message}`);

@@ -156,6 +156,31 @@ async function main() {
     });
   assert.equal(orgAdminUnknownRole.status, 400, 'Unknown roles must be rejected');
 
+  const missingEmployeePassword = await officeHeadAAgent
+    .post('/api/employees')
+    .send({
+      firstName: 'No',
+      lastName: 'Password',
+      email: 'employee-no-password@example.com',
+    });
+  assert.equal(missingEmployeePassword.status, 400, 'Employee creation without an initial password must be denied');
+  assert.equal(missingEmployeePassword.body.message, 'Initial password is required');
+
+  const employeeWithPassword = await officeHeadAAgent
+    .post('/api/employees')
+    .send({
+      firstName: 'Seeded',
+      lastName: 'Employee',
+      email: 'employee-with-password@example.com',
+      userPassword: 'Passw0rd!2026',
+    });
+  assert.equal(employeeWithPassword.status, 201, 'Employee creation with an explicit password should succeed');
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(employeeWithPassword.body, 'tempPassword'),
+    false,
+    'Employee creation response must not expose temporary passwords'
+  );
+
   // 3) Previously public write endpoints should require auth.
   const unauthOfficeCreate = await request(app).post('/api/offices').send({ name: 'Injected Office' });
   assert.equal(unauthOfficeCreate.status, 401, 'Unauthenticated office creation should be denied');

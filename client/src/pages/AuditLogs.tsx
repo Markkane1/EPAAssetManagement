@@ -41,7 +41,7 @@ import {
   getAuditLogs,
   type AuditAction,
 } from "@/lib/auditLog";
-import { exportToCSV, exportToExcel, exportToJSON } from "@/lib/exportUtils";
+import { exportToCSV, exportToJSON } from "@/lib/exportUtils";
 import { usePageSearch } from "@/contexts/PageSearchContext";
 
 const actionIcons: Record<AuditAction, React.ReactNode> = {
@@ -141,24 +141,6 @@ export default function AuditLogs() {
     );
   };
 
-  const handleExportExcel = async () => {
-    await exportToExcel(
-      filteredLogs.map((log) => ({
-        ...log,
-        actionLabel: actionLabels[log.action],
-      })),
-      [
-        { key: "timestamp", header: "Timestamp" },
-        { key: "userEmail", header: "User" },
-        { key: "actionLabel", header: "Action" },
-        { key: "category", header: "Category" },
-        { key: "details", header: "Details" },
-        { key: "status", header: "Status" },
-      ],
-      `audit-logs-${format(new Date(), "yyyy-MM-dd")}`,
-    );
-  };
-
   // Get unique categories from logs
   const uniqueCategories = useMemo(() => {
     const categories = new Set(allLogs.map(log => log.category));
@@ -189,10 +171,6 @@ export default function AuditLogs() {
         description="Track all user actions and security events"
         extra={
           <div className="flex w-full flex-wrap gap-2 sm:w-auto">
-            <Button variant="outline" size="sm" onClick={() => void handleExportExcel()}>
-              <Download className="h-4 w-4 mr-2" />
-              Excel
-            </Button>
             <Button variant="outline" size="sm" onClick={handleExportCSV}>
               <Download className="h-4 w-4 mr-2" />
               CSV
