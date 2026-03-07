@@ -27,7 +27,7 @@
     "test:asset-items": "node scripts/run-test-suites.js assetItems",
     "test:runtime": "node scripts/run-test-suites.js runtime",
     "test:all": "node scripts/run-test-suites.js all",
-    "test:manual:assignment-slip": "tsx tests/manual/generate-assignment-slip.manual-test.ts",
+    "test:manual:assignment-slip": "tsx ../tests/integration/manual/generate-assignment-slip.manual-test.ts",
     "audit": "npm audit --audit-level=high"
   },
   "dependencies": {

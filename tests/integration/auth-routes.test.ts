@@ -1,7 +1,7 @@
 import bcrypt from "bcryptjs";
 import crypto from "node:crypto";
 import request from "supertest";
-import { cleanupSecurityContext, login, seedSecurityData, TEST_PASSWORD, type SeededContext } from "../../server/tests/security/_helpers";
+import { cleanupSecurityContext, login, seedSecurityData, TEST_PASSWORD, type SeededContext } from "../security/_helpers";
 import { UserModel } from "../../server/src/models/user.model";
 
 jest.setTimeout(30000);

@@ -1,237 +1,149 @@
-# Asset Management System (AMS)
+# Asset Management System
 
-Full-stack asset management platform with a React/Vite frontend and an Express/MongoDB backend.
+Asset Management System is a full-stack MERN application for managing organizational assets across central store, offices, and labs. It supports movable and consumable inventory, assignments, transfers, requisitions, returns, maintenance, approvals, notifications, reporting, and role-based access control for operational and audit workflows.
 
 ## Tech Stack
 
-- Frontend: React, Vite, TypeScript, Tailwind CSS, shadcn-ui
-- Backend: Express, TypeScript, MongoDB (Mongoose)
-- Workspace: npm workspaces (`client/`, `server/`)
-
-## Repository Layout
-
-- `client/`: frontend app
-- `server/`: backend API and backend scripts
-- `server/tests/`: backend runtime/security tests
-- `scripts/`: root utility scripts (bundle budget check)
+- MongoDB
+- Express
+- React
+- Node.js
+- TypeScript
+- Vite
+- Mongoose
+- Playwright, Vitest, Jest, Supertest
 
 ## Prerequisites
 
-- Node.js 20+ (Node 22 recommended)
-- npm 10+
-- MongoDB 6+ running as a replica set (required for transactions)
+- Node.js 20 or newer
+- npm 10 or newer
+- MongoDB 6 or newer
+- A MongoDB replica set for transactional backend flows
 
-## Quick Start
+## Installation
 
-1. Install dependencies from repo root:
+1. Clone the repository.
+2. Install dependencies from the project root:
 
-```sh
+```bash
 npm install
 ```
 
-2. Create backend environment file:
+3. Copy the example environment file:
 
-```sh
-cp server/.env.example server/.env
+```bash
+cp .env.example .env
+cp .env.example server/.env
 ```
 
 PowerShell:
 
 ```powershell
-Copy-Item server/.env.example server/.env
+Copy-Item .env.example .env
+Copy-Item .env.example server/.env
 ```
 
-3. Update `server/.env` with at least:
+4. Update environment values as needed, especially `MONGO_URI`, `JWT_SECRET`, `CORS_ORIGIN`, and `VITE_API_BASE_URL`.
 
-```env
-MONGO_URI=mongodb://127.0.0.1:27017/ams?replicaSet=rs0
-MONGO_REQUIRE_REPLICA_SET=true
-JWT_SECRET=<strong-random-32-plus-chars>
-```
+## Run Locally
 
-4. Create root `.env` and set client API URL:
+Frontend:
 
-```env
-VITE_API_BASE_URL=http://localhost:5000/api
-```
-
-5. Start both client and server:
-
-```sh
-npm run dev:full
-```
-
-- Client: `http://localhost:8080`
-- API: `http://localhost:5000`
-
-## Run Client/Server Separately
-
-From repo root:
-
-```sh
+```bash
 npm run dev:client
+```
+
+Backend:
+
+```bash
 npm run dev:server
 ```
 
-## MongoDB Replica Set Setup (Required)
+Run both together:
 
-If MongoDB is local and single-node:
-
-```sh
-mongod --dbpath <YOUR_DB_PATH> --replSet rs0
-mongosh --eval "rs.initiate({_id:'rs0',members:[{_id:0,host:'127.0.0.1:27017'}]})"
-```
-
-If replica set is not enabled, transactional operations fail with:
-`Transaction numbers are only allowed on a replica set member or mongos`.
-
-## Common Commands
-
-### Root
-
-```sh
-npm run dev
+```bash
 npm run dev:full
-npm run build
-npm run build:server
-npm run lint
-npm run lint:server
-npm run test:security
-npm run test:consumables
-npm run test:runtime
-npm run test:server:all
-npm run build:client:budget
-npm run perf:bundle
-npm run precommit:checks
 ```
 
-### Backend (`server/`)
+Default local URLs:
 
-```sh
-npm run dev
-npm run build
-npm run lint
-npm run openapi:generate
-npm run seed:store
-npm run seed:consumables
-npm run test:suite -- security --list
-npm run test:security
-npm run test:consumables
-npm run test:runtime
+- Frontend: `http://localhost:8080`
+- Backend API: `http://localhost:5000`
+
+## Test Commands
+
+```bash
+npm run test:unit
+npm run test:integration
+npm run test:components
+npm run test:e2e
 npm run test:all
 ```
 
-### Frontend (`client/`)
+Additional suites:
 
-```sh
-npm run dev
-npm run build
-npm run lint
-npm run preview
+```bash
+npm run test:security
+npm run test:runtime
+npm run test:consumables
+npm run test:coverage
 ```
 
-## Test Suites and Folders
+## Folder Structure
 
-Server tests are organized in separate folders under `server/tests/` and run by suite:
-
-- `security/`
-- `consumables/`
-- `requisition/`
-- `return-requests/`
-- `reports/`
-- `employees/`
-- `office-sub-locations/`
-- `asset-items/`
-- `manual/` (manual/ad-hoc scripts, not part of automated suite)
-
-Folder-based runner:
-
-```sh
-cd server
-node scripts/run-test-suites.js security --list
-node scripts/run-test-suites.js runtime
-node scripts/run-test-suites.js all
+```text
+client/                React frontend
+server/                Express API, models, services, backend scripts
+tests/unit/            Pure unit tests and model tests
+tests/integration/     Express and runtime integration tests
+tests/components/      React Testing Library tests
+tests/e2e/             Playwright browser tests
+tests/security/        Security-focused tests
+docs/                  Discovery, audit, coverage, and project documentation
+scripts/               Root utility scripts
 ```
 
-## Migrations and Seed Runbook
+## Environment Variables
 
-Use this when upgrading an existing database. Always back up first:
+Required and supported variables are documented in `.env.example`. The application currently reads:
 
-```sh
-mongodump --uri "$MONGO_URI" --out ./backup-before-ams-migration
-```
+- `PORT`
+- `MONGO_URI`
+- `MONGO_MAX_POOL_SIZE`
+- `MONGO_MIN_POOL_SIZE`
+- `MONGO_MAX_IDLE_TIME_MS`
+- `MONGO_SERVER_SELECTION_TIMEOUT_MS`
+- `MONGO_SOCKET_TIMEOUT_MS`
+- `MONGO_CONNECT_TIMEOUT_MS`
+- `MONGO_HEARTBEAT_FREQUENCY_MS`
+- `MONGO_CONNECT_RETRIES`
+- `MONGO_CONNECT_RETRY_DELAY_MS`
+- `MONGO_RETRY_WRITES`
+- `MONGO_RETRY_READS`
+- `MONGO_REQUIRE_REPLICA_SET`
+- `JWT_SECRET`
+- `JWT_EXPIRES_IN`
+- `JWT_INVALIDATE_BEFORE`
+- `PASSWORD_RESET_TOKEN_TTL_MINUTES`
+- `AUTH_LOCKOUT_THRESHOLD`
+- `AUTH_LOCKOUT_BASE_MINUTES`
+- `AUTH_LOCKOUT_MAX_MINUTES`
+- `TRUST_PROXY`
+- `COMPRESSION_THRESHOLD_BYTES`
+- `COMPRESSION_LEVEL`
+- `HTTP_JSON_LIMIT`
+- `HTTP_URLENCODED_LIMIT`
+- `CACHE_REFERENCE_MAX_AGE_SECONDS`
+- `CACHE_REFERENCE_STALE_WHILE_REVALIDATE_SECONDS`
+- `RATE_LIMIT_BACKEND`
+- `CORS_ORIGIN`
+- `SEED_SUPER_ADMIN`
+- `SUPER_ADMIN_EMAIL`
+- `SUPER_ADMIN_PASSWORD`
+- `APP_VERSION`
+- `STORAGE_LIMIT_GB`
+- `VITE_API_BASE_URL`
 
-Recommended order:
+## Documentation
 
-1. Seed head office store (idempotent)
-
-```sh
-cd server
-npm run seed:store
-```
-
-2. Migrate offices (legacy location/directorate to office model, if applicable)
-
-```sh
-cd server
-npm run migrate:offices
-```
-
-3. Migrate office types to new enum
-
-```sh
-cd server
-npx tsx scripts/migrate-offices-to-new-types.ts --dry-run
-npx tsx scripts/migrate-offices-to-new-types.ts
-```
-
-4. Migrate asset item holder fields
-
-```sh
-cd server
-npm run migrate:assetitem-holders -- --dry-run
-npm run migrate:assetitem-holders
-```
-
-5. Migrate transfers to line-based workflow
-
-```sh
-cd server
-npm run migrate:transfer-lines -- --dry-run
-npm run migrate:transfer-lines
-```
-
-6. Migrate user roles
-
-```sh
-cd server
-npx tsx scripts/migrate-user-roles.ts --dry-run
-npx tsx scripts/migrate-user-roles.ts
-```
-
-If a migration result is incorrect, restore backup and rerun from dry-run mode.
-
-## Optional Super Admin Bootstrap
-
-Super admin seeding is disabled by default. To enable one-time bootstrap seeding, set in `server/.env`:
-
-- `SEED_SUPER_ADMIN=true`
-- `SUPER_ADMIN_EMAIL=<email>`
-- `SUPER_ADMIN_PASSWORD=<strong-password>`
-
-## Troubleshooting
-
-### Transactions error
-
-`Transaction numbers are only allowed on a replica set member or mongos`
-
-Cause: MongoDB is running without replica set mode.
-Fix: start MongoDB with `--replSet`, run `rs.initiate(...)`, and keep `?replicaSet=rs0` in `MONGO_URI`.
-
-### Access denied on protected pages
-
-Confirm user has:
-
-- correct role
-- valid office/assignment mapping
-- required page permission from system settings
+See [`docs/`](./docs) for discovery, security, coverage, performance, and audit documentation.

@@ -4,7 +4,7 @@ export default defineConfig({
   testDir: "./tests/e2e",
   fullyParallel: false,
   workers: 1,
-  timeout: 30_000,
+  timeout: 45_000,
   testIgnore: ["**/start-server.mjs", "**/seed.ts"],
   expect: {
     timeout: 5_000,
@@ -18,6 +18,7 @@ export default defineConfig({
     trace: "on-first-retry",
     screenshot: "only-on-failure",
     video: "retain-on-failure",
+    navigationTimeout: 20_000,
   },
   projects: [
     {

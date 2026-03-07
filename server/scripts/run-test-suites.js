@@ -3,28 +3,37 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
 const TEST_FILE_PATTERN = /((\.|-)runtime-tests?|(\.|-)runtime-test|\.test|\.spec)\.ts$/i;
+const RUNTIME_FILE_PATTERN = /((\.|-)runtime-tests?|(\.|-)runtime-test)\.ts$/i;
 
 const SUITES = {
-  security: ['security'],
-  consumables: ['consumables'],
-  requisition: ['requisition'],
-  returns: ['return-requests'],
-  reports: ['reports'],
-  transfers: ['transfers'],
-  employees: ['employees'],
-  office: ['office-sub-locations'],
-  assetItems: ['asset-items'],
-  runtime: ['asset-items', 'employees', 'office-sub-locations', 'requisition', 'return-requests', 'reports', 'transfers'],
+  security: ['tests/security'],
+  consumables: ['tests/integration/runtime/consumables'],
+  requisition: ['tests/integration/runtime/requisition'],
+  returns: ['tests/integration/runtime/return-requests'],
+  reports: ['tests/integration/runtime/reports'],
+  transfers: ['tests/integration/runtime/transfers'],
+  employees: ['tests/integration/runtime/employees'],
+  office: ['tests/integration/runtime/office-sub-locations'],
+  assetItems: ['tests/integration/runtime/asset-items'],
+  runtime: [
+    'tests/integration/runtime/asset-items',
+    'tests/integration/runtime/employees',
+    'tests/integration/runtime/office-sub-locations',
+    'tests/integration/runtime/requisition',
+    'tests/integration/runtime/return-requests',
+    'tests/integration/runtime/reports',
+    'tests/integration/runtime/transfers',
+  ],
   all: [
-    'security',
-    'consumables',
-    'asset-items',
-    'employees',
-    'office-sub-locations',
-    'requisition',
-    'return-requests',
-    'reports',
-    'transfers',
+    'tests/security',
+    'tests/integration/runtime/consumables',
+    'tests/integration/runtime/asset-items',
+    'tests/integration/runtime/employees',
+    'tests/integration/runtime/office-sub-locations',
+    'tests/integration/runtime/requisition',
+    'tests/integration/runtime/return-requests',
+    'tests/integration/runtime/reports',
+    'tests/integration/runtime/transfers',
   ],
 };
 
@@ -33,7 +42,7 @@ function printUsage() {
   console.log(`Available suites: ${Object.keys(SUITES).join(', ')}`);
 }
 
-function collectTestFiles(dir) {
+function collectTestFiles(dir, pattern = TEST_FILE_PATTERN) {
   if (!fs.existsSync(dir)) {
     return [];
   }
@@ -45,7 +54,7 @@ function collectTestFiles(dir) {
       files.push(...collectTestFiles(fullPath));
       continue;
     }
-    if (entry.isFile() && TEST_FILE_PATTERN.test(entry.name)) {
+    if (entry.isFile() && pattern.test(entry.name)) {
       files.push(fullPath);
     }
   }
@@ -57,8 +66,11 @@ function resolveTestFiles(serverRoot, suiteName) {
   if (!folders) {
     throw new Error(`Unknown suite "${suiteName}"`);
   }
-  const testsRoot = path.join(serverRoot, 'tests');
-  const files = folders.flatMap((folder) => collectTestFiles(path.join(testsRoot, folder)));
+  const workspaceRoot = path.resolve(serverRoot, '..');
+  const files = folders.flatMap((folder) => {
+    const pattern = folder === 'tests/security' ? RUNTIME_FILE_PATTERN : TEST_FILE_PATTERN;
+    return collectTestFiles(path.join(workspaceRoot, folder), pattern);
+  });
   return files.sort((a, b) => a.localeCompare(b));
 }
 
@@ -80,9 +92,10 @@ function resolveTsxCliPath(serverRoot) {
 
 function runTestFiles(serverRoot, files) {
   const tsxCliPath = resolveTsxCliPath(serverRoot);
+  const workspaceRoot = path.resolve(serverRoot, '..');
 
   for (const filePath of files) {
-    const relPath = path.relative(serverRoot, filePath).replace(/\\/g, '/');
+    const relPath = path.relative(workspaceRoot, filePath).replace(/\\/g, '/');
     console.log(`\n[TEST] ${relPath}`);
 
     const result = spawnSync(process.execPath, [tsxCliPath, filePath], {
@@ -122,8 +135,9 @@ function main() {
 
   if (shouldList || dryRun) {
     console.log(`Suite "${suiteName}" has ${files.length} test file(s):`);
+    const workspaceRoot = path.resolve(serverRoot, '..');
     for (const filePath of files) {
-      console.log(`- ${path.relative(serverRoot, filePath).replace(/\\/g, '/')}`);
+      console.log(`- ${path.relative(workspaceRoot, filePath).replace(/\\/g, '/')}`);
     }
     return;
   }

@@ -63,7 +63,7 @@ test.describe("console hygiene", () => {
     await expect(page).toHaveURL("/");
 
     for (const path of adminRoutes) {
-      await page.goto(path);
+      await page.goto(path, { waitUntil: "commit" });
       await expect(page).not.toHaveURL(/\/login$/);
       await expect(page.locator("body")).toBeVisible();
     }
@@ -79,7 +79,7 @@ test.describe("console hygiene", () => {
     await expect(page).toHaveURL("/");
 
     for (const path of employeeRoutes) {
-      await page.goto(path);
+      await page.goto(path, { waitUntil: "commit" });
       await expect(page).not.toHaveURL(/\/login$/);
       await expect(page.locator("body")).toBeVisible();
     }

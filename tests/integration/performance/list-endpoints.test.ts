@@ -7,7 +7,7 @@ import {
   seedSecurityData,
   TEST_PASSWORD,
   type SeededContext,
-} from "../../../server/tests/security/_helpers";
+} from "../../security/_helpers";
 
 jest.setTimeout(30000);
 

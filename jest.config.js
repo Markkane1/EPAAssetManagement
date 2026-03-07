@@ -9,6 +9,8 @@ export default {
   testMatch: [
     "<rootDir>/tests/integration/**/*.test.[jt]s",
     "<rootDir>/tests/integration/**/*.spec.[jt]s",
+    "<rootDir>/tests/security/**/*.test.[jt]s",
+    "<rootDir>/tests/security/**/*.spec.[jt]s",
   ],
   moduleFileExtensions: ["ts", "tsx", "js", "jsx", "json"],
   transform: {

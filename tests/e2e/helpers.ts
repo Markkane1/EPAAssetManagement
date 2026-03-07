@@ -21,7 +21,7 @@ export async function solveCaptcha(page: Page) {
 }
 
 export async function login(page: Page, email: string, password: string) {
-  await page.goto("/login");
+  await page.goto("/login", { waitUntil: "domcontentloaded" });
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(password);
   await solveCaptcha(page);
@@ -29,6 +29,6 @@ export async function login(page: Page, email: string, password: string) {
 }
 
 export async function expectProtectedRedirect(page: Page, path: string) {
-  await page.goto(path);
+  await page.goto(path, { waitUntil: "domcontentloaded" });
   await expect(page).toHaveURL(/\/login$/);
 }
