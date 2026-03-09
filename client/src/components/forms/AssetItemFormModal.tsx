@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -65,6 +65,7 @@ export function AssetItemFormModal({ open, onOpenChange, assets, locations, onSu
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [assetPickerOpen, setAssetPickerOpen] = useState(false);
   const [locationPickerOpen, setLocationPickerOpen] = useState(false);
+  const serialInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const defaultLocationId = isOrgAdmin ? CENTRAL_STORE_LOCATION_ID : authLocationId || "";
 
   const locationOptions = useMemo(() => {
@@ -186,7 +187,11 @@ export function AssetItemFormModal({ open, onOpenChange, assets, locations, onSu
       setItemsError(`Only ${assetQuantity} items can be added for this asset.`);
       return;
     }
-    setItems((prev) => [...prev, { id: crypto.randomUUID(), serialNumber: "", warrantyExpiry: "" }]);
+    const nextId = crypto.randomUUID();
+    setItems((prev) => [...prev, { id: nextId, serialNumber: "", warrantyExpiry: "" }]);
+    setTimeout(() => {
+      serialInputRefs.current[nextId]?.focus();
+    }, 0);
   };
 
   const removeRow = (id: string) => {
@@ -238,21 +243,21 @@ export function AssetItemFormModal({ open, onOpenChange, assets, locations, onSu
               )}
             </div>
             <div className="space-y-2">
-              <Label>Location *</Label>
+              <Label>Office *</Label>
               <Popover open={locationPickerOpen} onOpenChange={setLocationPickerOpen}>
                 <PopoverTrigger asChild>
                   <Button
                     variant="outline"
                     role="combobox"
-                    className="w-full justify-between"
-                    disabled={!isOrgAdmin}
+                  className="w-full justify-between"
+                  disabled={!isOrgAdmin}
                   >
-                    {selectedLocation ? selectedLocation.name : "Search location by name..."}
+                    {selectedLocation ? selectedLocation.name : "Search office by name..."}
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
                   <Command>
-                    <CommandInput placeholder="Type location name..." />
+                    <CommandInput placeholder="Type office name..." />
                     <CommandList>
                       <CommandEmpty>No location found.</CommandEmpty>
                       {locationOptions.map((location) => (
@@ -338,9 +343,12 @@ export function AssetItemFormModal({ open, onOpenChange, assets, locations, onSu
                 </thead>
                 <tbody>
                   {items.map((item) => (
-                    <tr key={item.id} className="border-t">
+                    <tr key={item.id} className="border-t" onClick={() => serialInputRefs.current[item.id]?.focus()}>
                       <td className="px-3 py-2">
                         <Input
+                          ref={(node) => {
+                            serialInputRefs.current[item.id] = node;
+                          }}
                           value={item.serialNumber}
                           onChange={(e) => updateItem(item.id, { serialNumber: e.target.value })}
                           placeholder="e.g., SN123456789"

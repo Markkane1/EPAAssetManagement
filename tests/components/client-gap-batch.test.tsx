@@ -238,7 +238,8 @@ describe("client gap batch", () => {
     const districtName = screen.getByLabelText(/name/i);
     await userEvent.clear(districtName);
     await userEvent.type(districtName, "North District");
-    await userEvent.selectOptions(screen.getByLabelText("select-trigger"), "division-1");
+    await userEvent.click(screen.getByRole("combobox", { name: /division/i }));
+    await userEvent.click(screen.getByRole("button", { name: /operations/i }));
     await userEvent.click(screen.getByRole("button", { name: /create/i }));
     await waitFor(() =>
       expect(districtSubmit).toHaveBeenCalledWith({ name: "North District", divisionId: "division-1" })

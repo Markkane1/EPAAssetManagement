@@ -66,7 +66,6 @@ interface PermissionPage {
 const appPages: PermissionPage[] = [
   { id: "dashboard", name: "Dashboard", category: "Main" },
   { id: "profile", name: "Profile", category: "Main" },
-  { id: "inventory", name: "Inventory Hub", category: "Main" },
   { id: "requisitions", name: "Requisitions", category: "Main" },
   { id: "requisitions-new", name: "New Requisition", category: "Main" },
   { id: "returns", name: "Returns", category: "Main" },

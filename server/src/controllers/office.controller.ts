@@ -96,35 +96,45 @@ async function validateSingleActiveHeadOffice(isActive: boolean, excludeOfficeId
   return null;
 }
 
-async function validateHierarchy(type: string, parentOfficeId: string) {
+async function resolveActiveHeadOfficeId(excludeOfficeId?: string) {
+  const filter: Record<string, unknown> = {
+    type: 'HEAD_OFFICE',
+    is_active: { $ne: false },
+  };
+  if (excludeOfficeId) {
+    filter._id = { $ne: excludeOfficeId };
+  }
+  const headOffice = await OfficeModel.findOne(filter, { _id: 1 }).lean();
+  return headOffice ? toIdString((headOffice as { _id?: unknown })._id) : '';
+}
+
+async function validateHierarchy(type: string, parentOfficeId: string, excludeOfficeId?: string) {
   if (type === 'HEAD_OFFICE') {
     if (parentOfficeId) {
-      return 'Head Office cannot have a parent office';
+      return { error: 'Head Office cannot have a parent office', parentOfficeId: '' };
     }
-    return null;
+    return { error: null, parentOfficeId: '' };
   }
 
   if (type === 'DIRECTORATE') {
-    if (!parentOfficeId) {
-      return 'Directorate must be linked to Head Office';
-    }
-    if (!OBJECT_ID_REGEX.test(parentOfficeId)) {
-      return 'Head Office reference is invalid';
+    const resolvedParentOfficeId = parentOfficeId || (await resolveActiveHeadOfficeId(excludeOfficeId));
+    if (!resolvedParentOfficeId) {
+      return { error: 'An active Head Office must exist before creating Directorates', parentOfficeId: '' };
     }
     const parent = await OfficeModel.findOne(
-      { _id: parentOfficeId, type: 'HEAD_OFFICE', is_active: { $ne: false } },
+      { _id: resolvedParentOfficeId, type: 'HEAD_OFFICE', is_active: { $ne: false } },
       { _id: 1 }
     ).lean();
     if (!parent) {
-      return 'Directorate parent must be an active Head Office';
+      return { error: 'Directorate parent must be an active Head Office', parentOfficeId: '' };
     }
-    return null;
+    return { error: null, parentOfficeId: resolvedParentOfficeId };
   }
 
   if (parentOfficeId) {
-    return 'Only Directorates can have a parent office';
+    return { error: 'Only Directorates can have a parent office', parentOfficeId: '' };
   }
-  return null;
+  return { error: null, parentOfficeId: '' };
 }
 
 async function validateDistrictTypeUniqueness(type: string, district: string, excludeOfficeId?: string) {
@@ -299,9 +309,9 @@ export const officeController = {
       }
       const type = String(payload.type || '');
       const parentOfficeId = asTrimmedString(payload.parent_office_id);
-      const hierarchyError = await validateHierarchy(type, parentOfficeId);
-      if (hierarchyError) {
-        return res.status(400).json({ message: hierarchyError });
+      const hierarchy = await validateHierarchy(type, parentOfficeId);
+      if (hierarchy.error) {
+        return res.status(400).json({ message: hierarchy.error });
       }
       const isActive = asBoolean(payload.is_active, true);
       const headOfficeUniquenessError = type === 'HEAD_OFFICE'
@@ -310,7 +320,7 @@ export const officeController = {
       if (headOfficeUniquenessError) {
         return res.status(409).json({ message: headOfficeUniquenessError });
       }
-      payload.parent_office_id = type === 'DIRECTORATE' ? parentOfficeId : null;
+      payload.parent_office_id = type === 'DIRECTORATE' ? hierarchy.parentOfficeId : null;
       const districtUniquenessError = await validateDistrictTypeUniqueness(type, String(payload.district || ''));
       if (districtUniquenessError) {
         return res.status(409).json({ message: districtUniquenessError });
@@ -342,9 +352,9 @@ export const officeController = {
       const effectiveParentOfficeId = payload.parent_office_id !== undefined
         ? asTrimmedString(payload.parent_office_id)
         : toIdString(existing.parent_office_id);
-      const hierarchyError = await validateHierarchy(effectiveType, effectiveParentOfficeId);
-      if (hierarchyError) {
-        return res.status(400).json({ message: hierarchyError });
+      const hierarchy = await validateHierarchy(effectiveType, effectiveParentOfficeId, officeId);
+      if (hierarchy.error) {
+        return res.status(400).json({ message: hierarchy.error });
       }
       const effectiveIsActive = asBoolean(payload.is_active, existing.is_active !== false);
       const headOfficeUniquenessError = effectiveType === 'HEAD_OFFICE'
@@ -353,7 +363,7 @@ export const officeController = {
       if (headOfficeUniquenessError) {
         return res.status(409).json({ message: headOfficeUniquenessError });
       }
-      payload.parent_office_id = effectiveType === 'DIRECTORATE' ? effectiveParentOfficeId : null;
+      payload.parent_office_id = effectiveType === 'DIRECTORATE' ? hierarchy.parentOfficeId : null;
       const effectiveDistrict = asTrimmedString(payload.district ?? existing.district);
       const districtUniquenessError = await validateDistrictTypeUniqueness(
         effectiveType,

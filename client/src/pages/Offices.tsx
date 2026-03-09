@@ -26,7 +26,6 @@ import { ViewModeToggle } from "@/components/shared/ViewModeToggle";
 import { useViewMode } from "@/hooks/useViewMode";
 
 const OFFICE_VIEW_TABS: Array<{ value: OfficeType; label: string }> = [
-  { value: "HEAD_OFFICE", label: "Head Offices" },
   { value: "DIRECTORATE", label: "Directorates" },
   { value: "DISTRICT_OFFICE", label: "District Offices" },
   { value: "DISTRICT_LAB", label: "District Labs" },
@@ -59,15 +58,10 @@ export default function Offices() {
   const [editingOffice, setEditingOffice] = useState<Office | null>(null);
   const [divisionModalOpen, setDivisionModalOpen] = useState(false);
   const [districtModalOpen, setDistrictModalOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<OfficeType>("HEAD_OFFICE");
+  const [activeTab, setActiveTab] = useState<OfficeType>("DIRECTORATE");
   const { mode: viewMode, setMode: setViewMode } = useViewMode("offices");
   const pageSearch = usePageSearch();
   const searchTerm = (pageSearch?.term || "").trim().toLowerCase();
-  const headOffices = useMemo(
-    () => (offices || []).filter((office) => office.type === "HEAD_OFFICE"),
-    [offices]
-  );
-
   const filteredOffices = useMemo(
     () =>
       (offices || []).filter((office) => {
@@ -268,7 +262,6 @@ export default function Offices() {
         office={editingOffice}
         divisions={divisions}
         districts={districts}
-        headOffices={headOffices}
         onSubmit={handleOfficeSubmit}
       />
 

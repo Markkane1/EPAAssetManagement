@@ -53,6 +53,9 @@ export default function Vendors() {
   } = useVendor(viewingVendorId || "");
 
   const vendorList = vendors || [];
+  const scopedLocations = isOrgAdmin
+    ? locations
+    : locations.filter((office) => office.id === locationId);
 
   const locationNameById = locations.reduce<Record<string, string>>((acc, office) => {
     acc[office.id] = office.name;
@@ -180,7 +183,7 @@ export default function Vendors() {
         onOpenChange={setIsModalOpen}
         vendor={editingVendor}
         isOrgAdmin={isOrgAdmin}
-        locations={locations}
+        locations={scopedLocations}
         defaultOfficeId={isOrgAdmin ? selectedOfficeId || locationId || null : locationId}
         onSubmit={handleSubmit}
       />

@@ -4,7 +4,10 @@ import { SystemSettingsModel } from '../models/systemSettings.model';
 import { OfficeModel } from '../models/office.model';
 import type { AuthRequest } from '../middleware/auth';
 import { createHttpError } from '../utils/httpError';
-import { invalidateWorkflowConfigCache } from '../services/workflowConfig.service';
+import {
+  getWorkflowConfigSnapshot,
+  invalidateWorkflowConfigCache,
+} from '../services/workflowConfig.service';
 
 const STORAGE_LIMIT_BYTES = Number(process.env.STORAGE_LIMIT_GB || 10) * 1024 * 1024 * 1024;
 const APP_VERSION = process.env.APP_VERSION || '1.0.0';
@@ -145,6 +148,22 @@ const getOrCreateSettings = async () => {
   }
   return settings;
 };
+
+async function serializeSettings(settings: any, options?: { forceRefresh?: boolean }) {
+  const plain =
+    settings && typeof settings.toObject === 'function'
+      ? settings.toObject()
+      : settings;
+  const workflowConfig = await getWorkflowConfigSnapshot({
+    forceRefresh: options?.forceRefresh,
+  });
+  return {
+    ...plain,
+    access_policies: workflowConfig.accessPolicies,
+    approval_matrix: workflowConfig.approvalMatrix,
+    scheduler: workflowConfig.scheduler,
+  };
+}
 
 function ensurePlainObject(value: unknown, field: string) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -366,7 +385,7 @@ export const settingsController = {
     try {
       const settings = await getOrCreateSettings();
       const systemInfo = await buildSystemInfo(req, settings.last_backup_at || null);
-      res.json({ settings, systemInfo });
+      res.json({ settings: await serializeSettings(settings), systemInfo });
     } catch (error) {
       next(error);
     }
@@ -423,7 +442,10 @@ export const settingsController = {
       await settings.save();
       invalidateWorkflowConfigCache();
       const systemInfo = await buildSystemInfo(req, settings.last_backup_at || null);
-      res.json({ settings, systemInfo });
+      res.json({
+        settings: await serializeSettings(settings, { forceRefresh: true }),
+        systemInfo,
+      });
     } catch (error) {
       next(error);
     }

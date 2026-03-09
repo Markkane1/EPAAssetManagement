@@ -13,15 +13,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Loader2 } from "lucide-react";
 import type { District, Division } from "@/types";
+import { SearchableSelect } from "@/components/shared/SearchableSelect";
 
 const districtSchema = z.object({
   name: z.string().min(1, "Name is required").max(120),
@@ -57,11 +51,12 @@ export function DistrictFormModal({
   });
 
   useEffect(() => {
+    if (!open) return;
     form.reset({
       name: district?.name || "",
       divisionId: district?.division_id || "",
     });
-  }, [district, form]);
+  }, [open, district, form]);
 
   const handleSubmit = async (data: DistrictFormData) => {
     setIsSubmitting(true);
@@ -92,22 +87,19 @@ export function DistrictFormModal({
             )}
           </div>
           <div className="space-y-2">
-            <Label>Division *</Label>
-            <Select
-              value={form.watch("divisionId") || undefined}
+            <Label htmlFor="district-division">Division *</Label>
+            <SearchableSelect
+              id="district-division"
+              value={form.watch("divisionId") || ""}
               onValueChange={(value) => form.setValue("divisionId", value, { shouldValidate: true })}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select division" />
-              </SelectTrigger>
-              <SelectContent>
-                {divisions.map((division) => (
-                  <SelectItem key={division.id} value={division.id}>
-                    {division.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              placeholder="Select division"
+              searchPlaceholder="Search divisions..."
+              emptyText="No divisions found."
+              options={divisions.map((division) => ({
+                value: division.id,
+                label: division.name,
+              }))}
+            />
             {form.formState.errors.divisionId && (
               <p className="text-sm text-destructive">{form.formState.errors.divisionId.message}</p>
             )}

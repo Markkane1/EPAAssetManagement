@@ -14,7 +14,7 @@ export default defineConfig({
     ["html", { open: "never" }],
   ],
   use: {
-    baseURL: "http://localhost:8080",
+    baseURL: "http://localhost:8081",
     trace: "on-first-retry",
     screenshot: "only-on-failure",
     video: "retain-on-failure",
@@ -33,15 +33,21 @@ export default defineConfig({
   webServer: [
     {
       command: "node ./tests/e2e/start-server.mjs",
-      url: "http://localhost:5000/health",
+      url: "http://localhost:5001/health",
       timeout: 120_000,
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer: false,
     },
     {
       command: "npm run dev:client",
-      url: "http://localhost:8080",
+      url: "http://localhost:8081",
       timeout: 120_000,
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer: false,
+      env: {
+        ...process.env,
+        VITE_API_BASE_URL: "http://localhost:5001/api",
+        VITE_API_PROXY_TARGET: "http://localhost:5001",
+        VITE_DEV_PORT: "8081",
+      },
     },
   ],
 });

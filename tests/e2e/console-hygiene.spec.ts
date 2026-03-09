@@ -17,7 +17,6 @@ const adminRoutes = [
   "/vendors",
   "/projects",
   "/reports",
-  "/inventory",
   "/requisitions",
   "/returns",
   "/settings",

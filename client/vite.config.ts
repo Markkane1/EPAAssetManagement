@@ -8,10 +8,10 @@ export default defineConfig(() => ({
   envDir: path.resolve(__dirname, ".."),
   server: {
     host: "::",
-    port: 8080,
+    port: Number(process.env.VITE_DEV_PORT || 8080),
     proxy: {
       "/api": {
-        target: "http://127.0.0.1:5000",
+        target: process.env.VITE_API_PROXY_TARGET || "http://127.0.0.1:5000",
         changeOrigin: true,
       },
     },

@@ -52,21 +52,6 @@ interface NavItem {
 
 const mainNavItems: NavItem[] = [
   { label: "Dashboard", href: "/", icon: LayoutDashboard, page: "dashboard" },
-  {
-    label: "Inventory & Assignments",
-    href: "/inventory",
-    icon: Layers,
-    page: "inventory",
-    allowedRoles: [
-      "org_admin",
-      "office_head",
-      "caretaker",
-      "storekeeper",
-      "inventory_controller",
-      "procurement_officer",
-      "compliance_auditor",
-    ],
-  },
 ];
 
 const managementNavItems: NavItem[] = [
@@ -136,9 +121,9 @@ const movableAssetsNavItems: NavItem[] = [
 
 const employeeServicesRootItem: NavItem = {
   label: "Employee Services",
-  href: "/assignments",
+  href: "/requisitions",
   icon: ClipboardList,
-  page: "assignments",
+  page: "requisitions",
 };
 const employeeServicesNavItems: NavItem[] = [
   { label: "My Assets", href: "/my-assets", icon: Package, page: "assignments", allowedRoles: ["employee"] },

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -13,26 +13,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Loader2 } from "lucide-react";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import {
-  Command,
-  CommandEmpty,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Employee, Directorate, Location } from "@/types";
-import { isHeadOfficeLocation } from "@/lib/locationUtils";
-import { useOfficeSubLocations } from "@/hooks/useOfficeSubLocations";
+import { SearchableSelect } from "@/components/shared/SearchableSelect";
 
 const employeeSchema = z.object({
   firstName: z.string().min(1, "First name is required").max(50),
@@ -41,21 +24,10 @@ const employeeSchema = z.object({
   userPassword: z.string().min(6, "Password must be at least 6 characters").optional().or(z.literal("")),
   phone: z.string().max(20).optional(),
   jobTitle: z.string().max(100).optional(),
-  directorateId: z.string().optional(),
   locationId: z.string().min(1, "Office is required"),
-  defaultSubLocationId: z.string().optional(),
-  allowedSubLocationIds: z.array(z.string()).default([]),
 });
 
 type EmployeeFormData = z.infer<typeof employeeSchema>;
-type OfficeTypeFilter = "FIELD_OFFICE" | "LAB" | "HEAD_OFFICE";
-
-function resolveOfficeTypeFilter(location: Location | undefined): OfficeTypeFilter {
-  if (!location?.type) return "FIELD_OFFICE";
-  if (location.type === "DISTRICT_LAB") return "LAB";
-  if (location.type === "HEAD_OFFICE" || location.type === "DIRECTORATE") return "HEAD_OFFICE";
-  return "FIELD_OFFICE";
-}
 
 interface EmployeeFormModalProps {
   open: boolean;
@@ -72,13 +44,12 @@ export function EmployeeFormModal({
   open,
   onOpenChange,
   employee,
-  directorates,
+  directorates: _directorates,
   locations,
   fixedLocationId,
   onSubmit,
 }: EmployeeFormModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [officePickerOpen, setOfficePickerOpen] = useState(false);
   const isEditing = !!employee;
 
   const form = useForm<EmployeeFormData>({
@@ -90,31 +61,24 @@ export function EmployeeFormModal({
       userPassword: "",
       phone: employee?.phone || "",
       jobTitle: employee?.job_title || "",
-      directorateId: employee?.directorate_id || "",
       locationId: employee?.location_id || fixedLocationId || "",
-      defaultSubLocationId: employee?.default_sub_location_id || "",
-      allowedSubLocationIds: employee?.allowed_sub_location_ids || [],
     },
   });
 
   const selectedLocationId = form.watch("locationId");
-  const selectedDirectorateId = form.watch("directorateId");
-  const selectedLocation = locations.find((loc) => loc.id === selectedLocationId);
-  const { data: subLocations = [] } = useOfficeSubLocations(
-    selectedLocationId ? { officeId: selectedLocationId } : undefined
+  const selectedLocation = locations.find((location) => location.id === selectedLocationId);
+  const officeOptions = useMemo(
+    () =>
+      locations.map((office) => ({
+        value: office.id,
+        label: office.name,
+        keywords: [office.division, office.district, office.type].filter(Boolean).join(" "),
+      })),
+    [locations]
   );
-  const activeSubLocations = subLocations.filter((entry) => entry.is_active !== false);
-  const [officeTypeFilter, setOfficeTypeFilter] = useState<OfficeTypeFilter>(
-    resolveOfficeTypeFilter(selectedLocation || locations[0])
-  );
-  const filteredLocations = locations.filter((location) => {
-    if (officeTypeFilter === "FIELD_OFFICE") return location.type === "DISTRICT_OFFICE";
-    if (officeTypeFilter === "LAB") return location.type === "DISTRICT_LAB";
-    return location.type === "HEAD_OFFICE" || location.type === "DIRECTORATE";
-  });
-  const isHeadOffice = isHeadOfficeLocation(selectedLocation);
 
   useEffect(() => {
+    if (!open) return;
     if (employee) {
       form.reset({
         firstName: employee.first_name,
@@ -123,58 +87,35 @@ export function EmployeeFormModal({
         userPassword: "",
         phone: employee.phone || "",
         jobTitle: employee.job_title || "",
-        directorateId: employee.directorate_id || "",
         locationId: fixedLocationId || employee.location_id || "",
-        defaultSubLocationId: employee.default_sub_location_id || "",
-        allowedSubLocationIds: employee.allowed_sub_location_ids || [],
       });
-      setOfficeTypeFilter(resolveOfficeTypeFilter(locations.find((loc) => loc.id === (fixedLocationId || employee.location_id || ""))));
-    } else {
-      form.reset({
-        firstName: "",
-        lastName: "",
-        email: "",
-        userPassword: "",
-        phone: "",
-        jobTitle: "",
-        directorateId: "",
-        locationId: fixedLocationId || "",
-        defaultSubLocationId: "",
-        allowedSubLocationIds: [],
-      });
-      setOfficeTypeFilter(resolveOfficeTypeFilter(locations.find((loc) => loc.id === (fixedLocationId || "")) || locations[0]));
+      return;
     }
-  }, [employee, fixedLocationId, form, locations]);
+
+    form.reset({
+      firstName: "",
+      lastName: "",
+      email: "",
+      userPassword: "",
+      phone: "",
+      jobTitle: "",
+      locationId: fixedLocationId || "",
+    });
+  }, [open, employee, fixedLocationId, form]);
 
   useEffect(() => {
-    if (!isHeadOffice && selectedDirectorateId) {
-      form.setValue("directorateId", "");
+    const currentLocationId = form.getValues("locationId") || "";
+    if (currentLocationId && locations.some((location) => location.id === currentLocationId)) {
+      return;
     }
-    if (!isHeadOffice) {
-      form.clearErrors("directorateId");
+    if (fixedLocationId && locations.some((location) => location.id === fixedLocationId)) {
+      form.setValue("locationId", fixedLocationId, { shouldValidate: true });
+      return;
     }
-  }, [isHeadOffice, selectedDirectorateId, form]);
-
-  useEffect(() => {
-    const currentLocationId = form.getValues("locationId");
-    if (!currentLocationId) return;
-    if (!filteredLocations.some((location) => location.id === currentLocationId)) {
-      form.setValue("locationId", "");
+    if (!currentLocationId && locations[0]) {
+      form.setValue("locationId", locations[0].id, { shouldValidate: true });
     }
-  }, [filteredLocations, form]);
-
-  useEffect(() => {
-    const validIds = new Set(activeSubLocations.map((section) => section.id));
-    const selectedAllowed = form.getValues("allowedSubLocationIds") || [];
-    const nextAllowed = selectedAllowed.filter((id) => validIds.has(id));
-    if (nextAllowed.length !== selectedAllowed.length) {
-      form.setValue("allowedSubLocationIds", nextAllowed, { shouldValidate: true });
-    }
-    const defaultId = form.getValues("defaultSubLocationId");
-    if (defaultId && !validIds.has(defaultId)) {
-      form.setValue("defaultSubLocationId", "", { shouldValidate: true });
-    }
-  }, [activeSubLocations, form]);
+  }, [locations, fixedLocationId, form]);
 
   const handleSubmit = async (data: EmployeeFormData) => {
     setIsSubmitting(true);
@@ -183,21 +124,14 @@ export function EmployeeFormModal({
         form.setError("userPassword", { message: "Initial password is required" });
         return;
       }
-      if (isHeadOffice && !data.directorateId) {
-        form.setError("directorateId", { message: "Division is required for Head Office" });
-        return;
-      }
 
-      const payload = {
+      await onSubmit({
         ...data,
-        userPassword: data.userPassword ? data.userPassword : undefined,
-        directorateId: isHeadOffice ? data.directorateId : undefined,
+        userPassword: data.userPassword || undefined,
         locationId: fixedLocationId || data.locationId,
-        defaultSubLocationId: data.defaultSubLocationId || null,
-        allowedSubLocationIds: data.allowedSubLocationIds || [],
-      };
-
-      await onSubmit(payload);
+        defaultSubLocationId: null,
+        allowedSubLocationIds: [],
+      });
       form.reset();
       onOpenChange(false);
     } finally {
@@ -264,149 +198,28 @@ export function EmployeeFormModal({
               <Input id="jobTitle" {...form.register("jobTitle")} placeholder="Designation" />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>Division *</Label>
-              <Select
-                value={form.watch("directorateId") || ""}
-                onValueChange={(v) => form.setValue("directorateId", v)}
-                disabled={!isHeadOffice}
-              >
-                <SelectTrigger><SelectValue placeholder={isHeadOffice ? "Select division" : "Head Office only"} /></SelectTrigger>
-                <SelectContent>
-                  {directorates.map((d) => (
-                    <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {isHeadOffice && form.formState.errors.directorateId && (
-                <p className="text-sm text-destructive">{form.formState.errors.directorateId.message}</p>
-              )}
-              {!isHeadOffice && (
-                <p className="text-xs text-muted-foreground">Divisions apply to Head Office only.</p>
-              )}
-            </div>
-            <div className="space-y-2">
-              <Label>Office Type *</Label>
-              <Select
-                value={officeTypeFilter}
-                onValueChange={(value) => setOfficeTypeFilter(value as OfficeTypeFilter)}
-              >
-                <SelectTrigger><SelectValue placeholder="Select office type" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="FIELD_OFFICE">Field Office</SelectItem>
-                  <SelectItem value="LAB">Lab</SelectItem>
-                  <SelectItem value="HEAD_OFFICE">Head Office</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
           <div className="space-y-2">
-            <Label>Office *</Label>
-            <Popover open={officePickerOpen} onOpenChange={setOfficePickerOpen}>
-              <PopoverTrigger asChild>
-                <Button variant="outline" role="combobox" className="w-full justify-between">
-                  {selectedLocation ? selectedLocation.name : "Search office..."}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-                <Command>
-                  <CommandInput placeholder="Type office name..." />
-                  <CommandList>
-                    <CommandEmpty>No offices found.</CommandEmpty>
-                    {filteredLocations.map((office) => (
-                      <CommandItem
-                        key={office.id}
-                        value={`${office.name} ${office.division || ""} ${office.district || ""}`}
-                        onSelect={() => {
-                          form.setValue("locationId", office.id);
-                          setOfficePickerOpen(false);
-                        }}
-                      >
-                        <span className="font-medium">{office.name}</span>
-                        <span className="ml-2 text-xs text-muted-foreground">
-                          {[office.division, office.district].filter(Boolean).join(" - ")}
-                        </span>
-                      </CommandItem>
-                    ))}
-                  </CommandList>
-                </Command>
-              </PopoverContent>
-            </Popover>
+            <Label htmlFor="employee-office">Office *</Label>
+            <SearchableSelect
+              id="employee-office"
+              value={selectedLocationId || ""}
+              onValueChange={(value) => form.setValue("locationId", value, { shouldValidate: true })}
+              disabled={Boolean(fixedLocationId)}
+              placeholder="Search office..."
+              searchPlaceholder="Search offices, labs, and directorates..."
+              emptyText="No offices found."
+              options={officeOptions}
+            />
+            {selectedLocation && (
+              <p className="text-xs text-muted-foreground">
+                {[selectedLocation.division, selectedLocation.district, selectedLocation.type]
+                  .filter(Boolean)
+                  .join(" • ")}
+              </p>
+            )}
             {form.formState.errors.locationId && (
               <p className="text-sm text-destructive">{form.formState.errors.locationId.message}</p>
             )}
-          </div>
-
-          <div className="space-y-2">
-            <Label>Allowed Room/Sections</Label>
-            {activeSubLocations.length === 0 ? (
-              <p className="text-xs text-muted-foreground">
-                No active room/sections found for this office.
-              </p>
-            ) : (
-              <div className="max-h-40 space-y-2 overflow-y-auto rounded-md border p-3">
-                {activeSubLocations.map((section) => {
-                  const selectedIds = form.watch("allowedSubLocationIds") || [];
-                  const checked = selectedIds.includes(section.id);
-                  return (
-                    <label key={section.id} className="flex items-center gap-2 text-sm">
-                      <Checkbox
-                        checked={checked}
-                        onCheckedChange={(value) => {
-                          const current = form.getValues("allowedSubLocationIds") || [];
-                          if (value) {
-                            if (!current.includes(section.id)) {
-                              form.setValue("allowedSubLocationIds", [...current, section.id], { shouldValidate: true });
-                            }
-                            return;
-                          }
-                          const next = current.filter((id) => id !== section.id);
-                          form.setValue("allowedSubLocationIds", next, { shouldValidate: true });
-                          if (form.getValues("defaultSubLocationId") === section.id) {
-                            form.setValue("defaultSubLocationId", "", { shouldValidate: true });
-                          }
-                        }}
-                      />
-                      <span>{section.name}</span>
-                    </label>
-                  );
-                })}
-              </div>
-            )}
-            <p className="text-xs text-muted-foreground">
-              Employees can consume from selected room/sections only.
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <Label>Default Room/Section</Label>
-            <Select
-              value={form.watch("defaultSubLocationId") || ""}
-              onValueChange={(value) => {
-                form.setValue("defaultSubLocationId", value, { shouldValidate: true });
-                const selectedIds = form.getValues("allowedSubLocationIds") || [];
-                if (value && !selectedIds.includes(value)) {
-                  form.setValue("allowedSubLocationIds", [...selectedIds, value], { shouldValidate: true });
-                }
-              }}
-              disabled={(form.watch("allowedSubLocationIds") || []).length === 0}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select default room/section" />
-              </SelectTrigger>
-              <SelectContent>
-                {(form.watch("allowedSubLocationIds") || []).map((id) => {
-                  const section = activeSubLocations.find((entry) => entry.id === id);
-                  if (!section) return null;
-                  return (
-                    <SelectItem key={section.id} value={section.id}>
-                      {section.name}
-                    </SelectItem>
-                  );
-                })}
-              </SelectContent>
-            </Select>
           </div>
 
           <DialogFooter>

@@ -20,7 +20,6 @@ const adminRoutes = [
   "/schemes",
   "/reports",
   "/compliance",
-  "/inventory",
   "/requisitions",
   "/returns",
   "/settings",

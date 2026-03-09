@@ -793,6 +793,57 @@ export interface LocationSummary {
   totalValue: number;
 }
 
+export type AccessPolicyScope = "none" | "same_office" | "self";
+export type ApprovalScope = "same_office" | "org_wide";
+
+export interface AccessPolicyRule {
+  allowed_roles: string[];
+  denied_roles: string[];
+  allow_org_admin: boolean;
+  require_assigned_office: boolean;
+  scope: AccessPolicyScope;
+}
+
+export interface LabScopePolicy {
+  lab_only_allowed_office_types: string[];
+  lab_only_allowed_user_office_types: string[];
+  chemical_allowed_office_types: string[];
+}
+
+export interface AccessPolicyConfig {
+  rules: Record<string, AccessPolicyRule>;
+  lab_scope: LabScopePolicy;
+  updated_at: string | null;
+  updated_by_user_id: string | null;
+}
+
+export interface ApprovalMatrixRule {
+  id: string;
+  enabled: boolean;
+  transaction_type: string;
+  min_amount: number;
+  risk_tags: string[];
+  required_approvals: number;
+  approver_roles: string[];
+  scope: ApprovalScope;
+  disallow_maker: boolean;
+}
+
+export interface ApprovalMatrixConfig {
+  rules: ApprovalMatrixRule[];
+  updated_at: string | null;
+  updated_by_user_id: string | null;
+}
+
+export interface SchedulerConfig {
+  enabled: boolean;
+  maintenance_interval_minutes: number;
+  threshold_interval_minutes: number;
+  startup_delay_seconds: number;
+  updated_at: string | null;
+  updated_by_user_id: string | null;
+}
+
 export interface SystemSettings {
   id: string;
   organization: {
@@ -813,6 +864,9 @@ export interface SystemSettings {
     session_timeout_minutes: number;
     audit_logging: boolean;
   };
+  access_policies: AccessPolicyConfig;
+  approval_matrix: ApprovalMatrixConfig;
+  scheduler: SchedulerConfig;
   last_backup_at: string | null;
   created_at: string;
   updated_at: string;

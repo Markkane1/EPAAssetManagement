@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -59,6 +59,7 @@ const functionalOptions = ["Functional", "Need Repairs", "Dead"];
 export function OfficeAssetItemFormModal({ open, onOpenChange, assets, locations, onSubmit }: OfficeAssetItemFormModalProps) {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const { user } = useAuth();
+    const serialInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
     const form = useForm<AssetItemFormData>({
         resolver: zodResolver(assetItemSchema),
@@ -148,7 +149,11 @@ export function OfficeAssetItemFormModal({ open, onOpenChange, assets, locations
             setItemsError(`Only ${assetQuantity} items can be added for this asset.`);
             return;
         }
-        setItems((prev) => [...prev, { id: crypto.randomUUID(), serialNumber: "", warrantyExpiry: "" }]);
+        const nextId = crypto.randomUUID();
+        setItems((prev) => [...prev, { id: nextId, serialNumber: "", warrantyExpiry: "" }]);
+        setTimeout(() => {
+            serialInputRefs.current[nextId]?.focus();
+        }, 0);
     };
 
     const removeRow = (id: string) => {
@@ -183,7 +188,7 @@ export function OfficeAssetItemFormModal({ open, onOpenChange, assets, locations
                             )}
                         </div>
                         <div className="space-y-2">
-                            <Label>Location *</Label>
+                            <Label>Office *</Label>
                             <div className="rounded-md border bg-muted/50 px-3 py-2 text-sm text-muted-foreground cursor-not-allowed">
                                 {userLocationName}
                             </div>
@@ -247,9 +252,12 @@ export function OfficeAssetItemFormModal({ open, onOpenChange, assets, locations
                                 </thead>
                                 <tbody>
                                     {items.map((item) => (
-                                        <tr key={item.id} className="border-t">
+                                        <tr key={item.id} className="border-t" onClick={() => serialInputRefs.current[item.id]?.focus()}>
                                             <td className="px-3 py-2">
                                                 <Input
+                                                    ref={(node) => {
+                                                        serialInputRefs.current[item.id] = node;
+                                                    }}
                                                     value={item.serialNumber}
                                                     onChange={(e) => updateItem(item.id, { serialNumber: e.target.value })}
                                                     placeholder="e.g., SN123456789"

@@ -18,7 +18,6 @@ import type { Office, Division, District, OfficeType } from "@/types";
 import { SearchableSelect } from "@/components/shared/SearchableSelect";
 
 const OFFICE_TYPE_OPTIONS: Array<{ value: OfficeType; label: string }> = [
-  { value: "HEAD_OFFICE", label: "Head Office" },
   { value: "DIRECTORATE", label: "Directorate" },
   { value: "DISTRICT_OFFICE", label: "District Office" },
   { value: "DISTRICT_LAB", label: "District Lab" },
@@ -42,67 +41,41 @@ function normalizePhoneForSubmit(value?: string) {
 }
 
 function coerceOfficeType(value?: string | null): OfficeType {
-  if (value === "HEAD_OFFICE" || value === "DIRECTORATE" || value === "DISTRICT_OFFICE" || value === "DISTRICT_LAB") {
+  if (value === "DIRECTORATE" || value === "DISTRICT_OFFICE" || value === "DISTRICT_LAB") {
     return value;
   }
   return "DISTRICT_OFFICE";
 }
 
-const officeSchema = z
-  .object({
-    name: z.string().min(2, "Office name is required"),
-    division: z.string().min(1, "Division is required"),
-    district: z.string().min(1, "District is required"),
-    address: z.string().min(1, "Address is required"),
-    contactNumber: z
-      .string()
-      .min(1, "Contact number is required")
-      .refine((value) => {
-        const normalized = normalizePhoneForValidation(String(value || "").trim());
-        return !normalized || PAKISTAN_PHONE_REGEX.test(normalized);
-      }, "Use Pakistani format, e.g. 03001234567 or +923001234567"),
-    type: z.enum(["HEAD_OFFICE", "DIRECTORATE", "DISTRICT_OFFICE", "DISTRICT_LAB"]),
-    parentOfficeId: z.string().optional(),
-    capabilities: z
-      .object({
-        moveables: z.boolean().optional(),
-        consumables: z.boolean().optional(),
-        chemicals: z.boolean().optional(),
-      })
-      .optional(),
-  })
-  .superRefine((value, ctx) => {
-    const parentOfficeId = String(value.parentOfficeId || "").trim();
-    if (value.type === "DIRECTORATE" && !parentOfficeId) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["parentOfficeId"],
-        message: "Parent Head Office is required for Directorates",
-      });
-    }
-    if (value.type !== "DIRECTORATE" && parentOfficeId) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["parentOfficeId"],
-        message: "Parent Office is only allowed for Directorates",
-      });
-    }
-  });
+const officeSchema = z.object({
+  name: z.string().min(2, "Office name is required"),
+  division: z.string().min(1, "Division is required"),
+  district: z.string().min(1, "District is required"),
+  address: z.string().min(1, "Address is required"),
+  contactNumber: z
+    .string()
+    .min(1, "Contact number is required")
+    .refine((value) => {
+      const normalized = normalizePhoneForValidation(String(value || "").trim());
+      return !normalized || PAKISTAN_PHONE_REGEX.test(normalized);
+    }, "Use Pakistani format, e.g. 03001234567 or +923001234567"),
+  type: z.enum(["DIRECTORATE", "DISTRICT_OFFICE", "DISTRICT_LAB"]),
+  capabilities: z
+    .object({
+      moveables: z.boolean().optional(),
+      consumables: z.boolean().optional(),
+      chemicals: z.boolean().optional(),
+    })
+    .optional(),
+});
 
 type OfficeFormData = z.infer<typeof officeSchema>;
-type HeadOfficeOption = {
-  id: string;
-  name: string;
-  is_active?: boolean | null;
-};
-
 interface OfficeFormModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   office?: Office | null;
   divisions?: Division[];
   districts?: District[];
-  headOffices?: HeadOfficeOption[];
   onSubmit: (data: OfficeFormData) => Promise<void> | void;
 }
 
@@ -112,7 +85,6 @@ export function OfficeFormModal({
   office,
   divisions = [],
   districts = [],
-  headOffices = [],
   onSubmit,
 }: OfficeFormModalProps) {
   const isEditing = !!office;
@@ -125,7 +97,6 @@ export function OfficeFormModal({
       address: office?.address || "",
       contactNumber: office?.contact_number || "",
       type: coerceOfficeType(office?.type),
-      parentOfficeId: office?.parent_office_id || "",
       capabilities: {
         moveables: office?.capabilities?.moveables ?? true,
         consumables: office?.capabilities?.consumables ?? true,
@@ -135,6 +106,7 @@ export function OfficeFormModal({
   });
 
   useEffect(() => {
+    if (!open) return;
     if (office) {
       form.reset({
         name: office.name,
@@ -143,7 +115,6 @@ export function OfficeFormModal({
         address: office.address || "",
         contactNumber: office.contact_number || "",
         type: coerceOfficeType(office.type),
-        parentOfficeId: office.parent_office_id || "",
         capabilities: {
           moveables: office.capabilities?.moveables ?? true,
           consumables: office.capabilities?.consumables ?? true,
@@ -158,7 +129,6 @@ export function OfficeFormModal({
         address: "",
         contactNumber: "",
         type: "DISTRICT_OFFICE",
-        parentOfficeId: "",
         capabilities: {
           moveables: true,
           consumables: true,
@@ -166,7 +136,7 @@ export function OfficeFormModal({
         },
       });
     }
-  }, [office, form]);
+  }, [open, office, form]);
 
   const handleSubmit = async (data: OfficeFormData) => {
     await onSubmit({
@@ -175,7 +145,6 @@ export function OfficeFormModal({
       district: data.district.trim(),
       address: data.address.trim(),
       contactNumber: normalizePhoneForSubmit(data.contactNumber),
-      parentOfficeId: data.type === "DIRECTORATE" ? String(data.parentOfficeId || "").trim() || undefined : undefined,
     });
     onOpenChange(false);
   };
@@ -183,7 +152,6 @@ export function OfficeFormModal({
   const activeDivisions = divisions.filter((division) => division.is_active !== false);
   const activeDistricts = districts.filter((district) => district.is_active !== false);
   const selectedType = form.watch("type");
-  const activeHeadOffices = headOffices.filter((entry) => entry.is_active !== false);
 
   const selectedDivisionName = form.watch("division");
   const selectedDivision = activeDivisions.find((division) => division.name === selectedDivisionName);
@@ -208,16 +176,6 @@ export function OfficeFormModal({
       ].filter(([name]) => name && name.trim())
     ).values()
   );
-  const headOfficeOptions: HeadOfficeOption[] = Array.from(
-    new Map(
-      [
-        ...activeHeadOffices.map((entry) => [entry.id, entry]),
-        ...(office?.parent_office_id && selectedType === "DIRECTORATE"
-          ? [[office.parent_office_id, { id: office.parent_office_id, name: "Current Parent Head Office" }]]
-          : []),
-      ]
-    ).values()
-  );
 
   useEffect(() => {
     const currentDistrict = form.getValues("district");
@@ -239,12 +197,6 @@ export function OfficeFormModal({
         },
         { shouldDirty: false, shouldValidate: false }
       );
-    }
-  }, [selectedType, form]);
-
-  useEffect(() => {
-    if (selectedType !== "DIRECTORATE" && form.getValues("parentOfficeId")) {
-      form.setValue("parentOfficeId", "", { shouldDirty: false, shouldValidate: false });
     }
   }, [selectedType, form]);
 
@@ -280,21 +232,17 @@ export function OfficeFormModal({
                 <FormItem>
                   <FormLabel>Division *</FormLabel>
                   <FormControl>
-                    <Select
-                      value={field.value || undefined}
+                    <SearchableSelect
+                      value={field.value || ""}
                       onValueChange={field.onChange}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select division" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {divisionOptions.map((division) => (
-                          <SelectItem key={division.id} value={division.name}>
-                            {division.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                      placeholder="Select division"
+                      searchPlaceholder="Search divisions..."
+                      emptyText="No divisions found."
+                      options={divisionOptions.map((division) => ({
+                        value: division.name,
+                        label: division.name,
+                      }))}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -307,21 +255,17 @@ export function OfficeFormModal({
                 <FormItem>
                   <FormLabel>District *</FormLabel>
                   <FormControl>
-                    <Select
-                      value={field.value || undefined}
+                    <SearchableSelect
+                      value={field.value || ""}
                       onValueChange={field.onChange}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select district" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {districtOptions.map((district) => (
-                          <SelectItem key={district.id} value={district.name}>
-                            {district.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                      placeholder="Select district"
+                      searchPlaceholder="Search districts..."
+                      emptyText="No districts found."
+                      options={districtOptions.map((district) => ({
+                        value: district.name,
+                        label: district.name,
+                      }))}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -383,35 +327,9 @@ export function OfficeFormModal({
               </div>
             </div>
             {selectedType === "DIRECTORATE" && (
-              <FormField
-                control={form.control}
-                name="parentOfficeId"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Parent Head Office *</FormLabel>
-                    <FormControl>
-                      <SearchableSelect
-                        value={field.value || undefined}
-                        onValueChange={field.onChange}
-                        disabled={headOfficeOptions.length === 0}
-                        placeholder="Select head office"
-                        searchPlaceholder="Search head offices..."
-                        emptyText="No head offices found."
-                        options={headOfficeOptions.map((entry) => ({
-                          value: entry.id,
-                          label: entry.name,
-                        }))}
-                      />
-                    </FormControl>
-                    {headOfficeOptions.length === 0 && (
-                      <p className="text-xs text-muted-foreground">
-                        Create an active Head Office first, then add Directorates.
-                      </p>
-                    )}
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              <p className="text-xs text-muted-foreground">
+                Directorates are automatically linked to the single active Head Office.
+              </p>
             )}
             <div className="grid grid-cols-3 gap-4">
               <div className="flex items-center gap-2">

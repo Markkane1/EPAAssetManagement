@@ -70,6 +70,13 @@ async function resolveDefaultHolder() {
   if (systemStore) {
     return { holder_type: 'STORE' as const, holder_id: systemStore.id };
   }
+  const headOffice = await OfficeModel.findOne({
+    type: 'HEAD_OFFICE',
+    is_active: { $ne: false },
+  });
+  if (headOffice) {
+    return { holder_type: 'OFFICE' as const, holder_id: String(headOffice._id) };
+  }
   return null;
 }
 

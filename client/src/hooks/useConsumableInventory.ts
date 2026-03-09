@@ -14,8 +14,18 @@ import type {
   InventoryHolderType,
 } from '@/services/consumableInventoryService';
 import { API_CONFIG } from '@/config/api.config';
+import { ApiError } from '@/lib/api';
 
 const { queryKeys, messages, query } = API_CONFIG;
+
+function getApprovalRequestId(error: Error) {
+  if (!(error instanceof ApiError) || error.status !== 409) return '';
+  const approvalRequest =
+    (error.details as Record<string, unknown> | undefined)?.approval_request as
+      | Record<string, unknown>
+      | undefined;
+  return String(approvalRequest?.id || approvalRequest?._id || '').trim();
+}
 
 export const useConsumableBalances = (filters?: BalancesQuery) =>
   useQuery({
@@ -82,6 +92,11 @@ export const useTransferConsumables = () => {
       toast.success(messages.consumableTxnSuccess);
     },
     onError: (error: Error) => {
+      const approvalRequestId = getApprovalRequestId(error);
+      if (approvalRequestId) {
+        toast.error(`Approval required before this consumable transfer step. Workflow id: ${approvalRequestId}`);
+        return;
+      }
       toast.error(`${messages.consumableTxnError}: ${error.message}`);
     },
   });
@@ -127,6 +142,11 @@ export const useDisposeConsumables = () => {
       toast.success(messages.consumableTxnSuccess);
     },
     onError: (error: Error) => {
+      const approvalRequestId = getApprovalRequestId(error);
+      if (approvalRequestId) {
+        toast.error(`Approval required before disposal. Workflow id: ${approvalRequestId}`);
+        return;
+      }
       toast.error(`${messages.consumableTxnError}: ${error.message}`);
     },
   });

@@ -41,7 +41,6 @@ const Projects = lazy(() => import("./pages/Projects"));
 const Schemes = lazy(() => import("./pages/Schemes"));
 const Reports = lazy(() => import("./pages/Reports"));
 const Compliance = lazy(() => import("./pages/Compliance"));
-const InventoryHub = lazy(() => import("./pages/InventoryHub"));
 const Requisitions = lazy(() => import("./pages/Requisitions"));
 const RequisitionNew = lazy(() => import("./pages/RequisitionNew"));
 const RequisitionDetail = lazy(() => import("./pages/RequisitionDetail"));
@@ -150,25 +149,6 @@ const App = () => {
                   <Route path="/schemes" element={<ProtectedRoute page="schemes"><Schemes /></ProtectedRoute>} />
                   <Route path="/reports" element={<ProtectedRoute page="reports"><Reports /></ProtectedRoute>} />
                   <Route path="/compliance" element={<ProtectedRoute page="compliance"><Compliance /></ProtectedRoute>} />
-                  <Route
-                    path="/inventory"
-                    element={
-                      <ProtectedRoute
-                        page="inventory"
-                        allowedRoles={[
-                          "org_admin",
-                          "office_head",
-                          "caretaker",
-                          "storekeeper",
-                          "inventory_controller",
-                          "procurement_officer",
-                          "compliance_auditor",
-                        ]}
-                      >
-                        <InventoryHub />
-                      </ProtectedRoute>
-                    }
-                  />
                   <Route path="/requisitions" element={<ProtectedRoute page="requisitions"><Requisitions /></ProtectedRoute>} />
                   <Route path="/requisitions/approved" element={<ProtectedRoute page="requisitions"><Requisitions /></ProtectedRoute>} />
                   <Route path="/requisitions/new" element={<ProtectedRoute page="requisitions-new"><RequisitionNew /></ProtectedRoute>} />

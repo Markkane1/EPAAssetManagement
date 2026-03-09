@@ -35,7 +35,7 @@ const serverProcess = spawn("npm run dev:server", [], {
     ...process.env,
     NODE_ENV: "test",
     LOAD_DOTENV_IN_TEST: "false",
-    PORT: process.env.PORT || "5000",
+    PORT: process.env.PORT || "5001",
     MONGO_URI: mongo.getUri(),
     MONGO_REQUIRE_REPLICA_SET: "false",
     JWT_SECRET:

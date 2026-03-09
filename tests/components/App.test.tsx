@@ -41,8 +41,8 @@ vi.mock("../../client/src/pages/Dashboard", () => ({ default: () => <div>Dashboa
 vi.mock("../../client/src/pages/Assets", () => ({ default: () => <div>Assets Page</div> }));
 vi.mock("../../client/src/pages/Assignments", () => ({ default: () => <div>Assignments Page</div> }));
 vi.mock("../../client/src/pages/MyAssets", () => ({ default: () => <div>My Assets Page</div> }));
-vi.mock("../../client/src/pages/InventoryHub", () => ({ default: () => <div>Inventory Hub Page</div> }));
 vi.mock("../../client/src/pages/Profile", () => ({ default: () => <div>Profile Page</div> }));
+vi.mock("../../client/src/pages/Settings", () => ({ default: () => <div>Settings Page</div> }));
 vi.mock("../../client/src/pages/Login", () => ({ default: () => <div>Login Page</div> }));
 vi.mock("../../client/src/pages/ForgotPassword", () => ({ default: () => <div>Forgot Password Page</div> }));
 vi.mock("../../client/src/pages/NotFound", () => ({ default: () => <div>Not Found Page</div> }));
@@ -94,11 +94,11 @@ describe("App routing", () => {
   });
 
   it("should wire allowed-role protected routes, profile, and not-found routing", async () => {
-    await renderAt("/inventory");
-    expect(await screen.findByText("Inventory Hub Page")).toBeInTheDocument();
+    await renderAt("/settings");
+    expect(await screen.findByText("Settings Page")).toBeInTheDocument();
     expect(screen.getByTestId("protected-route")).toHaveAttribute(
       "data-roles",
-      "org_admin,office_head,caretaker,storekeeper,inventory_controller,procurement_officer,compliance_auditor"
+      "org_admin,office_head"
     );
 
     cleanup();

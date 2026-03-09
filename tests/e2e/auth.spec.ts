@@ -72,7 +72,6 @@ test.describe("Authentication flows", () => {
       "/schemes",
       "/reports",
       "/compliance",
-      "/inventory",
       "/requisitions",
       "/returns",
       "/settings",
