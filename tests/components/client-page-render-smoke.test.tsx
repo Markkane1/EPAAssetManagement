@@ -5,6 +5,11 @@ import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const routerFuture = {
+  v7_startTransition: true,
+  v7_relativeSplatPath: true,
+} as const;
+
 const navigateMock = vi.fn();
 const exportToCSVMock = vi.fn();
 const generateReportPDFMock = vi.fn();
@@ -207,6 +212,10 @@ vi.mock("@/hooks/useAssets", () => ({
 }));
 vi.mock("@/hooks/useAssetItems", () => ({
   useAssetItems: () => ({ data: assetItems, isLoading: false }),
+  usePagedAssetItems: () => ({
+    data: { items: assetItems, total: assetItems.length, page: 1, limit: 100 },
+    isLoading: false,
+  }),
   useCreateAssetItem: () => createMutation(),
   useUpdateAssetItem: () => createMutation(),
 }));
@@ -220,8 +229,24 @@ vi.mock("@/hooks/useVendors", () => ({ useVendors: () => ({ data: vendors, isLoa
 vi.mock("@/hooks/useProjects", () => ({ useProjects: () => ({ data: projects, isLoading: false }) }));
 vi.mock("@/hooks/useSchemes", () => ({ useSchemes: () => ({ data: schemes, isLoading: false }) }));
 vi.mock("@/hooks/useLocations", () => ({ useLocations: () => ({ data: locations, isLoading: false }) }));
-vi.mock("@/hooks/useAssignments", () => ({ useAssignments: () => ({ data: assignments, isLoading: false }), useCreateAssignment: () => createMutation() }));
-vi.mock("@/hooks/useEmployees", () => ({ useEmployees: () => ({ data: employees, isLoading: false }), useCreateEmployee: () => createMutation(), useUpdateEmployee: () => createMutation(), useTransferEmployee: () => createMutation() }));
+vi.mock("@/hooks/useAssignments", () => ({
+  useAssignments: () => ({ data: assignments, isLoading: false }),
+  usePagedAssignments: () => ({
+    data: { items: assignments, total: assignments.length, page: 1, limit: 100 },
+    isLoading: false,
+  }),
+  useCreateAssignment: () => createMutation(),
+}));
+vi.mock("@/hooks/useEmployees", () => ({
+  useEmployees: () => ({ data: employees, isLoading: false }),
+  usePagedEmployees: () => ({
+    data: { items: employees, total: employees.length, page: 1, limit: 100 },
+    isLoading: false,
+  }),
+  useCreateEmployee: () => createMutation(),
+  useUpdateEmployee: () => createMutation(),
+  useTransferEmployee: () => createMutation(),
+}));
 vi.mock("@/hooks/useDirectorates", () => ({ useDirectorates: () => ({ data: directorates, isLoading: false }) }));
 vi.mock("@/hooks/useOffices", () => ({ useOffices: () => ({ data: offices, isLoading: false }), useCreateOffice: () => createMutation(), useUpdateOffice: () => createMutation(), useDeleteOffice: () => createMutation() }));
 vi.mock("@/hooks/useDivisions", () => ({ useDivisions: () => ({ data: divisions, isLoading: false }) }));
@@ -247,7 +272,7 @@ async function renderPage(modulePath: string) {
   const pageModule = await import(modulePath);
   const Component = pageModule.default;
   return render(
-    <MemoryRouter>
+    <MemoryRouter future={routerFuture}>
       <Component />
     </MemoryRouter>
   );

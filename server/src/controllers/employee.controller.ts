@@ -51,7 +51,7 @@ function readPagination(query: Record<string, unknown>) {
   const limit = clampInt(query.limit, 1000, 1, 2000);
   const page = clampInt(query.page, 1, 1, 100000);
   const skip = (page - 1) * limit;
-  return { limit, skip };
+  return { limit, page, skip };
 }
 
 function buildPayload(body: Record<string, unknown>) {
@@ -148,7 +148,7 @@ export const employeeController = {
       if (!user) {
         return res.status(401).json({ message: 'Unauthorized' });
       }
-      const { limit, skip } = readPagination(req.query as Record<string, unknown>);
+      const { limit, page, skip } = readPagination(req.query as Record<string, unknown>);
       const isGlobal = user.role === 'org_admin' || user.isOrgAdmin;
       const locationId = user.locationId ? String(user.locationId) : null;
 
@@ -157,12 +157,24 @@ export const employeeController = {
       }
 
       const query = isGlobal ? {} : { location_id: locationId };
+      const meta = String((req.query as Record<string, unknown>).meta || '') === '1';
       const employees = await EmployeeModel.find(query)
         .sort({ created_at: -1 })
         .skip(skip)
         .limit(limit)
         .lean();
-      return res.json(employees);
+      if (!meta) {
+        return res.json(employees);
+      }
+
+      const total = await EmployeeModel.countDocuments(query);
+      return res.json({
+        items: employees,
+        page,
+        limit,
+        total,
+        hasMore: skip + employees.length < total,
+      });
     } catch (error) {
       next(error);
     }

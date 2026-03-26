@@ -1,6 +1,5 @@
-import { cn } from "@/lib/utils";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { LucideIcon } from "lucide-react";
+import { MetricCard } from "@/components/shared/workflow";
 
 interface StatsCardProps {
   title: string;
@@ -22,42 +21,33 @@ export function StatsCard({
   variant = "default",
   trend,
 }: StatsCardProps) {
-  const iconColors = {
-    default: "text-muted-foreground",
-    primary: "text-primary",
-    accent: "text-accent",
-    success: "text-success",
-    warning: "text-warning",
-    info: "text-info",
-  };
+  const toneMap = {
+    default: "default",
+    primary: "primary",
+    accent: "primary",
+    success: "success",
+    warning: "warning",
+    info: "primary",
+  } as const;
 
   return (
-    <Card className="animate-fade-in">
-      <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">
-          {title}
-        </CardTitle>
-        <Icon className={cn("h-4 w-4", iconColors[variant])} />
-      </CardHeader>
-      <CardContent className="space-y-2">
-        <p className="text-2xl font-bold">
-          {typeof value === "number" ? value.toLocaleString() : value}
-        </p>
-        {subtitle && (
-          <p className="text-xs text-muted-foreground">{subtitle}</p>
-        )}
-        {trend && (
+    <MetricCard
+      label={title}
+      value={value}
+      helper={subtitle}
+      icon={Icon}
+      tone={toneMap[variant]}
+      trend={
+        trend ? (
           <div className="flex items-center gap-1">
-            <span className={cn(
-              "text-xs font-medium",
-              trend.isPositive ? "text-success" : "text-destructive"
-            )}>
-              {trend.isPositive ? "+" : ""}{trend.value}%
+            <span className={trend.isPositive ? "text-success" : "text-destructive"}>
+              {trend.isPositive ? "+" : ""}
+              {trend.value}%
             </span>
-            <span className="text-xs text-muted-foreground">vs last month</span>
+            <span>vs last month</span>
           </div>
-        )}
-      </CardContent>
-    </Card>
+        ) : undefined
+      }
+    />
   );
 }

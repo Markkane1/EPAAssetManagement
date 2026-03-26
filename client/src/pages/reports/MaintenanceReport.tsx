@@ -108,13 +108,13 @@ export default function MaintenanceReport() {
     );
   };
 
-  const handleExportPDF = () => {
+  const handleExportPDF = async () => {
     if (filteredRows.length === 0) {
       toast.error("No maintenance records available for the current filters");
       return;
     }
 
-    generateReportPDF({
+    await generateReportPDF({
       title: "Maintenance Report",
       headers: ["Tag", "Asset", "Type", "Status", "Scheduled", "Completed", "Cost"],
       data: filteredRows.map((row) => [

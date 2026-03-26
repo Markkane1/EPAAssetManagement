@@ -45,12 +45,13 @@ function sanitizeXssValue(value: unknown) {
 }
 
 function sanitizeStringValue(value: string) {
-  return value
-    .replace(/\u0000/g, '')
-    .replace(/\r\n?/g, ' ')
-    .replace(/\bjavascript\s*:/gi, '')
-    .replace(/\bon[a-z]+\s*=/gi, '')
-    .trim();
+  // Only strip null bytes (which can cause issues in many storage layers).
+  // The xss-clean pass above already handles XSS payloads, so the broader
+  // regex replacements that were here ("javascript:", "on[event]=", \r\n→space)
+  // were removed: they silently corrupted legitimate business text such as
+  // multi-line notes, technical specifications, or descriptions that happen to
+  // contain those substrings.
+  return value.replace(/\u0000/g, '').trim();
 }
 
 function sanitizeRequestValue(value: unknown): unknown {

@@ -53,6 +53,15 @@ type OfficeRoom = {
   office_id?: unknown;
 };
 
+type AggregatedSlipContext = {
+  assignment: Record<string, unknown>;
+  requisition: Record<string, unknown> | null;
+  requisitionLine: Record<string, unknown> | null;
+  assetItem: Record<string, unknown> | null;
+  asset: Record<string, unknown> | null;
+  office: Record<string, unknown> | null;
+};
+
 function sanitizeFilename(value: string) {
   return value.replace(/[^a-zA-Z0-9._-]+/g, '_');
 }
@@ -157,15 +166,106 @@ async function resolveTarget(assignment: any, requisition: any): Promise<Resolve
   };
 }
 
+async function loadAggregatedSlipContext(assignmentId: string): Promise<AggregatedSlipContext | null> {
+  const rows = await AssignmentModel.aggregate<AggregatedSlipContext>([
+    {
+      $match: {
+        _id: new Types.ObjectId(assignmentId),
+      },
+    },
+    {
+      $lookup: {
+        from: RequisitionModel.collection.name,
+        localField: 'requisition_id',
+        foreignField: '_id',
+        as: 'requisition',
+      },
+    },
+    {
+      $lookup: {
+        from: RequisitionLineModel.collection.name,
+        localField: 'requisition_line_id',
+        foreignField: '_id',
+        as: 'requisitionLine',
+      },
+    },
+    {
+      $lookup: {
+        from: AssetItemModel.collection.name,
+        localField: 'asset_item_id',
+        foreignField: '_id',
+        as: 'assetItem',
+      },
+    },
+    {
+      $set: {
+        requisition: { $ifNull: [{ $arrayElemAt: ['$requisition', 0] }, null] },
+        requisitionLine: { $ifNull: [{ $arrayElemAt: ['$requisitionLine', 0] }, null] },
+        assetItem: { $ifNull: [{ $arrayElemAt: ['$assetItem', 0] }, null] },
+      },
+    },
+    {
+      $lookup: {
+        from: AssetModel.collection.name,
+        localField: 'assetItem.asset_id',
+        foreignField: '_id',
+        as: 'asset',
+      },
+    },
+    {
+      $lookup: {
+        from: OfficeModel.collection.name,
+        localField: 'requisition.office_id',
+        foreignField: '_id',
+        as: 'office',
+      },
+    },
+    {
+      $set: {
+        asset: { $ifNull: [{ $arrayElemAt: ['$asset', 0] }, null] },
+        office: { $ifNull: [{ $arrayElemAt: ['$office', 0] }, null] },
+      },
+    },
+    {
+      $project: {
+        assignment: '$$ROOT',
+        requisition: 1,
+        requisitionLine: 1,
+        assetItem: 1,
+        asset: 1,
+        office: 1,
+      },
+    },
+  ]).exec();
+
+  const row = rows[0];
+  if (!row) return null;
+
+  if (row.assignment && typeof row.assignment === 'object') {
+    delete (row.assignment as Record<string, unknown>).requisition;
+    delete (row.assignment as Record<string, unknown>).requisitionLine;
+    delete (row.assignment as Record<string, unknown>).assetItem;
+    delete (row.assignment as Record<string, unknown>).asset;
+    delete (row.assignment as Record<string, unknown>).office;
+  }
+
+  return row;
+}
+
 async function loadSlipContext(assignmentId: string): Promise<LoadedSlipContext> {
   if (!Types.ObjectId.isValid(assignmentId)) {
     throw createHttpError(400, 'assignmentId is invalid');
   }
 
-  const assignment = await AssignmentModel.findById(assignmentId).exec();
-  if (!assignment) {
+  const aggregated = await loadAggregatedSlipContext(assignmentId);
+  if (!aggregated) {
     throw createHttpError(404, 'Assignment not found');
   }
+
+  const assignment = aggregated.assignment;
+  const requisition = aggregated.requisition;
+  const requisitionLine = aggregated.requisitionLine;
+  const assetItem = aggregated.assetItem;
 
   const requisitionId = asObjectIdString(assignment.requisition_id);
   if (!requisitionId) {
@@ -179,12 +279,6 @@ async function loadSlipContext(assignmentId: string): Promise<LoadedSlipContext>
   if (!assetItemId) {
     throw createHttpError(400, 'Assignment asset item is missing');
   }
-
-  const [requisition, requisitionLine, assetItem] = (await Promise.all([
-    RequisitionModel.findById(requisitionId).lean(),
-    RequisitionLineModel.findById(requisitionLineId).lean(),
-    AssetItemModel.findById(assetItemId).lean(),
-  ])) as [Record<string, unknown> | null, Record<string, unknown> | null, Record<string, unknown> | null];
 
   if (!requisition) {
     throw createHttpError(404, 'Requisition not found');
@@ -206,8 +300,8 @@ async function loadSlipContext(assignmentId: string): Promise<LoadedSlipContext>
   }
 
   const [asset, office, target] = (await Promise.all([
-    AssetModel.findById(assetId, { name: 1 }).lean(),
-    OfficeModel.findById(officeId, { name: 1 }).lean(),
+    Promise.resolve(aggregated.asset),
+    Promise.resolve(aggregated.office),
     resolveTarget(assignment, requisition),
   ])) as [Record<string, unknown> | null, Record<string, unknown> | null, ResolvedTarget];
 

@@ -20,6 +20,7 @@ import {
   ChevronRight,
   Download,
   FileText,
+  Inbox,
   Plus,
   Search,
   X,
@@ -35,6 +36,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
+import { StatePanel } from "@/components/shared/workflow";
 
 interface Column<T> {
   key: string;
@@ -46,6 +48,7 @@ interface Column<T> {
 interface DataTableProps<T> {
   columns: Column<T>[];
   data: T[];
+  pagination?: boolean;
   searchable?: boolean;
   filterable?: boolean;
   exportable?: boolean;
@@ -57,6 +60,12 @@ interface DataTableProps<T> {
   virtualized?: boolean;
   virtualRowHeight?: number;
   virtualViewportHeight?: number;
+  toolbarContent?: React.ReactNode;
+  emptyState?: {
+    title: string;
+    description: string;
+    action?: React.ReactNode;
+  };
 }
 
 type FilterOperator = "contains" | "equals" | "date_from" | "date_to";
@@ -182,6 +191,7 @@ function sanitizeFileName(raw: string): string {
 export function DataTable<T extends { id?: string; _id?: string }>({
   columns,
   data,
+  pagination = true,
   searchable = true,
   filterable = true,
   exportable = true,
@@ -193,6 +203,8 @@ export function DataTable<T extends { id?: string; _id?: string }>({
   virtualized = false,
   virtualRowHeight = 52,
   virtualViewportHeight = 560,
+  toolbarContent,
+  emptyState,
 }: DataTableProps<T>) {
   const isMobile = useIsMobile();
   const [search, setSearch] = useState("");
@@ -232,13 +244,32 @@ export function DataTable<T extends { id?: string; _id?: string }>({
   }, [page, pageSize, effectiveSearch, data.length, useVirtualizedTable, activeFilterSignature]);
 
   const normalizedSearch = effectiveSearch.trim().toLowerCase();
-
-  const filteredData = useMemo(() => {
-    return data.filter((row) => {
-      if (normalizedSearch) {
+  const searchBlobByRow = useMemo(
+    () =>
+      data.map((row) => {
         const tokens: string[] = [];
         appendSearchTokens(row, tokens, new WeakSet<object>());
-        const matchesSearch = tokens.some((token) => token.includes(normalizedSearch));
+        return tokens.join(" ").trim();
+      }),
+    [data]
+  );
+  const filterValueCacheByRowAndColumn = useMemo(() => {
+    const cache = new Map<number, Map<string, string>>();
+    data.forEach((row, rowIndex) => {
+      const rowCache = new Map<string, string>();
+      activeFilters.forEach((filter) => {
+        rowCache.set(filter.columnKey, stringifyFilterValue(getValueByKey(row, filter.columnKey)));
+      });
+      cache.set(rowIndex, rowCache);
+    });
+    return cache;
+  }, [activeFilters, data]);
+
+  const filteredData = useMemo(() => {
+    return data.filter((row, rowIndex) => {
+      if (normalizedSearch) {
+        const searchBlob = searchBlobByRow[rowIndex] || "";
+        const matchesSearch = searchBlob.includes(normalizedSearch);
         if (!matchesSearch) return false;
       }
 
@@ -255,7 +286,9 @@ export function DataTable<T extends { id?: string; _id?: string }>({
           if (filter.operator === "date_from") return rowTimestamp >= filterTimestamp;
           return rowTimestamp <= filterTimestamp;
         }
-        const value = stringifyFilterValue(rawValue);
+        const value =
+          filterValueCacheByRowAndColumn.get(rowIndex)?.get(filter.columnKey) ??
+          stringifyFilterValue(rawValue);
         const normalizedFilterValue = filterValue.toLowerCase();
         if (filter.operator === "equals") {
           return value === normalizedFilterValue;
@@ -263,7 +296,7 @@ export function DataTable<T extends { id?: string; _id?: string }>({
         return value.includes(normalizedFilterValue);
       });
     });
-  }, [activeFilters, data, normalizedSearch]);
+  }, [activeFilters, data, filterValueCacheByRowAndColumn, normalizedSearch, searchBlobByRow]);
 
   const exportRows = useMemo(
     () =>
@@ -290,8 +323,8 @@ export function DataTable<T extends { id?: string; _id?: string }>({
   }, [page, totalPages]);
 
   const paginatedData = useMemo(
-    () => filteredData.slice((page - 1) * pageSize, page * pageSize),
-    [filteredData, page, pageSize]
+    () => (pagination ? filteredData.slice((page - 1) * pageSize, page * pageSize) : filteredData),
+    [filteredData, page, pageSize, pagination]
   );
   const virtualOverscan = 6;
   const virtualWindow = useMemo(() => {
@@ -372,15 +405,30 @@ export function DataTable<T extends { id?: string; _id?: string }>({
     toast.success(`Exported ${exportRows.length} rows as CSV`);
   };
 
-  const rangeStart = filteredData.length === 0 ? 0 : (page - 1) * pageSize + 1;
-  const rangeEnd = filteredData.length === 0 ? 0 : Math.min(page * pageSize, filteredData.length);
+  const rangeStart = pagination
+    ? filteredData.length === 0
+      ? 0
+      : (page - 1) * pageSize + 1
+    : filteredData.length === 0
+      ? 0
+      : 1;
+  const rangeEnd = pagination
+    ? filteredData.length === 0
+      ? 0
+      : Math.min(page * pageSize, filteredData.length)
+    : filteredData.length;
+
+  const emptyStateContent = emptyState || {
+    title: "No results found.",
+    description: "Try adjusting the current search term or filters to broaden the result set.",
+  };
 
   return (
     <div className="space-y-4">
-      {/* Toolbar */}
-      <div className="flex flex-col items-stretch justify-between gap-3 sm:flex-row sm:items-center sm:gap-4">
-        {searchable && !(useGlobalPageSearch && pageSearch) && (
-          <div className="relative w-full flex-1 sm:max-w-sm">
+      <div className="workflow-filter-bar">
+        <div className="flex flex-col items-stretch justify-between gap-3 lg:flex-row lg:items-center lg:gap-4">
+          {searchable && !(useGlobalPageSearch && pageSearch) && (
+            <div className="relative w-full flex-1 lg:max-w-sm">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               placeholder={searchPlaceholder}
@@ -391,60 +439,62 @@ export function DataTable<T extends { id?: string; _id?: string }>({
               }}
               className="pl-9"
             />
+            </div>
+          )}
+          <div className="flex flex-1 flex-wrap items-center gap-2 lg:justify-end">
+            {toolbarContent}
+            {filterable && availableFilterColumns.length > 0 && (
+              <>
+                <Button type="button" variant="outline" size="sm" onClick={addFilter}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add Filter
+                </Button>
+                {filters.length > 0 && (
+                  <Button type="button" variant="ghost" size="sm" onClick={clearFilters}>
+                    <X className="mr-2 h-4 w-4" />
+                    Clear Filters
+                  </Button>
+                )}
+              </>
+            )}
+            {exportable && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button type="button" variant="outline" size="sm">
+                    <Download className="mr-2 h-4 w-4" />
+                    Export
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={exportCsv}>
+                    <FileText className="mr-2 h-4 w-4" />
+                    Export CSV
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+            <Select
+              value={String(pageSize)}
+              onValueChange={(value) => {
+                setPageSize(Number(value));
+                setPage(1);
+              }}
+            >
+              <SelectTrigger className="w-full sm:w-[140px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="10">10 per page</SelectItem>
+                <SelectItem value="20">20 per page</SelectItem>
+                <SelectItem value="50">50 per page</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
-        )}
-        <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-          {filterable && availableFilterColumns.length > 0 && (
-            <>
-              <Button type="button" variant="outline" size="sm" onClick={addFilter}>
-                <Plus className="mr-2 h-4 w-4" />
-                Add Filter
-              </Button>
-              {filters.length > 0 && (
-                <Button type="button" variant="ghost" size="sm" onClick={clearFilters}>
-                  <X className="mr-2 h-4 w-4" />
-                  Clear Filters
-                </Button>
-              )}
-            </>
-          )}
-          {exportable && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button type="button" variant="outline" size="sm">
-                  <Download className="mr-2 h-4 w-4" />
-                  Export
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={exportCsv}>
-                  <FileText className="mr-2 h-4 w-4" />
-                  Export CSV
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-          <Select
-            value={String(pageSize)}
-            onValueChange={(value) => {
-              setPageSize(Number(value));
-              setPage(1);
-            }}
-          >
-            <SelectTrigger className="w-full sm:w-[120px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="10">10 per page</SelectItem>
-              <SelectItem value="20">20 per page</SelectItem>
-              <SelectItem value="50">50 per page</SelectItem>
-            </SelectContent>
-          </Select>
         </div>
       </div>
 
       {filterable && filters.length > 0 && (
-        <div className="space-y-2">
+        <div className="space-y-3">
           <p className="text-xs text-muted-foreground">
             Date range: add two filters on the same date column using
             {" "}
@@ -457,7 +507,7 @@ export function DataTable<T extends { id?: string; _id?: string }>({
           {filters.map((filter) => (
             <div
               key={filter.id}
-              className="flex flex-col gap-2 rounded-md border bg-card/50 p-3 sm:flex-row sm:items-center"
+              className="flex flex-col gap-2 rounded-[1.25rem] border border-border/70 bg-card/92 p-3 sm:flex-row sm:items-center"
             >
               <Select
                 value={filter.columnKey}
@@ -522,15 +572,21 @@ export function DataTable<T extends { id?: string; _id?: string }>({
       {isMobile ? (
         <div className="space-y-3">
           {paginatedData.length === 0 ? (
-            <div className="rounded-lg border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
-              No results found.
+            <div className="space-y-3">
+              <StatePanel
+                title={emptyStateContent.title}
+                description={emptyStateContent.description}
+                icon={Inbox}
+                className="p-5"
+              />
+              {emptyStateContent.action}
             </div>
           ) : (
             paginatedData.map((row, index) => (
               <div
                 key={getRowKey(row, index)}
                 className={cn(
-                  "rounded-lg border bg-card p-4 shadow-sm",
+                  "rounded-[1.5rem] border border-border/70 bg-card/95 p-4 shadow-[0_18px_48px_-40px_rgba(15,23,42,0.42)]",
                   onRowClick && "cursor-pointer transition-colors hover:bg-muted/20"
                 )}
                 onClick={() => onRowClick?.(row)}
@@ -560,7 +616,7 @@ export function DataTable<T extends { id?: string; _id?: string }>({
         </div>
       ) : (
         <div
-          className={cn("rounded-lg border bg-card overflow-hidden", useVirtualizedTable && "overflow-y-auto")}
+          className={cn("table-shell", useVirtualizedTable && "overflow-y-auto")}
           style={useVirtualizedTable ? { maxHeight: `${virtualViewportHeight}px` } : undefined}
           onScroll={useVirtualizedTable ? (event) => setVirtualScrollTop(event.currentTarget.scrollTop) : undefined}
         >
@@ -580,9 +636,16 @@ export function DataTable<T extends { id?: string; _id?: string }>({
                 <TableRow>
                   <TableCell
                     colSpan={columns.length + (actions ? 1 : 0)}
-                    className="h-24 text-center text-muted-foreground"
+                    className="h-28"
                   >
-                    No results found.
+                    <div className="mx-auto flex max-w-md flex-col items-center gap-2 py-4 text-center">
+                      <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
+                        <Inbox className="h-5 w-5" />
+                      </div>
+                      <p className="font-medium text-foreground">{emptyStateContent.title}</p>
+                      <p className="text-sm text-muted-foreground">{emptyStateContent.description}</p>
+                      {emptyStateContent.action}
+                    </div>
                   </TableCell>
                 </TableRow>
               ) : (
@@ -626,33 +689,34 @@ export function DataTable<T extends { id?: string; _id?: string }>({
         </div>
       )}
 
-      {/* Pagination */}
-      <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
-        <p className="text-sm text-muted-foreground">
-          Showing {rangeStart} to {rangeEnd} of {filteredData.length} results
-        </p>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => setPage(page - 1)}
-            disabled={page === 1}
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <span className="text-sm font-medium">
-            Page {page} of {totalPages || 1}
-          </span>
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => setPage(page + 1)}
-            disabled={page >= totalPages || filteredData.length === 0}
-          >
-            <ChevronRight className="h-4 w-4" />
-          </Button>
+      {pagination && (
+        <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
+          <p className="text-sm text-muted-foreground">
+            Showing {rangeStart} to {rangeEnd} of {filteredData.length} results
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setPage(page - 1)}
+              disabled={page === 1}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <span className="text-sm font-medium">
+              Page {page} of {totalPages || 1}
+            </span>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setPage(page + 1)}
+              disabled={page >= totalPages || filteredData.length === 0}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

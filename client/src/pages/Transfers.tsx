@@ -30,6 +30,7 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { SearchableSelect } from "@/components/shared/SearchableSelect";
+import { MetricCard, TimelineList, WorkflowPanel } from "@/components/shared/workflow";
 
 type TransferRow = Transfer & {
   lineCount: number;
@@ -105,6 +106,13 @@ export default function Transfers() {
   );
 
   const canManage = isOrgAdmin || role === "office_head" || role === "caretaker";
+  const formErrors = {
+    fromOfficeId: !fromOfficeId ? "Select a source holder." : "",
+    toOfficeId: !toOfficeId ? "Select a destination office." : fromOfficeId === toOfficeId ? "Destination must be different from source." : "",
+    assetItems: selectedAssetItemIds.length === 0 ? "Select at least one asset item." : "",
+    approvalOrderFile: !approvalOrderFile ? "Attach the approval order before submitting." : "",
+  };
+  const hasFormErrors = Object.values(formErrors).some(Boolean);
 
   useEffect(() => {
     if (!canManage) return;
@@ -178,6 +186,17 @@ export default function Transfers() {
       }),
     [transfers, assetById, assetItemById, locationById]
   );
+  const requestedCount = tableRows.filter((row) => row.status === "REQUESTED").length;
+  const inTransitCount = tableRows.filter((row) => String(row.status).includes("DISPATCHED")).length;
+  const completedCount = tableRows.filter((row) => row.status === "RECEIVED_AT_DEST").length;
+  const recentTimeline = tableRows.slice(0, 5).map((row) => ({
+    id: row.id,
+    title: `${row.fromOfficeName} to ${row.toOfficeName}`,
+    description: row.assetsPreview,
+    meta: row.transfer_date ? new Date(row.transfer_date).toLocaleDateString() : "Date unavailable",
+    badge: row.status,
+    icon: row.status === "RECEIVED_AT_DEST" ? Check : Upload,
+  }));
 
   const toggleAssetSelection = (assetItemId: string) => {
     setSelectedAssetItemIds((current) =>
@@ -435,11 +454,29 @@ export default function Transfers() {
       <PageHeader
         title="Transfers"
         description="Create transfer requests with multiple lines and track the store-mediated workflow"
+        eyebrow="Workflow"
+        meta={
+          <>
+            <span>{tableRows.length} transfers</span>
+            <span className="hidden h-1 w-1 rounded-full bg-border sm:inline-block" />
+            <span>{canManage ? "Editable workflow" : "Read-only access"}</span>
+          </>
+        }
       />
 
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <MetricCard label="All transfers" value={tableRows.length} helper="Records across the workflow" icon={FileText} tone="primary" />
+        <MetricCard label="Requested" value={requestedCount} helper="Awaiting approval or next step" icon={Upload} tone="warning" />
+        <MetricCard label="In transit" value={inTransitCount} helper="Dispatched between locations" icon={ChevronsUpDown} tone="default" />
+        <MetricCard label="Completed" value={completedCount} helper="Received at destination" icon={Check} tone="success" />
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="space-y-6">
       {canManage ? (
-        <Card className="mb-6">
-          <CardContent className="pt-6">
+        <WorkflowPanel title="Create transfer request" description="Select the source, destination, item lines, and approval order before submitting.">
+          <Card className="border-0 shadow-none">
+            <CardContent className="p-0">
             <form onSubmit={handleCreateTransfer} className="space-y-6">
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div className="space-y-2">
@@ -464,6 +501,7 @@ export default function Transfers() {
                       ...locations.map((office) => ({ value: office.id, label: office.name })),
                     ]}
                   />
+                  {formErrors.fromOfficeId && <p className="field-error">{formErrors.fromOfficeId}</p>}
                 </div>
 
                 <div className="space-y-2">
@@ -482,6 +520,7 @@ export default function Transfers() {
                       ...destinationOffices.map((office) => ({ value: office.id, label: office.name })),
                     ]}
                   />
+                  {formErrors.toOfficeId && <p className="field-error">{formErrors.toOfficeId}</p>}
                 </div>
               </div>
 
@@ -542,6 +581,7 @@ export default function Transfers() {
                   </PopoverContent>
                 </Popover>
                 <p className="text-xs text-muted-foreground">Selected: {selectedAssetItemIds.length}</p>
+                {formErrors.assetItems && <p className="field-error">{formErrors.assetItems}</p>}
                 {selectedAssetItems.length > 0 && (
                   <div className="rounded-md border">
                     <div className="border-b px-3 py-2 text-xs font-medium text-muted-foreground">
@@ -580,6 +620,7 @@ export default function Transfers() {
                   id="approvalOrderFile"
                   type="file"
                   accept=".pdf,.jpg,.jpeg,.png"
+                  aria-invalid={Boolean(formErrors.approvalOrderFile)}
                   onChange={(event) => setApprovalOrderFile(event.target.files?.[0] || null)}
                 />
                 {approvalOrderFile ? (
@@ -587,6 +628,7 @@ export default function Transfers() {
                 ) : (
                   <p className="text-xs text-muted-foreground">Upload approval order before creating transfer.</p>
                 )}
+                {formErrors.approvalOrderFile && <p className="field-error">{formErrors.approvalOrderFile}</p>}
               </div>
 
               <div className="space-y-2">
@@ -601,23 +643,44 @@ export default function Transfers() {
                 </Button>
               </div>
             </form>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </WorkflowPanel>
       ) : (
-        <Card className="mb-6">
-          <CardContent className="py-4 text-sm text-muted-foreground">
+        <WorkflowPanel title="Transfer access" description="Your role can review records but cannot create or update transfer workflow steps.">
+          <Card className="border-0 shadow-none">
+            <CardContent className="p-0 text-sm text-muted-foreground">
             You have read-only access to transfer records.
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </WorkflowPanel>
       )}
 
-      <DataTable
-        columns={columns}
-        data={tableRows}
-        searchPlaceholder="Search transfers..."
-        actions={actions}
-        virtualized
-      />
+      <WorkflowPanel title="Transfer worklist" description="Review transfer records, open the file, or move a transfer to the next workflow step.">
+        <DataTable
+          columns={columns}
+          data={tableRows}
+          searchPlaceholder="Search transfers..."
+          actions={actions}
+          virtualized
+          emptyState={{
+            title: "No transfers available",
+            description: "Transfer records will appear here once requests are created.",
+          }}
+        />
+      </WorkflowPanel>
+        </div>
+
+        <div className="space-y-6">
+          <WorkflowPanel title="Recent transfer activity" description="The latest transfers and their current workflow stage.">
+            <TimelineList
+              items={recentTimeline}
+              emptyTitle="No transfers yet"
+              emptyDescription="Recent transfer activity will appear here once requests are submitted."
+            />
+          </WorkflowPanel>
+        </div>
+      </div>
 
       <RecordDetailModal
         open={recordModal.open}

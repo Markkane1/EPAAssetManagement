@@ -111,6 +111,9 @@ export const authService = {
   },
   
   register: async (data: RegisterDto): Promise<AuthResponse> => {
+    // Admin-only operation — do NOT write to localStorage. Writing the newly
+    // created user's profile here would overwrite the current admin's session
+    // identity in the browser, causing the UI to render as the wrong user.
     const response = await api.post<AuthResponse>('/auth/register', data);
     const normalizedUser = {
       ...response.user,
@@ -118,7 +121,6 @@ export const authService = {
       roles: normalizeRoles(response.user.roles, response.user.role),
       activeRole: resolveActiveRole(response.user.activeRole || response.user.role, normalizeRoles(response.user.roles, response.user.role)),
     };
-    localStorage.setItem('user', JSON.stringify(normalizedUser));
     return { ...response, user: normalizedUser };
   },
   

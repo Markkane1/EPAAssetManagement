@@ -19,6 +19,8 @@ export default defineConfig(() => ({
   build: {
     outDir: path.resolve(__dirname, "../dist"),
     emptyOutDir: true,
+    reportCompressedSize: true,
+    chunkSizeWarningLimit: Number(process.env.CLIENT_MAX_CHUNK_KB || 600),
     rollupOptions: {
       output: {
         manualChunks(id) {

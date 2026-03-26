@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Employee } from "@/types";
 import {
-  useEmployees,
+  usePagedEmployees,
   useCreateEmployee,
   useUpdateEmployee,
   useTransferEmployee,
@@ -29,9 +29,11 @@ import { isHeadOfficeLocationName, isHeadOfficeLocation } from "@/lib/locationUt
 import { useAuth } from "@/contexts/AuthContext";
 
 export default function Employees() {
+  const PAGE_SIZE = 100;
   const navigate = useNavigate();
   const { role, isOrgAdmin, locationId } = useAuth();
-  const { data: employees, isLoading } = useEmployees();
+  const [page, setPage] = useState(1);
+  const { data: employees, isLoading } = usePagedEmployees({ page, limit: PAGE_SIZE });
   const { data: directorates } = useDirectorates();
   const { data: locations } = useLocations();
   const createEmployee = useCreateEmployee();
@@ -43,9 +45,11 @@ export default function Employees() {
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
   const [transferTarget, setTransferTarget] = useState<Employee | null>(null);
 
-  const employeeList = employees || [];
+  const employeeList = employees?.items || [];
   const directorateList = directorates || [];
   const locationList = locations || [];
+  const totalEmployees = employees?.total || employeeList.length;
+  const totalPages = Math.max(1, Math.ceil(totalEmployees / PAGE_SIZE));
 
   const currentLocation = locationId ? locationList.find((loc) => loc.id === locationId) : undefined;
   const isOrgAdminHeadOffice = isOrgAdmin && isHeadOfficeLocation(currentLocation);
@@ -182,10 +186,32 @@ export default function Employees() {
       <DataTable 
         columns={columns} 
         data={enrichedEmployees} 
+        pagination={false}
         searchPlaceholder="Search employees..." 
         actions={actions} 
         onRowClick={(row) => navigate(`/employees/${row.id}`)}
       />
+      <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
+        <p className="text-sm text-muted-foreground">
+          Showing {employeeList.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1} to{" "}
+          {Math.min(page * PAGE_SIZE, totalEmployees)} of {totalEmployees} employees
+        </p>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page === 1}>
+            Previous
+          </Button>
+          <span className="text-sm font-medium">
+            Page {page} of {totalPages}
+          </span>
+          <Button
+            variant="outline"
+            onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+            disabled={page >= totalPages}
+          >
+            Next
+          </Button>
+        </div>
+      </div>
       <EmployeeFormModal
         open={isModalOpen}
         onOpenChange={setIsModalOpen}

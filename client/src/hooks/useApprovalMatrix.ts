@@ -7,12 +7,14 @@ import {
 } from "@/services/approvalMatrixService";
 
 const { queryKeys, query } = API_CONFIG;
+const { live } = query.profiles;
 
 export const usePendingApprovalMatrixRequests = () => {
   return useQuery({
     queryKey: [...queryKeys.approvalMatrix, "pending"],
     queryFn: approvalMatrixService.getPending,
-    staleTime: query.staleTime,
+    staleTime: live.staleTime,
+    refetchOnWindowFocus: live.refetchOnWindowFocus,
   });
 };
 

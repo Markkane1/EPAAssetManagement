@@ -121,13 +121,13 @@ export default function EmployeeAssetsReport() {
     );
   };
 
-  const handleExportPDF = () => {
+  const handleExportPDF = async () => {
     if (filteredRows.length === 0) {
       toast.error("No employee asset data available for the current filters");
       return;
     }
 
-    generateReportPDF({
+    await generateReportPDF({
       title: "Employee Assets Report",
       headers: ["Employee", "Email", "Directorate", "Job Title", "Assignments", "Asset Tags"],
       data: filteredRows.map((row) => [

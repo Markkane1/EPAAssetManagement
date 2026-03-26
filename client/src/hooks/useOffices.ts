@@ -6,12 +6,14 @@ import { API_CONFIG } from '@/config/api.config';
 import type { Office } from '@/types';
 
 const { queryKeys, messages, query } = API_CONFIG;
+const { referenceData, detail } = query.profiles;
 
 export const useOffices = (filters?: OfficeFilters) => {
   return useQuery({
     queryKey: [...queryKeys.offices, 'all', filters || {}],
     queryFn: () => officeService.getAll(filters) as Promise<Office[]>,
-    staleTime: query.staleTime,
+    staleTime: referenceData.staleTime,
+    refetchOnWindowFocus: referenceData.refetchOnWindowFocus,
   });
 };
 
@@ -20,7 +22,8 @@ export const useOffice = (id: string) => {
     queryKey: [...queryKeys.offices, id],
     queryFn: () => officeService.getById(id),
     enabled: !!id,
-    staleTime: query.staleTime,
+    staleTime: detail.staleTime,
+    refetchOnWindowFocus: detail.refetchOnWindowFocus,
   });
 };
 

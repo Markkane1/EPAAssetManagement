@@ -111,13 +111,13 @@ export default function AssetItemsInventoryReport() {
     );
   };
 
-  const handleExportPDF = () => {
+  const handleExportPDF = async () => {
     if (filteredRows.length === 0) {
       toast.error("No asset items available for the current filters");
       return;
     }
 
-    generateReportPDF({
+    await generateReportPDF({
       title: "Asset Items Inventory Report",
       headers: ["Tag", "Asset", "Serial #", "Location", "Status", "Condition", "Assignment"],
       data: filteredRows.map((row) => [

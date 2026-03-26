@@ -243,7 +243,7 @@ async function downloadAPI(endpoint: string): Promise<Blob> {
   });
   if (!response.ok) {
     const error = await response.text();
-    throw new Error(extractApiErrorMessage(error, response.status));
+    throw new Error(extractApiErrorPayload(error, response.status).message);
   }
   return response.blob();
 }

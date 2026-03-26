@@ -11,11 +11,33 @@ export const API_CONFIG = {
   
   // Query configuration for React Query
   query: {
-    staleTime: 5 * 60 * 1000, // 5 minutes - data is considered fresh for this duration
+    staleTime: 2 * 60 * 1000, // 2 minutes - conservative default for generic queries
     cacheTime: 10 * 60 * 1000, // 10 minutes - unused data remains in cache
-    refetchOnWindowFocus: true, // Refetch data when window regains focus
+    refetchOnWindowFocus: false, // Avoid focus-driven refetch storms on large lists
     retry: 3, // Number of retry attempts for failed queries
     retryDelay: (attemptIndex: number) => Math.min(1000 * 2 ** attemptIndex, 30000),
+    profiles: {
+      heavyList: {
+        staleTime: 10 * 60 * 1000,
+        refetchOnWindowFocus: false,
+      },
+      referenceData: {
+        staleTime: 15 * 60 * 1000,
+        refetchOnWindowFocus: false,
+      },
+      detail: {
+        staleTime: 5 * 60 * 1000,
+        refetchOnWindowFocus: false,
+      },
+      dashboard: {
+        staleTime: 60 * 1000,
+        refetchOnWindowFocus: false,
+      },
+      live: {
+        staleTime: 30 * 1000,
+        refetchOnWindowFocus: false,
+      },
+    },
   },
   
   // Toast messages configuration

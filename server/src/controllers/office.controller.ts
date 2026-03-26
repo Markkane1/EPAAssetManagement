@@ -3,6 +3,7 @@ import { OfficeModel } from '../models/office.model';
 import { mapFields } from '../utils/mapFields';
 import type { AuthRequest } from '../middleware/auth';
 import { escapeRegex, readPagination } from '../utils/requestParsing';
+import { buildSearchTerms, buildSearchTermsQuery } from '../utils/searchTerms';
 
 const fieldMap = {
   name: 'name',
@@ -78,6 +79,15 @@ function asBoolean(value: unknown, fallback: boolean) {
   if (normalized === 'true') return true;
   if (normalized === 'false') return false;
   return fallback;
+}
+
+function resolveOfficeSearchTerms(payload: Record<string, unknown>, existing?: Record<string, unknown> | null) {
+  return buildSearchTerms([
+    payload.name ?? existing?.name,
+    payload.code ?? existing?.code,
+    payload.division ?? existing?.division,
+    payload.district ?? existing?.district,
+  ]);
 }
 
 async function validateSingleActiveHeadOffice(isActive: boolean, excludeOfficeId?: string) {
@@ -228,8 +238,7 @@ export const officeController = {
       const andFilters: Record<string, unknown>[] = [];
       const search = String(query.search || '').trim();
       if (search) {
-        const regex = new RegExp(escapeRegex(search), 'i');
-        andFilters.push({ $or: [{ name: regex }, { code: regex }, { division: regex }, { district: regex }] });
+        andFilters.push(buildSearchTermsQuery(search) || {});
       }
       if (query.type) {
         andFilters.push({ type: String(query.type).trim() });
@@ -331,6 +340,7 @@ export const officeController = {
       } else if (payloadCapabilities) {
         payload.capabilities = { ...payloadCapabilities, chemicals: false };
       }
+      payload.search_terms = resolveOfficeSearchTerms(payload);
       const data = await OfficeModel.create(payload);
       return res.status(201).json(data.toJSON());
     } catch (error) {
@@ -389,6 +399,7 @@ export const officeController = {
           chemicals: false,
         };
       }
+      payload.search_terms = resolveOfficeSearchTerms(payload, existing as Record<string, unknown>);
 
       const data = await OfficeModel.findByIdAndUpdate(officeId, payload, { new: true });
       if (!data) return res.status(404).json({ message: 'Not found' });

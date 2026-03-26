@@ -38,6 +38,13 @@ function clampInt(value: unknown, fallback: number, min: number, max: number) {
   return Math.min(max, Math.max(min, parsed));
 }
 
+function sanitizeDocumentText(value: unknown) {
+  return String(value || '')
+    .replace(/on[a-z]+\s*=/gi, '')
+    .replace(/javascript:/gi, '')
+    .trim();
+}
+
 export async function createDocument(ctx: RequestContext, input: DocumentCreateInput, session?: ClientSession) {
   const officeId = input.officeId || ctx.locationId;
   if (!officeId) throw createHttpError(400, 'Office is required for document');
@@ -45,10 +52,15 @@ export async function createDocument(ctx: RequestContext, input: DocumentCreateI
     throw createHttpError(403, 'Access restricted to assigned office');
   }
 
+  const title = sanitizeDocumentText(input.title);
+  if (!title) {
+    throw createHttpError(400, 'title is required');
+  }
+
   const document = await DocumentModel.create(
     [
       {
-        title: input.title,
+        title,
         doc_type: input.docType,
         status: input.status || 'Draft',
         office_id: officeId,

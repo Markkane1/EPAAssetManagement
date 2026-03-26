@@ -2,8 +2,9 @@ import { Request, Response, NextFunction } from 'express';
 import { createCrudController } from './crudController';
 import { projectRepository } from '../repositories/project.repository';
 import { ProjectModel } from '../models/project.model';
-import { escapeRegex, readPagination } from '../utils/requestParsing';
+import { readPagination } from '../utils/requestParsing';
 import { createHttpError } from '../utils/httpError';
+import { buildSearchTerms, buildSearchTermsQuery } from '../utils/searchTerms';
 
 const baseController = createCrudController({
   repository: projectRepository,
@@ -34,6 +35,13 @@ function buildPayload(body: Record<string, unknown>) {
     }
   });
   return payload;
+}
+
+function resolveProjectSearchTerms(payload: Record<string, unknown>, existing?: Record<string, unknown> | null) {
+  return buildSearchTerms([
+    payload.name ?? existing?.name,
+    payload.code ?? existing?.code,
+  ]);
 }
 
 function toTrimmed(value: unknown) {
@@ -76,6 +84,7 @@ export const projectController = {
     try {
       const payload = buildPayload(req.body || {});
       assertProjectDates(payload);
+      payload.search_terms = resolveProjectSearchTerms(payload);
       const created = await projectRepository.create(payload);
       res.status(201).json(created);
     } catch (error) {
@@ -95,6 +104,7 @@ export const projectController = {
         ...incoming,
       };
       assertProjectDates(merged);
+      incoming.search_terms = resolveProjectSearchTerms(incoming, merged);
 
       const updated = await projectRepository.updateById(String(req.params.id || '').trim(), incoming);
       if (!updated) {
@@ -111,8 +121,7 @@ export const projectController = {
       const search = String((req.query as Record<string, unknown>).search || '').trim();
       const filter: Record<string, unknown> = {};
       if (search) {
-        const regex = new RegExp(escapeRegex(search), 'i');
-        filter.$or = [{ name: regex }, { code: regex }];
+        Object.assign(filter, buildSearchTermsQuery(search) || {});
       }
 
       const projects = await ProjectModel.find(
@@ -134,8 +143,7 @@ export const projectController = {
       const search = String((req.query as Record<string, unknown>).search || '').trim();
       const filter: Record<string, unknown> = { is_active: true };
       if (search) {
-        const regex = new RegExp(escapeRegex(search), 'i');
-        filter.$or = [{ name: regex }, { code: regex }];
+        Object.assign(filter, buildSearchTermsQuery(search) || {});
       }
 
       const projects = await ProjectModel.find(filter, { name: 1, code: 1, start_date: 1, end_date: 1, is_active: 1 })

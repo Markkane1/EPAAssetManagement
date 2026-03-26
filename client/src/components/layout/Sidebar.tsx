@@ -424,7 +424,14 @@ export function Sidebar({ className, isMobileDrawer = false, onNavigate }: Sideb
       <Button
         variant={isActive ? "secondary" : "ghost"}
         size={effectiveCollapsed ? "icon" : "sm"}
-        className={cn("w-full", effectiveCollapsed ? "justify-center" : "justify-start", linkClassName)}
+        className={cn(
+          "h-10 w-full rounded-2xl",
+          effectiveCollapsed ? "justify-center" : "justify-start px-3",
+          isActive
+            ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-[0_16px_32px_-18px_rgba(34,211,238,0.45)] hover:bg-sidebar-primary/95 hover:text-sidebar-primary-foreground"
+            : "text-sidebar-foreground/78 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+          linkClassName
+        )}
         asChild
       >
         <Link
@@ -445,7 +452,7 @@ export function Sidebar({ className, isMobileDrawer = false, onNavigate }: Sideb
           <Icon className={cn("h-4 w-4 shrink-0", !effectiveCollapsed && "mr-2")} />
           {!effectiveCollapsed && <span className="truncate">{item.label}</span>}
           {!effectiveCollapsed && item.badge && (
-            <span className="ml-auto bg-primary text-primary-foreground text-xs px-2 py-0.5 rounded-full">
+            <span className="ml-auto rounded-full bg-sidebar-primary/20 px-2 py-0.5 text-[11px] font-semibold text-sidebar-primary">
               {item.badge}
             </span>
           )}
@@ -470,30 +477,33 @@ export function Sidebar({ className, isMobileDrawer = false, onNavigate }: Sideb
   return (
     <aside
       className={cn(
-        "shrink-0 bg-sidebar border-r border-sidebar-border transition-all duration-300",
+        "shrink-0 border-r border-sidebar-border/80 bg-sidebar text-sidebar-foreground transition-all duration-300",
         isMobileDrawer ? "h-full w-full border-r-0" : "h-dvh",
-        isMobileDrawer ? "w-full" : effectiveCollapsed ? "w-16" : "w-64",
+        isMobileDrawer ? "w-full" : effectiveCollapsed ? "w-[5.5rem]" : "w-[18rem]",
         className
       )}
     >
       <div className="flex h-full flex-col">
         {/* Logo */}
-        <div className="flex h-16 items-center justify-between px-4 border-b border-sidebar-border">
+        <div className="flex h-[5.25rem] items-center justify-between border-b border-sidebar-border/80 px-4">
           {!effectiveCollapsed && (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
               <img 
                 src={epaLogo} 
                 alt="EPA Logo" 
-                className="h-10 w-10 rounded-lg object-contain bg-white"
+                className="h-11 w-11 rounded-2xl border border-white/20 object-contain bg-white/95 p-1"
               />
-              <span className="font-semibold text-sidebar-foreground">EPA AMS</span>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-sidebar-foreground">EPA AMS</p>
+                <p className="text-xs uppercase tracking-[0.16em] text-sidebar-foreground/55">Asset workspace</p>
+              </div>
             </div>
           )}
           {!isMobileDrawer && (
             <Button
               variant="ghost"
               size="icon"
-              className="h-8 w-8 text-sidebar-foreground hover:bg-sidebar-accent"
+              className="h-8 w-8 rounded-2xl text-sidebar-foreground hover:bg-sidebar-accent"
               onClick={() => setCollapsed(!collapsed)}
             >
               {effectiveCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
@@ -507,7 +517,7 @@ export function Sidebar({ className, isMobileDrawer = false, onNavigate }: Sideb
           onScroll={(e) => {
             sessionStorage.setItem(SIDEBAR_SCROLL_KEY, String((e.currentTarget as HTMLElement).scrollTop));
           }}
-          className="flex-1 overflow-y-auto overscroll-contain p-4 space-y-6 scrollbar-thin"
+          className="flex-1 space-y-7 overflow-y-auto overscroll-contain p-4 scrollbar-thin"
         >
           {/* Main */}
           {(() => {
@@ -538,6 +548,11 @@ export function Sidebar({ className, isMobileDrawer = false, onNavigate }: Sideb
             const remainingItems = items.filter((item) => item.href !== "/");
             return (
               <div className="space-y-1">
+                {!effectiveCollapsed && (
+                  <p className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-sidebar-foreground/45">
+                    Workspace
+                  </p>
+                )}
                 {dashboardItem && <NavLink item={dashboardItem} />}
                 {showMovable && !effectiveCollapsed && (
                   <Collapsible open={movableOpen} onOpenChange={setMovableOpen}>
@@ -641,6 +656,11 @@ export function Sidebar({ className, isMobileDrawer = false, onNavigate }: Sideb
             return (
               <div className="space-y-1">
                 {!effectiveCollapsed && (
+                  <p className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-sidebar-foreground/45">
+                    Operations
+                  </p>
+                )}
+                {!effectiveCollapsed && (
                   <Collapsible open={managementOpen} onOpenChange={setManagementOpen}>
                     <CollapsibleTrigger asChild>
                       <Button
@@ -687,7 +707,7 @@ export function Sidebar({ className, isMobileDrawer = false, onNavigate }: Sideb
             return (
               <div className="space-y-1">
                 {!effectiveCollapsed && (
-                  <p className="px-3 text-xs font-semibold text-sidebar-foreground/50 uppercase tracking-wider mb-2">
+                  <p className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-sidebar-foreground/45">
                     System
                   </p>
                 )}
@@ -753,13 +773,13 @@ export function Sidebar({ className, isMobileDrawer = false, onNavigate }: Sideb
         </nav>
 
         {/* Footer */}
-        <div className="border-t border-sidebar-border p-3">
+        <div className="border-t border-sidebar-border/80 p-3">
           {!effectiveCollapsed ? (
-            <div className="flex items-center gap-3 px-3 py-2">
+            <div className="flex items-center gap-3 rounded-2xl border border-white/5 bg-white/[0.03] px-3 py-3">
               <div className={cn(
-                "h-8 w-8 rounded-full flex items-center justify-center font-medium text-sm",
+                "flex h-10 w-10 items-center justify-center rounded-2xl text-sm font-medium",
                 isOrgAdmin 
-                  ? "bg-yellow-500 text-yellow-950" 
+                  ? "bg-yellow-400 text-yellow-950" 
                   : "bg-sidebar-primary text-sidebar-primary-foreground"
               )}>
                 {isOrgAdmin ? <Crown className="h-4 w-4" /> : getUserInitials()}
@@ -768,7 +788,7 @@ export function Sidebar({ className, isMobileDrawer = false, onNavigate }: Sideb
                 <p className="text-sm font-medium text-sidebar-foreground truncate">
                   {user?.email?.split('@')[0] || 'User'}
                 </p>
-                <p className="text-xs text-sidebar-foreground/60 truncate">{getRoleLabel()}</p>
+                <p className="truncate text-xs uppercase tracking-[0.14em] text-sidebar-foreground/55">{getRoleLabel()}</p>
               </div>
             </div>
           ) : (
@@ -776,9 +796,9 @@ export function Sidebar({ className, isMobileDrawer = false, onNavigate }: Sideb
               <TooltipTrigger asChild>
                 <div className="flex justify-center">
                   <div className={cn(
-                    "h-8 w-8 rounded-full flex items-center justify-center font-medium text-sm cursor-pointer",
+                    "flex h-10 w-10 cursor-pointer items-center justify-center rounded-2xl text-sm font-medium",
                     isOrgAdmin 
-                      ? "bg-yellow-500 text-yellow-950" 
+                      ? "bg-yellow-400 text-yellow-950" 
                       : "bg-sidebar-primary text-sidebar-primary-foreground"
                   )}>
                     {isOrgAdmin ? <Crown className="h-4 w-4" /> : getUserInitials()}

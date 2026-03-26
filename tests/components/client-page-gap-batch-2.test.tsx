@@ -5,6 +5,11 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 
+const routerFuture = {
+  v7_startTransition: true,
+  v7_relativeSplatPath: true,
+} as const;
+
 const navigateMock = vi.fn();
 const apiPostMock = vi.fn();
 const toastSuccessMock = vi.fn();
@@ -130,6 +135,12 @@ vi.mock("sonner", () => ({ toast: { success: (...args: unknown[]) => toastSucces
 vi.mock("@/lib/api", () => ({ default: { post: (...args: unknown[]) => apiPostMock(...args) }, API_BASE_URL: "/api" }));
 vi.mock("@/contexts/AuthContext", () => ({ useAuth: () => ({ role: "org_admin", isOrgAdmin: true, locationId: "office-1", user: { id: "user-1", email: "ava@example.com" } }) }));
 vi.mock("@/contexts/PageSearchContext", () => ({ usePageSearch: () => ({ term: "", setTerm: pageSearchSetTermMock }) }));
+vi.mock("@/hooks/useDashboard", () => ({
+  useDashboardMe: () => ({
+    data: { employeeId: "employee-1", employee: employees[0], openRequisitionsCount: 0, openReturnsCount: 0 },
+    isLoading: false,
+  }),
+}));
 vi.mock("@/components/layout/MainLayout", () => ({ MainLayout: ({ title, description, children }: any) => <div><h1>{title}</h1><p>{description}</p>{children}</div> }));
 vi.mock("@/components/shared/PageHeader", () => ({ PageHeader: ({ title, description, action, extra }: any) => <div><h2>{title}</h2><p>{description}</p>{action ? <button type="button" onClick={action.onClick}>{action.label}</button> : null}{extra}</div> }));
 vi.mock("@/components/shared/StatusBadge", () => ({ StatusBadge: ({ status }: { status: string }) => <span>{status}</span> }));
@@ -203,6 +214,10 @@ vi.mock("@/hooks/useAssetItems", () => ({ useAssetItems: () => ({ data: assetIte
 vi.mock("@/hooks/useAssets", () => ({ useAssets: () => ({ data: assets, isLoading: false }) }));
 vi.mock("@/hooks/useAssignments", () => ({
   useAssignments: () => ({ data: assignments, isLoading: false }),
+  usePagedAssignments: () => ({
+    data: { items: assignments, total: assignments.length, page: 1, limit: 100 },
+    isLoading: false,
+  }),
   useCreateAssignment: () => makeMutation(),
   useRequestReturn: () => makeMutation(),
   useReassignAsset: () => makeMutation(),
@@ -223,7 +238,11 @@ async function renderPage(modulePath: string) {
   cleanup();
   const pageModule = await import(modulePath);
   const Component = pageModule.default;
-  return render(<MemoryRouter><Component /></MemoryRouter>);
+  return render(
+    <MemoryRouter future={routerFuture}>
+      <Component />
+    </MemoryRouter>
+  );
 }
 
 describe("client page gap batch", () => {

@@ -1,4 +1,4 @@
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
@@ -63,6 +63,9 @@ export function RecordDetailModal({
       <DialogContent className="sm:max-w-[920px]">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>
+            View linked documents, approvals, requirements, and audit activity for the selected record.
+          </DialogDescription>
         </DialogHeader>
         <ScrollArea className="max-h-[70vh] pr-4">
           {(lookupQuery.isLoading || detailQuery.isLoading) && (

@@ -54,7 +54,7 @@ export function SearchableSelect({
           role="combobox"
           aria-expanded={open}
           disabled={disabled}
-          className={cn("w-full justify-between font-normal", triggerClassName)}
+          className={cn("h-11 w-full justify-between rounded-xl font-normal", triggerClassName)}
         >
           <span className="truncate text-left">
             {selectedOption ? selectedOption.label : placeholder}
@@ -62,7 +62,7 @@ export function SearchableSelect({
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className={cn("w-[--radix-popover-trigger-width] p-0", className)} align="start">
+      <PopoverContent className={cn("w-[--radix-popover-trigger-width] rounded-2xl border-border/80 p-0 shadow-[0_24px_60px_-32px_rgba(15,23,42,0.45)]", className)} align="start">
         <Command>
           <CommandInput placeholder={searchPlaceholder} />
           <CommandList>

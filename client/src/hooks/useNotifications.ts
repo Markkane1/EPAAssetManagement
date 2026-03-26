@@ -6,6 +6,7 @@ import {
 } from '@/services/notificationService';
 
 const { queryKeys, query } = API_CONFIG;
+const { live } = query.profiles;
 
 type UseNotificationsParams = NotificationListQuery & {
   scopeKey?: string | number | null;
@@ -17,7 +18,8 @@ export const useNotifications = (params: UseNotificationsParams = {}) => {
   return useQuery({
     queryKey: [...queryKeys.notifications, scopeKey, unreadOnly ?? false, limit ?? 20, page ?? 1],
     queryFn: () => notificationService.list({ unreadOnly, limit, page }),
-    staleTime: query.staleTime,
+    staleTime: live.staleTime,
+    refetchOnWindowFocus: live.refetchOnWindowFocus,
     enabled,
   });
 };

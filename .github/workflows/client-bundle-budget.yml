@@ -26,5 +26,7 @@ jobs:
       - name: Run bundle budget gate
         env:
           CLIENT_MAX_CHUNK_KB: 600
+          CLIENT_MAX_CHUNK_GZIP_KB: 200
+          CLIENT_MAX_ENTRY_KB: 350
+          CLIENT_MAX_ENTRY_GZIP_KB: 120
         run: npm run build:client:budget
-

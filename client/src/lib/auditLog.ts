@@ -44,7 +44,16 @@ export interface AuditLogEntry {
 }
 
 const AUDIT_LOG_KEY = 'audit_logs';
-const MAX_LOGS = 500; // Keep last 500 entries in localStorage
+const MAX_LOGS = 500; // Keep last 500 entries in memory for the current tab session
+let inMemoryAuditLogs: AuditLogEntry[] = [];
+
+const purgeLegacyAuditStorage = (): void => {
+  try {
+    localStorage.removeItem(AUDIT_LOG_KEY);
+  } catch {
+    // Ignore storage access errors
+  }
+};
 
 // Generate unique ID
 const generateId = (): string => {
@@ -95,7 +104,9 @@ export const createAuditLog = (
     metadata: options.metadata,
   };
 
-  // Store in localStorage
+  // Keep logs only in memory for the current tab session.
+  // Persisting audit data in localStorage retained user activity and PII on
+  // shared browsers long after logout, which is not acceptable for this app.
   saveAuditLog(entry);
 
   // In production, also send to backend
@@ -104,32 +115,16 @@ export const createAuditLog = (
   return entry;
 };
 
-// Save audit log to localStorage
+// Save audit log in memory only
 const saveAuditLog = (entry: AuditLogEntry): void => {
-  try {
-    const logs = getAuditLogs();
-    logs.unshift(entry); // Add to beginning
-    
-    // Keep only last MAX_LOGS entries
-    const trimmedLogs = logs.slice(0, MAX_LOGS);
-    
-    localStorage.setItem(AUDIT_LOG_KEY, JSON.stringify(trimmedLogs));
-  } catch {
-    // Ignore localStorage write errors
-  }
+  purgeLegacyAuditStorage();
+  inMemoryAuditLogs = [entry, ...inMemoryAuditLogs].slice(0, MAX_LOGS);
 };
 
 // Get all audit logs
 export const getAuditLogs = (): AuditLogEntry[] => {
-  try {
-    const logsStr = localStorage.getItem(AUDIT_LOG_KEY);
-    if (logsStr) {
-      return JSON.parse(logsStr);
-    }
-  } catch {
-    // Ignore parse errors
-  }
-  return [];
+  purgeLegacyAuditStorage();
+  return [...inMemoryAuditLogs];
 };
 
 // Filter audit logs
@@ -167,7 +162,8 @@ export const filterAuditLogs = (filters: {
 
 // Clear all audit logs (admin only)
 export const clearAuditLogs = (): void => {
-  localStorage.removeItem(AUDIT_LOG_KEY);
+  inMemoryAuditLogs = [];
+  purgeLegacyAuditStorage();
 };
 
 // Export audit logs as JSON

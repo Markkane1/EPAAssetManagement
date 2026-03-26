@@ -23,10 +23,58 @@ export interface DashboardData {
   }>;
 }
 
+export interface DashboardMeSummary {
+  employeeId: string | null;
+  employee: {
+    id: string;
+    first_name: string;
+    last_name: string;
+    email: string;
+    directorate_id: string | null;
+    location_id: string | null;
+  } | null;
+  openRequisitionsCount: number;
+  openReturnsCount: number;
+}
+
+export interface DashboardAdminPanels {
+  recentItems: Array<{
+    id: string;
+    tag: string | null;
+    serial_number: string | null;
+    item_status: string | null;
+    item_condition: string | null;
+  }>;
+  locations: Array<{
+    id: string;
+    name: string;
+    address: string | null;
+    assetCount: number;
+  }>;
+  storeItemCount: number;
+}
+
+function toQueryString(params?: Record<string, unknown>) {
+  if (!params) return '';
+  const query = Object.entries(params).reduce<Record<string, string>>((acc, [key, value]) => {
+    if (value !== undefined && value !== null && value !== '') {
+      acc[key] = String(value);
+    }
+    return acc;
+  }, {});
+  const encoded = new URLSearchParams(query).toString();
+  return encoded ? `?${encoded}` : '';
+}
+
 export const dashboardService = {
   getStats: () => api.get<DashboardStats>('/dashboard/stats'),
   
   getDashboardData: () => api.get<DashboardData>('/dashboard'),
+
+  getMySummary: () => api.get<DashboardMeSummary>('/dashboard/me'),
+
+  getAdminPanels: (search?: string) =>
+    api.get<DashboardAdminPanels>(`/dashboard/panels${toQueryString({ search })}`),
   
   getRecentActivity: (limit?: number) => 
     api.get<DashboardData['recentActivity']>(`/dashboard/activity${limit ? `?limit=${limit}` : ''}`),

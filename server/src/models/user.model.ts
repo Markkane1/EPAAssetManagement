@@ -1,5 +1,6 @@
 import mongoose, { Schema } from 'mongoose';
 import { baseSchemaOptions } from './base';
+import { buildSearchTerms } from '../utils/searchTerms';
 
 const UserSchema = new Schema<any>(
   {
@@ -20,9 +21,17 @@ const UserSchema = new Schema<any>(
     password_reset_token_hash: { type: String, default: null },
     password_reset_expires_at: { type: Date, default: null },
     password_reset_requested_at: { type: Date, default: null },
+    search_terms: { type: [String], default: undefined, select: false },
   },
   baseSchemaOptions
 );
+
+UserSchema.pre('validate', function (next) {
+  this.search_terms = buildSearchTerms([this.email, this.first_name, this.last_name]);
+  next();
+});
+
+UserSchema.index({ search_terms: 1, created_at: -1 });
 
 export const UserModel = mongoose.model<any>('User', UserSchema);
 

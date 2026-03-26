@@ -109,6 +109,26 @@ describe("AuthProvider", () => {
     expect(screen.getByTestId("roles")).toHaveTextContent("");
   });
 
+  it("should preserve cached auth data when /auth/me fails transiently", async () => {
+    localStorage.setItem(
+      "user",
+      JSON.stringify({ id: "cached", email: "cached@example.com", role: "employee", activeRole: "employee", roles: ["employee"] })
+    );
+
+    mswServer.use(
+      http.get(`${API_BASE_URL}/auth/me`, () =>
+        HttpResponse.json({ message: "Temporary failure" }, { status: 500 })
+      )
+    );
+
+    renderProvider();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("auth-state")).toHaveTextContent("guest");
+    });
+    expect(localStorage.getItem("user")).toContain("cached@example.com");
+  });
+
   it("should execute login, activity logging, role switching, and logout against the API surface", async () => {
     let meState = {
       id: "user-1",

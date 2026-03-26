@@ -33,16 +33,16 @@ export function MainLayout({ children, title, description, searchPlaceholder }: 
   }, [location.pathname]);
 
   return (
-    <div className="flex h-dvh min-h-dvh overflow-hidden bg-background">
+    <div className="app-shell flex h-dvh min-h-dvh overflow-hidden">
       <div className="hidden md:block">
         <Sidebar />
       </div>
       <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
-        <SheetContent side="left" className="w-[88vw] max-w-[22rem] p-0">
+        <SheetContent side="left" className="w-[90vw] max-w-[22rem] border-r-0 bg-transparent p-0 shadow-none">
           <Sidebar isMobileDrawer onNavigate={() => setMobileNavOpen(false)} />
         </SheetContent>
       </Sheet>
-      <div className="flex-1 flex flex-col">
+      <div className="flex min-w-0 flex-1 flex-col">
         <Header
           title={title}
           description={description}
@@ -53,9 +53,11 @@ export function MainLayout({ children, title, description, searchPlaceholder }: 
         />
         <main 
           ref={mainRef}
-          className="flex-1 overflow-y-auto overscroll-contain p-4 sm:p-6 lg:p-8"
+          className="flex-1 overflow-y-auto overscroll-contain px-3 pb-6 pt-3 sm:px-5 sm:pb-8 sm:pt-4 lg:px-8"
         >
-          {children}
+          <div className="app-main">
+            <div className="page-content">{children}</div>
+          </div>
         </main>
       </div>
     </div>

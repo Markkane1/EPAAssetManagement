@@ -26,6 +26,7 @@ import { useConsumableMode } from '@/hooks/useConsumableMode';
 import { filterItemsByMode } from '@/lib/consumableMode';
 import { ConsumableModeToggle } from '@/components/consumables/ConsumableModeToggle';
 import { useAuth } from '@/contexts/AuthContext';
+import { MetricCard, TimelineList, WorkflowPanel } from '@/components/shared/workflow';
 
 export default function ConsumableMaster() {
   const { role, isOrgAdmin } = useAuth();
@@ -46,6 +47,15 @@ export default function ConsumableMaster() {
   const categoryList = categories || [];
   const unitList = units || [];
   const itemList = filterItemsByMode(items || [], mode);
+  const lotTrackedCount = itemList.filter((item) => item.requires_lot_tracking).length;
+  const containerTrackedCount = itemList.filter((item) => item.is_controlled || item.requires_container_tracking).length;
+  const recentTimeline = itemList.slice(0, 5).map((item) => ({
+    id: item.id,
+    title: item.name,
+    description: categoryList.find((cat) => cat.id === item.category_id)?.name || 'Uncategorized',
+    meta: `${item.base_uom} base unit`,
+    badge: item.is_chemical ? 'CHEMICAL' : 'GENERAL',
+  }));
 
   const columns = [
     {
@@ -150,16 +160,47 @@ export default function ConsumableMaster() {
       <PageHeader
         title="Item Master"
         description={`Create and maintain ${modeLabel} inventory items`}
+        eyebrow="Master data"
+        meta={
+          <>
+            <span>{itemList.length} items in this mode</span>
+            <span className="hidden h-1 w-1 rounded-full bg-border sm:inline-block" />
+            <span>{canManage ? 'Editable' : 'Read-only'}</span>
+          </>
+        }
         extra={<ConsumableModeToggle mode={mode} onChange={setMode} />}
         action={canManage ? { label: 'Add Consumable Item', onClick: handleAdd } : undefined}
       />
 
-      <DataTable
-        columns={columns}
-        data={itemList as any}
-        searchPlaceholder="Search consumable items..."
-        actions={canManage ? actions : undefined}
-      />
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <MetricCard label="Items" value={itemList.length} helper="Visible in the active consumable mode" icon={Loader2} tone="primary" />
+        <MetricCard label="Lot tracked" value={lotTrackedCount} helper="Items requiring batch-level tracking" icon={Loader2} tone="warning" />
+        <MetricCard label="Container tracked" value={containerTrackedCount} helper="Items requiring container or controlled tracking" icon={Loader2} />
+        <MetricCard label="Units" value={unitList.length} helper="Reusable consumable units of measure" icon={Loader2} />
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <WorkflowPanel title="Consumable item master" description="Manage item definitions, units, and tracking requirements.">
+          <DataTable
+            columns={columns}
+            data={itemList as any}
+            searchPlaceholder="Search consumable items..."
+            actions={canManage ? actions : undefined}
+            emptyState={{
+              title: "No consumable items in this mode",
+              description: "Create the first item to start managing consumable inventory.",
+            }}
+          />
+        </WorkflowPanel>
+
+        <WorkflowPanel title="Recent item definitions" description="A compact look at the latest visible item definitions in this mode.">
+          <TimelineList
+            items={recentTimeline}
+            emptyTitle="No items yet"
+            emptyDescription="Item definitions will appear here once you add consumables to the master list."
+          />
+        </WorkflowPanel>
+      </div>
 
       {canManage && (
         <ConsumableItemFormModal

@@ -1,5 +1,6 @@
 import mongoose, { Schema } from 'mongoose';
 import { baseSchemaOptions } from './base';
+import { buildSearchTerms } from '../utils/searchTerms';
 
 function isValidDateString(value: unknown) {
   if (typeof value !== 'string' || value.trim().length === 0) return false;
@@ -30,9 +31,15 @@ const ProjectSchema = new Schema<any>(
     },
     budget: { type: Number, default: null },
     is_active: { type: Boolean, default: true },
+    search_terms: { type: [String], default: undefined, select: false },
   },
   baseSchemaOptions
 );
+
+ProjectSchema.pre('validate', function (next) {
+  this.search_terms = buildSearchTerms([this.name, this.code]);
+  next();
+});
 
 ProjectSchema.pre('validate', function (next) {
   const start = new Date(String(this.start_date ?? ''));
@@ -46,6 +53,7 @@ ProjectSchema.pre('validate', function (next) {
 ProjectSchema.index({ is_active: 1, created_at: -1 });
 ProjectSchema.index({ created_at: -1 });
 ProjectSchema.index({ name: 1, is_active: 1 });
+ProjectSchema.index({ search_terms: 1, created_at: -1 });
 
 export const ProjectModel = mongoose.model<any>('Project', ProjectSchema);
 

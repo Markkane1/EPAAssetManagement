@@ -111,13 +111,13 @@ export default function AssetSummaryReport() {
     );
   };
 
-  const handleExportPDF = () => {
+  const handleExportPDF = async () => {
     if (filteredRows.length === 0) {
       toast.error("No asset data available for the current filters");
       return;
     }
 
-    generateReportPDF({
+    await generateReportPDF({
       title: "Asset Summary Report",
       headers: ["Name", "Category", "Qty", "Items", "Unit Price", "Total Value", "Acq. Date", "Status"],
       data: filteredRows.map((row) => [

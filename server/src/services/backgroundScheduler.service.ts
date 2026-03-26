@@ -14,7 +14,13 @@ let schedulerState: SchedulerState | null = null;
 
 function scheduleNext(state: SchedulerState, callback: () => Promise<void>, delayMs: number) {
   const safeDelay = Number.isFinite(delayMs) && delayMs > 0 ? Math.floor(delayMs) : 60_000;
-  const timer = setTimeout(async () => {
+  // Declare before assignment so the callback can reference it for self-removal.
+  let timer: NodeJS.Timeout;
+  timer = setTimeout(async () => {
+    // Remove this handle as soon as it fires — keeps state.timers to only
+    // currently-pending timers instead of accumulating every historical handle.
+    const idx = state.timers.indexOf(timer);
+    if (idx !== -1) state.timers.splice(idx, 1);
     if (state.stopped) return;
     try {
       await callback();

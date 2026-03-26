@@ -26,6 +26,7 @@ const EmployeeSchema = new Schema<any>(
 EmployeeSchema.index({ location_id: 1, created_at: -1 });
 EmployeeSchema.index({ location_id: 1, default_sub_location_id: 1 });
 EmployeeSchema.index({ directorate_id: 1, location_id: 1, created_at: -1 });
+EmployeeSchema.index({ user_id: 1 });
 EmployeeSchema.index({ transferred_to_office_id: 1, transferred_at: -1 });
 EmployeeSchema.index({ transferred_from_office_id: 1, transferred_at: -1 });
 

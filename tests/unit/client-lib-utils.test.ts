@@ -119,6 +119,7 @@ describe("client library utilities", () => {
     const entry = audit.createAuditLog("CREATE", "ASSET", { resource: "asset", resourceId: "asset-1", details: "created" });
     expect(entry.userEmail).toBe("ava@example.com");
     expect(audit.getAuditLogs()).toHaveLength(1);
+    expect(localStorage.getItem("audit_logs")).toBeNull();
     expect(audit.filterAuditLogs({ category: "ASSET" })).toHaveLength(1);
     expect(audit.exportAuditLogsAsJSON()).toMatch(/asset-1/);
     expect(audit.exportAuditLogsAsCSV()).toMatch(/Timestamp/);

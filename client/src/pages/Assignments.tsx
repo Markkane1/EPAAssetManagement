@@ -20,7 +20,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Assignment } from "@/types";
-import { useAssignments, useCreateAssignment, useRequestReturn, useReassignAsset } from "@/hooks/useAssignments";
+import {
+  useAssignments,
+  useCreateAssignment,
+  usePagedAssignments,
+  useRequestReturn,
+  useReassignAsset,
+} from "@/hooks/useAssignments";
 import { useAssetItems } from "@/hooks/useAssetItems";
 import { useAssets } from "@/hooks/useAssets";
 import { useEmployees } from "@/hooks/useEmployees";
@@ -28,13 +34,13 @@ import { AssignmentFormModal } from "@/components/forms/AssignmentFormModal";
 import { ReassignmentFormModal } from "@/components/forms/ReassignmentFormModal";
 import { ReturnFormModal } from "@/components/forms/ReturnFormModal";
 import { useAuth } from "@/contexts/AuthContext";
+import { useDashboardMe } from "@/hooks/useDashboard";
+import { MetricCard, TimelineList, WorkflowPanel } from "@/components/shared/workflow";
 
 export default function Assignments() {
-  const { role, user } = useAuth();
-  const { data: assignments, isLoading } = useAssignments();
-  const { data: assetItems } = useAssetItems();
-  const { data: assets } = useAssets();
-  const { data: employees } = useEmployees();
+  const PAGE_SIZE = 100;
+  const { role } = useAuth();
+  const [page, setPage] = useState(1);
   const createAssignment = useCreateAssignment();
   const requestReturn = useRequestReturn();
   const reassignAsset = useReassignAsset();
@@ -46,51 +52,51 @@ export default function Assignments() {
     open: false,
     assignment: null,
   });
+  const isLimitedRole = role === "employee" || role === "office_head";
+  const needsFullLists = !isLimitedRole && (isModalOpen || isReassignOpen || isReturnOpen);
+  const needsEmployeeLookup = role === "office_head" || needsFullLists;
+  const { data: assignments, isLoading } = usePagedAssignments({ page, limit: PAGE_SIZE });
+  const { data: me, isLoading: isMeLoading } = useDashboardMe({ enabled: isLimitedRole });
+  const { data: assetItems } = useAssetItems({ enabled: needsFullLists });
+  const { data: assets } = useAssets({ enabled: needsFullLists });
+  const { data: employees } = useEmployees({ enabled: needsEmployeeLookup });
+  const { data: modalAssignments } = useAssignments({ enabled: needsFullLists });
 
-  const assignmentList = assignments || [];
+  const assignmentList = assignments?.items || [];
   const assetItemList = assetItems || [];
   const assetList = assets || [];
   const employeeList = employees || [];
+  const fullAssignmentList = modalAssignments || [];
+  const totalAssignments = assignments?.total || assignmentList.length;
+  const totalPages = Math.max(1, Math.ceil(totalAssignments / PAGE_SIZE));
 
-  const currentEmployee = user
-    ? employeeList.find((employee) => employee.email?.toLowerCase() === user.email.toLowerCase())
-    : undefined;
-
-  const directorateEmployeeIds = currentEmployee?.directorate_id
-    ? new Set(
-        employeeList
-          .filter((employee) => employee.directorate_id === currentEmployee.directorate_id)
-          .map((employee) => employee.id)
-      )
-    : new Set<string>();
-
-  const isLimitedRole = role === "employee" || role === "office_head";
-
+  const currentEmployeeId = me?.employeeId || null;
+  const currentDirectorateId = me?.employee?.directorate_id || null;
   const visibleAssignments = assignmentList.filter((assignment) => {
     if (role === "employee") {
-      return currentEmployee ? assignment.employee_id === currentEmployee.id : false;
+      return currentEmployeeId ? assignment.employee_id === currentEmployeeId : false;
     }
     if (role === "office_head") {
-      return currentEmployee?.directorate_id
-        ? directorateEmployeeIds.has(assignment.employee_id)
+      return currentDirectorateId
+        ? employeeList.some(
+            (employee) =>
+              employee.id === assignment.employee_id && employee.directorate_id === currentDirectorateId
+          )
         : false;
     }
     return true;
   });
-
-  const enrichedAssignments = visibleAssignments.map((assignment) => {
-    const item = assetItemList.find((i) => i.id === assignment.asset_item_id);
-    const asset = item ? assetList.find((a) => a.id === item.asset_id) : null;
-    const employee = employeeList.find((e) => e.id === assignment.employee_id);
-    
-    return {
-      ...assignment,
-      assetName: asset?.name || "N/A",
-      itemTag: item?.tag || "N/A",
-      employeeName: employee ? `${employee.first_name} ${employee.last_name}` : "N/A",
-      employeeEmail: employee?.email || "N/A",
-    };
-  });
+  const activeAssignments = visibleAssignments.filter((assignment) => assignment.is_active).length;
+  const returnedAssignments = visibleAssignments.length - activeAssignments;
+  const expectedReturns = visibleAssignments.filter((assignment) => Boolean(assignment.expected_return_date)).length;
+  const recentTimeline = visibleAssignments.slice(0, 5).map((assignment) => ({
+    id: assignment.id,
+    title: `${assignment.assetName || "Asset"} - ${assignment.itemTag || assignment.id}`,
+    description: assignment.employeeName || "Unassigned employee",
+    meta: assignment.assigned_date ? new Date(assignment.assigned_date).toLocaleDateString() : "Date unavailable",
+    badge: assignment.is_active ? "ACTIVE" : "RETURNED",
+    icon: assignment.is_active ? PackageCheck : RotateCcw,
+  }));
 
   const columns = [
     {
@@ -202,7 +208,7 @@ export default function Assignments() {
     </DropdownMenu>
   );
 
-  if (isLoading) {
+  if (isLoading || (isLimitedRole && isMeLoading) || (role === "office_head" && needsEmployeeLookup && !employees)) {
     return (
       <MainLayout title="Assignments" description="Track asset assignments to employees">
         <div className="flex items-center justify-center h-64">
@@ -217,6 +223,14 @@ export default function Assignments() {
       <PageHeader
         title="Assignments"
         description="View and manage asset assignments"
+        eyebrow={isLimitedRole ? "Scoped view" : "Operations"}
+        meta={
+          <>
+            <span>{visibleAssignments.length} assignments in view</span>
+            <span className="hidden h-1 w-1 rounded-full bg-border sm:inline-block" />
+            <span>{isLimitedRole ? "Restricted by your role" : "Full assignment operations"}</span>
+          </>
+        }
         action={
           isLimitedRole
             ? undefined
@@ -241,13 +255,64 @@ export default function Assignments() {
         }
       />
 
-      <DataTable
-        columns={columns}
-        data={enrichedAssignments}
-        searchPlaceholder="Search assignments..."
-        actions={isLimitedRole ? undefined : actions}
-        virtualized
-      />
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <MetricCard label="Visible assignments" value={visibleAssignments.length} helper="Based on your role scope" icon={PackageCheck} tone="primary" />
+        <MetricCard label="Active" value={activeAssignments} helper="Currently issued items" icon={RefreshCw} tone="success" />
+        <MetricCard label="Returned" value={returnedAssignments} helper="Closed assignment records" icon={RotateCcw} />
+        <MetricCard label="Expected returns" value={expectedReturns} helper="Records with a target return date" icon={Calendar} tone="warning" />
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <WorkflowPanel
+          title="Assignment worklist"
+          description="Search, review, and act on assignment records. Open the row menu for operational actions."
+        >
+          <DataTable
+            columns={columns}
+            data={visibleAssignments}
+            pagination={false}
+            searchPlaceholder="Search assignments..."
+            actions={isLimitedRole ? undefined : actions}
+            virtualized
+            emptyState={{
+              title: "No assignments available",
+              description: "Assignments will appear here once assets are issued within your scope.",
+            }}
+          />
+          <div className="mt-4 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
+            <p className="text-sm text-muted-foreground">
+              Showing {assignmentList.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1} to{" "}
+              {Math.min(page * PAGE_SIZE, totalAssignments)} of {totalAssignments} assignments
+            </p>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page === 1}>
+                Previous
+              </Button>
+              <span className="text-sm font-medium">
+                Page {page} of {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                disabled={page >= totalPages}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        </WorkflowPanel>
+
+        <WorkflowPanel
+          title="Recent assignment activity"
+          description="A compact timeline of the latest assignment records in this page."
+        >
+          <TimelineList
+            items={recentTimeline}
+            emptyTitle="No assignment activity yet"
+            emptyDescription="Recent assignment updates will appear here once records are available."
+          />
+        </WorkflowPanel>
+      </div>
 
       {!isLimitedRole && (
         <>
@@ -263,7 +328,7 @@ export default function Assignments() {
           <ReassignmentFormModal
             open={isReassignOpen}
             onOpenChange={setIsReassignOpen}
-            assignments={assignmentList as any}
+            assignments={fullAssignmentList as any}
             assetItems={assetItemList as any}
             employees={employeeList as any}
             assets={assetList as any}
@@ -273,7 +338,7 @@ export default function Assignments() {
           <ReturnFormModal
             open={isReturnOpen}
             onOpenChange={setIsReturnOpen}
-            assignments={assignmentList as any}
+            assignments={fullAssignmentList as any}
             assetItems={assetItemList as any}
             employees={employeeList as any}
             assets={assetList as any}

@@ -1,8 +1,13 @@
-import type { ClientSession } from 'mongoose';
+import { Types, type ClientSession } from 'mongoose';
 import { RecordModel } from '../../../models/record.model';
 import { DocumentLinkModel } from '../../../models/documentLink.model';
 import { DocumentModel } from '../../../models/document.model';
 import { ApprovalRequestModel } from '../../../models/approvalRequest.model';
+import { AssetItemModel } from '../../../models/assetItem.model';
+import { EmployeeModel } from '../../../models/employee.model';
+import { AssignmentModel } from '../../../models/assignment.model';
+import { TransferModel } from '../../../models/transfer.model';
+import { MaintenanceRecordModel } from '../../../models/maintenanceRecord.model';
 import { createHttpError } from '../../../utils/httpError';
 import { buildOfficeFilter, RequestContext } from '../../../utils/scope';
 import { generateReference } from '../utils/reference';
@@ -30,6 +35,12 @@ function clampInt(value: unknown, fallback: number, min: number, max: number) {
   const parsed = Number.parseInt(String(value ?? ''), 10);
   if (Number.isNaN(parsed)) return fallback;
   return Math.min(max, Math.max(min, parsed));
+}
+
+function toObjectIdIfValid(value: unknown) {
+  const parsed = String(value ?? '').trim();
+  if (!parsed || !Types.ObjectId.isValid(parsed)) return value;
+  return new Types.ObjectId(parsed);
 }
 
 export async function createRecord(
@@ -214,15 +225,75 @@ export async function listRegister(
     if (to) (query.created_at as Record<string, unknown>).$lte = new Date(to);
   }
 
-  return RecordModel.find(query)
-    .sort({ created_at: -1 })
-    .skip(skip)
-    .limit(limit)
-    .populate('asset_item_id')
-    .populate('employee_id')
-    .populate('assignment_id')
-    .populate('transfer_id')
-    .populate('maintenance_record_id');
+  const aggregateQuery = { ...query } as Record<string, unknown>;
+  if (aggregateQuery.office_id) {
+    aggregateQuery.office_id = toObjectIdIfValid(aggregateQuery.office_id);
+  }
+
+  return RecordModel.aggregate([
+    { $match: aggregateQuery },
+    { $sort: { created_at: -1 } },
+    { $skip: skip },
+    { $limit: limit },
+    {
+      $lookup: {
+        from: AssetItemModel.collection.name,
+        localField: 'asset_item_id',
+        foreignField: '_id',
+        as: 'asset_item_doc',
+      },
+    },
+    {
+      $lookup: {
+        from: EmployeeModel.collection.name,
+        localField: 'employee_id',
+        foreignField: '_id',
+        as: 'employee_doc',
+      },
+    },
+    {
+      $lookup: {
+        from: AssignmentModel.collection.name,
+        localField: 'assignment_id',
+        foreignField: '_id',
+        as: 'assignment_doc',
+      },
+    },
+    {
+      $lookup: {
+        from: TransferModel.collection.name,
+        localField: 'transfer_id',
+        foreignField: '_id',
+        as: 'transfer_doc',
+      },
+    },
+    {
+      $lookup: {
+        from: MaintenanceRecordModel.collection.name,
+        localField: 'maintenance_record_id',
+        foreignField: '_id',
+        as: 'maintenance_record_doc',
+      },
+    },
+    {
+      $set: {
+        asset_item_id: { $ifNull: [{ $arrayElemAt: ['$asset_item_doc', 0] }, null] },
+        employee_id: { $ifNull: [{ $arrayElemAt: ['$employee_doc', 0] }, null] },
+        assignment_id: { $ifNull: [{ $arrayElemAt: ['$assignment_doc', 0] }, null] },
+        transfer_id: { $ifNull: [{ $arrayElemAt: ['$transfer_doc', 0] }, null] },
+        maintenance_record_id: { $ifNull: [{ $arrayElemAt: ['$maintenance_record_doc', 0] }, null] },
+      },
+    },
+    {
+      $project: {
+        asset_item_doc: 0,
+        employee_doc: 0,
+        assignment_doc: 0,
+        transfer_doc: 0,
+        maintenance_record_doc: 0,
+      },
+    },
+  ]).exec();
 }
 
 export async function ensureDocumentOwnership(recordId: string, docType: string) {

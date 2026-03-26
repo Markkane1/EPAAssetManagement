@@ -4,17 +4,17 @@ import { useQuery } from "@tanstack/react-query";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTable } from "@/components/shared/DataTable";
-import { Card, CardContent } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Loader2 } from "lucide-react";
+import { Label } from "@/components/ui/label";
+import { Loader2, RotateCcw, CheckCircle2, Clock3, UserRound } from "lucide-react";
 import { returnRequestService } from "@/services/returnRequestService";
 import { useEmployees } from "@/hooks/useEmployees";
 import { useLocations } from "@/hooks/useLocations";
 import { useAuth } from "@/contexts/AuthContext";
 import { ReturnRequestStatus } from "@/types";
+import { StatusBadge } from "@/components/shared/StatusBadge";
+import { FilterBar, FilterField, MetricCard, TimelineList, WorkflowPanel } from "@/components/shared/workflow";
 
 const STATUS_OPTIONS = [
   "ALL",
@@ -134,11 +134,7 @@ export default function Returns() {
     {
       key: "status",
       label: "Status",
-      render: (value: unknown) => (
-        <Badge variant="outline" className="font-mono text-xs">
-          {String(value || "UNKNOWN")}
-        </Badge>
-      ),
+      render: (value: unknown) => <StatusBadge status={String(value || "UNKNOWN")} />,
     },
     { key: "employee_name", label: "Employee" },
     { key: "office_name", label: "Office" },
@@ -149,6 +145,22 @@ export default function Returns() {
       render: (value: unknown) => (value ? new Date(String(value)).toLocaleString() : "N/A"),
     },
   ];
+
+  const filterError =
+    fromDate && toDate && new Date(fromDate).getTime() > new Date(toDate).getTime()
+      ? "The start date must be on or before the end date."
+      : "";
+  const submittedCount = rows.filter((row) => String(row.status) === ReturnRequestStatus.Submitted).length;
+  const closedCount = rows.filter((row) => String(row.status) === ReturnRequestStatus.Closed).length;
+  const pendingSignatureCount = rows.filter((row) => String(row.status) === ReturnRequestStatus.ClosedPendingSignature).length;
+  const recentTimeline = rows.slice(0, 5).map((row) => ({
+    id: row.id,
+    title: String(row.id),
+    description: `${row.employee_name} - ${row.office_name}`,
+    meta: row.created_at ? new Date(String(row.created_at)).toLocaleString() : "Date unavailable",
+    badge: String(row.status || "UNKNOWN"),
+    icon: String(row.status) === ReturnRequestStatus.Closed ? CheckCircle2 : Clock3,
+  }));
 
   if (query.isLoading) {
     return (
@@ -162,68 +174,111 @@ export default function Returns() {
 
   return (
     <MainLayout title="Return Requests" description="Review return requests pending confirmation">
-      <PageHeader title="Return Requests" description="Filter and review employee return requests." />
+      <PageHeader
+        title="Return Requests"
+        description="Filter and review employee return requests."
+        eyebrow={isEmployeeRole ? "Self service" : "Queue"}
+        meta={
+          <>
+            <span>{rows.length} requests</span>
+            <span className="hidden h-1 w-1 rounded-full bg-border sm:inline-block" />
+            <span>{isEmployeeRole ? "Employee view" : "Operations view"}</span>
+          </>
+        }
+      />
 
-      <Card className="mt-6">
-        <CardContent className="pt-6">
-          <div className="grid gap-4 md:grid-cols-4">
-            <div className="space-y-2">
-              <Label>Status</Label>
-              <select
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                value={status}
-                onChange={(event) => setStatus(event.target.value)}
-              >
-                {STATUS_OPTIONS.map((entry) => (
-                  <option key={entry} value={entry}>
-                    {entry}
-                  </option>
-                ))}
-              </select>
-            </div>
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <MetricCard label="Visible requests" value={rows.length} helper="Records in the current filter set" icon={RotateCcw} tone="primary" />
+        <MetricCard label="Submitted" value={submittedCount} helper="Awaiting confirmation" icon={Clock3} tone="warning" />
+        <MetricCard label="Closed" value={closedCount} helper="Fully completed requests" icon={CheckCircle2} tone="success" />
+        <MetricCard
+          label={isEmployeeRole ? "Your profile" : "Employees in view"}
+          value={isEmployeeRole ? 1 : new Set(rows.map((row) => row.employee_id)).size}
+          helper={isEmployeeRole ? "Restricted to your requests" : "Distinct employees in the result set"}
+          icon={UserRound}
+        />
+      </div>
 
-            <div className="space-y-2">
-              <Label>Employee</Label>
-              {isEmployeeRole ? (
-                <Input
-                  value={
-                    currentEmployee
-                      ? `${currentEmployee.first_name} ${currentEmployee.last_name}`.trim() || currentEmployee.email
-                      : "Employee mapping missing"
-                  }
-                  readOnly
-                />
-              ) : (
+      <FilterBar>
+        <div className="grid gap-4 lg:grid-cols-4">
+          <FilterField label="Status">
+            <Label htmlFor="returns-status" className="sr-only">Status</Label>
+            <select
+              id="returns-status"
+              className="flex h-11 w-full rounded-xl border border-input/80 bg-background/90 px-3.5 py-2 text-sm"
+              value={status}
+              onChange={(event) => setStatus(event.target.value)}
+            >
+              {STATUS_OPTIONS.map((entry) => (
+                <option key={entry} value={entry}>
+                  {entry}
+                </option>
+              ))}
+            </select>
+          </FilterField>
+
+          <FilterField label="Employee">
+            {isEmployeeRole ? (
+              <Input
+                value={
+                  currentEmployee
+                    ? `${currentEmployee.first_name} ${currentEmployee.last_name}`.trim() || currentEmployee.email
+                    : "Employee mapping missing"
+                }
+                readOnly
+              />
+            ) : (
+              <>
+                <Label htmlFor="returns-employee" className="sr-only">Employee</Label>
                 <select
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  id="returns-employee"
+                  className="flex h-11 w-full rounded-xl border border-input/80 bg-background/90 px-3.5 py-2 text-sm"
                   value={employeeId}
                   onChange={(event) => setEmployeeId(event.target.value)}
                 >
-                  <option value="ALL">ALL</option>
+                  <option value="ALL">All employees</option>
                   {(employees || []).map((employee) => (
                     <option key={employee.id} value={employee.id}>
                       {`${employee.first_name} ${employee.last_name}`.trim() || employee.email}
                     </option>
                   ))}
                 </select>
-              )}
-            </div>
+              </>
+            )}
+          </FilterField>
 
-            <div className="space-y-2">
-              <Label>From Date</Label>
-              <Input type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} />
-            </div>
+          <FilterField label="From Date">
+            <Input
+              type="date"
+              value={fromDate}
+              onChange={(event) => setFromDate(event.target.value)}
+              aria-invalid={Boolean(filterError)}
+            />
+          </FilterField>
 
-            <div className="space-y-2">
-              <Label>To Date</Label>
-              <Input type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} />
-            </div>
+          <FilterField label="To Date">
+            <Input
+              type="date"
+              value={toDate}
+              onChange={(event) => setToDate(event.target.value)}
+              aria-invalid={Boolean(filterError)}
+            />
+          </FilterField>
+        </div>
+
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-h-5 text-sm">
+            {filterError ? (
+              <p className="field-error">{filterError}</p>
+            ) : (
+              <p className="text-muted-foreground">
+                {pendingSignatureCount} requests are currently waiting on final signature.
+              </p>
+            )}
           </div>
-
-          <div className="mt-4 flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button
               type="button"
-              className="w-full sm:w-auto"
               onClick={() =>
                 setAppliedFilters({
                   status,
@@ -232,14 +287,13 @@ export default function Returns() {
                   toDate,
                 })
               }
-              disabled={isEmployeeRole && !currentEmployee}
+              disabled={(isEmployeeRole && !currentEmployee) || Boolean(filterError)}
             >
               Apply Filters
             </Button>
             <Button
               type="button"
               variant="outline"
-              className="w-full sm:w-auto"
               onClick={() => {
                 setStatus("ALL");
                 setEmployeeId(isEmployeeRole ? currentEmployee?.id || "ALL" : "ALL");
@@ -256,16 +310,36 @@ export default function Returns() {
               Reset
             </Button>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </FilterBar>
 
-      <div className="mt-6">
-        <DataTable
-          columns={columns}
-          data={rows as Array<{ id: string }>}
-          searchable={false}
-          onRowClick={(row) => navigate(`/returns/${row.id}`)}
-        />
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <WorkflowPanel
+          title="Return request worklist"
+          description="Open any request to review its lines, confirm receipt, or continue closure steps."
+        >
+          <DataTable
+            columns={columns}
+            data={rows as Array<{ id: string }>}
+            searchable={false}
+            emptyState={{
+              title: "No return requests match the current filters",
+              description: "Adjust the status, employee, or date range to broaden the result set.",
+            }}
+            onRowClick={(row) => navigate(`/returns/${row.id}`)}
+          />
+        </WorkflowPanel>
+
+        <WorkflowPanel
+          title="Recent queue activity"
+          description="The most recent return requests in the current view."
+        >
+          <TimelineList
+            items={recentTimeline}
+            emptyTitle="No requests yet"
+            emptyDescription="Recent return activity will appear here once requests are created."
+          />
+        </WorkflowPanel>
       </div>
     </MainLayout>
   );

@@ -28,47 +28,65 @@ export async function getRecordDetail(ctx: RequestContext, recordId: string) {
     linkFilters.push({ entity_type: 'MaintenanceRecord', entity_id: relatedMaintenanceId });
   }
 
-  const links = await DocumentLinkModel.find({ $or: linkFilters }).sort({ created_at: -1 });
-  const docIds = Array.from(new Set(links.map((link) => link.document_id.toString())));
-  const documents = docIds.length
-    ? await DocumentModel.find({ _id: { $in: docIds } }).sort({ created_at: -1 })
-    : [];
-  const versions = docIds.length
-    ? await DocumentVersionModel.find({ document_id: { $in: docIds } }).sort({ version_no: -1 })
-    : [];
-
-  const docMap = new Map(documents.map((doc) => [doc.id.toString(), doc]));
-  const versionMap = new Map<string, any[]>();
-  versions.forEach((version) => {
-    const key = version.document_id.toString();
-    const list = versionMap.get(key) || [];
-    list.push(version);
-    versionMap.set(key, list);
-  });
-  const linkMap = new Map<string, any[]>();
-  links.forEach((link) => {
-    const key = link.document_id.toString();
-    const list = linkMap.get(key) || [];
-    list.push(link);
-    linkMap.set(key, list);
-  });
-
-  const documentViews = docIds.map((docId) => {
-    const doc = docMap.get(docId);
-    const docVersions = versionMap.get(docId) || [];
-    const docLinks = linkMap.get(docId) || [];
-    return {
-      document: doc,
-      versions: docVersions,
-      links: docLinks,
-    };
-  });
+  const documentViews = await DocumentLinkModel.aggregate([
+    { $match: { $or: linkFilters } },
+    { $sort: { created_at: -1 } },
+    {
+      $lookup: {
+        from: DocumentModel.collection.name,
+        localField: 'document_id',
+        foreignField: '_id',
+        as: 'document',
+      },
+    },
+    {
+      $set: {
+        document: { $ifNull: [{ $arrayElemAt: ['$document', 0] }, null] },
+      },
+    },
+    {
+      $lookup: {
+        from: DocumentVersionModel.collection.name,
+        let: { documentId: '$document_id' },
+        pipeline: [
+          {
+            $match: {
+              $expr: { $eq: ['$document_id', '$$documentId'] },
+            },
+          },
+          { $sort: { version_no: -1 } },
+        ],
+        as: 'versions',
+      },
+    },
+    {
+      $group: {
+        _id: '$document_id',
+        document: { $first: '$document' },
+        versions: { $first: '$versions' },
+        links: {
+          $push: {
+            _id: '$_id',
+            document_id: '$document_id',
+            entity_type: '$entity_type',
+            entity_id: '$entity_id',
+            required_for_status: '$required_for_status',
+            created_at: '$created_at',
+            updated_at: '$updated_at',
+          },
+        },
+      },
+    },
+    { $sort: { 'document.created_at': -1 } },
+  ]).exec();
 
   const approvals = await ApprovalRequestModel.find({ record_id: recordDoc.id }).sort({ requested_at: -1 });
   const auditLogs = await AuditLogModel.find({
     entity_type: 'Record',
     entity_id: recordDoc.id,
-  }).sort({ timestamp: -1 });
+  })
+    .sort({ timestamp: -1 })
+    .select({ _id: 1, actor_user_id: 1, office_id: 1, action: 1, entity_type: 1, entity_id: 1, timestamp: 1, diff: 1 });
 
   const docTypesWithVersions = new Set<string>();
   documentViews.forEach((view) => {

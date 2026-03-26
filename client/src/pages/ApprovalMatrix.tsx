@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { AlertTriangle, BadgeCheck, CircleDollarSign, ClipboardList, Loader2 } from "lucide-react";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTable } from "@/components/shared/DataTable";
@@ -24,6 +24,7 @@ import type {
   ApprovalMatrixDecision,
   ApprovalMatrixRequest,
 } from "@/services/approvalMatrixService";
+import { MetricCard, TimelineList, WorkflowPanel } from "@/components/shared/workflow";
 
 type ApprovalRow = ApprovalMatrixRequest & {
   transactionLabel: string;
@@ -101,6 +102,9 @@ export default function ApprovalMatrix() {
 
   const submitDecision = async () => {
     if (!selectedDecision) return;
+    if (selectedDecision.decision === "REJECTED" && notes.trim().length < 5) {
+      return;
+    }
     try {
       await decideMutation.mutateAsync({
         id: selectedDecision.id,
@@ -207,33 +211,78 @@ export default function ApprovalMatrix() {
   );
 
   const pendingCount = pendingRows.length;
+  const highRiskCount = pendingRows.filter((row) => (Array.isArray(row.risk_tags) ? row.risk_tags.length > 0 : false)).length;
+  const highValueCount = pendingRows.filter((row) => Number(row.amount || 0) >= 1000).length;
+  const timelineItems = pendingRows.slice(0, 5).map((row) => ({
+    id: row.id,
+    title: `${row.transactionLabel} request`,
+    description: `${formatAmount(row.amount)} - ${row.approvalProgress} approvals`,
+    meta: formatDateTime(row.requested_at),
+    badge: "PENDING",
+  }));
+  const notesError =
+    selectedDecision?.decision === "REJECTED" && notes.trim().length < 5
+      ? "Rejection notes must be at least 5 characters."
+      : "";
 
   return (
     <MainLayout title="Approvals Queue" description="Review pending approval matrix requests">
       <PageHeader
         title="Approvals Queue"
         description="Approve or reject pending maker-checker requests for transfer and consumable workflows."
+        eyebrow="Queue"
+        meta={
+          <>
+            <span>{pendingCount} pending</span>
+            <span className="hidden h-1 w-1 rounded-full bg-border sm:inline-block" />
+            <span>{highRiskCount} tagged for risk review</span>
+          </>
+        }
       />
 
-      <Card className="mb-6">
-        <CardContent className="py-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <p className="text-sm text-muted-foreground">
-              You can decide only the requests currently assigned to your role/scope.
-            </p>
-            <Badge variant={pendingCount > 0 ? "default" : "secondary"}>
-              {pendingCount} Pending
-            </Badge>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <MetricCard label="Pending decisions" value={pendingCount} helper="Requests currently assigned to you" icon={ClipboardList} tone="primary" />
+        <MetricCard label="Risk-tagged" value={highRiskCount} helper="Requests carrying one or more risk tags" icon={AlertTriangle} tone="warning" />
+        <MetricCard label="High value" value={highValueCount} helper="Requests with amount >= 1,000" icon={CircleDollarSign} />
+        <MetricCard label="Average approvals" value={pendingCount ? (pendingRows.reduce((sum, row) => sum + Number(row.required_approvals || 1), 0) / pendingCount).toFixed(1) : "0.0"} helper="Required approvals per request" icon={BadgeCheck} />
+      </div>
 
-      <DataTable
-        columns={columns}
-        data={pendingRows}
-        actions={actions}
-        searchPlaceholder="Search pending approvals..."
-      />
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <WorkflowPanel
+          title="Pending approval worklist"
+          description="Review risk tags, amounts, and progress before approving or rejecting the request."
+        >
+          <Card className="mb-5 border-0 shadow-none">
+            <CardContent className="px-0 py-0">
+              <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+                <p>You can decide only the requests currently assigned to your role and scope.</p>
+                <Badge variant={pendingCount > 0 ? "default" : "secondary"}>
+                  {pendingCount} Pending
+                </Badge>
+              </div>
+            </CardContent>
+          </Card>
+
+          <DataTable
+            columns={columns}
+            data={pendingRows}
+            actions={actions}
+            searchPlaceholder="Search pending approvals..."
+            emptyState={{
+              title: "No pending approvals",
+              description: "Requests assigned to your role will appear here when approval is needed.",
+            }}
+          />
+        </WorkflowPanel>
+
+        <WorkflowPanel title="Recent request intake" description="The latest approval requests entering your queue.">
+          <TimelineList
+            items={timelineItems}
+            emptyTitle="Queue is clear"
+            emptyDescription="New approval requests will appear here as they are routed to you."
+          />
+        </WorkflowPanel>
+      </div>
 
       <Dialog open={Boolean(selectedDecision)} onOpenChange={(open) => (!open ? closeDialog() : undefined)}>
         <DialogContent>
@@ -254,7 +303,9 @@ export default function ApprovalMatrix() {
               placeholder="Enter review notes for the maker..."
               value={notes}
               onChange={(event) => setNotes(event.target.value)}
+              aria-invalid={Boolean(notesError)}
             />
+            {notesError && <p className="field-error">{notesError}</p>}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={closeDialog} disabled={decideMutation.isPending}>
@@ -263,7 +314,7 @@ export default function ApprovalMatrix() {
             <Button
               variant={selectedDecision?.decision === "REJECTED" ? "destructive" : "default"}
               onClick={() => void submitDecision()}
-              disabled={decideMutation.isPending}
+              disabled={decideMutation.isPending || Boolean(notesError)}
             >
               {decideMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {selectedDecision?.decision === "APPROVED" ? "Confirm Approve" : "Confirm Reject"}

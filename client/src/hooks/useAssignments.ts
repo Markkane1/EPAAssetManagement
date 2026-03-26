@@ -1,36 +1,69 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { assignmentService, AssignmentCreateDto, AssignmentUpdateDto } from '@/services/assignmentService';
+import {
+  assignmentService,
+  AssignmentCreateDto,
+  AssignmentListQuery,
+  AssignmentUpdateDto,
+} from '@/services/assignmentService';
 import { toast } from 'sonner';
+import { API_CONFIG } from '@/config/api.config';
 
-export const useAssignments = () => {
+const { queryKeys, query } = API_CONFIG;
+const { heavyList, detail } = query.profiles;
+
+type QueryToggleOptions = {
+  enabled?: boolean;
+};
+
+export const useAssignments = (options: QueryToggleOptions = {}) => {
+  const { enabled = true } = options;
   return useQuery({
-    queryKey: ['assignments'],
+    queryKey: queryKeys.assignments,
     queryFn: assignmentService.getAll,
-    staleTime: 30000,
+    staleTime: heavyList.staleTime,
+    refetchOnWindowFocus: heavyList.refetchOnWindowFocus,
+    enabled,
+  });
+};
+
+export const usePagedAssignments = (query: AssignmentListQuery, options: QueryToggleOptions = {}) => {
+  const { enabled = true } = options;
+  return useQuery({
+    queryKey: [...queryKeys.assignments, 'paged', query.page ?? 1, query.limit ?? null],
+    queryFn: () => assignmentService.getPaged(query),
+    staleTime: heavyList.staleTime,
+    refetchOnWindowFocus: heavyList.refetchOnWindowFocus,
+    enabled,
   });
 };
 
 export const useAssignment = (id: string) => {
   return useQuery({
-    queryKey: ['assignments', id],
+    queryKey: [...queryKeys.assignments, id],
     queryFn: () => assignmentService.getById(id),
     enabled: !!id,
+    staleTime: detail.staleTime,
+    refetchOnWindowFocus: detail.refetchOnWindowFocus,
   });
 };
 
 export const useAssignmentsByEmployee = (employeeId: string) => {
   return useQuery({
-    queryKey: ['assignments', 'byEmployee', employeeId],
+    queryKey: [...queryKeys.assignments, 'byEmployee', employeeId],
     queryFn: () => assignmentService.getByEmployee(employeeId),
     enabled: !!employeeId,
+    staleTime: heavyList.staleTime,
+    refetchOnWindowFocus: heavyList.refetchOnWindowFocus,
   });
 };
 
 export const useAssignmentsByAssetItem = (assetItemId: string) => {
   return useQuery({
-    queryKey: ['assignments', 'byAssetItem', assetItemId],
+    queryKey: [...queryKeys.assignments, 'byAssetItem', assetItemId],
     queryFn: () => assignmentService.getByAssetItem(assetItemId),
     enabled: !!assetItemId,
+    staleTime: heavyList.staleTime,
+    refetchOnWindowFocus: heavyList.refetchOnWindowFocus,
   });
 };
 
@@ -40,8 +73,8 @@ export const useCreateAssignment = () => {
   return useMutation({
     mutationFn: (data: AssignmentCreateDto) => assignmentService.create(data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['assignments'] });
-      queryClient.invalidateQueries({ queryKey: ['assetItems'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.assignments });
+      queryClient.invalidateQueries({ queryKey: queryKeys.assetItems });
       toast.success('Assignment created successfully');
     },
     onError: (error: Error) => {
@@ -57,7 +90,7 @@ export const useUpdateAssignment = () => {
     mutationFn: ({ id, data }: { id: string; data: AssignmentUpdateDto }) =>
       assignmentService.update(id, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['assignments'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.assignments });
       toast.success('Assignment updated successfully');
     },
     onError: (error: Error) => {
@@ -72,7 +105,7 @@ export const useRequestReturn = () => {
   return useMutation({
     mutationFn: ({ id }: { id: string }) => assignmentService.requestReturn(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['assignments'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.assignments });
       toast.success('Return requested successfully');
     },
     onError: (error: Error) => {
@@ -88,7 +121,7 @@ export const useReassignAsset = () => {
     mutationFn: ({ id, newEmployeeId, notes }: { id: string; newEmployeeId: string; notes?: string }) =>
       assignmentService.reassign(id, newEmployeeId, notes),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['assignments'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.assignments });
       toast.success('Asset reassigned successfully');
     },
     onError: (error: Error) => {
@@ -103,7 +136,7 @@ export const useDeleteAssignment = () => {
   return useMutation({
     mutationFn: (id: string) => assignmentService.delete(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['assignments'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.assignments });
       toast.success('Assignment deleted successfully');
     },
     onError: (error: Error) => {

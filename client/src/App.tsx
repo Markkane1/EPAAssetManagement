@@ -9,6 +9,11 @@ import { PageSearchProvider } from "@/contexts/PageSearchContext";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { API_CONFIG } from "@/config/api.config";
 
+const routerFuture = {
+  v7_startTransition: true,
+  v7_relativeSplatPath: true,
+} as const;
+
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Assets = lazy(() => import("./pages/Assets"));
 const AssetDetail = lazy(() => import("./pages/AssetDetail"));
@@ -104,7 +109,7 @@ const App = () => {
       <TooltipProvider>
         <Toaster />
         <Sonner />
-        <BrowserRouter>
+        <BrowserRouter future={routerFuture}>
           <AuthProvider>
             <PageSearchProvider>
               <Suspense fallback={<RouteFallback />}>

@@ -1,16 +1,38 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { employeeService } from '@/services/employeeService';
-import type { EmployeeCreateDto, EmployeeTransferDto, EmployeeUpdateDto } from '@/services/employeeService';
+import type {
+  EmployeeCreateDto,
+  EmployeeListQuery,
+  EmployeeTransferDto,
+  EmployeeUpdateDto,
+} from '@/services/employeeService';
 import { toast } from 'sonner';
 import { API_CONFIG } from '@/config/api.config';
 
 const { queryKeys, messages, query } = API_CONFIG;
+const { heavyList, detail } = query.profiles;
 
-export const useEmployees = () => {
+type QueryToggleOptions = {
+  enabled?: boolean;
+};
+
+export const useEmployees = (options: QueryToggleOptions = {}) => {
+  const { enabled = true } = options;
   return useQuery({
     queryKey: queryKeys.employees,
     queryFn: employeeService.getAll,
-    staleTime: query.staleTime,
+    staleTime: heavyList.staleTime,
+    refetchOnWindowFocus: heavyList.refetchOnWindowFocus,
+    enabled,
+  });
+};
+
+export const usePagedEmployees = (query: EmployeeListQuery) => {
+  return useQuery({
+    queryKey: [...queryKeys.employees, 'paged', query.page ?? 1, query.limit ?? null],
+    queryFn: () => employeeService.getPaged(query),
+    staleTime: heavyList.staleTime,
+    refetchOnWindowFocus: heavyList.refetchOnWindowFocus,
   });
 };
 
@@ -19,7 +41,8 @@ export const useEmployee = (id: string) => {
     queryKey: [...queryKeys.employees, id],
     queryFn: () => employeeService.getById(id),
     enabled: !!id,
-    staleTime: query.staleTime,
+    staleTime: detail.staleTime,
+    refetchOnWindowFocus: detail.refetchOnWindowFocus,
   });
 };
 
@@ -28,7 +51,8 @@ export const useEmployeesByDirectorate = (directorateId: string) => {
     queryKey: [...queryKeys.employees, 'byDirectorate', directorateId],
     queryFn: () => employeeService.getByDirectorate(directorateId),
     enabled: !!directorateId,
-    staleTime: query.staleTime,
+    staleTime: heavyList.staleTime,
+    refetchOnWindowFocus: heavyList.refetchOnWindowFocus,
   });
 };
 

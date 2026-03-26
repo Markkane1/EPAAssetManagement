@@ -50,8 +50,11 @@ type OfficeNameDoc = {
   name?: string | null;
 };
 
-type VersionDoc = {
-  version_no?: number;
+type LinkedIssueSlipDoc = {
+  _id?: unknown;
+  title?: string | null;
+  status?: string | null;
+  latestVersionNo?: number | null;
 };
 
 function normalizeText(value: string) {
@@ -130,6 +133,67 @@ function wrapText(text: string, maxChars = 95) {
   }
   lines.push(current);
   return lines;
+}
+
+async function loadLinkedIssueSlipDocument(requisitionId: unknown): Promise<LinkedIssueSlipDoc | null> {
+  const documents = await DocumentLinkModel.aggregate<LinkedIssueSlipDoc>([
+    {
+      $match: {
+        entity_type: 'Requisition',
+        entity_id: requisitionId,
+      },
+    },
+    {
+      $lookup: {
+        from: DocumentModel.collection.name,
+        localField: 'document_id',
+        foreignField: '_id',
+        as: 'document',
+      },
+    },
+    {
+      $set: {
+        document: { $ifNull: [{ $arrayElemAt: ['$document', 0] }, null] },
+      },
+    },
+    {
+      $match: {
+        'document.doc_type': 'IssueSlip',
+        'document.status': { $ne: 'Archived' },
+      },
+    },
+    { $sort: { 'document.created_at': -1 } },
+    { $limit: 1 },
+    {
+      $lookup: {
+        from: DocumentVersionModel.collection.name,
+        let: { documentId: '$document_id' },
+        pipeline: [
+          {
+            $match: {
+              $expr: { $eq: ['$document_id', '$$documentId'] },
+            },
+          },
+          { $sort: { version_no: -1 } },
+          { $limit: 1 },
+          { $project: { version_no: 1 } },
+        ],
+        as: 'latestVersion',
+      },
+    },
+    {
+      $project: {
+        _id: '$document._id',
+        title: '$document.title',
+        status: '$document.status',
+        latestVersionNo: {
+          $ifNull: [{ $arrayElemAt: ['$latestVersion.version_no', 0] }, null],
+        },
+      },
+    },
+  ]).exec();
+
+  return documents[0] || null;
 }
 
 async function buildLineReports(requisition: any, lines: any[]) {
@@ -353,26 +417,17 @@ export async function generateAndStoreIssuanceReport(ctx: RequestContext, requis
   await fs.writeFile(absolutePath, pdfBuffer);
   const relativePath = path.join('uploads', 'documents', storedFileName).replace(/\\/g, '/');
 
-  const requisitionLinks = await DocumentLinkModel.find(
-    { entity_type: 'Requisition', entity_id: requisition._id },
-    { document_id: 1 }
-  ).lean();
-  const linkedDocIds = requisitionLinks
-    .map((link) => link.document_id?.toString())
-    .filter((id): id is string => Boolean(id));
-
-  let issueSlipDoc = linkedDocIds.length
-    ? await DocumentModel.findOne({
-        _id: { $in: linkedDocIds },
-        doc_type: 'IssueSlip',
-        status: { $ne: 'Archived' },
-      })
-        .sort({ created_at: -1 })
-        .exec()
+  const existingIssueSlip = await loadLinkedIssueSlipDocument(requisition._id);
+  let issueSlipDoc: { _id: unknown; title?: string | null; status?: string | null } | null = existingIssueSlip
+    ? {
+        _id: existingIssueSlip._id,
+        title: existingIssueSlip.title || null,
+        status: existingIssueSlip.status || null,
+      }
     : null;
 
-  if (!issueSlipDoc) {
-    issueSlipDoc = await DocumentModel.create({
+  if (!issueSlipDoc?._id) {
+    const createdIssueSlip = await DocumentModel.create({
       title: `Issue Slip ${requisition.file_number}`,
       doc_type: 'IssueSlip',
       status: 'Draft',
@@ -380,21 +435,25 @@ export async function generateAndStoreIssuanceReport(ctx: RequestContext, requis
       created_by_user_id: ctx.userId,
     });
     await DocumentLinkModel.create({
-      document_id: issueSlipDoc._id,
+      document_id: createdIssueSlip._id,
       entity_type: 'Requisition',
       entity_id: requisition._id,
       required_for_status: null,
     });
+    issueSlipDoc = createdIssueSlip;
   } else if (issueSlipDoc.status !== 'Draft') {
+    await DocumentModel.updateOne(
+      { _id: issueSlipDoc._id },
+      { $set: { status: 'Draft' } }
+    ).exec();
     issueSlipDoc.status = 'Draft';
-    await issueSlipDoc.save();
   }
 
-  const lastVersion = (await DocumentVersionModel.findOne({ document_id: issueSlipDoc._id }, { version_no: 1 })
-    .sort({ version_no: -1 })
-    .lean()
-    .exec()) as VersionDoc | null;
-  const nextVersion = lastVersion && typeof lastVersion.version_no === 'number' ? lastVersion.version_no + 1 : 1;
+  const latestVersionNo =
+    existingIssueSlip && issueSlipDoc?._id && String(existingIssueSlip._id || '') === String(issueSlipDoc._id || '')
+      ? Number(existingIssueSlip.latestVersionNo || 0)
+      : 0;
+  const nextVersion = latestVersionNo > 0 ? latestVersionNo + 1 : 1;
 
   const versionId = new Types.ObjectId();
   const sha256 = crypto.createHash('sha256').update(pdfBuffer).digest('hex');

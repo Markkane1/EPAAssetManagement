@@ -139,13 +139,13 @@ export default function AssignmentSummaryReport() {
     );
   };
 
-  const handleExportPDF = () => {
+  const handleExportPDF = async () => {
     if (filteredRows.length === 0) {
       toast.error("No assignment data available for the current filters");
       return;
     }
 
-    generateReportPDF({
+    await generateReportPDF({
       title: "Assignment Summary Report",
       headers: ["Employee", "Directorate", "Asset Tag", "Asset", "Assigned", "Expected Return", "Status"],
       data: filteredRows.map((row) => [

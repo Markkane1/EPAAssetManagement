@@ -43,6 +43,7 @@ import { getOfficeHolderId } from "@/lib/assetItemHolder";
 import { useAssignments } from "@/hooks/useAssignments";
 import { useEmployees } from "@/hooks/useEmployees";
 import { useAuth } from "@/contexts/AuthContext";
+import { MetricCard, TimelineList, WorkflowPanel } from "@/components/shared/workflow";
 
 function asId(value: unknown): string {
   if (!value) return "";
@@ -143,6 +144,17 @@ export default function Maintenance() {
       itemTag: item?.tag || "N/A",
     };
   });
+  const completedCount = enrichedRecords.filter((record) => record.maintenance_status === "Completed").length;
+  const scheduledCount = enrichedRecords.filter((record) => record.maintenance_status === "Scheduled").length;
+  const inProgressCount = enrichedRecords.filter((record) => record.maintenance_status === "InProgress").length;
+  const recentTimeline = enrichedRecords.slice(0, 5).map((record) => ({
+    id: record.id,
+    title: `${record.assetName} (${record.itemTag})`,
+    description: record.description || "No description provided",
+    meta: record.scheduled_date ? new Date(record.scheduled_date).toLocaleDateString() : "No scheduled date",
+    badge: record.maintenance_status,
+    icon: record.maintenance_status === "Completed" ? CheckCircle : record.maintenance_status === "Scheduled" ? AlertCircle : FileUp,
+  }));
 
   const columns = [
     {
@@ -460,6 +472,14 @@ export default function Maintenance() {
             ? "Request maintenance for asset items currently assigned to you"
             : "Schedule and track maintenance activities for assets"
         }
+        eyebrow={isEmployeeView ? "Self service" : "Operations"}
+        meta={
+          <>
+            <span>{enrichedRecords.length} records in view</span>
+            <span className="hidden h-1 w-1 rounded-full bg-border sm:inline-block" />
+            <span>{isEmployeeView ? "Restricted to assigned assets" : "Organization-wide view"}</span>
+          </>
+        }
         action={
           isEmployeeView
             ? {
@@ -472,6 +492,13 @@ export default function Maintenance() {
               }
         }
       />
+
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <MetricCard label="Visible records" value={enrichedRecords.length} helper="Maintenance requests in scope" icon={FileUp} tone="primary" />
+        <MetricCard label="Scheduled" value={scheduledCount} helper="Ready to be performed" icon={AlertCircle} tone="warning" />
+        <MetricCard label="In progress" value={inProgressCount} helper="Currently being worked on" icon={Pencil} />
+        <MetricCard label="Completed" value={completedCount} helper="Closed maintenance work" icon={CheckCircle} tone="success" />
+      </div>
 
       {isEmployeeView && !currentEmployeeId && (
         <Alert variant="destructive" className="mb-4">
@@ -492,12 +519,33 @@ export default function Maintenance() {
         </Alert>
       )}
 
-      <DataTable
-        columns={columns}
-        data={enrichedRecords}
-        searchPlaceholder="Search maintenance records..."
-        actions={isEmployeeView ? undefined : actions}
-      />
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <WorkflowPanel
+          title="Maintenance worklist"
+          description="Search records, inspect attached files, and update the maintenance workflow from one place."
+        >
+          <DataTable
+            columns={columns}
+            data={enrichedRecords}
+            searchPlaceholder="Search maintenance records..."
+            actions={isEmployeeView ? undefined : actions}
+            emptyState={{
+              title: "No maintenance records available",
+              description: isEmployeeView
+                ? "Maintenance requests for your assigned asset items will appear here."
+                : "Maintenance records will appear here after the first request is created.",
+            }}
+          />
+        </WorkflowPanel>
+
+        <WorkflowPanel title="Recent maintenance activity" description="The latest maintenance records and their current status.">
+          <TimelineList
+            items={recentTimeline}
+            emptyTitle="No maintenance activity yet"
+            emptyDescription="Recent maintenance activity will appear here once records exist."
+          />
+        </WorkflowPanel>
+      </div>
 
       <MaintenanceFormModal
         open={isModalOpen}

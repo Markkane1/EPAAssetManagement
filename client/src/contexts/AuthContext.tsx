@@ -1,10 +1,11 @@
 /* eslint-disable react-refresh/only-export-components */
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import authService, { AppRole, User, normalizeRole } from '@/services/authService';
 import { activityService } from '@/services/activityService';
-import api from '@/lib/api';
+import api, { ApiError } from '@/lib/api';
 import { userPermissionService } from '@/services/userPermissionService';
 import { setRuntimeRolePermissions } from '@/config/pagePermissions';
+import { clearAuditLogs } from '@/lib/auditLog';
 
 interface AuthContextType {
   user: User | null;
@@ -43,8 +44,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [isOrgAdmin, setIsOrgAdmin] = useState(false);
   const [locationId, setLocationId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const currentUserIdRef = useRef<string | null>(null);
 
-  const loadCurrentUser = async () => {
+  const loadCurrentUser = useCallback(async () => {
     try {
       const me = await api.get<{
         id: string;
@@ -70,7 +72,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         activeRole: normalizedActiveRole,
         roles: normalizedRoles,
       };
+      if (currentUserIdRef.current && currentUserIdRef.current !== normalizedUser.id) {
+        clearAuditLogs();
+      }
       localStorage.setItem('user', JSON.stringify(normalizedUser));
+      currentUserIdRef.current = normalizedUser.id;
       setUser(normalizedUser);
       setRole(normalizedRole);
       setActiveRole(normalizedActiveRole);
@@ -90,22 +96,31 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       } catch {
         setRuntimeRolePermissions(null);
       }
-    } catch {
-      authService.logout();
-      setUser(null);
-      setRole(null);
-      setActiveRole(null);
-      setRoles([]);
-      setIsOrgAdmin(false);
-      setLocationId(null);
-      setRuntimeRolePermissions(null);
+    } catch (err) {
+      // Only clear local auth state on confirmed auth failures (401/403).
+      // Network errors, timeouts, and 5xx responses are transient — treating
+      // them the same as a real logout causes confusing "flash logout" behaviour
+      // even though the cookie session is still valid.
+      const status = err instanceof ApiError ? err.status : 0;
+      if (status === 401 || status === 403) {
+        authService.logout();
+        clearAuditLogs();
+        currentUserIdRef.current = null;
+        setUser(null);
+        setRole(null);
+        setActiveRole(null);
+        setRoles([]);
+        setIsOrgAdmin(false);
+        setLocationId(null);
+        setRuntimeRolePermissions(null);
+      }
     }
     setIsLoading(false);
-  };
+  }, []);
 
   useEffect(() => {
     loadCurrentUser();
-  }, []);
+  }, [loadCurrentUser]);
 
   const login = async (email: string, password: string) => {
     await authService.login({ email, password });
@@ -135,6 +150,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       // Ignore logout API errors and clear local state anyway
     }
     authService.logout();
+    clearAuditLogs();
+    currentUserIdRef.current = null;
     setUser(null);
     setRole(null);
     setActiveRole(null);

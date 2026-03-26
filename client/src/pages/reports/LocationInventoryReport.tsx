@@ -146,13 +146,13 @@ export default function LocationInventoryReport() {
     );
   };
 
-  const handleExportPDF = () => {
+  const handleExportPDF = async () => {
     if (filteredRows.length === 0) {
       toast.error("No location inventory data available for the current filters");
       return;
     }
 
-    generateReportPDF({
+    await generateReportPDF({
       title: "Location Inventory Report",
       headers: ["Location", "Items", "Value", "Available", "Assigned", "Maintenance", "Damaged"],
       data: filteredRows.map((row) => [

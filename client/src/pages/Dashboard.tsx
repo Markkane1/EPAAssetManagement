@@ -7,6 +7,7 @@ import { RecentActivity } from "@/components/dashboard/RecentActivity";
 import { AssetsByCategory } from "@/components/dashboard/AssetsByCategory";
 import { AssetStatusChart } from "@/components/dashboard/AssetStatusChart";
 import { PendingPurchaseOrders } from "@/components/dashboard/PendingPurchaseOrders";
+import { PageHeader } from "@/components/shared/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -25,67 +26,32 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { StatusBadge } from "@/components/shared/StatusBadge";
-import { useDashboardStats } from "@/hooks/useDashboard";
-import { useAssetItems } from "@/hooks/useAssetItems";
-import { useLocations } from "@/hooks/useLocations";
+import { useDashboardMe, useDashboardPanels, useDashboardStats } from "@/hooks/useDashboard";
 import { useAssignmentsByEmployee } from "@/hooks/useAssignments";
-import { useEmployees } from "@/hooks/useEmployees";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePageSearch } from "@/contexts/PageSearchContext";
-import { getOfficeHolderId, isStoreHolder } from "@/lib/assetItemHolder";
-import { requisitionService } from "@/services/requisitionService";
-import { returnRequestService } from "@/services/returnRequestService";
 import { consumableInventoryService } from "@/services/consumableInventoryService";
+import { TimelineList, WorkflowPanel } from "@/components/shared/workflow";
 
 function safeId(value: unknown): string | null {
   const normalized = String(value ?? "").trim();
   return normalized ? normalized : null;
 }
 
-const OPEN_REQUISITION_STATUSES = new Set([
-  "SUBMITTED",
-  "PENDING_VERIFICATION",
-  "APPROVED",
-  "VERIFIED_APPROVED",
-  "IN_FULFILLMENT",
-  "PARTIALLY_FULFILLED",
-]);
-
 export default function Dashboard() {
-  const { role, user } = useAuth();
+  const { role } = useAuth();
   const isEmployee = role === "employee";
   const loadAdminCollections = !isEmployee;
   const { data: dashboardStats, isLoading: statsLoading } = useDashboardStats({
     enabled: loadAdminCollections,
   });
-  const { data: assetItems } = useAssetItems({ enabled: loadAdminCollections });
-  const { data: locations } = useLocations({ enabled: loadAdminCollections });
-  const { data: employees, isLoading: employeesLoading } = useEmployees();
+  const dashboardMeQuery = useDashboardMe({ enabled: isEmployee });
   const pageSearch = usePageSearch();
   const searchTerm = (pageSearch?.term || "").trim().toLowerCase();
-
-  const employeeList = useMemo(() => employees || [], [employees]);
-  const currentEmployee = useMemo(() => {
-    const userId = safeId(user?.id);
-    const userEmail = String(user?.email || "").toLowerCase();
-    return (
-      employeeList.find((entry) => safeId((entry as Record<string, unknown>).user_id) === userId) ||
-      employeeList.find((entry) => String((entry as Record<string, unknown>).email || "").toLowerCase() === userEmail) ||
-      null
-    );
-  }, [employeeList, user?.email, user?.id]);
-  const currentEmployeeId = safeId((currentEmployee as Record<string, unknown> | null)?._id) || safeId((currentEmployee as Record<string, unknown> | null)?.id);
-
-  const employeeRequisitionsQuery = useQuery({
-    queryKey: ["dashboard", "employee", "requisitions"],
-    queryFn: () => requisitionService.list({ limit: 200 }),
-    enabled: isEmployee,
+  const dashboardPanelsQuery = useDashboardPanels(searchTerm, {
+    enabled: loadAdminCollections,
   });
-  const employeeReturnRequestsQuery = useQuery({
-    queryKey: ["dashboard", "employee", "returns", currentEmployeeId || "unmapped"],
-    queryFn: () => returnRequestService.list({ limit: 200 }),
-    enabled: isEmployee && Boolean(currentEmployeeId),
-  });
+  const currentEmployeeId = dashboardMeQuery.data?.employeeId || null;
 
   const { data: employeeAssignmentData, isLoading: employeeAssignmentsLoading } = useAssignmentsByEmployee(currentEmployeeId || "");
 
@@ -148,37 +114,13 @@ export default function Dashboard() {
     [employeeConsumableLines]
   );
 
-  const employeeRequisitions = useMemo(
-    () => employeeRequisitionsQuery.data?.data || [],
-    [employeeRequisitionsQuery.data]
-  );
-  const employeeOpenRequisitionsCount = useMemo(
-    () =>
-      employeeRequisitions.filter((row) =>
-        OPEN_REQUISITION_STATUSES.has(String((row as Record<string, unknown>).status || "").toUpperCase())
-      ).length,
-    [employeeRequisitions]
-  );
-
-  const employeeReturnRequests = useMemo(
-    () => employeeReturnRequestsQuery.data?.data || [],
-    [employeeReturnRequestsQuery.data]
-  );
-  const employeeOpenReturnsCount = useMemo(
-    () =>
-      employeeReturnRequests.filter((row) => {
-        const status = String((row as Record<string, unknown>).status || "").toUpperCase();
-        return status === "SUBMITTED" || status === "RECEIVED_CONFIRMED";
-      }).length,
-    [employeeReturnRequests]
-  );
+  const employeeOpenRequisitionsCount = dashboardMeQuery.data?.openRequisitionsCount || 0;
+  const employeeOpenReturnsCount = dashboardMeQuery.data?.openReturnsCount || 0;
 
   const employeeLoading =
     isEmployee &&
-    (employeesLoading ||
+    (dashboardMeQuery.isLoading ||
       employeeAssignmentsLoading ||
-      employeeRequisitionsQuery.isLoading ||
-      employeeReturnRequestsQuery.isLoading ||
       employeeConsumableBalancesQuery.isLoading);
 
   const stats = dashboardStats || {
@@ -190,47 +132,11 @@ export default function Dashboard() {
     totalValue: 0,
     lowStockAlerts: 0,
   };
-  const assetItemList = useMemo(() => assetItems || [], [assetItems]);
-  const locationList = useMemo(() => locations || [], [locations]);
-
-  const recentItems = useMemo(
-    () =>
-      assetItemList
-        .filter((item) => {
-          if (!searchTerm) return true;
-          return [item.tag, item.serial_number, item.item_status, item.item_condition]
-            .join(" ")
-            .toLowerCase()
-            .includes(searchTerm);
-        })
-        .slice(0, 5),
-    [assetItemList, searchTerm]
-  );
-  const locationCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-    assetItemList.forEach((item) => {
-      const officeId = getOfficeHolderId(item);
-      if (!officeId) return;
-      counts.set(officeId, (counts.get(officeId) || 0) + 1);
-    });
-    return counts;
-  }, [assetItemList]);
-  const storeItemCount = useMemo(
-    () => assetItemList.filter((item) => isStoreHolder(item)).length,
-    [assetItemList]
-  );
+  const recentItems = dashboardPanelsQuery.data?.recentItems || [];
+  const visibleLocations = dashboardPanelsQuery.data?.locations || [];
+  const storeItemCount = dashboardPanelsQuery.data?.storeItemCount || 0;
   const showStoreRow =
     !searchTerm || "head office store system store".toLowerCase().includes(searchTerm);
-  const visibleLocations = useMemo(
-    () =>
-      locationList
-        .filter((location) => {
-          if (!searchTerm) return true;
-          return [location.name, location.address].join(" ").toLowerCase().includes(searchTerm);
-        })
-        .slice(0, 5),
-    [locationList, searchTerm]
-  );
 
   if (employeeLoading) {
     return (
@@ -243,8 +149,42 @@ export default function Dashboard() {
   }
 
   if (isEmployee) {
+    const employeeTimeline = employeeAssignments.slice(0, 5).map((assignment, index) => {
+      const key = safeId((assignment as Record<string, unknown>).id) || safeId((assignment as Record<string, unknown>)._id) || `employee-assignment-${index}`;
+      const status = String((assignment as Record<string, unknown>).status || "UNKNOWN");
+      const statusLabel = status
+        .toLowerCase()
+        .split("_")
+        .filter(Boolean)
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(" ");
+      return {
+        id: key,
+        title: `Issued asset ${key.slice(-8)}`,
+        description: `Status: ${status}`,
+        meta: String((assignment as Record<string, unknown>).assigned_date || "")
+          ? new Date(String((assignment as Record<string, unknown>).assigned_date || "")).toLocaleDateString()
+          : "Date unavailable",
+        badge: statusLabel,
+        icon: status === "RETURN_REQUESTED" ? RotateCcw : Package,
+      };
+    });
+
     return (
       <MainLayout title="Dashboard" description="Overview of your services and assigned assets">
+        <PageHeader
+          title="Dashboard"
+          description="Track your assigned assets, consumables, requisitions, and return requests."
+          eyebrow="Personal workspace"
+          meta={
+            <>
+              <span>{employeeActiveAssignments.length} active assignments</span>
+              <span className="hidden h-1 w-1 rounded-full bg-border sm:inline-block" />
+              <span>{employeeOpenRequisitionsCount} open requisitions</span>
+            </>
+          }
+        />
+
         {!currentEmployeeId && (
           <Alert variant="destructive" className="mb-6">
             <AlertCircle className="h-4 w-4" />
@@ -286,12 +226,9 @@ export default function Dashboard() {
           />
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-          <Card>
-            <CardHeader>
-              <CardTitle>Quick Actions</CardTitle>
-            </CardHeader>
-            <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
+          <WorkflowPanel title="Quick Actions" description="Jump straight into the most common self-service tasks.">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Button asChild variant="outline">
                 <Link to="/my-assets">My Assets</Link>
               </Button>
@@ -304,9 +241,19 @@ export default function Dashboard() {
               <Button asChild variant="outline">
                 <Link to="/consumables/consume">Consumable Consumption</Link>
               </Button>
-            </CardContent>
-          </Card>
+            </div>
+          </WorkflowPanel>
 
+          <WorkflowPanel title="Recent assignment activity" description="Your latest issued or returned asset records.">
+            <TimelineList
+              items={employeeTimeline}
+              emptyTitle="No assignment records yet"
+              emptyDescription="Assignment history will appear here after your first issued asset."
+            />
+          </WorkflowPanel>
+        </div>
+
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <Card>
             <CardHeader>
               <CardTitle>Recent Assignment Records</CardTitle>
@@ -341,7 +288,7 @@ export default function Dashboard() {
     );
   }
 
-  if (statsLoading) {
+  if (statsLoading || dashboardPanelsQuery.isLoading) {
     return (
       <MainLayout title="Dashboard" description="Overview of your asset management">
         <div className="flex items-center justify-center h-64">
@@ -351,8 +298,33 @@ export default function Dashboard() {
     );
   }
 
+  const recentItemsTimeline = recentItems.slice(0, 5).map((item, index) => {
+    const itemId = safeId(item.id) || safeId((item as Record<string, unknown>)._id) || `recent-item-${index}`;
+    return {
+      id: itemId,
+      title: item.tag || "Untitled asset item",
+      description: item.serial_number || "Serial unavailable",
+      meta: String(item.item_status || "UNKNOWN"),
+      badge: String(item.item_status || "UNKNOWN"),
+      icon: PackageOpen,
+    };
+  });
+
   return (
     <MainLayout title="Dashboard" description="Overview of your asset management">
+      <PageHeader
+        title="Dashboard"
+        description="Monitor key asset health, operational queues, and recent inventory activity."
+        eyebrow="Operations overview"
+        meta={
+          <>
+            <span>{stats.totalAssetItems.toLocaleString()} total items</span>
+            <span className="hidden h-1 w-1 rounded-full bg-border sm:inline-block" />
+            <span>{stats.lowStockAlerts || 0} low-stock alerts</span>
+          </>
+        }
+      />
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         <StatsCard
           title="Total Assets"
@@ -408,23 +380,31 @@ export default function Dashboard() {
         />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3 mb-8">
         <div className="lg:col-span-1">
-          <AssetStatusChart />
+          <WorkflowPanel title="Asset status" description="Current item mix across the asset lifecycle." contentClassName="pt-3">
+            <AssetStatusChart />
+          </WorkflowPanel>
         </div>
         <div className="lg:col-span-1">
-          <AssetsByCategory />
+          <WorkflowPanel title="Categories" description="See where the portfolio is concentrated." contentClassName="pt-3">
+            <AssetsByCategory />
+          </WorkflowPanel>
         </div>
         <div className="lg:col-span-1">
-          <RecentActivity />
+          <WorkflowPanel title="Recent activity" description="Latest system actions across key workflows." contentClassName="pt-3">
+            <RecentActivity />
+          </WorkflowPanel>
         </div>
       </div>
 
       <div className="mb-8">
-        <PendingPurchaseOrders />
+        <WorkflowPanel title="Pending purchase orders" description="Items that may affect replenishment and assignment planning." contentClassName="pt-3">
+          <PendingPurchaseOrders />
+        </WorkflowPanel>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
         <Card className="animate-fade-in">
           <CardHeader className="flex flex-row items-center justify-between pb-3">
             <CardTitle className="text-lg font-semibold">Recent Asset Items</CardTitle>
@@ -461,16 +441,8 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card className="animate-fade-in">
-          <CardHeader className="flex flex-row items-center justify-between pb-3">
-            <CardTitle className="text-lg font-semibold">Locations Overview</CardTitle>
-            <Link to="/offices">
-              <Button variant="ghost" size="sm" className="gap-1">
-                View all <ArrowRight className="h-4 w-4" />
-              </Button>
-            </Link>
-          </CardHeader>
-          <CardContent>
+        <div className="space-y-6">
+          <WorkflowPanel title="Locations Overview" description="The busiest locations and store availability.">
             <div className="space-y-3">
               {visibleLocations.map((location, index) => {
                 const locationId = safeId(location.id) || safeId((location as Record<string, unknown>)._id);
@@ -478,28 +450,26 @@ export default function Dashboard() {
                 return (
                   <div
                     key={`${locationKey}-${index}`}
-                    className="flex items-center justify-between p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
+                    className="flex items-center justify-between rounded-2xl bg-muted/35 p-3 transition-colors hover:bg-muted/55"
                   >
                     <div>
                       <p className="font-medium text-sm">{location.name}</p>
-                      <p className="text-xs text-muted-foreground truncate max-w-[200px]">
+                      <p className="max-w-[220px] truncate text-xs text-muted-foreground">
                         {location.address}
                       </p>
                     </div>
                     <div className="text-right">
-                      <p className="font-semibold text-sm">
-                        {locationCounts.get(locationId || "") || 0}
-                      </p>
+                      <p className="font-semibold text-sm">{location.assetCount}</p>
                       <p className="text-xs text-muted-foreground">assets</p>
                     </div>
                   </div>
                 );
               })}
               {showStoreRow && (
-                <div className="flex items-center justify-between p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors">
+                <div className="flex items-center justify-between rounded-2xl bg-muted/35 p-3 transition-colors hover:bg-muted/55">
                   <div>
                     <p className="font-medium text-sm">Head Office Store</p>
-                    <p className="text-xs text-muted-foreground truncate max-w-[200px]">System Store</p>
+                    <p className="max-w-[220px] truncate text-xs text-muted-foreground">System Store</p>
                   </div>
                   <div className="text-right">
                     <p className="font-semibold text-sm">{storeItemCount}</p>
@@ -507,9 +477,22 @@ export default function Dashboard() {
                   </div>
                 </div>
               )}
+              <Link to="/offices">
+                <Button variant="ghost" size="sm" className="mt-2 gap-1">
+                  View all <ArrowRight className="h-4 w-4" />
+                </Button>
+              </Link>
             </div>
-          </CardContent>
-        </Card>
+          </WorkflowPanel>
+
+          <WorkflowPanel title="Recent item timeline" description="A compact view of the latest item activity surfaced in the dashboard.">
+            <TimelineList
+              items={recentItemsTimeline}
+              emptyTitle="No recent asset items"
+              emptyDescription="Recent item activity will appear here once new items are added or updated."
+            />
+          </WorkflowPanel>
+        </div>
       </div>
     </MainLayout>
   );

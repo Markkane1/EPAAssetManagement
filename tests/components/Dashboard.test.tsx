@@ -5,10 +5,9 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const useAuthMock = vi.fn();
+const useDashboardMeMock = vi.fn();
+const useDashboardPanelsMock = vi.fn();
 const useDashboardStatsMock = vi.fn();
-const useAssetItemsMock = vi.fn();
-const useLocationsMock = vi.fn();
-const useEmployeesMock = vi.fn();
 const useAssignmentsByEmployeeMock = vi.fn();
 const usePageSearchMock = vi.fn();
 const useQueryMock = vi.fn();
@@ -22,19 +21,9 @@ vi.mock("@/contexts/AuthContext", () => ({
 }));
 
 vi.mock("@/hooks/useDashboard", () => ({
+  useDashboardMe: (args: unknown) => useDashboardMeMock(args),
+  useDashboardPanels: (search: string, args: unknown) => useDashboardPanelsMock(search, args),
   useDashboardStats: (args: unknown) => useDashboardStatsMock(args),
-}));
-
-vi.mock("@/hooks/useAssetItems", () => ({
-  useAssetItems: (args: unknown) => useAssetItemsMock(args),
-}));
-
-vi.mock("@/hooks/useLocations", () => ({
-  useLocations: (args: unknown) => useLocationsMock(args),
-}));
-
-vi.mock("@/hooks/useEmployees", () => ({
-  useEmployees: () => useEmployeesMock(),
 }));
 
 vi.mock("@/hooks/useAssignments", () => ({
@@ -87,6 +76,21 @@ describe("Dashboard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useAuthMock.mockReturnValue({ role: "org_admin", user: { id: "user-1", email: "admin@example.com" } });
+    useDashboardMeMock.mockReturnValue({
+      data: { employeeId: null, openRequisitionsCount: 0, openReturnsCount: 0 },
+      isLoading: false,
+    });
+    useDashboardPanelsMock.mockReturnValue({
+      data: {
+        recentItems: [
+          { id: "ai-1", tag: "TAG-1", serial_number: "SER-1", item_status: "Available" },
+          { id: "ai-2", tag: "TAG-2", serial_number: "SER-2", item_status: "Assigned" },
+        ],
+        locations: [{ id: "office-1", name: "Lahore Office", address: "Mall Road", assetCount: 3 }],
+        storeItemCount: 9,
+      },
+      isLoading: false,
+    });
     useDashboardStatsMock.mockReturnValue({
       data: {
         totalAssets: 5,
@@ -99,23 +103,9 @@ describe("Dashboard", () => {
       },
       isLoading: false,
     });
-    useAssetItemsMock.mockReturnValue({
-      data: [
-        { id: "ai-1", tag: "TAG-1", serial_number: "SER-1", item_status: "Available", current_holder_type: "STORE" },
-        { id: "ai-2", tag: "TAG-2", serial_number: "SER-2", item_status: "Assigned", current_holder_type: "OFFICE", current_office_id: "office-1" },
-      ],
-    });
-    useLocationsMock.mockReturnValue({ data: [{ id: "office-1", name: "Lahore Office", address: "Mall Road" }] });
-    useEmployeesMock.mockReturnValue({ data: [], isLoading: false });
     useAssignmentsByEmployeeMock.mockReturnValue({ data: [], isLoading: false });
     usePageSearchMock.mockReturnValue({ term: "", setTerm: vi.fn() });
     useQueryMock.mockImplementation(({ queryKey }: { queryKey: string[] }) => {
-      if (queryKey.includes("requisitions")) {
-        return { data: { data: [] }, isLoading: false };
-      }
-      if (queryKey.includes("returns")) {
-        return { data: { data: [] }, isLoading: false };
-      }
       if (queryKey.includes("consumable-balances")) {
         return { data: [], isLoading: false };
       }
@@ -136,8 +126,8 @@ describe("Dashboard", () => {
 
   it("should render employee dashboard stats, quick actions, and recent assignment records when the employee is mapped", () => {
     useAuthMock.mockReturnValue({ role: "employee", user: { id: "user-emp", email: "employee@example.com" } });
-    useEmployeesMock.mockReturnValue({
-      data: [{ id: "emp-1", user_id: "user-emp", email: "employee@example.com" }],
+    useDashboardMeMock.mockReturnValue({
+      data: { employeeId: "emp-1", openRequisitionsCount: 1, openReturnsCount: 1 },
       isLoading: false,
     });
     useAssignmentsByEmployeeMock.mockReturnValue({
@@ -148,12 +138,6 @@ describe("Dashboard", () => {
       isLoading: false,
     });
     useQueryMock.mockImplementation(({ queryKey }: { queryKey: string[] }) => {
-      if (queryKey.includes("requisitions")) {
-        return { data: { data: [{ id: "req-1", status: "SUBMITTED" }] }, isLoading: false };
-      }
-      if (queryKey.includes("returns")) {
-        return { data: { data: [{ id: "ret-1", status: "SUBMITTED" }] }, isLoading: false };
-      }
       if (queryKey.includes("consumable-balances")) {
         return {
           data: [{ holder_type: "EMPLOYEE", qty_on_hand_base: 5 }],

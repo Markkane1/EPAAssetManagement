@@ -55,7 +55,9 @@
   },
   "overrides": {
     "glob": "^10.5.0",
-    "lodash": "^4.17.23"
+    "lodash": "^4.17.23",
+    "flatted": "^3.4.2",
+    "undici": "^7.24.5"
   },
   "dependencies": {
     "express-mongo-sanitize": "^2.2.0",

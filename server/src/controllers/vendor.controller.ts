@@ -6,7 +6,15 @@ import { OfficeModel } from '../models/office.model';
 import { createHttpError } from '../utils/httpError';
 import { getRequestContext } from '../utils/scope';
 import { isOfficeManager } from '../utils/accessControl';
-import { escapeRegex, readPagination } from '../utils/requestParsing';
+import { readPagination } from '../utils/requestParsing';
+import { buildSearchTerms, buildSearchTermsQuery } from '../utils/searchTerms';
+
+function sanitizeVendorText(value: unknown) {
+  return String(value || '')
+    .replace(/on[a-z]+\s*=/gi, '')
+    .replace(/javascript:/gi, '')
+    .trim();
+}
 
 function readOfficeIdFromBody(body: Record<string, unknown>) {
   const raw = body.officeId ?? body.office_id;
@@ -16,13 +24,21 @@ function readOfficeIdFromBody(body: Record<string, unknown>) {
 
 function normalizeWritePayload(body: Record<string, unknown>) {
   const payload: Record<string, unknown> = {};
-  if (body.name !== undefined) payload.name = body.name;
-  if (body.contactInfo !== undefined) payload.contact_info = body.contactInfo;
-  else if (body.contact_info !== undefined) payload.contact_info = body.contact_info;
-  if (body.email !== undefined) payload.email = body.email;
-  if (body.phone !== undefined) payload.phone = body.phone;
-  if (body.address !== undefined) payload.address = body.address;
+  if (body.name !== undefined) payload.name = sanitizeVendorText(body.name);
+  if (body.contactInfo !== undefined) payload.contact_info = sanitizeVendorText(body.contactInfo);
+  else if (body.contact_info !== undefined) payload.contact_info = sanitizeVendorText(body.contact_info);
+  if (body.email !== undefined) payload.email = sanitizeVendorText(body.email);
+  if (body.phone !== undefined) payload.phone = sanitizeVendorText(body.phone);
+  if (body.address !== undefined) payload.address = sanitizeVendorText(body.address);
   return payload;
+}
+
+function resolveVendorSearchTerms(payload: Record<string, unknown>, existing?: Record<string, unknown> | null) {
+  return buildSearchTerms([
+    payload.name ?? existing?.name,
+    payload.email ?? existing?.email,
+    payload.phone ?? existing?.phone,
+  ]);
 }
 
 async function ensureOfficeExists(officeId: string) {
@@ -65,8 +81,7 @@ export const vendorController = {
 
       const filter: Record<string, unknown> = {};
       if (search) {
-        const regex = new RegExp(escapeRegex(search), 'i');
-        filter.$or = [{ name: regex }, { email: regex }, { phone: regex }];
+        Object.assign(filter, buildSearchTermsQuery(search) || {});
       }
 
       if (ctx.isOrgAdmin) {
@@ -143,6 +158,7 @@ export const vendorController = {
 
       const payload = normalizeWritePayload(body);
       payload.office_id = targetOfficeId;
+      payload.search_terms = resolveVendorSearchTerms(payload);
 
       const vendor = await VendorModel.create(payload);
       return res.status(201).json(vendor);
@@ -178,6 +194,7 @@ export const vendorController = {
         await ensureOfficeExists(requestedOfficeId);
         payload.office_id = requestedOfficeId;
       }
+      payload.search_terms = resolveVendorSearchTerms(payload, existing as Record<string, unknown>);
 
       const updated = await VendorModel.findByIdAndUpdate(req.params?.id, payload, {
         new: true,

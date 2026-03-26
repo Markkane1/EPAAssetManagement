@@ -5,6 +5,11 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const routerFuture = {
+  v7_startTransition: true,
+  v7_relativeSplatPath: true,
+} as const;
+
 const createDivisionMutateAsyncMock = vi.fn();
 const updateDivisionMutateAsyncMock = vi.fn();
 const deleteDivisionMutateMock = vi.fn();
@@ -368,7 +373,7 @@ describe("client gap batch", () => {
 
   it("should manage divisions, districts, office sections, and page search state", async () => {
     render(
-      <MemoryRouter initialEntries={["/a"]}>
+      <MemoryRouter initialEntries={["/a"]} future={routerFuture}>
         <Routes>
           <Route
             path="*"

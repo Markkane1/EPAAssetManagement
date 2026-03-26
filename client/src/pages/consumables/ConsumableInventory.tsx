@@ -25,6 +25,8 @@ import { filterItemsByMode, filterLocationsByMode } from '@/lib/consumableMode';
 import { ConsumableModeToggle } from '@/components/consumables/ConsumableModeToggle';
 import { useAuth } from '@/contexts/AuthContext';
 import { SearchableSelect } from '@/components/shared/SearchableSelect';
+import { MetricCard, TimelineList, WorkflowPanel } from '@/components/shared/workflow';
+import { Package, Boxes, Warehouse, History } from 'lucide-react';
 
 function asId(value: { id?: string; _id?: string }) {
   return value.id || value._id || '';
@@ -236,17 +238,44 @@ export default function ConsumableInventory() {
       },
     },
   ];
+  const totalOnHand = visibleBalances.reduce((sum, balance) => sum + Number(balance.qty_on_hand_base || 0), 0);
+  const uniqueItems = new Set(visibleBalances.map((balance) => balance.consumable_item_id)).size;
+  const uniqueHolders = new Set(visibleBalances.map((balance) => `${balance.holder_type}:${balance.holder_id}`)).size;
+  const recentLedgerTimeline = ledger.slice(0, 5).map((entry) => ({
+    id: entry.id,
+    title: String(entry.tx_type || 'Transaction'),
+    description: `${entry.qty_base} ${filteredItems.find((i) => i.id === entry.consumable_item_id)?.base_uom || ''}`,
+    meta: entry.tx_time ? new Date(entry.tx_time).toLocaleString() : 'Time unavailable',
+    badge: entry.lot_id ? String(lots?.find((lot) => lot.id === entry.lot_id)?.batch_no || 'LOT') : 'NO LOT',
+    icon: History,
+  }));
 
   return (
     <MainLayout title="Consumable Inventory" description="Central and lab inventory view">
       <PageHeader
         title="Inventory"
         description="View balances by location, item, and lot"
+        eyebrow="Inventory"
+        meta={
+          <>
+            <span>{visibleBalances.length} balance rows</span>
+            <span className="hidden h-1 w-1 rounded-full bg-border sm:inline-block" />
+            <span>{mode === 'chemicals' ? 'Chemical mode' : 'General mode'}</span>
+          </>
+        }
         extra={<ConsumableModeToggle mode={mode} onChange={setMode} />}
       />
 
-      <Card className="mb-6">
-        <CardContent className="pt-6">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <MetricCard label="Balance rows" value={visibleBalances.length} helper="Visible inventory records after filtering" icon={Boxes} tone="primary" />
+        <MetricCard label="Total on hand" value={totalOnHand} helper="Sum of base quantities in the current view" icon={Package} tone="success" />
+        <MetricCard label="Distinct items" value={uniqueItems} helper="Unique consumable items in the current view" icon={Warehouse} />
+        <MetricCard label="Distinct holders" value={uniqueHolders} helper="Offices, store, employees, and sections holding stock" icon={History} tone="warning" />
+      </div>
+
+      <WorkflowPanel title="Inventory filters" description="Slice balances by location, holder, item, and lot to narrow the operational view.">
+        <Card className="border-0 shadow-none">
+          <CardContent className="p-0">
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
             <div className="space-y-2">
               <label className="text-sm font-medium">Location</label>
@@ -330,18 +359,28 @@ export default function ConsumableInventory() {
               </Select>
             </div>
           </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      </WorkflowPanel>
 
-      <DataTable
-        columns={columns}
-        data={visibleBalances as any}
-        searchPlaceholder="Search inventory..."
-      />
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="space-y-6">
+          <WorkflowPanel title="Inventory balances" description="Review current balances across offices, the store, employees, and sections.">
+            <DataTable
+              columns={columns}
+              data={visibleBalances as any}
+              searchPlaceholder="Search inventory..."
+              emptyState={{
+                title: "No inventory balances match the current filters",
+                description: "Adjust the location, holder, item, or lot filters to broaden the view.",
+              }}
+            />
+          </WorkflowPanel>
 
       {itemId !== ALL_VALUE && rollup && rollup.length > 0 && (
-        <Card className="mt-6">
-          <CardContent className="pt-6">
+        <WorkflowPanel title="Item rollup" description="See how the selected item is distributed across holders and locations.">
+          <Card className="border-0 shadow-none">
+            <CardContent className="p-0">
             <h3 className="text-lg font-semibold mb-2">Item Rollup</h3>
             {rollup.map((row: any) => (
               <div key={row.itemId} className="space-y-2">
@@ -369,13 +408,25 @@ export default function ConsumableInventory() {
                 </div>
               </div>
             ))}
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </WorkflowPanel>
       )}
+        </div>
+
+        <div className="space-y-6">
+          <WorkflowPanel title="Recent transactions" description="The latest transactions for the currently selected item.">
+            <TimelineList
+              items={recentLedgerTimeline}
+              emptyTitle="No recent transactions"
+              emptyDescription="Select an item to view its recent transaction activity."
+            />
+          </WorkflowPanel>
 
       {itemId !== ALL_VALUE && ledger.length > 0 && (
-        <Card className="mt-6">
-          <CardContent className="pt-6">
+        <WorkflowPanel title="Transaction details" description="A detailed list of the latest ledger movements for the selected item.">
+          <Card className="border-0 shadow-none">
+            <CardContent className="p-0">
             <h3 className="text-lg font-semibold mb-2">Recent Transactions</h3>
             <div className="space-y-2 text-sm">
             {ledger.slice(0, 5).map((entry) => (
@@ -391,9 +442,12 @@ export default function ConsumableInventory() {
               </div>
             ))}
             </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </WorkflowPanel>
       )}
+        </div>
+      </div>
     </MainLayout>
   );
 }

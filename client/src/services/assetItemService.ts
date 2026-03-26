@@ -1,5 +1,6 @@
 import api from '@/lib/api';
 import { AssetItem, AssetStatus, AssetCondition, ItemSource, AssignmentStatus, FunctionalStatus } from '@/types';
+import { ListQuery, PagedListResponse, toListQueryString } from '@/services/pagination';
 
 export interface AssetItemCreateDto {
   assetId: string;
@@ -43,8 +44,16 @@ export interface AssetItemUpdateDto {
 
 const LIST_LIMIT = 1000;
 
+export type AssetItemListQuery = ListQuery;
+
 export const assetItemService = {
-  getAll: () => api.get<AssetItem[]>(`/asset-items?limit=${LIST_LIMIT}`),
+  getAll: (query: AssetItemListQuery = {}) =>
+    api.get<AssetItem[]>(`/asset-items${toListQueryString({ limit: LIST_LIMIT, ...query })}`),
+
+  getPaged: (query: AssetItemListQuery = {}) =>
+    api.get<PagedListResponse<AssetItem>>(
+      `/asset-items${toListQueryString({ limit: LIST_LIMIT, ...query, meta: true })}`
+    ),
   
   getById: (id: string) => api.get<AssetItem>(`/asset-items/${id}`),
   

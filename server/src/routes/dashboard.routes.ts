@@ -5,6 +5,8 @@ import { requireAuth } from '../middleware/auth';
 const router = Router();
 
 router.get('/', requireAuth, dashboardController.getDashboardData);
+router.get('/me', requireAuth, dashboardController.getMySummary);
+router.get('/panels', requireAuth, dashboardController.getAdminPanels);
 router.get('/stats', requireAuth, dashboardController.getStats);
 router.get('/activity', requireAuth, dashboardController.getRecentActivity);
 router.get('/assets-by-category', requireAuth, dashboardController.getAssetsByCategory);

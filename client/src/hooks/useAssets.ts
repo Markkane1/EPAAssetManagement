@@ -6,11 +6,17 @@ import { API_CONFIG } from '@/config/api.config';
 
 const { queryKeys, messages, query } = API_CONFIG;
 
-export const useAssets = () => {
+type QueryToggleOptions = {
+  enabled?: boolean;
+};
+
+export const useAssets = (options: QueryToggleOptions = {}) => {
+  const { enabled = true } = options;
   return useQuery({
     queryKey: queryKeys.assets,
     queryFn: assetService.getAll,
     staleTime: query.staleTime,
+    enabled,
   });
 };
 

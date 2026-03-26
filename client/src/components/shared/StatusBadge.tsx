@@ -42,12 +42,31 @@ const statusStyles: Record<string, string> = {
   RECEIVED_AT_DEST: "bg-success/10 text-success",
   REJECTED: "bg-destructive/10 text-destructive",
   CANCELLED: "bg-muted text-muted-foreground",
+
+  SUBMITTED: "bg-warning/10 text-warning",
+  PENDING_VERIFICATION: "bg-warning/10 text-warning",
+  VERIFIED_APPROVED: "bg-info/10 text-info",
+  IN_FULFILLMENT: "bg-info/10 text-info",
+  PARTIALLY_FULFILLED: "bg-warning/10 text-warning",
+  FULFILLED: "bg-success/10 text-success",
+  FULFILLED_PENDING_SIGNATURE: "bg-warning/10 text-warning",
+  REJECTED_INVALID: "bg-destructive/10 text-destructive",
+  RECEIVED_CONFIRMED: "bg-info/10 text-info",
+  CLOSED_PENDING_SIGNATURE: "bg-warning/10 text-warning",
+  CLOSED: "bg-success/10 text-success",
 };
 
 export function StatusBadge({ status, className }: StatusBadgeProps) {
+  const normalizedStatus = String(status || "").trim();
   return (
-    <span className={cn("status-badge", statusStyles[status] || "bg-muted text-muted-foreground", className)}>
-      {status}
+    <span
+      className={cn(
+        "status-badge",
+        statusStyles[normalizedStatus] || "border-border bg-muted text-muted-foreground",
+        className
+      )}
+    >
+      {normalizedStatus || "UNKNOWN"}
     </span>
   );
 }

@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import { DocumentLinkModel } from '../../../models/documentLink.model';
 import { DocumentModel } from '../../../models/document.model';
 import { RecordModel } from '../../../models/record.model';
@@ -18,34 +19,74 @@ export interface DocumentLinkInput {
   requiredForStatus?: 'PendingApproval' | 'Approved' | 'Completed';
 }
 
+async function resolveAssetItemOfficeFromQuery(query: Record<string, unknown>) {
+  const item = await AssetItemModel.findOne(query, { holder_type: 1, holder_id: 1 }).lean().exec();
+  return item ? getAssetItemOfficeId(item) : null;
+}
+
+function toObjectIdOrNull(value: string) {
+  return mongoose.Types.ObjectId.isValid(value) ? new mongoose.Types.ObjectId(value) : null;
+}
+
 async function resolveEntityOffice(entityType: DocumentLinkInput['entityType'], entityId: string) {
   switch (entityType) {
     case 'Record': {
-      const record = await RecordModel.findById(entityId);
+      const record = await RecordModel.findById(entityId, { office_id: 1 }).lean().exec();
       return record?.office_id?.toString() || null;
     }
     case 'AssetItem': {
-      const item = await AssetItemModel.findById(entityId);
-      return item ? getAssetItemOfficeId(item) : null;
+      return resolveAssetItemOfficeFromQuery({ _id: entityId });
     }
     case 'Assignment': {
-      const assignment = await AssignmentModel.findById(entityId);
-      if (!assignment) return null;
-      const item = await AssetItemModel.findById(assignment.asset_item_id);
-      return item ? getAssetItemOfficeId(item) : null;
+      const assignmentId = toObjectIdOrNull(entityId);
+      if (!assignmentId) return null;
+      const [assignment] = await AssignmentModel.aggregate<Array<{ assetItem?: { holder_type?: unknown; holder_id?: unknown } }>>([
+        { $match: { _id: assignmentId } },
+        {
+          $lookup: {
+            from: AssetItemModel.collection.name,
+            localField: 'asset_item_id',
+            foreignField: '_id',
+            pipeline: [{ $project: { holder_type: 1, holder_id: 1 } }],
+            as: 'assetItem',
+          },
+        },
+        {
+          $project: {
+            assetItem: { $arrayElemAt: ['$assetItem', 0] },
+          },
+        },
+      ]);
+      return assignment?.assetItem ? getAssetItemOfficeId(assignment.assetItem) : null;
     }
     case 'Transfer': {
-      const transfer = await TransferModel.findById(entityId);
+      const transfer = await TransferModel.findById(entityId, { from_office_id: 1, to_office_id: 1 }).lean().exec();
       return transfer?.from_office_id?.toString() || transfer?.to_office_id?.toString() || null;
     }
     case 'MaintenanceRecord': {
-      const record = await MaintenanceRecordModel.findById(entityId);
-      if (!record) return null;
-      const item = await AssetItemModel.findById(record.asset_item_id);
-      return item ? getAssetItemOfficeId(item) : null;
+      const maintenanceRecordId = toObjectIdOrNull(entityId);
+      if (!maintenanceRecordId) return null;
+      const [record] = await MaintenanceRecordModel.aggregate<Array<{ assetItem?: { holder_type?: unknown; holder_id?: unknown } }>>([
+        { $match: { _id: maintenanceRecordId } },
+        {
+          $lookup: {
+            from: AssetItemModel.collection.name,
+            localField: 'asset_item_id',
+            foreignField: '_id',
+            pipeline: [{ $project: { holder_type: 1, holder_id: 1 } }],
+            as: 'assetItem',
+          },
+        },
+        {
+          $project: {
+            assetItem: { $arrayElemAt: ['$assetItem', 0] },
+          },
+        },
+      ]);
+      return record?.assetItem ? getAssetItemOfficeId(record.assetItem) : null;
     }
     case 'Requisition': {
-      const requisition = await RequisitionModel.findById(entityId);
+      const requisition = await RequisitionModel.findById(entityId, { office_id: 1 }).lean().exec();
       return requisition?.office_id?.toString() || null;
     }
     default:
@@ -54,13 +95,15 @@ async function resolveEntityOffice(entityType: DocumentLinkInput['entityType'], 
 }
 
 export async function createDocumentLink(ctx: RequestContext, input: DocumentLinkInput) {
-  const document = await DocumentModel.findById(input.documentId);
+  const document = await DocumentModel.findById(input.documentId, { office_id: 1 }).lean().exec();
   if (!document) throw createHttpError(404, 'Document not found');
+
+  const documentOfficeId = document.office_id.toString();
 
   const entityOfficeId = await resolveEntityOffice(input.entityType, input.entityId);
   if (!ctx.isOrgAdmin) {
     if (!ctx.locationId) throw createHttpError(403, 'User is not assigned to an office');
-    if (document.office_id.toString() !== ctx.locationId) {
+    if (documentOfficeId !== ctx.locationId) {
       throw createHttpError(403, 'Document must belong to your office');
     }
     if (entityOfficeId && entityOfficeId !== ctx.locationId) {
@@ -80,7 +123,7 @@ export async function createDocumentLink(ctx: RequestContext, input: DocumentLin
     action: 'LINK_DOCUMENT',
     entityType: input.entityType,
     entityId: input.entityId,
-    officeId: document.office_id.toString(),
+    officeId: documentOfficeId,
     diff: { documentId: input.documentId },
   });
 

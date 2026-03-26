@@ -13,7 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { AssetItem } from "@/types";
-import { useAssetItems, useCreateAssetItem, useUpdateAssetItem } from "@/hooks/useAssetItems";
+import { usePagedAssetItems, useCreateAssetItem, useUpdateAssetItem } from "@/hooks/useAssetItems";
 import { useAssets } from "@/hooks/useAssets";
 import { useLocations } from "@/hooks/useLocations";
 import { useAssignments, useCreateAssignment } from "@/hooks/useAssignments";
@@ -38,19 +38,10 @@ import {
 } from "@/components/ui/dialog";
 
 export default function AssetItems() {
+  const PAGE_SIZE = 100;
   const { isOrgAdmin } = useAuth();
   const officeScopedMode = !isOrgAdmin;
-  const { data: assetItems, isLoading } = useAssetItems();
-  const { data: assets } = useAssets();
-  const { data: locations } = useLocations();
-  const { data: assignments } = useAssignments();
-  const { data: employees } = useEmployees();
-  const { data: projects } = useProjects();
-  const { data: schemes } = useSchemes();
-  const createAssetItem = useCreateAssetItem();
-  const updateAssetItem = useUpdateAssetItem();
-  const createAssignment = useCreateAssignment();
-
+  const [page, setPage] = useState(1);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editModal, setEditModal] = useState<{ open: boolean; item: AssetItem | null }>({
     open: false,
@@ -72,12 +63,24 @@ export default function AssetItems() {
     open: false,
     item: null,
   });
+  const { data: assetItems, isLoading } = usePagedAssetItems({ page, limit: PAGE_SIZE });
+  const { data: assets } = useAssets();
+  const { data: locations } = useLocations();
+  const { data: assignments } = useAssignments({ enabled: historyModal.open });
+  const { data: employees } = useEmployees({ enabled: assignmentModal.open || historyModal.open });
+  const { data: projects } = useProjects();
+  const { data: schemes } = useSchemes();
+  const createAssetItem = useCreateAssetItem();
+  const updateAssetItem = useUpdateAssetItem();
+  const createAssignment = useCreateAssignment();
 
-  const assetItemList = assetItems || [];
+  const assetItemList = assetItems?.items || [];
   const assetList = assets || [];
   const locationList = locations || [];
   const assignmentList = assignments || [];
   const employeeList = employees || [];
+  const totalAssetItems = assetItems?.total || assetItemList.length;
+  const totalPages = Math.max(1, Math.ceil(totalAssetItems / PAGE_SIZE));
 
   const assetById = new Map(assetList.map((asset) => [asset.id, asset]));
   const projectById = new Map((projects || []).map((project) => [project.id, project]));
@@ -203,10 +206,32 @@ export default function AssetItems() {
       <DataTable
         columns={columns}
         data={enrichedItems}
+        pagination={false}
         searchPlaceholder="Search by tag, serial number..."
         actions={actions}
         virtualized
       />
+      <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
+        <p className="text-sm text-muted-foreground">
+          Showing {assetItemList.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1} to{" "}
+          {Math.min(page * PAGE_SIZE, totalAssetItems)} of {totalAssetItems} asset items
+        </p>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page === 1}>
+            Previous
+          </Button>
+          <span className="text-sm font-medium">
+            Page {page} of {totalPages}
+          </span>
+          <Button
+            variant="outline"
+            onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+            disabled={page >= totalPages}
+          >
+            Next
+          </Button>
+        </div>
+      </div>
 
       {officeScopedMode ? (
         <OfficeAssetItemFormModal

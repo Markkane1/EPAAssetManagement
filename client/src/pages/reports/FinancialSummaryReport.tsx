@@ -118,13 +118,13 @@ export default function FinancialSummaryReport() {
     );
   };
 
-  const handleExportPDF = () => {
+  const handleExportPDF = async () => {
     if (filteredRows.length === 0) {
       toast.error("No financial data available for the current filters");
       return;
     }
 
-    generateReportPDF({
+    await generateReportPDF({
       title: "Financial Summary Report",
       headers: ["Category", "Asset Count", "Total Value"],
       data: filteredRows.map((row) => [

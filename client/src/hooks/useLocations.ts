@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { API_CONFIG } from '@/config/api.config';
 
 const { queryKeys, messages, query } = API_CONFIG;
+const { referenceData, detail } = query.profiles;
 
 type QueryToggleOptions = {
   enabled?: boolean;
@@ -15,7 +16,8 @@ export const useLocations = (options: QueryToggleOptions = {}) => {
   return useQuery({
     queryKey: queryKeys.locations,
     queryFn: locationService.getAll,
-    staleTime: query.staleTime,
+    staleTime: referenceData.staleTime,
+    refetchOnWindowFocus: referenceData.refetchOnWindowFocus,
     enabled,
   });
 };
@@ -25,7 +27,8 @@ export const useLocation = (id: string) => {
     queryKey: [...queryKeys.locations, id],
     queryFn: () => locationService.getById(id),
     enabled: !!id,
-    staleTime: query.staleTime,
+    staleTime: detail.staleTime,
+    refetchOnWindowFocus: detail.refetchOnWindowFocus,
   });
 };
 

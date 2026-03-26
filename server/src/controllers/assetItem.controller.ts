@@ -201,6 +201,7 @@ export const assetItemController = {
     try {
       const limit = clampInt(req.query.limit, 250, 1000);
       const page = clampInt(req.query.page, 1, 10_000);
+      const meta = String(req.query.meta || '') === '1';
       const access = await resolveAccessContext(req.user);
       const filter: Record<string, unknown> = { is_active: { $ne: false } };
       if (!access.isOrgAdmin) {
@@ -211,7 +212,18 @@ export const assetItemController = {
         .sort({ created_at: -1 })
         .skip((page - 1) * limit)
         .limit(limit);
-      res.json(items);
+      if (!meta) {
+        return res.json(items);
+      }
+
+      const total = await AssetItemModel.countDocuments(filter);
+      return res.json({
+        items,
+        page,
+        limit,
+        total,
+        hasMore: (page - 1) * limit + items.length < total,
+      });
     } catch (error) {
       next(error);
     }

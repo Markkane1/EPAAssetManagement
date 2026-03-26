@@ -204,28 +204,28 @@ export default function Reports() {
 
       switch (reportId) {
         case "asset-summary":
-          generateAssetSummaryReport(exportType);
+          await generateAssetSummaryReport(exportType);
           break;
         case "asset-items-inventory":
-          generateAssetItemsInventoryReport(exportType);
+          await generateAssetItemsInventoryReport(exportType);
           break;
         case "assignment-summary":
-          generateAssignmentSummaryReport(exportType);
+          await generateAssignmentSummaryReport(exportType);
           break;
         case "status-report":
-          generateStatusDistributionReport(exportType);
+          await generateStatusDistributionReport(exportType);
           break;
         case "maintenance-report":
-          generateMaintenanceReport(exportType);
+          await generateMaintenanceReport(exportType);
           break;
         case "location-inventory":
-          generateLocationInventoryReport(exportType);
+          await generateLocationInventoryReport(exportType);
           break;
         case "financial-summary":
-          generateFinancialSummaryReport(exportType);
+          await generateFinancialSummaryReport(exportType);
           break;
         case "employee-assets":
-          generateEmployeeAssetsReport(exportType);
+          await generateEmployeeAssetsReport(exportType);
           break;
         default:
           toast.error("Report not available");
@@ -241,7 +241,7 @@ export default function Reports() {
     }
   };
 
-  const generateAssetSummaryReport = (exportType: "csv" | "pdf") => {
+  const generateAssetSummaryReport = async (exportType: "csv" | "pdf") => {
     const filteredAssets = filterByDateRange(assets, "acquisition_date", startDate, endDate);
     if (!filteredAssets || filteredAssets.length === 0) {
       toast.error("No asset data available for selected date range");
@@ -280,7 +280,7 @@ export default function Reports() {
         { key: "status", header: "Status" },
       ], filename);
     } else {
-      generateReportPDF({
+      await generateReportPDF({
         title: "Asset Summary Report",
         headers: ["Name", "Category", "Qty", "Items", "Unit Price", "Total Value", "Acq. Date", "Status"],
         data: reportData.map(r => [
@@ -299,7 +299,7 @@ export default function Reports() {
     }
   };
 
-  const generateAssetItemsInventoryReport = (exportType: "csv" | "pdf") => {
+  const generateAssetItemsInventoryReport = async (exportType: "csv" | "pdf") => {
     const filteredItems = filterByDateRange(assetItems, "created_at", startDate, endDate);
     if (!filteredItems || filteredItems.length === 0) {
       toast.error("No asset items data available for selected date range");
@@ -341,7 +341,7 @@ export default function Reports() {
         { key: "warrantyExpiry", header: "Warranty Expiry", formatter: (v) => formatDateForExport(v as string) },
       ], filename);
     } else {
-      generateReportPDF({
+      await generateReportPDF({
         title: "Asset Items Inventory Report",
         headers: ["Tag", "Asset", "Serial #", "Location", "Status", "Condition", "Assignment"],
         data: reportData.map(r => [
@@ -359,7 +359,7 @@ export default function Reports() {
     }
   };
 
-  const generateAssignmentSummaryReport = (exportType: "csv" | "pdf") => {
+  const generateAssignmentSummaryReport = async (exportType: "csv" | "pdf") => {
     const filteredAssignments = filterByDateRange(assignments, "assigned_date", startDate, endDate) || [];
     const scopedAssignments = isEmployeeRole
       ? filteredAssignments.filter((assignment) => assignment.employee_id === currentEmployee?.id)
@@ -405,7 +405,7 @@ export default function Reports() {
         { key: "notes", header: "Notes" },
       ], filename);
     } else {
-      generateReportPDF({
+      await generateReportPDF({
         title: "Assignment Summary Report",
         headers: ["Employee", "Directorate", "Asset Tag", "Asset", "Assigned", "Expected Return", "Status"],
         data: reportData.map(r => [
@@ -423,7 +423,7 @@ export default function Reports() {
     }
   };
 
-  const generateStatusDistributionReport = (exportType: "csv" | "pdf") => {
+  const generateStatusDistributionReport = async (exportType: "csv" | "pdf") => {
     const filteredItems = filterByDateRange(assetItems, "created_at", startDate, endDate);
     if (!filteredItems || filteredItems.length === 0) {
       toast.error("No asset items data available for selected date range");
@@ -495,7 +495,7 @@ export default function Reports() {
         pdfData.push(["Assignment", type, count, ((count / filteredItems.length) * 100).toFixed(1) + "%"]);
       });
 
-      generateReportPDF({
+      await generateReportPDF({
         title: "Status Distribution Report",
         headers: ["Category", "Type", "Count", "Percentage"],
         data: pdfData,
@@ -505,7 +505,7 @@ export default function Reports() {
     }
   };
 
-  const generateMaintenanceReport = (exportType: "csv" | "pdf") => {
+  const generateMaintenanceReport = async (exportType: "csv" | "pdf") => {
     const filteredMaintenance = filterByDateRange(maintenance, "scheduled_date", startDate, endDate);
     if (!filteredMaintenance || filteredMaintenance.length === 0) {
       toast.error("No maintenance data available for selected date range");
@@ -547,7 +547,7 @@ export default function Reports() {
         { key: "notes", header: "Notes" },
       ], filename);
     } else {
-      generateReportPDF({
+      await generateReportPDF({
         title: "Maintenance Report",
         headers: ["Tag", "Asset", "Type", "Status", "Scheduled", "Completed", "Cost"],
         data: reportData.map(r => [
@@ -567,7 +567,7 @@ export default function Reports() {
     toast.info(`Total maintenance cost: ${formatCurrencyForExport(totalCost)}`);
   };
 
-  const generateLocationInventoryReport = (exportType: "csv" | "pdf") => {
+  const generateLocationInventoryReport = async (exportType: "csv" | "pdf") => {
     if (!locations || locations.length === 0) {
       toast.error("No location data available");
       return;
@@ -650,7 +650,7 @@ export default function Reports() {
         { key: "retired", header: "Retired" },
       ], filename);
     } else {
-      generateReportPDF({
+      await generateReportPDF({
         title: "Location Inventory Report",
         headers: ["Location", "Items", "Value", "Available", "Assigned", "Maintenance", "Damaged"],
         data: reportData.map(r => [
@@ -668,7 +668,7 @@ export default function Reports() {
     }
   };
 
-  const generateFinancialSummaryReport = (exportType: "csv" | "pdf") => {
+  const generateFinancialSummaryReport = async (exportType: "csv" | "pdf") => {
     const filteredAssets = filterByDateRange(assets, "acquisition_date", startDate, endDate);
     if (!filteredAssets || filteredAssets.length === 0) {
       toast.error("No asset data available for selected date range");
@@ -720,7 +720,7 @@ export default function Reports() {
       ]);
       pdfData.push(["GRAND TOTAL", totalCount, formatCurrencyForExport(grandTotal)]);
 
-      generateReportPDF({
+      await generateReportPDF({
         title: "Financial Summary Report",
         headers: ["Category", "Asset Count", "Total Value"],
         data: pdfData,
@@ -732,7 +732,7 @@ export default function Reports() {
     toast.info(`Total asset value: ${formatCurrencyForExport(grandTotal)}`);
   };
 
-  const generateEmployeeAssetsReport = (exportType: "csv" | "pdf") => {
+  const generateEmployeeAssetsReport = async (exportType: "csv" | "pdf") => {
     if (!employees || employees.length === 0) {
       toast.error("No employee data available");
       return;
@@ -792,7 +792,7 @@ export default function Reports() {
         { key: "assetTags", header: "Assigned Asset Tags" },
       ], filename);
     } else {
-      generateReportPDF({
+      await generateReportPDF({
         title: "Employee Assets Report",
         headers: ["Employee", "Email", "Directorate", "Job Title", "Assignments", "Asset Tags"],
         data: reportData.map(r => [

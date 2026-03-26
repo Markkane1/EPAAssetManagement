@@ -1,10 +1,15 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { assetItemService } from '@/services/assetItemService';
-import type { AssetItemBatchCreateDto, AssetItemUpdateDto } from '@/services/assetItemService';
+import type {
+  AssetItemBatchCreateDto,
+  AssetItemListQuery,
+  AssetItemUpdateDto,
+} from '@/services/assetItemService';
 import { toast } from 'sonner';
 import { API_CONFIG } from '@/config/api.config';
 
 const { queryKeys, messages, query } = API_CONFIG;
+const { heavyList, detail } = query.profiles;
 
 type QueryToggleOptions = {
   enabled?: boolean;
@@ -15,7 +20,19 @@ export const useAssetItems = (options: QueryToggleOptions = {}) => {
   return useQuery({
     queryKey: queryKeys.assetItems,
     queryFn: assetItemService.getAll,
-    staleTime: query.staleTime,
+    staleTime: heavyList.staleTime,
+    refetchOnWindowFocus: heavyList.refetchOnWindowFocus,
+    enabled,
+  });
+};
+
+export const usePagedAssetItems = (query: AssetItemListQuery, options: QueryToggleOptions = {}) => {
+  const { enabled = true } = options;
+  return useQuery({
+    queryKey: [...queryKeys.assetItems, 'paged', query.page ?? 1, query.limit ?? null],
+    queryFn: () => assetItemService.getPaged(query),
+    staleTime: heavyList.staleTime,
+    refetchOnWindowFocus: heavyList.refetchOnWindowFocus,
     enabled,
   });
 };
@@ -25,7 +42,8 @@ export const useAssetItem = (id: string) => {
     queryKey: [...queryKeys.assetItems, id],
     queryFn: () => assetItemService.getById(id),
     enabled: !!id,
-    staleTime: query.staleTime,
+    staleTime: detail.staleTime,
+    refetchOnWindowFocus: detail.refetchOnWindowFocus,
   });
 };
 
@@ -34,7 +52,8 @@ export const useAssetItemsByAsset = (assetId: string) => {
     queryKey: [...queryKeys.assetItems, 'byAsset', assetId],
     queryFn: () => assetItemService.getByAsset(assetId),
     enabled: !!assetId,
-    staleTime: query.staleTime,
+    staleTime: heavyList.staleTime,
+    refetchOnWindowFocus: heavyList.refetchOnWindowFocus,
   });
 };
 
@@ -43,7 +62,8 @@ export const useAssetItemsByLocation = (locationId: string) => {
     queryKey: [...queryKeys.assetItems, 'byLocation', locationId],
     queryFn: () => assetItemService.getByLocation(locationId),
     enabled: !!locationId,
-    staleTime: query.staleTime,
+    staleTime: heavyList.staleTime,
+    refetchOnWindowFocus: heavyList.refetchOnWindowFocus,
   });
 };
 
@@ -51,7 +71,8 @@ export const useAvailableAssetItems = () => {
   return useQuery({
     queryKey: [...queryKeys.assetItems, 'available'],
     queryFn: assetItemService.getAvailable,
-    staleTime: query.staleTime,
+    staleTime: heavyList.staleTime,
+    refetchOnWindowFocus: heavyList.refetchOnWindowFocus,
   });
 };
 

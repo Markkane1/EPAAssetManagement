@@ -138,6 +138,8 @@ async function main() {
   assert.ok([404, 400].includes(traversalRes.status), 'Path traversal via static-style path must not expose files');
 
   const originalFind = UserModel.find.bind(UserModel);
+  const originalConsoleError = console.error;
+  console.error = () => undefined;
   (UserModel as any).find = () => {
     throw new Error('Simulated Mongo failure at C:/secret/path with internal var userQuery');
   };
@@ -145,6 +147,7 @@ async function main() {
     .get('/api/users')
     .set('Authorization', `Bearer ${authToken}`);
   (UserModel as any).find = originalFind;
+  console.error = originalConsoleError;
   assert.equal(errorRes.status, 500, 'Server errors should bubble as 500');
   assert.equal(errorRes.body.message, 'Internal Server Error', 'Production error responses must be generic');
   assert.equal(String(JSON.stringify(errorRes.body)).includes('Mongo'), false, 'Mongo details must not leak');

@@ -11,6 +11,7 @@ import {
 } from '../utils/roles';
 import { validateStrongPassword } from '../utils/passwordPolicy';
 import { escapeRegex, readPagination } from '../utils/requestParsing';
+import { buildSearchTermsQuery } from '../utils/searchTerms';
 
 const isAdminUser = (user?: AuthRequest['user']) => Boolean(user?.isOrgAdmin || hasRoleCapability(user?.roles || [], ['org_admin']));
 
@@ -110,12 +111,7 @@ export const userController = {
 
       const query: Record<string, unknown> = {};
       if (search.length > 0) {
-        const regex = new RegExp(escapeRegex(search), 'i');
-        query.$or = [
-          { email: regex },
-          { first_name: regex },
-          { last_name: regex },
-        ];
+        Object.assign(query, buildSearchTermsQuery(search) || {});
       }
 
       const users = await UserModel.find(

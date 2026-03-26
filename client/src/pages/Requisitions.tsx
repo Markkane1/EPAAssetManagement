@@ -4,15 +4,15 @@ import { useQuery } from "@tanstack/react-query";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTable } from "@/components/shared/DataTable";
-import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Loader2 } from "lucide-react";
+import { Label } from "@/components/ui/label";
+import { Loader2, CheckCircle2, ClipboardList, Clock3, PackageCheck } from "lucide-react";
 import { requisitionService } from "@/services/requisitionService";
 import { useLocations } from "@/hooks/useLocations";
 import { useAuth } from "@/contexts/AuthContext";
+import { StatusBadge } from "@/components/shared/StatusBadge";
+import { FilterBar, FilterField, MetricCard, TimelineList, WorkflowPanel } from "@/components/shared/workflow";
 
 function asId<T extends { id?: string; _id?: string }>(row: T): string {
   return String(row.id || row._id || "");
@@ -177,11 +177,7 @@ export default function Requisitions() {
     {
       key: "status",
       label: "Status",
-      render: (value: unknown) => (
-        <Badge variant="outline" className="font-mono text-xs">
-          {String(value || "UNKNOWN")}
-        </Badge>
-      ),
+      render: (value: unknown) => <StatusBadge status={String(value || "UNKNOWN")} />,
     },
     {
       key: "created_at",
@@ -194,6 +190,23 @@ export default function Requisitions() {
     { key: "office_name", label: "Office" },
     { key: "submitted_by", label: "Submitted By" },
   ];
+
+  const filterError =
+    fromDate && toDate && new Date(fromDate).getTime() > new Date(toDate).getTime()
+      ? "The start date must be on or before the end date."
+      : "";
+
+  const submittedCount = rows.filter((row) => SUBMITTED_STATUSES.has(String(row.status || ""))).length;
+  const approvedCount = rows.filter((row) => APPROVED_STATUSES.has(String(row.status || ""))).length;
+  const fulfilledCount = rows.filter((row) => String(row.status || "").includes("FULFILLED")).length;
+  const recentTimeline = rows.slice(0, 5).map((row) => ({
+    id: row.id,
+    title: String(row.file_number || row.id),
+    description: `${row.office_name} - ${row.submitted_by}`,
+    meta: row.created_at ? new Date(String(row.created_at)).toLocaleString() : "Date unavailable",
+    badge: String(row.status || "UNKNOWN"),
+    icon: APPROVED_STATUSES.has(String(row.status || "")) ? CheckCircle2 : Clock3,
+  }));
 
   if (query.isLoading) {
     return (
@@ -213,6 +226,14 @@ export default function Requisitions() {
       <PageHeader
         title={pageTitle}
         description={headerDescription}
+        eyebrow={isApprovedQueue ? "Queue" : isCaretakerFulfilledQueue ? "Completed work" : "Workflow"}
+        meta={
+          <>
+            <span>{rows.length} records</span>
+            <span className="hidden h-1 w-1 rounded-full bg-border sm:inline-block" />
+            <span>{statusOptions.length - 1} status views</span>
+          </>
+        }
         action={
           canCreateRequisition
             ? { label: "New Requisition", onClick: () => navigate("/requisitions/new") }
@@ -220,48 +241,65 @@ export default function Requisitions() {
         }
       />
 
-      <Card className="mt-6">
-        <CardContent className="pt-6">
-          <div className="grid gap-4 md:grid-cols-4">
-            <div className="space-y-2">
-              <Label>Status</Label>
-              <select
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                value={status}
-                onChange={(event) => setStatus(event.target.value)}
-              >
-                {statusOptions.map((entry) => (
-                  <option key={entry.value} value={entry.value}>
-                    {entry.label}
-                  </option>
-                ))}
-              </select>
-            </div>
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <MetricCard label="Visible requests" value={rows.length} helper="Based on the active queue and filters" icon={ClipboardList} tone="primary" />
+        <MetricCard label="Submitted" value={submittedCount} helper="Awaiting review or verification" icon={Clock3} tone="warning" />
+        <MetricCard label="Approved" value={approvedCount} helper="Ready for fulfillment or issue" icon={CheckCircle2} tone="success" />
+        <MetricCard label="Fulfilled" value={fulfilledCount} helper="Completed requisitions in this view" icon={PackageCheck} tone="default" />
+      </div>
 
-            <div className="space-y-2">
-              <Label>File Number</Label>
-              <Input
-                value={fileNumber}
-                onChange={(event) => setFileNumber(event.target.value)}
-                placeholder="Search file number"
-              />
-            </div>
+      <FilterBar>
+        <div className="grid gap-4 lg:grid-cols-4">
+          <FilterField label="Status">
+            <Label htmlFor="requisition-status" className="sr-only">Status</Label>
+            <select
+              id="requisition-status"
+              className="flex h-11 w-full rounded-xl border border-input/80 bg-background/90 px-3.5 py-2 text-sm"
+              value={status}
+              onChange={(event) => setStatus(event.target.value)}
+            >
+              {statusOptions.map((entry) => (
+                <option key={entry.value} value={entry.value}>
+                  {entry.label}
+                </option>
+              ))}
+            </select>
+          </FilterField>
 
-            <div className="space-y-2">
-              <Label>From Date</Label>
-              <Input type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} />
-            </div>
+          <FilterField label="File Number" hint="Match against the requisition file number">
+            <Input
+              value={fileNumber}
+              onChange={(event) => setFileNumber(event.target.value)}
+              placeholder="Search file number"
+            />
+          </FilterField>
 
-            <div className="space-y-2">
-              <Label>To Date</Label>
-              <Input type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} />
-            </div>
+          <FilterField label="From Date">
+            <Input
+              type="date"
+              value={fromDate}
+              onChange={(event) => setFromDate(event.target.value)}
+              aria-invalid={Boolean(filterError)}
+            />
+          </FilterField>
+
+          <FilterField label="To Date">
+            <Input
+              type="date"
+              value={toDate}
+              onChange={(event) => setToDate(event.target.value)}
+              aria-invalid={Boolean(filterError)}
+            />
+          </FilterField>
+        </div>
+
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-h-5 text-sm">
+            {filterError ? <p className="field-error">{filterError}</p> : <p className="text-muted-foreground">Filters are applied only when you confirm them.</p>}
           </div>
-
-          <div className="mt-4 flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button
               type="button"
-              className="w-full sm:w-auto"
               onClick={() =>
                 setAppliedFilters({
                   status,
@@ -270,13 +308,13 @@ export default function Requisitions() {
                   toDate,
                 })
               }
+              disabled={Boolean(filterError)}
             >
               Apply Filters
             </Button>
             <Button
               type="button"
               variant="outline"
-              className="w-full sm:w-auto"
               onClick={() => {
                 setStatus("ALL");
                 setFileNumber("");
@@ -293,18 +331,38 @@ export default function Requisitions() {
               Reset
             </Button>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </FilterBar>
 
-      <div className="mt-6">
-        <DataTable
-          columns={columns}
-          data={rows as Array<{ id: string }>}
-          searchable={false}
-          onRowClick={(row) =>
-            navigate(`/requisitions/${row.id}`, { state: { from: location.pathname } })
-          }
-        />
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <WorkflowPanel
+          title={isApprovedQueue ? "Approved requisition queue" : "Requisition worklist"}
+          description="Use the filter bar to narrow the list, then open a record to review or continue the workflow."
+        >
+          <DataTable
+            columns={columns}
+            data={rows as Array<{ id: string }>}
+            searchable={false}
+            emptyState={{
+              title: "No requisitions match the current view",
+              description: "Adjust the queue, dates, or status filters to see more requests.",
+            }}
+            onRowClick={(row) =>
+              navigate(`/requisitions/${row.id}`, { state: { from: location.pathname } })
+            }
+          />
+        </WorkflowPanel>
+
+        <WorkflowPanel
+          title="Recent activity"
+          description="The latest requisitions in this queue, ordered by creation time."
+        >
+          <TimelineList
+            items={recentTimeline}
+            emptyTitle="No requisitions yet"
+            emptyDescription="New requisition activity will appear here once requests enter this queue."
+          />
+        </WorkflowPanel>
       </div>
     </MainLayout>
   );

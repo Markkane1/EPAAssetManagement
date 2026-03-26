@@ -20,6 +20,7 @@ import { logAudit } from '../modules/records/services/audit.service';
 import { getAssetItemOfficeId, officeAssetItemFilter } from '../utils/assetHolder';
 import { createBulkNotifications } from '../services/notification.service';
 import { generateHandoverSlip, generateReturnSlip } from '../services/assignmentSlip.service';
+import { AssetModel } from '../models/asset.model';
 
 import {
   OPEN_ASSIGNMENT_STATUSES,
@@ -67,47 +68,246 @@ function ensureEmployeeOwnsAssignment(assignment: any, requesterEmployeeId: stri
   }
 }
 
+async function listAssignmentsForOffice(officeId: string, skip: number, limit: number) {
+  return AssignmentModel.aggregate([
+    {
+      $lookup: {
+        from: AssetItemModel.collection.name,
+        localField: 'asset_item_id',
+        foreignField: '_id',
+        as: 'asset_item',
+      },
+    },
+    {
+      $match: {
+        asset_item: {
+          $elemMatch: {
+            ...officeAssetItemFilter(officeId),
+            is_active: { $ne: false },
+          },
+        },
+      },
+    },
+    { $sort: { assigned_date: -1, created_at: -1 } },
+    { $skip: skip },
+    { $limit: limit },
+    { $project: { asset_item: 0 } },
+  ]).exec();
+}
+
+function prefixedFilter(filter: Record<string, unknown>, prefix: string) {
+  return Object.fromEntries(
+    Object.entries(filter).map(([key, value]) => [`${prefix}.${key}`, value])
+  );
+}
+
+async function listAssignmentsWithDetails(params: {
+  match?: Record<string, unknown>;
+  officeId?: string;
+  skip: number;
+  limit: number;
+}) {
+  const pipeline: Record<string, unknown>[] = [];
+  if (params.match && Object.keys(params.match).length > 0) {
+    pipeline.push({ $match: params.match });
+  }
+
+  pipeline.push(
+    {
+      $lookup: {
+        from: AssetItemModel.collection.name,
+        localField: 'asset_item_id',
+        foreignField: '_id',
+        as: 'asset_item',
+      },
+    },
+    {
+      $unwind: {
+        path: '$asset_item',
+        preserveNullAndEmptyArrays: true,
+      },
+    }
+  );
+
+  if (params.officeId) {
+    pipeline.push({
+      $match: {
+        ...prefixedFilter(officeAssetItemFilter(params.officeId), 'asset_item'),
+        'asset_item.is_active': { $ne: false },
+      },
+    });
+  }
+
+  pipeline.push(
+    {
+      $lookup: {
+        from: EmployeeModel.collection.name,
+        localField: 'employee_id',
+        foreignField: '_id',
+        as: 'employee',
+      },
+    },
+    {
+      $unwind: {
+        path: '$employee',
+        preserveNullAndEmptyArrays: true,
+      },
+    },
+    {
+      $lookup: {
+        from: AssetModel.collection.name,
+        localField: 'asset_item.asset_id',
+        foreignField: '_id',
+        as: 'asset',
+      },
+    },
+    {
+      $unwind: {
+        path: '$asset',
+        preserveNullAndEmptyArrays: true,
+      },
+    },
+    { $sort: { assigned_date: -1, created_at: -1 } },
+    { $skip: params.skip },
+    { $limit: params.limit },
+    {
+      $addFields: {
+        itemTag: '$asset_item.tag',
+        assetName: '$asset.name',
+        employeeName: {
+          $trim: {
+            input: {
+              $concat: [
+                { $ifNull: ['$employee.first_name', ''] },
+                ' ',
+                { $ifNull: ['$employee.last_name', ''] },
+              ],
+            },
+          },
+        },
+        employeeEmail: '$employee.email',
+      },
+    },
+    {
+      $project: {
+        asset_item: 0,
+        asset: 0,
+        employee: 0,
+      },
+    }
+  );
+
+  return AssignmentModel.aggregate(pipeline).exec();
+}
+
+async function countAssignmentsWithDetailsFilter(params: {
+  match?: Record<string, unknown>;
+  officeId?: string;
+}) {
+  const pipeline: Record<string, unknown>[] = [];
+  if (params.match && Object.keys(params.match).length > 0) {
+    pipeline.push({ $match: params.match });
+  }
+
+  if (params.officeId) {
+    pipeline.push(
+      {
+        $lookup: {
+          from: AssetItemModel.collection.name,
+          localField: 'asset_item_id',
+          foreignField: '_id',
+          as: 'asset_item',
+        },
+      },
+      {
+        $match: {
+          asset_item: {
+            $elemMatch: {
+              ...officeAssetItemFilter(params.officeId),
+              is_active: { $ne: false },
+            },
+          },
+        },
+      }
+    );
+  }
+
+  pipeline.push({ $count: 'total' });
+  const counts = await AssignmentModel.aggregate(pipeline).exec();
+  return Number(counts[0]?.total || 0);
+}
+
 export const assignmentController = {
   list: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const limit = clampInt(req.query.limit, 200, 1000);
       const page = clampInt(req.query.page, 1, 10_000);
       const skip = (page - 1) * limit;
+      const meta = String(req.query.meta || '') === '1';
+      const includeDetails = String(req.query.details || '') === '1';
       const access = await resolveAccessContext(req.user);
 
       if (!access.isOrgAdmin && access.role === 'employee') {
         const requesterEmployeeId = await resolveRequesterEmployeeId(access.userId);
-        const assignments = await AssignmentModel.find({
+        const match = {
           $or: [
             { employee_id: requesterEmployeeId },
             { assigned_to_type: 'EMPLOYEE', assigned_to_id: requesterEmployeeId },
           ],
-        })
-          .sort({ assigned_date: -1, created_at: -1 })
-          .skip(skip)
-          .limit(limit);
-        return res.json(assignments);
+        };
+        const assignments = includeDetails
+          ? await listAssignmentsWithDetails({ match, skip, limit })
+          : await AssignmentModel.find(match)
+              .sort({ assigned_date: -1, created_at: -1 })
+              .skip(skip)
+              .limit(limit);
+        if (!meta) {
+          return res.json(assignments);
+        }
+        const total = await AssignmentModel.countDocuments(match);
+        return res.json({
+          items: assignments,
+          page,
+          limit,
+          total,
+          hasMore: skip + assignments.length < total,
+        });
       }
 
       if (access.isOrgAdmin) {
-        const assignments = await AssignmentModel.find()
-          .sort({ assigned_date: -1, created_at: -1 })
-          .skip(skip)
-          .limit(limit);
-        return res.json(assignments);
+        const assignments = includeDetails
+          ? await listAssignmentsWithDetails({ skip, limit })
+          : await AssignmentModel.find()
+              .sort({ assigned_date: -1, created_at: -1 })
+              .skip(skip)
+              .limit(limit);
+        if (!meta) {
+          return res.json(assignments);
+        }
+        const total = await AssignmentModel.countDocuments({});
+        return res.json({
+          items: assignments,
+          page,
+          limit,
+          total,
+          hasMore: skip + assignments.length < total,
+        });
       }
       if (!access.officeId) throw createHttpError(403, 'User is not assigned to an office');
-      const assetItemIds = await AssetItemModel.distinct('_id', {
-        ...officeAssetItemFilter(access.officeId),
-        is_active: true,
+      const assignments = includeDetails
+        ? await listAssignmentsWithDetails({ officeId: access.officeId, skip, limit })
+        : await listAssignmentsForOffice(access.officeId, skip, limit);
+      if (!meta) {
+        return res.json(assignments);
+      }
+      const total = await countAssignmentsWithDetailsFilter({ officeId: access.officeId });
+      return res.json({
+        items: assignments,
+        page,
+        limit,
+        total,
+        hasMore: skip + assignments.length < total,
       });
-      const assignments = await AssignmentModel.find({
-        asset_item_id: { $in: assetItemIds },
-      })
-        .sort({ assigned_date: -1, created_at: -1 })
-        .skip(skip)
-        .limit(limit);
-      return res.json(assignments);
     } catch (error) {
       return next(error);
     }

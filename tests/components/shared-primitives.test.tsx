@@ -5,6 +5,11 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
+const routerFuture = {
+  v7_startTransition: true,
+  v7_relativeSplatPath: true,
+} as const;
+
 const toastSuccessMock = vi.fn();
 const toastErrorMock = vi.fn();
 
@@ -71,7 +76,7 @@ describe("shared primitives", () => {
 
   it("should apply the active class to NavLink when the route matches", () => {
     render(
-      <MemoryRouter initialEntries={["/active"]}>
+      <MemoryRouter initialEntries={["/active"]} future={routerFuture}>
         <NavLink to="/active" className="base" activeClassName="active">Active Link</NavLink>
       </MemoryRouter>
     );

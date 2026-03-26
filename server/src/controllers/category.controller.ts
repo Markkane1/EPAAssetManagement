@@ -6,6 +6,13 @@ import { escapeRegex, readPagination } from '../utils/requestParsing';
 const CATEGORY_SCOPES = new Set(['GENERAL', 'LAB_ONLY']);
 const CATEGORY_ASSET_TYPES = new Set(['ASSET', 'CONSUMABLE']);
 
+function sanitizeCategoryText(value: string) {
+  return value
+    .replace(/on[a-z]+\s*=/gi, '')
+    .replace(/javascript:/gi, '')
+    .trim();
+}
+
 function parseScope(value: unknown, fallback: 'GENERAL' | 'LAB_ONLY' = 'GENERAL') {
   if (value === undefined || value === null || value === '') return fallback;
   const scope = String(value).trim().toUpperCase();
@@ -25,7 +32,7 @@ function parseAssetType(value: unknown, fallback: 'ASSET' | 'CONSUMABLE' = 'ASSE
 }
 
 function parseName(value: unknown) {
-  const name = String(value || '').trim();
+  const name = sanitizeCategoryText(String(value || ''));
   if (!name) {
     throw createHttpError(400, 'name is required');
   }
@@ -34,7 +41,7 @@ function parseName(value: unknown) {
 
 function parseDescription(value: unknown) {
   if (value === undefined) return undefined;
-  const description = String(value || '').trim();
+  const description = sanitizeCategoryText(String(value || ''));
   return description || null;
 }
 

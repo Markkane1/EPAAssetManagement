@@ -138,27 +138,34 @@ async function resolveTransferApprovalRiskProfile(transfer: any) {
     };
   }
 
-  const items = await AssetItemModel.find(
-    { _id: { $in: assetItemIds } },
-    { _id: 1, asset_id: 1 }
-  )
-    .lean()
-    .exec();
-  const assetIds = Array.from(
-    new Set(items.map((item: any) => String(item.asset_id || '')).filter(Boolean))
-  );
-  const assets = assetIds.length > 0
-    ? await AssetModel.find({ _id: { $in: assetIds } }, { _id: 1, unit_price: 1 }).lean().exec()
-    : [];
-  const valueByAssetId = new Map(
-    assets.map((asset: any) => [String(asset._id), Number(asset.unit_price || 0)])
-  );
+  const riskRows = await AssetItemModel.aggregate<{ totalAmount: number }>([
+    {
+      $match: {
+        _id: { $in: assetItemIds.map((id) => new mongoose.Types.ObjectId(id)) },
+      },
+    },
+    {
+      $lookup: {
+        from: AssetModel.collection.name,
+        localField: 'asset_id',
+        foreignField: '_id',
+        as: 'asset',
+      },
+    },
+    {
+      $set: {
+        asset: { $ifNull: [{ $arrayElemAt: ['$asset', 0] }, null] },
+      },
+    },
+    {
+      $group: {
+        _id: null,
+        totalAmount: { $sum: { $ifNull: ['$asset.unit_price', 0] } },
+      },
+    },
+  ]).exec();
+  const amount = Number(riskRows[0]?.totalAmount || 0);
 
-  let amount = 0;
-  items.forEach((item: any) => {
-    const assetId = String(item.asset_id || '');
-    amount += Number(valueByAssetId.get(assetId) || 0);
-  });
   const riskTags: string[] = [];
   if (lineCount >= 10) riskTags.push('BULK');
   if (String(transfer.from_office_id || '') !== String(transfer.to_office_id || '')) {

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const notificationExistsMock = vi.fn();
+const notificationFindMock = vi.fn();
 const notificationCreateMock = vi.fn();
 const notificationInsertManyMock = vi.fn();
 const userFindMock = vi.fn();
@@ -11,6 +12,7 @@ const buildUserRoleMatchFilterMock = vi.fn((roles: string[]) => ({ roles }));
 vi.mock("../../server/src/models/notification.model", () => ({
   NotificationModel: {
     exists: (...args: unknown[]) => notificationExistsMock(...args),
+    find: (...args: unknown[]) => notificationFindMock(...args),
     create: (...args: unknown[]) => notificationCreateMock(...args),
     insertMany: (...args: unknown[]) => notificationInsertManyMock(...args),
   },
@@ -36,6 +38,7 @@ vi.mock("../../server/src/utils/roles", () => ({
 import {
   createBulkNotifications,
   createNotification,
+  invalidateNotificationSettingsCache,
   resolveNotificationRecipientsByOffice,
 } from "../../server/src/services/notification.service";
 
@@ -48,9 +51,11 @@ function execQuery<T>(value: T) {
 describe("notification.service", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    invalidateNotificationSettingsCache();
     settingsFindOneMock.mockReturnValue(execQuery({ notifications: {} }));
     userExistsMock.mockResolvedValue(true);
     notificationExistsMock.mockResolvedValue(false);
+    notificationFindMock.mockReturnValue(execQuery([]));
     notificationCreateMock.mockResolvedValue({ id: "notification-1" });
     notificationInsertManyMock.mockResolvedValue([{ id: "bulk-1" }]);
     userFindMock.mockReturnValue(execQuery([{ _id: "507f1f77bcf86cd799439011" }]));
@@ -59,9 +64,22 @@ describe("notification.service", () => {
   it("should resolve office recipients with org admins, explicit users, and exclusions applied", async () => {
     userFindMock.mockReturnValue(
       execQuery([
-        { _id: "507f1f77bcf86cd799439011" },
-        { _id: "507f1f77bcf86cd799439012" },
-        { _id: "507f1f77bcf86cd799439013" },
+        {
+          _id: "507f1f77bcf86cd799439011",
+          location_id: "507f1f77bcf86cd799439021",
+          role: "office_head",
+          roles: ["office_head"],
+        },
+        {
+          _id: "507f1f77bcf86cd799439012",
+          role: "org_admin",
+          roles: ["org_admin"],
+        },
+        {
+          _id: "507f1f77bcf86cd799439013",
+          role: "employee",
+          roles: ["employee"],
+        },
       ])
     );
 
@@ -84,7 +102,7 @@ describe("notification.service", () => {
           expect.objectContaining({ _id: { $in: ["507f1f77bcf86cd799439013"] } }),
         ]),
       }),
-      { _id: 1 }
+      { _id: 1, location_id: 1, role: 1, roles: 1 }
     );
     expect(recipients).toEqual([
       "507f1f77bcf86cd799439011",
@@ -164,10 +182,18 @@ describe("notification.service", () => {
     settingsFindOneMock.mockReturnValue(
       execQuery({ notifications: { maintenance_reminders: false } })
     );
-    notificationExistsMock
-      .mockResolvedValueOnce(false)
-      .mockResolvedValueOnce(true)
-      .mockResolvedValueOnce(false);
+    notificationFindMock.mockReturnValue(
+      execQuery([
+        {
+          recipient_user_id: "507f1f77bcf86cd799439013",
+          office_id: "507f1f77bcf86cd799439021",
+          type: "TRANSFER_APPROVED",
+          entity_type: "Transfer",
+          entity_id: "507f1f77bcf86cd799439032",
+          created_at: new Date().toISOString(),
+        },
+      ])
+    );
     userFindMock.mockReturnValue(
       execQuery([
         { _id: "507f1f77bcf86cd799439011" },
@@ -216,16 +242,12 @@ describe("notification.service", () => {
     ]);
 
     expect(notificationInsertManyMock).toHaveBeenCalledWith(
-      expect.arrayContaining([
+      [
         expect.objectContaining({
           recipient_user_id: "507f1f77bcf86cd799439011",
           type: "TRANSFER_REQUESTED",
         }),
-        expect.objectContaining({
-          recipient_user_id: "507f1f77bcf86cd799439013",
-          type: "TRANSFER_APPROVED",
-        }),
-      ]),
+      ],
       { ordered: false }
     );
     expect(rows).toEqual([{ id: "bulk-1" }]);

@@ -1,5 +1,6 @@
 import mongoose, { Schema } from 'mongoose';
 import { baseSchemaOptions } from './base';
+import { buildSearchTerms } from '../utils/searchTerms';
 
 const CapabilitySchema = new Schema<any>(
   {
@@ -35,14 +36,21 @@ const OfficeSchema = new Schema<any>(
     parent_office_id: { type: Schema.Types.ObjectId, ref: 'Office', default: null },
     // Soft-active flag for office availability
     is_active: { type: Boolean, default: true },
+    search_terms: { type: [String], default: undefined, select: false },
   },
   baseSchemaOptions
 );
+
+OfficeSchema.pre('validate', function (next) {
+  this.search_terms = buildSearchTerms([this.name, this.code, this.division, this.district]);
+  next();
+});
 
 OfficeSchema.index({ is_active: 1, created_at: -1 });
 OfficeSchema.index({ type: 1, is_active: 1 });
 OfficeSchema.index({ 'capabilities.chemicals': 1, type: 1, name: 1 });
 OfficeSchema.index({ 'capabilities.consumables': 1, name: 1 });
+OfficeSchema.index({ search_terms: 1, created_at: -1 });
 
 export const OfficeModel = mongoose.model<any>('Office', OfficeSchema);
 

@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm root:*)",
+      "Read(//c/Users/IS/AppData/Roaming/npm/node_modules/gitnexus/dist/cli/**)",
+      "Bash(node \"C:/Users/IS/.claude/dist/cli/index.js\" augment \"test\")"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\IS\\.claude\\dist"
+    ]
+  }
+}

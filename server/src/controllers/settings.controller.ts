@@ -8,6 +8,7 @@ import {
   getWorkflowConfigSnapshot,
   invalidateWorkflowConfigCache,
 } from '../services/workflowConfig.service';
+import { invalidateNotificationSettingsCache } from '../services/notification.service';
 
 const STORAGE_LIMIT_BYTES = Number(process.env.STORAGE_LIMIT_GB || 10) * 1024 * 1024 * 1024;
 const APP_VERSION = process.env.APP_VERSION || '1.0.0';
@@ -398,6 +399,7 @@ export const settingsController = {
       const accessPolicies = body.accessPolicies ?? body.access_policies;
       const approvalMatrix = body.approvalMatrix ?? body.approval_matrix;
       const scheduler = body.scheduler;
+      const notificationsChanged = notifications !== undefined;
 
       if (organization) {
         settings.organization = {
@@ -441,6 +443,9 @@ export const settingsController = {
 
       await settings.save();
       invalidateWorkflowConfigCache();
+      if (notificationsChanged) {
+        invalidateNotificationSettingsCache();
+      }
       const systemInfo = await buildSystemInfo(req, settings.last_backup_at || null);
       res.json({
         settings: await serializeSettings(settings, { forceRefresh: true }),

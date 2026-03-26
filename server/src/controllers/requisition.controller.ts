@@ -177,6 +177,106 @@ async function dispatchRequisitionNotifications(input: {
   );
 }
 
+async function loadRequisitionLinkedDocuments(requisitionId: unknown) {
+  const documents = await DocumentLinkModel.aggregate<{
+    _id: unknown;
+    title?: string;
+    doc_type?: string;
+    status?: string;
+    created_at?: Date | string;
+    latestVersion?: {
+      version_no?: number;
+      file_name?: string;
+      mime_type?: string;
+      size_bytes?: number;
+      uploaded_at?: Date | string;
+      file_url?: string;
+    } | null;
+  }>([
+    {
+      $match: {
+        entity_type: 'Requisition',
+        entity_id: requisitionId,
+      },
+    },
+    {
+      $lookup: {
+        from: DocumentModel.collection.name,
+        localField: 'document_id',
+        foreignField: '_id',
+        as: 'document',
+      },
+    },
+    {
+      $set: {
+        document: { $ifNull: [{ $arrayElemAt: ['$document', 0] }, null] },
+      },
+    },
+    {
+      $match: {
+        'document.doc_type': { $in: ['RequisitionForm', 'IssueSlip'] },
+      },
+    },
+    {
+      $lookup: {
+        from: DocumentVersionModel.collection.name,
+        let: { documentId: '$document_id' },
+        pipeline: [
+          {
+            $match: {
+              $expr: { $eq: ['$document_id', '$$documentId'] },
+            },
+          },
+          { $sort: { version_no: -1 } },
+          { $limit: 1 },
+          {
+            $project: {
+              _id: 1,
+              version_no: 1,
+              file_name: 1,
+              mime_type: 1,
+              size_bytes: 1,
+              uploaded_at: 1,
+              file_url: 1,
+            },
+          },
+        ],
+        as: 'latestVersion',
+      },
+    },
+    {
+      $set: {
+        latestVersion: { $ifNull: [{ $arrayElemAt: ['$latestVersion', 0] }, null] },
+      },
+    },
+    { $sort: { 'document.created_at': -1 } },
+    {
+      $project: {
+        _id: '$document._id',
+        title: '$document.title',
+        doc_type: '$document.doc_type',
+        status: '$document.status',
+        created_at: '$document.created_at',
+        latestVersion: 1,
+      },
+    },
+  ]).exec();
+
+  const requisitionForm =
+    documents.find((doc) => String(doc.doc_type || '') === 'RequisitionForm') || null;
+  const issueSlip =
+    documents.find(
+      (doc) =>
+        String(doc.doc_type || '') === 'IssueSlip' &&
+        (String(doc.status || '') === 'Draft' || String(doc.status || '') === 'Final')
+    ) || null;
+
+  return {
+    requisitionForm,
+    issueSlip,
+  };
+}
+
 export const requisitionController = {
   list: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
@@ -355,49 +455,9 @@ export const requisitionController = {
         }
       }
 
-      const linesPromise = RequisitionLineModel.find({ requisition_id: requisition._id }).sort({ created_at: 1 }).lean();
-      const linkedDocIdsPromise = DocumentLinkModel.find(
-        { entity_type: 'Requisition', entity_id: requisition._id },
-        { document_id: 1 }
-      ).lean();
-
-      const [lines, linkRows] = await Promise.all([linesPromise, linkedDocIdsPromise]);
-      const linkedDocIds = linkRows
-        .map((row) => (row.document_id ? String(row.document_id) : null))
-        .filter((id): id is string => Boolean(id));
-
-      let requisitionFormDoc: any = null;
-      let issueSlipDoc: any = null;
-      if (linkedDocIds.length > 0) {
-        const docs = await DocumentModel.find({
-          _id: { $in: linkedDocIds },
-          doc_type: { $in: ['RequisitionForm', 'IssueSlip'] },
-        })
-          .sort({ created_at: -1 })
-          .lean();
-
-        requisitionFormDoc = docs.find((doc) => String(doc.doc_type) === 'RequisitionForm') || null;
-        issueSlipDoc =
-          docs.find(
-            (doc) =>
-              String(doc.doc_type) === 'IssueSlip' &&
-              (String(doc.status) === 'Draft' || String(doc.status) === 'Final')
-          ) || null;
-      }
-
-      const getLatestVersion = async (doc: any) => {
-        if (!doc?._id) return null;
-        return DocumentVersionModel.findOne(
-          { document_id: doc._id },
-          { version_no: 1, file_name: 1, mime_type: 1, size_bytes: 1, uploaded_at: 1, file_url: 1 }
-        )
-          .sort({ version_no: -1 })
-          .lean();
-      };
-
-      const [requisitionFormVersion, issueSlipVersion] = await Promise.all([
-        getLatestVersion(requisitionFormDoc),
-        getLatestVersion(issueSlipDoc),
+      const [lines, linkedDocuments] = await Promise.all([
+        RequisitionLineModel.find({ requisition_id: requisition._id }).sort({ created_at: 1 }).lean(),
+        loadRequisitionLinkedDocuments(requisition._id),
       ]);
 
       const enrichedLines = await enrichLinesWithMappingMetadata(lines as Array<Record<string, unknown>>);
@@ -411,24 +471,24 @@ export const requisitionController = {
         lines: enrichedLines,
         ...mappingSummary,
         documents: {
-          requisitionForm: requisitionFormDoc
+          requisitionForm: linkedDocuments.requisitionForm
             ? {
-                id: requisitionFormDoc._id,
-                title: requisitionFormDoc.title,
-                doc_type: requisitionFormDoc.doc_type,
-                status: requisitionFormDoc.status,
-                created_at: requisitionFormDoc.created_at,
-                latestVersion: requisitionFormVersion,
+                id: linkedDocuments.requisitionForm._id,
+                title: linkedDocuments.requisitionForm.title,
+                doc_type: linkedDocuments.requisitionForm.doc_type,
+                status: linkedDocuments.requisitionForm.status,
+                created_at: linkedDocuments.requisitionForm.created_at,
+                latestVersion: linkedDocuments.requisitionForm.latestVersion || null,
               }
             : null,
-          issueSlip: issueSlipDoc
+          issueSlip: linkedDocuments.issueSlip
             ? {
-                id: issueSlipDoc._id,
-                title: issueSlipDoc.title,
-                doc_type: issueSlipDoc.doc_type,
-                status: issueSlipDoc.status,
-                created_at: issueSlipDoc.created_at,
-                latestVersion: issueSlipVersion,
+                id: linkedDocuments.issueSlip._id,
+                title: linkedDocuments.issueSlip.title,
+                doc_type: linkedDocuments.issueSlip.doc_type,
+                status: linkedDocuments.issueSlip.status,
+                created_at: linkedDocuments.issueSlip.created_at,
+                latestVersion: linkedDocuments.issueSlip.latestVersion || null,
               }
             : null,
         },
@@ -1463,8 +1523,57 @@ export const requisitionController = {
           requisition.record_id = issueRecord._id;
         }
 
+        const preloadConsumableItemIds = uniqueObjectIdStrings(
+          payloadLines.map((payloadLine) => {
+            const line = dbLineById.get(payloadLine.lineId);
+            return line?.consumable_id ? String(line.consumable_id) : null;
+          })
+        );
+        const [prefetchedMoveableAssetItems, prefetchedOpenAssignments, prefetchedConsumableItems] = await Promise.all([
+          moveableTargetIds.length > 0
+            ? AssetItemModel.find({ _id: { $in: moveableTargetIds } }).session(session)
+            : Promise.resolve([]),
+          moveableTargetIds.length > 0
+            ? AssignmentModel.find(
+                {
+                  asset_item_id: { $in: moveableTargetIds },
+                  status: { $in: Array.from(OPEN_ASSIGNMENT_STATUSES) },
+                },
+                { asset_item_id: 1 }
+              ).session(session)
+            : Promise.resolve([]),
+          preloadConsumableItemIds.length > 0
+            ? ConsumableItemModel.find({ _id: { $in: preloadConsumableItemIds } }).session(session)
+            : Promise.resolve([]),
+        ]);
+
+        const prefetchedMoveableAssetItemById = new Map(
+          prefetchedMoveableAssetItems.map((item) => [String(item._id), item])
+        );
+        const prefetchedOpenAssignmentAssetItemIds = new Set(
+          prefetchedOpenAssignments
+            .map((row) => (row.asset_item_id ? String(row.asset_item_id) : null))
+            .filter((id): id is string => Boolean(id))
+        );
+        const prefetchedConsumableItemById = new Map(
+          prefetchedConsumableItems.map((item) => [String(item._id), item])
+        );
+
         const createdAssignments: unknown[] = [];
         const consumableTransactions: unknown[] = [];
+        const pendingIssueRecordAssignments: Array<{
+          assignmentId: string;
+          assetItemId: string;
+          employeeId?: string;
+          notes: string;
+        }> = [];
+        const pendingConsumableTransactionDocs: Array<Record<string, unknown>> = [];
+        const lineUpdateOps: Array<{
+          updateOne: {
+            filter: { _id: unknown };
+            update: { $set: { fulfilled_quantity: number; status: string } };
+          };
+        }> = [];
 
         for (const payloadLine of payloadLines) {
           const line = dbLineById.get(payloadLine.lineId);
@@ -1495,21 +1604,14 @@ export const requisitionController = {
               if (!requisition.target_id || !Types.ObjectId.isValid(String(requisition.target_id))) {
                 throw createHttpError(400, 'Requisition target_id is invalid');
               }
-              const assetItems = await AssetItemModel.find({ _id: { $in: assignIds } }).session(session);
+              const assetItems = assignIds
+                .map((assignId) => prefetchedMoveableAssetItemById.get(assignId) || null)
+                .filter((item): item is NonNullable<typeof item> => Boolean(item));
               if (assetItems.length !== assignIds.length) {
                 throw createHttpError(404, `One or more asset items were not found for line ${line.id}`);
               }
-              const openAssignments = await AssignmentModel.find(
-                {
-                  asset_item_id: { $in: assignIds },
-                  status: { $in: Array.from(OPEN_ASSIGNMENT_STATUSES) },
-                },
-                { asset_item_id: 1 }
-              ).session(session);
-              if (openAssignments.length > 0) {
-                const blockedIds = openAssignments
-                  .map((row) => (row.asset_item_id ? String(row.asset_item_id) : null))
-                  .filter((id): id is string => Boolean(id));
+              const blockedIds = assignIds.filter((assignId) => prefetchedOpenAssignmentAssetItemIds.has(assignId));
+              if (blockedIds.length > 0) {
                 throw createHttpError(400, `Asset item(s) already have open assignments: ${blockedIds.join(', ')}`);
               }
               for (const item of assetItems) {
@@ -1553,30 +1655,14 @@ export const requisitionController = {
                 { session }
               );
 
-              for (const assignment of assignmentRows) {
-                const existingIssueRecord = await RecordModel.findOne({
-                  record_type: 'ISSUE',
-                  assignment_id: assignment._id,
-                }).session(session);
-                if (!existingIssueRecord) {
-                  await createRecord(
-                    ctx,
-                    {
-                      recordType: 'ISSUE',
-                      officeId: issuingOfficeId,
-                      status: 'Completed',
-                      assetItemId: String(assignment.asset_item_id || ''),
-                      employeeId: targetType === 'EMPLOYEE' ? String(requisition.target_id || '') : undefined,
-                      assignmentId: String(assignment._id),
-                      notes: `Issued via requisition ${requisition.file_number} line ${line.id}`,
-                    },
-                    session
-                  );
-                } else {
-                  existingIssueRecord.status = 'Completed';
-                  await existingIssueRecord.save({ session });
-                }
-              }
+              pendingIssueRecordAssignments.push(
+                ...assignmentRows.map((assignment) => ({
+                  assignmentId: String(assignment._id),
+                  assetItemId: String(assignment.asset_item_id || ''),
+                  employeeId: targetType === 'EMPLOYEE' ? String(requisition.target_id || '') : undefined,
+                  notes: `Issued via requisition ${requisition.file_number} line ${line.id}`,
+                }))
+              );
 
               createdAssignments.push(...assignmentRows.map((assignment) => assignment.toJSON()));
               issuedAssignmentIds.push(...assignmentRows.map((assignment) => String(assignment._id)));
@@ -1594,7 +1680,7 @@ export const requisitionController = {
               if (!lineConsumableId) {
                 throw createHttpError(400, `Consumable line ${line.id} must be mapped before fulfillment`);
               }
-              const item = await ConsumableItemModel.findById(lineConsumableId).session(session);
+              const item = prefetchedConsumableItemById.get(lineConsumableId) || null;
 
               if (item) {
                 const balances = await ConsumableInventoryBalanceModel.find({
@@ -1610,6 +1696,13 @@ export const requisitionController = {
                   .session(session);
 
                 let remainingToIssue = issueCap;
+                const balanceUpdates: Array<{
+                  updateOne: {
+                    filter: { _id: unknown };
+                    update: { $set: { qty_on_hand_base: number } };
+                  };
+                }> = [];
+                const transactionDocs: Array<Record<string, unknown>> = [];
                 for (const balance of balances) {
                   if (remainingToIssue <= 0) break;
                   const available = Math.max(Number(balance.qty_on_hand_base || 0), 0);
@@ -1617,55 +1710,128 @@ export const requisitionController = {
                   const take = Math.min(available, remainingToIssue);
                   if (take <= 0) continue;
 
-                  balance.qty_on_hand_base = available - take;
-                  await balance.save({ session });
-
-                  const tx = await ConsumableInventoryTransactionModel.create(
-                    [
-                      {
-                        tx_type: 'CONSUME',
-                        tx_time: new Date().toISOString(),
-                        created_by: ctx.userId,
-                        from_holder_type: 'OFFICE',
-                        from_holder_id: issuingOfficeId,
-                        to_holder_type: null,
-                        to_holder_id: null,
-                        consumable_item_id: item._id,
-                        lot_id: balance.lot_id || null,
-                        container_id: null,
-                        qty_base: take,
-                        entered_qty: take,
-                        entered_uom: item.base_uom,
-                        reason_code_id: null,
-                        reference: requisition.file_number,
-                        notes: `Requisition ${requisition.file_number} line ${line.id}`,
-                        metadata: {
-                          requisitionId: requisition.id,
-                          requisitionLineId: line.id,
-                          recordId: issueRecordId,
-                        },
-                      },
-                    ],
-                    { session }
-                  );
-                  consumableTransactions.push(tx[0].toJSON());
+                  balanceUpdates.push({
+                    updateOne: {
+                      filter: { _id: balance._id },
+                      update: { $set: { qty_on_hand_base: available - take } },
+                    },
+                  });
+                  transactionDocs.push({
+                    tx_type: 'CONSUME',
+                    tx_time: new Date().toISOString(),
+                    created_by: ctx.userId,
+                    from_holder_type: 'OFFICE',
+                    from_holder_id: issuingOfficeId,
+                    to_holder_type: null,
+                    to_holder_id: null,
+                    consumable_item_id: item._id,
+                    lot_id: balance.lot_id || null,
+                    container_id: null,
+                    qty_base: take,
+                    entered_qty: take,
+                    entered_uom: item.base_uom,
+                    reason_code_id: null,
+                    reference: requisition.file_number,
+                    notes: `Requisition ${requisition.file_number} line ${line.id}`,
+                    metadata: {
+                      requisitionId: requisition.id,
+                      requisitionLineId: line.id,
+                      recordId: issueRecordId,
+                    },
+                  });
                   additionalFulfilled += take;
                   remainingToIssue -= take;
+                }
+
+                if (balanceUpdates.length > 0) {
+                  await ConsumableInventoryBalanceModel.bulkWrite(balanceUpdates, { session });
+                }
+                if (transactionDocs.length > 0) {
+                  pendingConsumableTransactionDocs.push(...transactionDocs);
                 }
               }
             }
           }
 
           const nextFulfilled = Number(line.fulfilled_quantity || 0) + additionalFulfilled;
-          line.fulfilled_quantity = nextFulfilled;
+          let nextLineStatus = 'PARTIALLY_ASSIGNED';
           if (nextFulfilled <= 0) {
-            line.status = 'NOT_AVAILABLE';
+            nextLineStatus = 'NOT_AVAILABLE';
           } else if (nextFulfilled === approvedQty) {
-            line.status = 'ASSIGNED';
-          } else {
-            line.status = 'PARTIALLY_ASSIGNED';
+            nextLineStatus = 'ASSIGNED';
           }
-          await line.save({ session });
+          lineUpdateOps.push({
+            updateOne: {
+              filter: { _id: line._id },
+              update: {
+                $set: {
+                  fulfilled_quantity: nextFulfilled,
+                  status: nextLineStatus,
+                },
+              },
+            },
+          });
+        }
+
+        if (lineUpdateOps.length > 0) {
+          await RequisitionLineModel.bulkWrite(lineUpdateOps, { session });
+        }
+
+        if (pendingIssueRecordAssignments.length > 0) {
+          const assignmentIds = pendingIssueRecordAssignments.map((entry) => entry.assignmentId);
+          const existingIssueRecords = await RecordModel.find(
+            {
+              record_type: 'ISSUE',
+              assignment_id: { $in: assignmentIds },
+            },
+            { _id: 1, assignment_id: 1, status: 1 }
+          ).session(session);
+          const existingIssueRecordByAssignmentId = new Map(
+            existingIssueRecords
+              .filter((record) => record.assignment_id)
+              .map((record) => [String(record.assignment_id), record])
+          );
+
+          const recordsNeedingCompletion = existingIssueRecords.filter(
+            (record) => String(record.status || '') !== 'Completed'
+          );
+          if (recordsNeedingCompletion.length > 0) {
+            await RecordModel.bulkWrite(
+              recordsNeedingCompletion.map((record) => ({
+                updateOne: {
+                  filter: { _id: record._id },
+                  update: { $set: { status: 'Completed' } },
+                },
+              })),
+              { session }
+            );
+          }
+
+          const missingIssueRecords = pendingIssueRecordAssignments.filter(
+            (assignment) => !existingIssueRecordByAssignmentId.has(assignment.assignmentId)
+          );
+          for (const assignment of missingIssueRecords) {
+            await createRecord(
+              ctx,
+              {
+                recordType: 'ISSUE',
+                officeId: issuingOfficeId,
+                status: 'Completed',
+                assetItemId: assignment.assetItemId,
+                employeeId: assignment.employeeId,
+                assignmentId: assignment.assignmentId,
+                notes: assignment.notes,
+              },
+              session
+            );
+          }
+        }
+
+        if (pendingConsumableTransactionDocs.length > 0) {
+          const txRows = await ConsumableInventoryTransactionModel.insertMany(pendingConsumableTransactionDocs, {
+            session,
+          });
+          consumableTransactions.push(...txRows.map((tx) => tx.toJSON()));
         }
 
         const finalLines = await RequisitionLineModel.find({ requisition_id: requisition._id }).session(session);

@@ -90,6 +90,9 @@ const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettingsSnapshot = {
   assignment_notifications: true,
   warranty_expiry_alerts: false,
 };
+const NOTIFICATION_SETTINGS_CACHE_TTL_MS = 30_000;
+let cachedNotificationSettings: { expiresAt: number; snapshot: NotificationSettingsSnapshot } | null = null;
+let notificationSettingsInFlight: Promise<NotificationSettingsSnapshot> | null = null;
 
 const NOTIFICATION_TYPE_TO_PREFERENCE: Record<string, NotificationPreferenceKey> = {
   ASSIGNMENT_DRAFT_CREATED: 'assignment_notifications',
@@ -229,8 +232,7 @@ function asBoolean(value: unknown, fallback: boolean) {
   return typeof value === 'boolean' ? value : fallback;
 }
 
-async function getNotificationSettingsSnapshot() {
-  const settings: any = await SystemSettingsModel.findOne({}, { notifications: 1 }).lean().exec();
+function sanitizeNotificationSettings(settings: any) {
   const notifications = settings?.notifications || {};
   return {
     low_stock_alerts: asBoolean(notifications.low_stock_alerts, DEFAULT_NOTIFICATION_SETTINGS.low_stock_alerts),
@@ -247,6 +249,44 @@ async function getNotificationSettingsSnapshot() {
       DEFAULT_NOTIFICATION_SETTINGS.warranty_expiry_alerts
     ),
   } satisfies NotificationSettingsSnapshot;
+}
+
+async function readNotificationSettingsSnapshotFromDb() {
+  const settings: any = await SystemSettingsModel.findOne({}, { notifications: 1 }).lean().exec();
+  return sanitizeNotificationSettings(settings);
+}
+
+export function invalidateNotificationSettingsCache() {
+  cachedNotificationSettings = null;
+  notificationSettingsInFlight = null;
+}
+
+async function getNotificationSettingsSnapshot(options?: { forceRefresh?: boolean }) {
+  const now = Date.now();
+  if (!options?.forceRefresh && cachedNotificationSettings && cachedNotificationSettings.expiresAt > now) {
+    return cachedNotificationSettings.snapshot;
+  }
+
+  if (!options?.forceRefresh && notificationSettingsInFlight) {
+    return notificationSettingsInFlight;
+  }
+
+  const loadPromise = readNotificationSettingsSnapshotFromDb()
+    .then((snapshot) => {
+      cachedNotificationSettings = {
+        snapshot,
+        expiresAt: Date.now() + NOTIFICATION_SETTINGS_CACHE_TTL_MS,
+      };
+      return snapshot;
+    })
+    .finally(() => {
+      if (notificationSettingsInFlight === loadPromise) {
+        notificationSettingsInFlight = null;
+      }
+    });
+
+  notificationSettingsInFlight = loadPromise;
+  return loadPromise;
 }
 
 function isNotificationTypeEnabled(type: string, settings: NotificationSettingsSnapshot) {
@@ -284,13 +324,25 @@ function normalizeUniqueObjectIds(list: string[]) {
   );
 }
 
-export async function resolveNotificationRecipientsByOffice(input: {
+type NotificationRecipientResolutionInput = {
   officeIds?: string[];
   includeOrgAdmins?: boolean;
   includeRoles?: string[];
   includeUserIds?: string[];
   excludeUserIds?: string[];
-}) {
+};
+
+type NormalizedRecipientResolutionInput = {
+  includeOrgAdmins: boolean;
+  officeIds: string[];
+  includeRoles: string[];
+  includeUserIds: string[];
+  excludeUserIds: Set<string>;
+};
+
+function normalizeRecipientResolutionInput(
+  input: NotificationRecipientResolutionInput
+): NormalizedRecipientResolutionInput {
   const includeOrgAdmins = input.includeOrgAdmins !== false;
   const officeIds = normalizeUniqueObjectIds(input.officeIds || []);
   const includeRoles = Array.from(
@@ -303,19 +355,102 @@ export async function resolveNotificationRecipientsByOffice(input: {
   const includeUserIds = normalizeUniqueObjectIds(input.includeUserIds || []);
   const excludeUserIds = new Set(normalizeUniqueObjectIds(input.excludeUserIds || []));
 
+  return {
+    includeOrgAdmins,
+    officeIds,
+    includeRoles,
+    includeUserIds,
+    excludeUserIds,
+  };
+}
+
+function buildRecipientRoleFilters(input: NormalizedRecipientResolutionInput) {
   const roleFilters: Record<string, unknown>[] = [];
-  if (includeRoles.length > 0 && officeIds.length > 0) {
+  if (input.includeRoles.length > 0 && input.officeIds.length > 0) {
     roleFilters.push({
-      ...buildUserRoleMatchFilter(includeRoles),
-      location_id: { $in: officeIds },
+      ...buildUserRoleMatchFilter(input.includeRoles),
+      location_id: { $in: input.officeIds },
     });
   }
-  if (includeOrgAdmins) {
+  if (input.includeOrgAdmins) {
     roleFilters.push(buildUserRoleMatchFilter(['org_admin']));
   }
-  if (includeUserIds.length > 0) {
-    roleFilters.push({ _id: { $in: includeUserIds } });
+  if (input.includeUserIds.length > 0) {
+    roleFilters.push({ _id: { $in: input.includeUserIds } });
   }
+  return roleFilters;
+}
+
+function userHasRole(user: { role?: unknown; roles?: unknown[] }, role: string) {
+  const normalizedRole = String(user.role || '').trim().toLowerCase();
+  if (normalizedRole === role) return true;
+  if (!Array.isArray(user.roles)) return false;
+  return user.roles.some((entry) => String(entry || '').trim().toLowerCase() === role);
+}
+
+export async function resolveNotificationRecipientsByOfficeMap(input: NotificationRecipientResolutionInput) {
+  const normalized = normalizeRecipientResolutionInput(input);
+  const recipientSets = new Map<string, Set<string>>(
+    normalized.officeIds.map((officeId) => [officeId, new Set<string>()])
+  );
+
+  if (normalized.officeIds.length === 0) {
+    return new Map<string, string[]>();
+  }
+
+  const roleFilters = buildRecipientRoleFilters(normalized);
+  if (roleFilters.length === 0) {
+    return new Map(
+      normalized.officeIds.map((officeId) => [officeId, [] as string[]])
+    );
+  }
+
+  const users = await UserModel.find(
+    {
+      is_active: true,
+      $or: roleFilters,
+    },
+    { _id: 1, location_id: 1, role: 1, roles: 1 }
+  )
+    .lean()
+    .exec();
+
+  users.forEach((user: any) => {
+    const recipientId = String(user._id || '').trim();
+    if (!recipientId || normalized.excludeUserIds.has(recipientId)) return;
+
+    const isExplicitRecipient = normalized.includeUserIds.includes(recipientId);
+    const isOrgAdminRecipient = normalized.includeOrgAdmins && userHasRole(user, 'org_admin');
+
+    if (isExplicitRecipient || isOrgAdminRecipient) {
+      normalized.officeIds.forEach((officeId) => {
+        recipientSets.get(officeId)?.add(recipientId);
+      });
+      return;
+    }
+
+    const locationId = String(user.location_id || '').trim();
+    if (!locationId) return;
+    recipientSets.get(locationId)?.add(recipientId);
+  });
+
+  return new Map(
+    Array.from(recipientSets.entries()).map(([officeId, recipients]) => [officeId, Array.from(recipients)])
+  );
+}
+
+export async function resolveNotificationRecipientsByOffice(input: NotificationRecipientResolutionInput) {
+  const normalized = normalizeRecipientResolutionInput(input);
+  if (normalized.officeIds.length > 0) {
+    const recipientMap = await resolveNotificationRecipientsByOfficeMap(input);
+    return Array.from(
+      new Set(
+        Array.from(recipientMap.values()).flatMap((recipients) => recipients)
+      )
+    );
+  }
+
+  const roleFilters = buildRecipientRoleFilters(normalized);
   if (roleFilters.length === 0) {
     return [] as string[];
   }
@@ -331,7 +466,106 @@ export async function resolveNotificationRecipientsByOffice(input: {
     .exec();
 
   const recipients = Array.from(new Set(users.map((user) => String(user._id))));
-  return recipients.filter((id) => !excludeUserIds.has(id));
+  return recipients.filter((id) => !normalized.excludeUserIds.has(id));
+}
+
+function buildNotificationIdentityKey(payload: {
+  recipient_user_id: string;
+  office_id: string;
+  type: string;
+  entity_type: string;
+  entity_id: string;
+}) {
+  return [
+    payload.recipient_user_id,
+    payload.office_id,
+    payload.type,
+    payload.entity_type,
+    payload.entity_id,
+  ].join('|');
+}
+
+async function filterDuplicateNotifications(payloads: ValidatedNotificationPayload[]) {
+  if (payloads.length === 0) return [] as ValidatedNotificationPayload[];
+
+  const dedupeRows = payloads.filter((row) => row.dedupe_window_hours);
+  if (dedupeRows.length === 0) return payloads;
+
+  const earliestCreatedAfter = new Date(
+    Math.min(
+      ...dedupeRows.map((row) => Date.now() - Number(row.dedupe_window_hours || 0) * 60 * 60 * 1000)
+    )
+  );
+
+  const identityFilters = Array.from(
+    new Map(
+      dedupeRows.map((row) => [
+        buildNotificationIdentityKey(row),
+        {
+          recipient_user_id: row.recipient_user_id,
+          office_id: row.office_id,
+          type: row.type,
+          entity_type: row.entity_type,
+          entity_id: row.entity_id,
+        },
+      ])
+    ).values()
+  );
+
+  const existingRows =
+    identityFilters.length > 0
+      ? await NotificationModel.find(
+          {
+            created_at: { $gte: earliestCreatedAfter },
+            $or: identityFilters,
+          },
+          {
+            recipient_user_id: 1,
+            office_id: 1,
+            type: 1,
+            entity_type: 1,
+            entity_id: 1,
+            created_at: 1,
+          }
+        )
+          .lean()
+          .exec()
+      : [];
+
+  const latestCreatedAtByIdentity = new Map<string, number>();
+  existingRows.forEach((row: any) => {
+    const key = buildNotificationIdentityKey({
+      recipient_user_id: String(row.recipient_user_id || ''),
+      office_id: String(row.office_id || ''),
+      type: String(row.type || ''),
+      entity_type: String(row.entity_type || ''),
+      entity_id: String(row.entity_id || ''),
+    });
+    const createdAt = new Date(String(row.created_at || '')).getTime();
+    if (!Number.isFinite(createdAt)) return;
+    const previous = latestCreatedAtByIdentity.get(key) || 0;
+    if (createdAt > previous) {
+      latestCreatedAtByIdentity.set(key, createdAt);
+    }
+  });
+
+  const seenBatchKeys = new Set<string>();
+  return payloads.filter((row) => {
+    if (!row.dedupe_window_hours) return true;
+
+    const identityKey = buildNotificationIdentityKey(row);
+    const batchKey = `${identityKey}|${row.dedupe_window_hours}`;
+    if (seenBatchKeys.has(batchKey)) {
+      return false;
+    }
+    seenBatchKeys.add(batchKey);
+
+    const latestCreatedAt = latestCreatedAtByIdentity.get(identityKey);
+    if (!latestCreatedAt) return true;
+
+    const createdAfter = Date.now() - row.dedupe_window_hours * 60 * 60 * 1000;
+    return latestCreatedAt < createdAfter;
+  });
 }
 
 export async function createNotification(input: NotificationCreateInput) {
@@ -367,8 +601,7 @@ export async function createBulkNotifications(list: NotificationCreateInput[]) {
   const settings = await getNotificationSettingsSnapshot();
   const enabledRows = normalized.filter((row) => isNotificationTypeEnabled(row.type, settings));
   if (enabledRows.length === 0) return [];
-  const duplicateFlags = await Promise.all(enabledRows.map((row) => isDuplicateNotification(row)));
-  const dedupedRows = enabledRows.filter((_, index) => !duplicateFlags[index]);
+  const dedupedRows = await filterDuplicateNotifications(enabledRows);
   if (dedupedRows.length === 0) return [];
 
   const recipientIds = Array.from(new Set(dedupedRows.map((row) => row.recipient_user_id)));

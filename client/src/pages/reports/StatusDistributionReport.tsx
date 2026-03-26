@@ -110,13 +110,13 @@ export default function StatusDistributionReport() {
     );
   };
 
-  const handleExportPDF = () => {
+  const handleExportPDF = async () => {
     if (filteredRows.length === 0) {
       toast.error("No asset item data available for the current filters");
       return;
     }
 
-    generateReportPDF({
+    await generateReportPDF({
       title: "Status Distribution Report",
       headers: ["Category", "Type", "Count", "Percentage"],
       data: filteredRows.map((row) => [row.category, row.type, row.count, row.percentage]),

@@ -1,0 +1,41 @@
+# Tests To Run
+
+- Verify `ensureEmployeeProfileForUser()` still resolves existing employees by `user_id` during user create/update flows.
+- Confirm the MongoDB `employees` collection has the `user_id_1` index after startup or migration in the target environment.
+- Run backend regression coverage for user and employee profile reconciliation paths when tests are authorized.
+- Verify `runThresholdAlertWorker()` resolves recipients once for the union of low-stock and warranty office IDs.
+- Verify low-stock and warranty notifications preserve message content, entity type, entity id, and `dedupeWindowHours` after the shared-recipient-map refactor.
+- Exercise a case where the same office has both low-stock and warranty alerts to confirm notifications are still emitted for both categories with one shared office recipient map.
+- Run an explain plan for the notification dedupe query in `filterDuplicateNotifications()` and confirm the new compound index is selected.
+- Confirm the notifications collection builds the compound dedupe index in the target environment without exceeding acceptable index storage overhead.
+- Verify `createDocumentLink()` still enforces office ownership correctly for `Record`, `AssetItem`, `Assignment`, `Transfer`, `MaintenanceRecord`, and `Requisition`.
+- Exercise `Assignment` and `MaintenanceRecord` document-link creation paths and confirm office resolution still works after the single-query lookup refactor.
+- Verify requisition fulfillment still produces the same line statuses and fulfilled quantities after batching line updates with `RequisitionLineModel.bulkWrite()`.
+- Verify moveable-line fulfillment still rejects missing asset items, cross-asset mismatches, wrong-office items, inactive items, and already-open assignments after the preload refactor.
+- Verify requisition fulfillment still creates or completes issue records correctly after the requisition-level issue-record existence check.
+- Verify consumable fulfillment still creates the same inventory transaction rows after deferring transaction insertion to one requisition-level `insertMany()`.
+- Load test requisition fulfillment with many moveable lines and a many-lot consumable line to profile the remaining balance-allocation loop cost.
+- Verify `resolveOfficeIdsFromHolders()` returns the same office IDs for mixed `OFFICE`, `EMPLOYEE`, `SUB_LOCATION`, `USER`, and `STORE` holder batches after the bulk-resolution refactor.
+- Exercise a large holder batch with repeated employee, user, and sub-location IDs to confirm office resolution now uses one query per holder type instead of one query per holder.
+- Verify the employee dashboard no longer fetches the full employees list or 200-item requisition/return lists, and instead uses `/dashboard/me`.
+- Verify the admin dashboard no longer fetches full asset-item and office collections, and instead uses `/dashboard/panels` while preserving the Recent Asset Items and Locations Overview cards.
+- Confirm dashboard search still filters the recent-items and locations panels correctly after moving that work server-side.
+- Verify `DataTable` search results are unchanged after introducing memoized per-row search blobs.
+- Exercise a large `DataTable` dataset and confirm typing in global search no longer triggers noticeable UI lag from repeated row-object traversal.
+- Verify React Query no longer refetches large list screens on window focus after the global default was changed to `refetchOnWindowFocus: false`.
+- Verify heavy list hooks (`assetItems`, `employees`, `locations`, `offices`) use their longer stale-time profiles and still refresh correctly after explicit invalidation.
+- Verify faster-changing hooks (`notifications`, approval queue, dashboard activity) still refresh on expected navigation and mutation flows after moving them to shorter stale-time profiles.
+- Verify `/employees`, `/asset-items`, and `/assignments` return paged metadata when `meta=1` is supplied and preserve legacy array responses otherwise.
+- Verify the `Assignments` paged endpoint still returns `itemTag`, `assetName`, `employeeName`, and `employeeEmail` for table rendering across org-admin, office-head, office-scoped, and employee roles.
+- Verify the `Asset Items`, `Employees`, and `Assignments` pages only fetch their paged list slice on initial render, and defer modal-support `employees`, `assignments`, `assetItems`, and `assets` queries until the relevant modal opens.
+- Verify employee and office-head assignment visibility is unchanged after switching the page to paged list data plus `/dashboard/me` identity context.
+- Verify notification creation bursts now reuse the cached notification settings snapshot instead of issuing repeated `SystemSettingsModel.findOne()` reads within the TTL window.
+- Verify updating notification settings through `/settings` invalidates the notification settings cache immediately and subsequent notification creation reflects the new flags without waiting for TTL expiry.
+- Verify the maintenance reminder worker walks scheduled records in batches, still emits the same due/overdue notifications, and no longer depends on a single 5,000-row scan.
+- Verify the threshold alert worker walks warranty-expiry items in batches, still emits the same warranty notifications, and no longer depends on a single 2,000-row scan.
+- Verify the report routes no longer pull `jspdf` and `jspdf-autotable` into the initial route bundle, and those libraries are only requested after a PDF export is triggered.
+- Verify the strengthened client bundle budget gate reports raw and gzip sizes, and enforces the configured chunk and entry budgets in CI.
+- Run `npm run migrate:search-terms -- --dry-run` in `server` first, then execute the live backfill in the target environment so existing `users`, `offices`, `vendors`, and `projects` receive `search_terms`.
+- Verify `users`, `offices`, `vendors`, and `projects` list search still supports partial matches after replacing regex filters with indexed `search_terms` lookups.
+- Run explain plans for the list-search queries on `users`, `offices`, `vendors`, and `projects` and confirm the new `search_terms` indexes are selected under realistic filters.
+- Verify dashboard recent activity for office-scoped users still returns the same assignment, maintenance, and new-asset rows after replacing the two-step scoped `distinct` flow with one aggregate reference lookup.
