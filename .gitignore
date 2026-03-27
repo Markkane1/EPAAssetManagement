@@ -17,9 +17,9 @@ server/.env
 uploads/
 server/uploads/
 coverage/
-playwright-report/
-test-results/
+tests/test-results/
 tests/integration/.runtime/
+docs/
 
 # Editor directories and files
 .vscode/*
@@ -32,7 +32,9 @@ tests/integration/.runtime/
 *.sln
 *.sw?
 .gitnexus
+.agents/
+.claude/
+CLAUDE.md
 audit-results.json
 *.tmp
 zap-report.html
-/docs/temp/

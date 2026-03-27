@@ -89,6 +89,12 @@ npm run test:consumables
 npm run test:coverage
 ```
 
+Test tooling config now lives under `tests/`:
+
+- `tests/jest.config.js`
+- `tests/playwright.config.ts`
+- `tests/test-results/` for Playwright HTML reports and artifacts
+
 ## Folder Structure
 
 ```text
@@ -99,7 +105,10 @@ tests/integration/     Express and runtime integration tests
 tests/components/      React Testing Library tests
 tests/e2e/             Playwright browser tests
 tests/security/        Security-focused tests
-docs/                  Discovery, audit, coverage, and project documentation
+tests/test-results/    Generated Playwright reports and artifacts
+tests/jest.config.js   Jest config for integration and security suites
+tests/playwright.config.ts Playwright config for browser coverage
+docs/                  Local-only notes, audits, and generated reports (Git-ignored)
 scripts/               Root utility scripts
 ```
 
@@ -146,4 +155,4 @@ Required and supported variables are documented in `.env.example`. The applicati
 
 ## Documentation
 
-See [`docs/`](./docs) for discovery, security, coverage, performance, and audit documentation.
+Tracked project guidance lives in this README plus the source tree. Use `docs/` for local notes, audits, profiling output, and generated reports; it is intentionally Git-ignored.

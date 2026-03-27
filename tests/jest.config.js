@@ -1,8 +1,13 @@
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const rootDir = path.resolve(__dirname, "..");
 
 /** @type {import('jest').Config} */
 export default {
-  rootDir: ".",
+  rootDir,
   testEnvironment: "node",
   maxWorkers: 1,
   passWithNoTests: true,
@@ -17,7 +22,7 @@ export default {
     "^.+\\.tsx?$": [
       "ts-jest",
       {
-        tsconfig: path.resolve("./server/tsconfig.json"),
+        tsconfig: path.resolve(rootDir, "server/tsconfig.json"),
       },
     ],
   },

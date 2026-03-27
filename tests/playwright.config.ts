@@ -1,7 +1,14 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { defineConfig, devices } from "@playwright/test";
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const workspaceRoot = path.resolve(__dirname, "..");
+
 export default defineConfig({
-  testDir: "./tests/e2e",
+  testDir: path.resolve(__dirname, "e2e"),
+  outputDir: path.resolve(__dirname, "test-results", "test-results"),
   fullyParallel: false,
   workers: 1,
   timeout: 45_000,
@@ -11,7 +18,13 @@ export default defineConfig({
   },
   reporter: [
     ["list"],
-    ["html", { open: "never" }],
+    [
+      "html",
+      {
+        open: "never",
+        outputFolder: path.resolve(__dirname, "test-results", "playwright-report"),
+      },
+    ],
   ],
   use: {
     baseURL: "http://localhost:8081",
@@ -33,12 +46,14 @@ export default defineConfig({
   webServer: [
     {
       command: "node ./tests/e2e/start-server.mjs",
+      cwd: workspaceRoot,
       url: "http://localhost:5001/health",
       timeout: 120_000,
       reuseExistingServer: false,
     },
     {
       command: "npm run dev:client",
+      cwd: workspaceRoot,
       url: "http://localhost:8081",
       timeout: 120_000,
       reuseExistingServer: false,
