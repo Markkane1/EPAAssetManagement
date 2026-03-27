@@ -1,8 +1,30 @@
 import assert from 'node:assert/strict';
 import bcrypt from 'bcryptjs';
 import mongoose from 'mongoose';
+import fs from 'node:fs';
+import path from 'node:path';
 import request from 'supertest';
 import { MongoMemoryServer } from 'mongodb-memory-server';
+
+const workspaceRoot = path.resolve(process.cwd());
+const testCacheRoot = path.resolve(workspaceRoot, '..', '.ams-test-cache', path.basename(workspaceRoot));
+const mongoCacheDir = path.join(testCacheRoot, 'mongodb-binaries');
+const securityMongoRoot = path.join(testCacheRoot, 'security-mongo');
+const defaultWindowsMongoPath = 'C:\\Program Files\\MongoDB\\Server\\8.2\\bin\\mongod.exe';
+
+function resolveMongoBinaryConfig() {
+  const systemBinary =
+    process.env.MONGOMS_SYSTEM_BINARY ||
+    (fs.existsSync(defaultWindowsMongoPath) ? defaultWindowsMongoPath : undefined);
+
+  if (systemBinary) {
+    return { systemBinary };
+  }
+
+  return {
+    version: process.env.MONGOMS_VERSION || '7.0.14',
+  };
+}
 
 function readCookieValue(setCookie: string[] | undefined, cookieName: string) {
   for (const entry of setCookie || []) {
@@ -18,7 +40,22 @@ function readCookieValue(setCookie: string[] | undefined, cookieName: string) {
 }
 
 async function main() {
-  const mongo = await MongoMemoryServer.create();
+  const binaryConfig = resolveMongoBinaryConfig();
+  const mongoDbPath = path.join(securityMongoRoot, `api-runtime-${process.pid}`);
+  fs.mkdirSync(mongoDbPath, { recursive: true });
+  if (!('systemBinary' in binaryConfig)) {
+    fs.mkdirSync(mongoCacheDir, { recursive: true });
+  }
+
+  const mongo = await MongoMemoryServer.create({
+    binary: {
+      ...binaryConfig,
+      downloadDir: mongoCacheDir,
+    },
+    instance: {
+      dbPath: mongoDbPath,
+    },
+  });
   process.env.NODE_ENV = 'test';
   process.env.LOAD_DOTENV_IN_TEST = 'false';
   process.env.MONGO_URI = mongo.getUri();
@@ -155,6 +192,7 @@ async function main() {
 
   await mongoose.disconnect();
   await mongo.stop();
+  fs.rmSync(mongoDbPath, { recursive: true, force: true });
   console.log('API security tests passed.');
 }
 
@@ -164,6 +202,7 @@ main().catch(async (error) => {
   try {
     await mongoose.disconnect();
   } catch {}
+  fs.rmSync(securityMongoRoot, { recursive: true, force: true });
   process.exit(1);
 });
 

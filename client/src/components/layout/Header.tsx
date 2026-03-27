@@ -130,9 +130,9 @@ export function Header({
                 </div>
               </div>
               <div className="min-w-0">
-                <h1 className="truncate text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
+                <div className="truncate text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
                   {title}
-                </h1>
+                </div>
                 {description && (
                   <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">{description}</p>
                 )}

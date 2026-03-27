@@ -1,0 +1,46 @@
+{
+  "database": "ams_profile_codex",
+  "capturedAt": "2026-03-26T18:29:24.523Z",
+  "dashboard50kAssetItems": {
+    "label": "dashboard50kAssetItems",
+    "status": 200,
+    "runs": 3,
+    "minMs": 142,
+    "maxMs": 341,
+    "averageMs": 216.33,
+    "responseBytes": 177
+  },
+  "employeeDashboardLargeEmployeeCollection": {
+    "label": "employeeDashboardLargeEmployeeCollection",
+    "status": 200,
+    "runs": 3,
+    "minMs": 97,
+    "maxMs": 172,
+    "averageMs": 138.67,
+    "responseBytes": 250
+  },
+  "requisitionList": {
+    "label": "requisitionList",
+    "status": 200,
+    "runs": 3,
+    "minMs": 218,
+    "maxMs": 429,
+    "averageMs": 317.33,
+    "responseBytes": 25957
+  },
+  "requisitionDetail": {
+    "label": "requisitionDetail",
+    "status": 200,
+    "runs": 3,
+    "minMs": 155,
+    "maxMs": 543,
+    "averageMs": 317.67,
+    "responseBytes": 45578
+  },
+  "requisitionFulfillmentManyLinesLots": {
+    "label": "requisitionFulfillmentManyLinesLots",
+    "status": 400,
+    "durationMs": 4154,
+    "responseBytes": 109
+  }
+}

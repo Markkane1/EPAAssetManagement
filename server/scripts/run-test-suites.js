@@ -1,9 +1,10 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
+const { spawn } = require('node:child_process');
 
 const TEST_FILE_PATTERN = /((\.|-)runtime-tests?|(\.|-)runtime-test|\.test|\.spec)\.ts$/i;
 const RUNTIME_FILE_PATTERN = /((\.|-)runtime-tests?|(\.|-)runtime-test)\.ts$/i;
+const DEFAULT_WINDOWS_MONGOD_PATH = 'C:\\Program Files\\MongoDB\\Server\\8.2\\bin\\mongod.exe';
 
 const SUITES = {
   security: ['tests/security'],
@@ -90,27 +91,54 @@ function resolveTsxCliPath(serverRoot) {
   );
 }
 
-function runTestFiles(serverRoot, files) {
+async function runTestFiles(serverRoot, files) {
   const tsxCliPath = resolveTsxCliPath(serverRoot);
   const workspaceRoot = path.resolve(serverRoot, '..');
+  const testCacheRoot = path.resolve(workspaceRoot, '..', '.ams-test-cache', path.basename(workspaceRoot));
+  const mongoCacheDir = path.join(testCacheRoot, 'mongodb-binaries');
+  const runtimeTmpDir = path.join(testCacheRoot, 'runtime-tmp');
+  const mongoEnv = { ...process.env };
+
+  fs.mkdirSync(mongoCacheDir, { recursive: true });
+  fs.mkdirSync(runtimeTmpDir, { recursive: true });
+
+  if (fs.existsSync(DEFAULT_WINDOWS_MONGOD_PATH)) {
+    mongoEnv.MONGOMS_SYSTEM_BINARY = mongoEnv.MONGOMS_SYSTEM_BINARY || DEFAULT_WINDOWS_MONGOD_PATH;
+  }
+  mongoEnv.MONGOMS_DOWNLOAD_DIR = mongoEnv.MONGOMS_DOWNLOAD_DIR || mongoCacheDir;
+  mongoEnv.TMP = runtimeTmpDir;
+  mongoEnv.TEMP = runtimeTmpDir;
+  mongoEnv.TMPDIR = runtimeTmpDir;
 
   for (const filePath of files) {
     const relPath = path.relative(workspaceRoot, filePath).replace(/\\/g, '/');
     console.log(`\n[TEST] ${relPath}`);
 
-    const result = spawnSync(process.execPath, [tsxCliPath, filePath], {
-      cwd: serverRoot,
-      stdio: 'inherit',
-      env: process.env,
+    const exitCode = await new Promise((resolve, reject) => {
+      const child = spawn(process.execPath, [tsxCliPath, filePath], {
+        cwd: serverRoot,
+        stdio: 'inherit',
+        env: mongoEnv,
+      });
+
+      child.on('error', reject);
+      child.on('close', (code, signal) => {
+        if (signal) {
+          reject(new Error(`Test process exited with signal ${signal}`));
+          return;
+        }
+        resolve(code ?? 0);
+      });
     });
 
-    if (result.status !== 0) {
-      process.exit(result.status || 1);
+    if (exitCode !== 0) {
+      console.error(`[TEST ERROR] ${relPath}`);
+      process.exit(exitCode || 1);
     }
   }
 }
 
-function main() {
+async function main() {
   const args = process.argv.slice(2);
   const shouldList = args.includes('--list');
   const dryRun = args.includes('--dry-run');
@@ -142,7 +170,10 @@ function main() {
     return;
   }
 
-  runTestFiles(serverRoot, files);
+  await runTestFiles(serverRoot, files);
 }
 
-main();
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

@@ -1,8 +1,11 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
-const runtimeDir = path.resolve(__dirname, ".runtime");
+const workspaceRoot = path.resolve(__dirname, "..", "..");
+const testCacheRoot = path.resolve(workspaceRoot, "..", ".ams-test-cache", path.basename(workspaceRoot));
+const runtimeDir = path.join(testCacheRoot, "integration");
 const stateFile = path.join(runtimeDir, "mongo-state.json");
+const mongoDbPath = path.join(runtimeDir, "mongo-db");
 
 module.exports = async () => {
   if (global.__AMS_JEST_MONGO__) {
@@ -12,4 +15,6 @@ module.exports = async () => {
   if (fs.existsSync(stateFile)) {
     fs.unlinkSync(stateFile);
   }
+
+  fs.rmSync(mongoDbPath, { recursive: true, force: true });
 };

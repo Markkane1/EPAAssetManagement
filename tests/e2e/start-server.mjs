@@ -8,10 +8,41 @@ import { MongoMemoryServer } from "mongodb-memory-server";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const workspaceRoot = path.resolve(__dirname, "..", "..");
-const runtimePath = path.resolve(__dirname, "runtime.json");
+const testCacheRoot = path.resolve(workspaceRoot, "..", ".ams-test-cache", path.basename(workspaceRoot));
+const runtimePath = path.join(testCacheRoot, "e2e", "runtime.json");
+const mongoCacheDir = path.join(testCacheRoot, "mongodb-binaries");
+const mongoDbPath = path.join(testCacheRoot, "e2e-mongo", `server-${process.pid}`);
+const defaultWindowsMongoPath = "C:\\Program Files\\MongoDB\\Server\\8.2\\bin\\mongod.exe";
+
+function resolveMongoBinaryConfig() {
+  const systemBinary =
+    process.env.MONGOMS_SYSTEM_BINARY ||
+    (fs.existsSync(defaultWindowsMongoPath) ? defaultWindowsMongoPath : undefined);
+
+  if (systemBinary) {
+    return { systemBinary };
+  }
+
+  return {
+    version: process.env.MONGOMS_VERSION || "7.0.14",
+  };
+}
+
+const binaryConfig = resolveMongoBinaryConfig();
+fs.mkdirSync(path.dirname(runtimePath), { recursive: true });
+fs.mkdirSync(mongoDbPath, { recursive: true });
+if (!("systemBinary" in binaryConfig)) {
+  fs.mkdirSync(mongoCacheDir, { recursive: true });
+}
+
 const mongo = await MongoMemoryServer.create({
+  binary: {
+    ...binaryConfig,
+    downloadDir: mongoCacheDir,
+  },
   instance: {
     dbName: "ams_e2e",
+    dbPath: mongoDbPath,
   },
 });
 
@@ -64,6 +95,7 @@ const shutdown = async (signal) => {
   if (fs.existsSync(runtimePath)) {
     fs.unlinkSync(runtimePath);
   }
+  fs.rmSync(mongoDbPath, { recursive: true, force: true });
 };
 
 process.on("SIGINT", async () => {

@@ -7,6 +7,26 @@ import bcrypt from 'bcryptjs';
 import request from 'supertest';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 
+const workspaceRoot = path.resolve(process.cwd());
+const testCacheRoot = path.resolve(workspaceRoot, '..', '.ams-test-cache', path.basename(workspaceRoot));
+const mongoCacheDir = path.join(testCacheRoot, 'mongodb-binaries');
+const securityMongoRoot = path.join(testCacheRoot, 'security-mongo');
+const defaultWindowsMongoPath = 'C:\\Program Files\\MongoDB\\Server\\8.2\\bin\\mongod.exe';
+
+function resolveMongoBinaryConfig() {
+  const systemBinary =
+    process.env.MONGOMS_SYSTEM_BINARY ||
+    (fs.existsSync(defaultWindowsMongoPath) ? defaultWindowsMongoPath : undefined);
+
+  if (systemBinary) {
+    return { systemBinary };
+  }
+
+  return {
+    version: process.env.MONGOMS_VERSION || '7.0.14',
+  };
+}
+
 type Agent = ReturnType<typeof request.agent>;
 
 interface LoginSession {
@@ -38,7 +58,22 @@ async function login(agent: Agent, email: string, password: string): Promise<Log
 }
 
 async function main() {
-  const mongo = await MongoMemoryServer.create();
+  const binaryConfig = resolveMongoBinaryConfig();
+  const mongoDbPath = path.join(securityMongoRoot, `runtime-${process.pid}`);
+  fs.mkdirSync(mongoDbPath, { recursive: true });
+  if (!('systemBinary' in binaryConfig)) {
+    fs.mkdirSync(mongoCacheDir, { recursive: true });
+  }
+
+  const mongo = await MongoMemoryServer.create({
+    binary: {
+      ...binaryConfig,
+      downloadDir: mongoCacheDir,
+    },
+    instance: {
+      dbPath: mongoDbPath,
+    },
+  });
   process.env.NODE_ENV = 'test';
   process.env.MONGO_URI = mongo.getUri();
   process.env.JWT_SECRET = '0123456789abcdef0123456789abcdef';
@@ -431,6 +466,7 @@ async function main() {
   await ActivityLogModel.deleteMany({});
   await mongoose.disconnect();
   await mongo.stop();
+  fs.rmSync(mongoDbPath, { recursive: true, force: true });
 
   console.log('Security runtime exploitation tests passed.');
 }
@@ -443,5 +479,6 @@ main().catch(async (error) => {
   } catch {
     // ignore cleanup errors
   }
+  fs.rmSync(securityMongoRoot, { recursive: true, force: true });
   process.exit(1);
 });

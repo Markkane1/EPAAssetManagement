@@ -1,0 +1,55 @@
+{
+  "database": "ams_profile_codex",
+  "capturedAt": "2026-03-26T18:14:31.313Z",
+  "explainPlans": {
+    "notificationDedupe": {
+      "stage": "PROJECTION_SIMPLE",
+      "indexName": "recipient_user_id_1_office_id_1_type_1_entity_type_1_entity_id_1_created_at_-1",
+      "totalDocsExamined": 20,
+      "totalKeysExamined": 20,
+      "executionTimeMs": 69
+    },
+    "dashboardScopedStats": {
+      "stage": "PROJECTION_SIMPLE",
+      "indexName": "holder_type_1_holder_id_1_is_active_1",
+      "totalDocsExamined": 45454,
+      "totalKeysExamined": 45455,
+      "executionTimeMs": 1016
+    },
+    "employeeUserLookup": {
+      "stage": "EXPRESS_IXSCAN",
+      "indexName": "user_id_1",
+      "totalDocsExamined": 1,
+      "totalKeysExamined": 1,
+      "executionTimeMs": 8
+    },
+    "requisitionList": {
+      "stage": "LIMIT",
+      "indexName": "office_id_1_status_1_created_at_-1",
+      "totalDocsExamined": 50,
+      "totalKeysExamined": 51,
+      "executionTimeMs": 7
+    },
+    "requisitionDetail": {
+      "stage": "EXPRESS_IXSCAN",
+      "indexName": "_id_",
+      "totalDocsExamined": 1,
+      "totalKeysExamined": 1,
+      "executionTimeMs": 5
+    },
+    "requisitionDetailLines": {
+      "stage": "FETCH",
+      "indexName": "requisition_id_1_created_at_1",
+      "totalDocsExamined": 80,
+      "totalKeysExamined": 80,
+      "executionTimeMs": 13
+    },
+    "maintenanceReminderScheduledDate": {
+      "stage": "SORT",
+      "indexName": "maintenance_status_1_created_at_-1",
+      "totalDocsExamined": 5000,
+      "totalKeysExamined": 5000,
+      "executionTimeMs": 94
+    }
+  }
+}

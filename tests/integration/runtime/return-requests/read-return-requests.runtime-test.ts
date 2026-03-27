@@ -14,6 +14,7 @@ async function login(agent: ReturnType<typeof request.agent>, email: string, pas
 async function main() {
   const mongo = await MongoMemoryReplSet.create({
     replSet: { count: 1, storageEngine: 'wiredTiger' },
+    instanceOpts: [{ launchTimeout: 30000 }],
   });
   process.env.NODE_ENV = 'test';
   process.env.MONGO_URI = mongo.getUri();

@@ -10,6 +10,15 @@ type MaintenanceReminderCursor = {
   id: string;
 } | null;
 
+function toExactDate(value: unknown) {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return new Date(value.getTime());
+  }
+  const parsed = value ? new Date(String(value)) : null;
+  if (!parsed || Number.isNaN(parsed.getTime())) return null;
+  return parsed;
+}
+
 function toRecordId(record: any) {
   if (record?._id) return String(record._id);
   if (record?.id) return String(record.id);
@@ -147,8 +156,8 @@ export async function runMaintenanceReminderWorker() {
     }
 
     const lastRecord = records[records.length - 1];
-    const lastScheduledDate = lastRecord?.scheduled_date ? new Date(String(lastRecord.scheduled_date)) : null;
-    if (!lastRecord?._id || !lastScheduledDate || Number.isNaN(lastScheduledDate.getTime())) {
+    const lastScheduledDate = toExactDate(lastRecord?.scheduled_date);
+    if (!lastRecord?._id || !lastScheduledDate) {
       break;
     }
     cursor = {

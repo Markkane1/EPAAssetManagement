@@ -56,7 +56,25 @@ export const TEST_PASSWORD = 'Passw0rd!2026';
 export const TEST_OBJECT_ID = '507f1f77bcf86cd799439011';
 
 const workspaceRoot = path.resolve(process.cwd());
+const testCacheRoot = path.resolve(workspaceRoot, '..', '.ams-test-cache', path.basename(workspaceRoot));
 const routesIndexPath = path.join(workspaceRoot, 'src', 'routes', 'index.ts');
+const mongoCacheDir = path.join(testCacheRoot, 'mongodb-binaries');
+const securityMongoRoot = path.join(testCacheRoot, 'security-mongo');
+const defaultWindowsMongoPath = 'C:\\Program Files\\MongoDB\\Server\\8.2\\bin\\mongod.exe';
+
+function resolveMongoBinaryConfig() {
+  const systemBinary =
+    process.env.MONGOMS_SYSTEM_BINARY ||
+    (fs.existsSync(defaultWindowsMongoPath) ? defaultWindowsMongoPath : undefined);
+
+  if (systemBinary) {
+    return { systemBinary };
+  }
+
+  return {
+    version: process.env.MONGOMS_VERSION || '7.0.14',
+  };
+}
 
 export function readCookieValue(setCookie: string[] | undefined, cookieName: string) {
   for (const entry of setCookie || []) {
@@ -106,9 +124,20 @@ export function buildAuthPayload(user: { id: string; email: string; role?: strin
 }
 
 export async function bootstrapSecurityApp() {
+  const binaryConfig = resolveMongoBinaryConfig();
+  const mongoDbPath = path.join(securityMongoRoot, `repl-${process.pid}`);
+  fs.mkdirSync(mongoDbPath, { recursive: true });
+  if (!('systemBinary' in binaryConfig)) {
+    fs.mkdirSync(mongoCacheDir, { recursive: true });
+  }
+
   const mongo = await MongoMemoryReplSet.create({
+    binary: {
+      ...binaryConfig,
+      downloadDir: mongoCacheDir,
+    },
     replSet: { count: 1, storageEngine: 'wiredTiger' },
-    instanceOpts: [{ launchTimeout: 30000 }],
+    instanceOpts: [{ launchTimeout: 30000, dbPath: mongoDbPath }],
   });
   process.env.NODE_ENV = 'test';
   process.env.MONGO_URI = mongo.getUri();
@@ -240,6 +269,7 @@ export async function seedSecurityData(): Promise<SeededContext> {
 export async function cleanupSecurityContext(ctx: { mongo: MongoMemoryReplSet }) {
   await mongoose.disconnect();
   await ctx.mongo.stop();
+  fs.rmSync(securityMongoRoot, { recursive: true, force: true });
 }
 
 function normalizePath(prefix: string, routePath: string) {

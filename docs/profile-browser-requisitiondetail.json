@@ -1,0 +1,12 @@
+{
+  "database": "ams_profile_codex",
+  "capturedAt": "2026-03-26T19:38:50.828Z",
+  "routes": [
+    {
+      "label": "RequisitionDetail",
+      "path": "/requisitions/69c56334f64a8e2d11072c14",
+      "status": "error",
+      "error": "Timed out after 60000ms"
+    }
+  ]
+}

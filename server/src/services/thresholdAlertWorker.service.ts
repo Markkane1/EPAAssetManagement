@@ -20,6 +20,15 @@ type WarrantySeedCursor = {
   id: string;
 } | null;
 
+function toExactDate(value: unknown) {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return new Date(value.getTime());
+  }
+  const parsed = value ? new Date(String(value)) : null;
+  if (!parsed || Number.isNaN(parsed.getTime())) return null;
+  return parsed;
+}
+
 async function buildOfficeRecipientMap(officeIds: string[]) {
   return resolveNotificationRecipientsByOfficeMap({
     officeIds,
@@ -165,11 +174,11 @@ async function collectWarrantyNotificationSeedBatch(cursor: WarrantySeedCursor) 
   });
 
   const lastItem = items[items.length - 1];
-  const lastWarrantyExpiry = lastItem?.warranty_expiry ? new Date(String(lastItem.warranty_expiry)) : null;
+  const lastWarrantyExpiry = toExactDate(lastItem?.warranty_expiry);
   return {
     seeds,
     nextCursor:
-      lastItem?._id && lastWarrantyExpiry && !Number.isNaN(lastWarrantyExpiry.getTime())
+      lastItem?._id && lastWarrantyExpiry
         ? {
             warrantyExpiry: lastWarrantyExpiry,
             id: String(lastItem._id),

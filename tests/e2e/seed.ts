@@ -7,7 +7,15 @@ import mongoose from "mongoose";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const runtimePath = path.resolve(__dirname, "runtime.json");
+const workspaceRoot = path.resolve(__dirname, "..", "..");
+const runtimePath = path.resolve(
+  workspaceRoot,
+  "..",
+  ".ams-test-cache",
+  path.basename(workspaceRoot),
+  "e2e",
+  "runtime.json"
+);
 
 type SeedResult = {
   officeId: string;

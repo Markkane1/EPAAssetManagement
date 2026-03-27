@@ -1,0 +1,21 @@
+{
+  "database": "ams_profile_codex",
+  "capturedAt": "2026-03-26T19:28:00.192Z",
+  "routes": [
+    {
+      "label": "Dashboard",
+      "path": "/",
+      "status": "ok",
+      "domContentLoadedMs": 217,
+      "loadEventMs": 219,
+      "responseEndMs": 34,
+      "transferSize": 1422,
+      "encodedBodySize": 1122,
+      "decodedBodySize": 1122,
+      "firstContentfulPaintMs": 280,
+      "largestContentfulPaintMs": 1232,
+      "resourceCount": 116,
+      "jsHeapUsedBytes": 27600000
+    }
+  ]
+}
