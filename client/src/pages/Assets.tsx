@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTable } from "@/components/shared/DataTable";
@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Asset } from "@/types";
 import { useNavigate } from "react-router-dom";
-import { useAssets, useCreateAsset, useUpdateAsset, useDeleteAsset } from "@/hooks/useAssets";
+import { usePagedAssets, useCreateAsset, useUpdateAsset, useDeleteAsset } from "@/hooks/useAssets";
 import { useCategories } from "@/hooks/useCategories";
 import { useVendors } from "@/hooks/useVendors";
 import { useProjects } from "@/hooks/useProjects";
@@ -21,6 +21,10 @@ import { useSchemes } from "@/hooks/useSchemes";
 import { AssetFormModal } from "@/components/forms/AssetFormModal";
 import { OfficeAssetFormModal } from "@/components/forms/OfficeAssetFormModal";
 import { useAuth } from "@/contexts/AuthContext";
+import { usePageSearch } from "@/contexts/PageSearchContext";
+
+const EMPTY_ASSETS: Asset[] = [];
+const EMPTY_LIST: never[] = [];
 
 function formatDimensions(asset: Asset) {
   const dims = asset.dimensions;
@@ -32,11 +36,19 @@ function formatDimensions(asset: Asset) {
 }
 
 export default function Assets() {
+  const PAGE_SIZE = 60;
   const navigate = useNavigate();
   const { isOrgAdmin } = useAuth();
   const officeScopedMode = !isOrgAdmin;
+  const [page, setPage] = useState(1);
+  const pageSearch = usePageSearch();
+  const searchTerm = useDeferredValue((pageSearch?.term || "").trim());
 
-  const { data: assets, isLoading } = useAssets();
+  const { data: assetsResponse, isLoading } = usePagedAssets({
+    page,
+    limit: PAGE_SIZE,
+    search: searchTerm || undefined,
+  });
   const { data: categories } = useCategories({ assetType: "ASSET" });
   const { data: vendors } = useVendors();
   const { data: projects } = useProjects();
@@ -48,16 +60,27 @@ export default function Assets() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingAsset, setEditingAsset] = useState<Asset | null>(null);
 
-  const assetList = assets || [];
-  const categoryList = categories || [];
-  const vendorList = vendors || [];
-  const projectList = projects || [];
-  const schemeList = schemes || [];
+  const assetList = assetsResponse?.items ?? EMPTY_ASSETS;
+  const categoryList = useMemo(() => categories ?? EMPTY_LIST, [categories]);
+  const vendorList = useMemo(() => vendors ?? EMPTY_LIST, [vendors]);
+  const projectList = useMemo(() => projects ?? EMPTY_LIST, [projects]);
+  const schemeList = useMemo(() => schemes ?? EMPTY_LIST, [schemes]);
+  const totalAssets = assetsResponse?.total || assetList.length;
+  const totalPages = Math.max(1, Math.ceil(totalAssets / PAGE_SIZE));
+
+  useEffect(() => {
+    setPage(1);
+  }, [searchTerm]);
+
+  const categoryById = useMemo(() => new Map(categoryList.map((category) => [category.id, category])), [categoryList]);
+  const vendorById = useMemo(() => new Map(vendorList.map((vendor) => [vendor.id, vendor])), [vendorList]);
+  const projectById = useMemo(() => new Map(projectList.map((project) => [project.id, project])), [projectList]);
+  const schemeById = useMemo(() => new Map(schemeList.map((scheme) => [scheme.id, scheme])), [schemeList]);
 
   const enrichedAssets = assetList.map((asset) => {
-    const vendor = vendorList.find((v) => v.id === asset.vendor_id);
-    const project = projectList.find((p) => p.id === asset.project_id);
-    const scheme = schemeList.find((s) => s.id === asset.scheme_id);
+    const vendor = asset.vendor_id ? vendorById.get(asset.vendor_id) : undefined;
+    const project = asset.project_id ? projectById.get(asset.project_id) : undefined;
+    const scheme = asset.scheme_id ? schemeById.get(asset.scheme_id) : undefined;
     const sourceLabel = officeScopedMode
       ? "Procurement"
       : asset.asset_source === "project"
@@ -71,7 +94,7 @@ export default function Assets() {
 
     return {
       ...asset,
-      categoryName: categoryList.find((c) => c.id === asset.category_id)?.name || "N/A",
+      categoryName: (asset.category_id ? categoryById.get(asset.category_id)?.name : null) || "N/A",
       vendorName: vendor?.name || "N/A",
       sourceLabel,
       sourceDetail,
@@ -179,10 +202,34 @@ export default function Assets() {
       <DataTable
         columns={columns}
         data={enrichedAssets}
+        pagination={false}
+        searchable={false}
+        useGlobalPageSearch={false}
         searchPlaceholder="Search assets..."
         onRowClick={(row) => navigate(`/assets/${row.id}`)}
         actions={actions}
       />
+      <div className="mt-4 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
+        <p className="text-sm text-muted-foreground">
+          Showing {assetList.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1} to{" "}
+          {Math.min(page * PAGE_SIZE, totalAssets)} of {totalAssets} assets
+        </p>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page === 1}>
+            Previous
+          </Button>
+          <span className="text-sm font-medium">
+            Page {page} of {totalPages}
+          </span>
+          <Button
+            variant="outline"
+            onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+            disabled={page >= totalPages}
+          >
+            Next
+          </Button>
+        </div>
+      </div>
       {officeScopedMode ? (
         <OfficeAssetFormModal
           open={isModalOpen}

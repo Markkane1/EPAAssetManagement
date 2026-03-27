@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,11 +15,22 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { StatusBadge } from "@/components/shared/StatusBadge";
-import { requisitionService } from "@/services/requisitionService";
 import { assignmentService } from "@/services/assignmentService";
-import { assetService } from "@/services/assetService";
-import { consumableItemService } from "@/services/consumableItemService";
-import { assetItemService } from "@/services/assetItemService";
+import { useAssets } from "@/hooks/useAssets";
+import { useConsumableItems } from "@/hooks/useConsumableItems";
+import { useAssetItemsByLocation } from "@/hooks/useAssetItems";
+import {
+  useRequestReturn,
+  useUploadSignedHandoverSlip,
+  useUploadSignedReturnSlip,
+} from "@/hooks/useAssignments";
+import {
+  useFulfillRequisition,
+  useMapRequisitionLine,
+  useRequisitionAssignments,
+  useRequisitionDetail,
+  useVerifyRequisition,
+} from "@/hooks/useRequisitions";
 import { useLocations } from "@/hooks/useLocations";
 import { useOfficeSubLocations } from "@/hooks/useOfficeSubLocations";
 import { useAuth } from "@/contexts/AuthContext";
@@ -115,7 +125,6 @@ export default function RequisitionDetail() {
   const location = useLocation();
   const isMobile = useIsMobile();
   const { id } = useParams<{ id: string }>();
-  const queryClient = useQueryClient();
   const { role } = useAuth();
   const { data: locations } = useLocations();
   const locationList = useMemo(() => locations || [], [locations]);
@@ -129,11 +138,7 @@ export default function RequisitionDetail() {
   const [signedHandoverFiles, setSignedHandoverFiles] = useState<Record<string, File | null>>({});
   const [signedReturnFiles, setSignedReturnFiles] = useState<Record<string, File | null>>({});
 
-  const requisitionQuery = useQuery({
-    queryKey: ["requisition", id],
-    queryFn: () => requisitionService.getById(String(id)),
-    enabled: Boolean(id),
-  });
+  const requisitionQuery = useRequisitionDetail(String(id || ""), { enabled: Boolean(id) });
 
   const requisition = requisitionQuery.data?.requisition;
   const lines = useMemo(() => requisitionQuery.data?.lines || [], [requisitionQuery.data?.lines]);
@@ -188,28 +193,12 @@ export default function RequisitionDetail() {
     return "/requisitions";
   }, [location.state]);
 
-  const assetsQuery = useQuery({
-    queryKey: ["assets", "map-for-requisition", officeId],
-    queryFn: assetService.getAll,
-    enabled: canFulfill,
-  });
-  const consumablesQuery = useQuery({
-    queryKey: ["consumables", "map-for-requisition", officeId],
-    queryFn: consumableItemService.getAll,
-    enabled: canFulfill,
-  });
-
-  const assetItemsQuery = useQuery({
-    queryKey: ["asset-items", "by-location", issuingOfficeId],
-    queryFn: () => assetItemService.getByLocation(issuingOfficeId),
+  const assetsQuery = useAssets({ enabled: canFulfill });
+  const consumablesQuery = useConsumableItems({ enabled: canFulfill });
+  const assetItemsQuery = useAssetItemsByLocation(issuingOfficeId, {
     enabled: canFulfill && Boolean(issuingOfficeId),
   });
-
-  const assignmentsQuery = useQuery({
-    queryKey: ["assignments", "requisition", id],
-    queryFn: assignmentService.getAll,
-    enabled: Boolean(id),
-  });
+  const assignmentsQuery = useRequisitionAssignments(String(id || ""), { enabled: Boolean(id) });
 
   const officeStockItems = useMemo(() => {
     const entries = assetItemsQuery.data || [];
@@ -349,132 +338,17 @@ export default function RequisitionDetail() {
     };
   }, [fulfillDraft, lines]);
 
-  const verifyMutation = useMutation({
-    mutationFn: (decision: "VERIFY" | "REJECT") =>
-      requisitionService.verify(String(id), {
-        decision,
-        remarks: decision === "REJECT" ? rejectRemarks.trim() : undefined,
-      }),
-    onSuccess: async () => {
-      toast.success("Requisition updated.");
-      setShowRejectInput(false);
-      setRejectRemarks("");
-      await queryClient.invalidateQueries({ queryKey: ["requisitions"] });
-      navigate(backToListPath);
-    },
-    onError: (error: Error) => toast.error(error.message || "Failed to update requisition."),
+  const verifyMutation = useVerifyRequisition(String(id || ""));
+  const mapLineMutation = useMapRequisitionLine(String(id || ""));
+  const fulfillMutation = useFulfillRequisition(String(id || ""), issuingOfficeId || undefined);
+  const requestReturnMutation = useRequestReturn();
+  const uploadSignedHandoverMutation = useUploadSignedHandoverSlip({
+    requisitionId: String(id || ""),
+    officeId: issuingOfficeId || undefined,
   });
-
-  const mapLineMutation = useMutation({
-    mutationFn: async (payload: {
-      lineId: string;
-      mapType: "MOVEABLE" | "CONSUMABLE";
-      mappedId: string;
-    }) => {
-      if (payload.mapType === "MOVEABLE") {
-        return requisitionService.mapLine(String(id), payload.lineId, {
-          map_type: "MOVEABLE",
-          asset_id: payload.mappedId,
-        });
-      }
-      return requisitionService.mapLine(String(id), payload.lineId, {
-        map_type: "CONSUMABLE",
-        consumable_id: payload.mappedId,
-      });
-    },
-    onSuccess: async () => {
-      toast.success("Line mapped successfully.");
-      await queryClient.invalidateQueries({ queryKey: ["requisition", id] });
-    },
-    onError: (error: Error) => toast.error(error.message || "Failed to map line."),
-  });
-
-  const fulfillMutation = useMutation({
-    mutationFn: async () => {
-      const payloadLines = lines
-        .map((line) => {
-          const lineId = asId(line);
-          const isMapped =
-            line.line_type === "MOVEABLE" ? Boolean(line.asset_id) : Boolean(line.consumable_id);
-          if (!isMapped) return null;
-          const draft = fulfillDraft[lineId] || { assignedAssetItemIds: [], issuedQuantity: "" };
-          const parsedQty = Number(draft.issuedQuantity);
-          const hasMoveable = draft.assignedAssetItemIds.length > 0;
-          const hasConsumable = Number.isFinite(parsedQty) && parsedQty > 0;
-          if (!hasMoveable && !hasConsumable) return null;
-          return {
-            lineId,
-            assignedAssetItemIds:
-              draft.assignedAssetItemIds.length > 0 ? draft.assignedAssetItemIds : undefined,
-            issuedQuantity: hasConsumable ? parsedQty : undefined,
-          };
-        })
-        .filter(
-          (
-            entry
-          ): entry is {
-            lineId: string;
-            assignedAssetItemIds?: string[];
-            issuedQuantity?: number;
-          } => Boolean(entry)
-        );
-
-      if (payloadLines.length === 0) {
-        throw new Error("Map lines and select asset items/quantities before fulfillment.");
-      }
-      return requisitionService.fulfill(String(id), { lines: payloadLines });
-    },
-    onSuccess: async () => {
-      toast.success("Fulfillment submitted.");
-      setFulfillDraft({});
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["requisition", id] }),
-        queryClient.invalidateQueries({ queryKey: ["assignments", "requisition", id] }),
-      ]);
-    },
-    onError: (error: Error) => toast.error(error.message || "Failed to fulfill requisition."),
-  });
-
-  const uploadSignedHandoverMutation = useMutation({
-    mutationFn: async ({ assignmentId, file }: { assignmentId: string; file: File }) => {
-      const form = new FormData();
-      form.append("signedHandoverFile", file);
-      return assignmentService.uploadSignedHandoverSlip(assignmentId, form);
-    },
-    onSuccess: async () => {
-      toast.success("Signed handover slip uploaded.");
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["requisition", id] }),
-        queryClient.invalidateQueries({ queryKey: ["assignments", "requisition", id] }),
-        queryClient.invalidateQueries({ queryKey: ["asset-items", "by-location", issuingOfficeId] }),
-      ]);
-    },
-    onError: (error: Error) => toast.error(error.message || "Failed to upload signed handover slip."),
-  });
-
-  const requestReturnMutation = useMutation({
-    mutationFn: (assignmentId: string) => assignmentService.requestReturn(assignmentId),
-    onSuccess: async () => {
-      toast.success("Return requested.");
-      await queryClient.invalidateQueries({ queryKey: ["assignments", "requisition", id] });
-    },
-    onError: (error: Error) => toast.error(error.message || "Failed to request return."),
-  });
-
-  const uploadSignedReturnMutation = useMutation({
-    mutationFn: async ({ assignmentId, file }: { assignmentId: string; file: File }) => {
-      const form = new FormData();
-      form.append("signedReturnFile", file);
-      return assignmentService.uploadSignedReturnSlip(assignmentId, form);
-    },
-    onSuccess: async () => {
-      toast.success("Signed return slip uploaded.");
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["assignments", "requisition", id] }),
-        queryClient.invalidateQueries({ queryKey: ["asset-items", "by-location", issuingOfficeId] }),
-      ]);
-    },
-    onError: (error: Error) => toast.error(error.message || "Failed to upload signed return slip."),
+  const uploadSignedReturnMutation = useUploadSignedReturnSlip({
+    requisitionId: String(id || ""),
+    officeId: issuingOfficeId || undefined,
   });
 
   const openAssetPicker = (line: RequisitionLine) => {
@@ -788,7 +662,18 @@ export default function RequisitionDetail() {
                   <Button
                     type="button"
                     className="w-full sm:w-auto"
-                    onClick={() => verifyMutation.mutate("VERIFY")}
+                    onClick={() =>
+                      verifyMutation.mutate(
+                        { decision: "VERIFY" },
+                        {
+                          onSuccess: () => {
+                            setShowRejectInput(false);
+                            setRejectRemarks("");
+                            navigate(backToListPath);
+                          },
+                        }
+                      )
+                    }
                     disabled={verifyMutation.isPending}
                   >
                     {verifyMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -824,7 +709,19 @@ export default function RequisitionDetail() {
                           toast.error("Reject remarks are required.");
                           return;
                         }
-                        verifyMutation.mutate("REJECT");
+                        verifyMutation.mutate(
+                          {
+                            decision: "REJECT",
+                            remarks: rejectRemarks.trim() || undefined,
+                          },
+                          {
+                            onSuccess: () => {
+                              setShowRejectInput(false);
+                              setRejectRemarks("");
+                              navigate(backToListPath);
+                            },
+                          }
+                        );
                       }}
                       disabled={verifyMutation.isPending}
                     >
@@ -981,8 +878,16 @@ export default function RequisitionDetail() {
                               }
                               mapLineMutation.mutate({
                                 lineId,
-                                mapType: selectedMapType,
-                                mappedId: mapDraft.selectedId,
+                                payload:
+                                  selectedMapType === "MOVEABLE"
+                                    ? {
+                                        map_type: "MOVEABLE",
+                                        asset_id: mapDraft.selectedId,
+                                      }
+                                    : {
+                                        map_type: "CONSUMABLE",
+                                        consumable_id: mapDraft.selectedId,
+                                      },
                               });
                             }}
                             disabled={
@@ -1136,8 +1041,12 @@ export default function RequisitionDetail() {
                                               return;
                                             }
                                             uploadSignedHandoverMutation.mutate({
-                                              assignmentId,
-                                              file: handoverFile,
+                                              id: assignmentId,
+                                              formData: (() => {
+                                                const form = new FormData();
+                                                form.append("signedHandoverFile", handoverFile);
+                                                return form;
+                                              })(),
                                             });
                                           }}
                                           disabled={uploadSignedHandoverMutation.isPending}
@@ -1183,7 +1092,7 @@ export default function RequisitionDetail() {
                                       <Button
                                         type="button"
                                         variant="outline"
-                                        onClick={() => requestReturnMutation.mutate(assignmentId)}
+                                        onClick={() => requestReturnMutation.mutate({ id: assignmentId })}
                                         disabled={requestReturnMutation.isPending}
                                       >
                                         {requestReturnMutation.isPending && (
@@ -1234,8 +1143,12 @@ export default function RequisitionDetail() {
                                               return;
                                             }
                                             uploadSignedReturnMutation.mutate({
-                                              assignmentId,
-                                              file: returnFile,
+                                              id: assignmentId,
+                                              formData: (() => {
+                                                const form = new FormData();
+                                                form.append("signedReturnFile", returnFile);
+                                                return form;
+                                              })(),
                                             });
                                           }}
                                           disabled={uploadSignedReturnMutation.isPending}
@@ -1265,7 +1178,54 @@ export default function RequisitionDetail() {
                   <Button
                     type="button"
                     className="w-full sm:w-auto"
-                    onClick={() => fulfillMutation.mutate()}
+                    onClick={() => {
+                      const payloadLines = lines
+                        .map((line) => {
+                          const lineId = asId(line);
+                          const isMapped =
+                            line.line_type === "MOVEABLE"
+                              ? Boolean(line.asset_id)
+                              : Boolean(line.consumable_id);
+                          if (!isMapped) return null;
+                          const draft = fulfillDraft[lineId] || {
+                            assignedAssetItemIds: [],
+                            issuedQuantity: "",
+                          };
+                          const parsedQty = Number(draft.issuedQuantity);
+                          const hasMoveable = draft.assignedAssetItemIds.length > 0;
+                          const hasConsumable = Number.isFinite(parsedQty) && parsedQty > 0;
+                          if (!hasMoveable && !hasConsumable) return null;
+                          return {
+                            lineId,
+                            assignedAssetItemIds:
+                              draft.assignedAssetItemIds.length > 0
+                                ? draft.assignedAssetItemIds
+                                : undefined,
+                            issuedQuantity: hasConsumable ? parsedQty : undefined,
+                          };
+                        })
+                        .filter(
+                          (
+                            entry
+                          ): entry is {
+                            lineId: string;
+                            assignedAssetItemIds?: string[];
+                            issuedQuantity?: number;
+                          } => Boolean(entry)
+                        );
+
+                      if (payloadLines.length === 0) {
+                        toast.error("Map lines and select asset items/quantities before fulfillment.");
+                        return;
+                      }
+
+                      fulfillMutation.mutate(
+                        { lines: payloadLines },
+                        {
+                          onSuccess: () => setFulfillDraft({}),
+                        }
+                      );
+                    }}
                     disabled={fulfillMutation.isPending || !fulfillmentSummary.canSubmit}
                   >
                     {fulfillMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

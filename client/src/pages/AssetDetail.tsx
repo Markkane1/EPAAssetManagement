@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,7 +18,7 @@ import { StatusBadge } from "@/components/shared/StatusBadge";
 import { AssignmentHistoryModal } from "@/components/shared/AssignmentHistoryModal";
 import type { AssetItem } from "@/types";
 import { getOfficeHolderId, isStoreHolder } from "@/lib/assetItemHolder";
-import { userService } from "@/services/userService";
+import { useUsersLookup } from "@/hooks/useUsers";
 
 function formatDimensions(length?: number | null, width?: number | null, height?: number | null, unit?: string | null) {
   if (length == null && width == null && height == null) return "N/A";
@@ -45,17 +44,8 @@ export default function AssetDetail() {
   const { data: transfers } = useTransfers();
   const { data: employees } = useEmployees();
   const { data: officeSubLocations } = useOfficeSubLocations({ includeInactive: true });
-  const { data: users = [] } = useQuery({
-    queryKey: ["users", "history-lookup"],
-    queryFn: async () => {
-      try {
-        return await userService.getAll({ limit: 1000 });
-      } catch {
-        return [];
-      }
-    },
-    staleTime: 60_000,
-  });
+  const usersLookupQuery = useUsersLookup({ limit: 1000 });
+  const users = usersLookupQuery.data || [];
 
   const assetList = assets || [];
   const assetItemList = assetItems || [];

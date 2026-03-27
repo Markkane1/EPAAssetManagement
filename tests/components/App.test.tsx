@@ -52,7 +52,7 @@ import App from "../../client/src/App";
 async function renderAt(path: string) {
   window.history.pushState({}, "", path);
   render(<App />);
-  await screen.findByTestId("toaster");
+  await screen.findByTestId("sonner");
 }
 
 describe("App routing", () => {

@@ -22,7 +22,7 @@ export async function getRequestContext(req: AuthRequest): Promise<RequestContex
   }
 
   let locationId: string | null = req.user.locationId ?? null;
-  let isOrgAdmin: boolean = req.user.isOrgAdmin ?? req.user.role === 'org_admin';
+  const isOrgAdmin: boolean = req.user.isOrgAdmin ?? req.user.role === 'org_admin';
 
   if (locationId === null || req.user.locationId === undefined) {
     const userDoc = await UserModel.findById(req.user.userId);

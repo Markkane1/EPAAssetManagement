@@ -4,17 +4,16 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const useQueryMock = vi.fn();
-const invalidateQueriesMock = vi.fn();
 const setTermMock = vi.fn();
-const toastSuccessMock = vi.fn();
-const toastErrorMock = vi.fn();
 const exportToCSVMock = vi.fn();
-const createUserMock = vi.fn();
-const updateRoleMock = vi.fn();
-const updateLocationMock = vi.fn();
-const deleteUserMock = vi.fn();
-const resetPasswordMock = vi.fn();
+const usePagedUsersMock = vi.fn();
+const useLocationsMock = vi.fn();
+const useUserRolePermissionsCatalogMock = vi.fn();
+const createUserMutateAsyncMock = vi.fn();
+const updateRoleMutateAsyncMock = vi.fn();
+const updateLocationMutateAsyncMock = vi.fn();
+const deleteUserMutateMock = vi.fn();
+const resetPasswordMutateMock = vi.fn();
 
 const usersData = {
   items: [
@@ -70,37 +69,6 @@ function findSelectItems(children: React.ReactNode): Array<{ value: string; labe
   });
   return items;
 }
-
-vi.mock("@tanstack/react-query", () => ({
-  useQuery: (config: { queryKey: unknown[] }) => useQueryMock(config),
-  useMutation: (config: {
-    mutationFn: (variables: any) => Promise<unknown>;
-    onSuccess?: (data: unknown) => void | Promise<void>;
-    onError?: (error: Error) => void;
-  }) => ({
-    isPending: false,
-    mutateAsync: async (variables: unknown) => {
-      try {
-        const result = await config.mutationFn(variables);
-        await config.onSuccess?.(result);
-        return result;
-      } catch (error) {
-        config.onError?.(error as Error);
-        throw error;
-      }
-    },
-    mutate: async (variables: unknown) => {
-      try {
-        const result = await config.mutationFn(variables);
-        await config.onSuccess?.(result);
-        return result;
-      } catch (error) {
-        config.onError?.(error as Error);
-      }
-    },
-  }),
-  useQueryClient: () => ({ invalidateQueries: invalidateQueriesMock }),
-}));
 
 vi.mock("@/components/layout/MainLayout", () => ({
   MainLayout: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
@@ -203,38 +171,37 @@ vi.mock("@/contexts/PageSearchContext", () => ({
   usePageSearch: () => ({ term: "", setTerm: setTermMock }),
 }));
 
-vi.mock("@/services/userService", () => ({
-  userService: {
-    getPaged: vi.fn(),
-    updateRole: (...args: unknown[]) => updateRoleMock(...args),
-    updateLocation: (...args: unknown[]) => updateLocationMock(...args),
-    create: (...args: unknown[]) => createUserMock(...args),
-    delete: (...args: unknown[]) => deleteUserMock(...args),
-    resetPassword: (...args: unknown[]) => resetPasswordMock(...args),
-  },
+vi.mock("@/hooks/useLocations", () => ({
+  useLocations: () => useLocationsMock(),
 }));
 
-vi.mock("@/services/locationService", () => ({
-  locationService: {
-    getAll: vi.fn(),
-  },
-}));
-
-vi.mock("@/services/userPermissionService", () => ({
-  userPermissionService: {
-    getRolePermissions: vi.fn(),
-  },
+vi.mock("@/hooks/useUsers", () => ({
+  usePagedUsers: (filters: unknown) => usePagedUsersMock(filters),
+  useUserRolePermissionsCatalog: () => useUserRolePermissionsCatalogMock(),
+  useCreateUser: () => ({
+    mutateAsync: createUserMutateAsyncMock,
+    isPending: false,
+  }),
+  useUpdateUserRole: () => ({
+    mutateAsync: updateRoleMutateAsyncMock,
+    isPending: false,
+  }),
+  useUpdateUserLocation: () => ({
+    mutateAsync: updateLocationMutateAsyncMock,
+    isPending: false,
+  }),
+  useDeleteUser: () => ({
+    mutate: deleteUserMutateMock,
+    isPending: false,
+  }),
+  useResetUserPassword: () => ({
+    mutate: resetPasswordMutateMock,
+    isPending: false,
+  }),
 }));
 
 vi.mock("@/lib/exportUtils", () => ({
   exportToCSV: (...args: unknown[]) => exportToCSVMock(...args),
-}));
-
-vi.mock("sonner", () => ({
-  toast: {
-    success: (...args: unknown[]) => toastSuccessMock(...args),
-    error: (...args: unknown[]) => toastErrorMock(...args),
-  },
 }));
 
 import UserManagement from "../../client/src/pages/UserManagement";
@@ -242,46 +209,34 @@ import UserManagement from "../../client/src/pages/UserManagement";
 describe("UserManagement page", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    createUserMock.mockResolvedValue({ id: "user-3" });
-    updateRoleMock.mockResolvedValue({});
-    updateLocationMock.mockResolvedValue({});
-    deleteUserMock.mockResolvedValue({});
-    resetPasswordMock.mockResolvedValue({});
-    useQueryMock.mockImplementation(({ queryKey }: { queryKey: unknown[] }) => {
-      const key = queryKey[0];
-      if (key === "users-management") {
-        return { data: usersData, isLoading: false };
+    createUserMutateAsyncMock.mockResolvedValue({ id: "user-3" });
+    updateRoleMutateAsyncMock.mockResolvedValue({});
+    updateLocationMutateAsyncMock.mockResolvedValue({});
+    deleteUserMutateMock.mockImplementation((_variables: unknown, options?: { onSuccess?: () => void }) => {
+      options?.onSuccess?.();
+    });
+    resetPasswordMutateMock.mockImplementation(
+      (_variables: unknown, options?: { onSuccess?: () => void }) => {
+        options?.onSuccess?.();
       }
-      if (key === "locations-management") {
-        return { data: locationsData, isLoading: false };
-      }
-      if (key === "settings") {
-        return {
-          data: {
-            roles: [
-              { id: "org_admin", name: "Org Admin" },
-              { id: "office_head", name: "Office Head" },
-              { id: "caretaker", name: "Caretaker" },
-              { id: "employee", name: "Employee" },
-            ],
-          },
-          isLoading: false,
-        };
-      }
-      return { data: undefined, isLoading: false };
+    );
+    usePagedUsersMock.mockReturnValue({ data: usersData, isLoading: false });
+    useLocationsMock.mockReturnValue({ data: locationsData, isLoading: false });
+    useUserRolePermissionsCatalogMock.mockReturnValue({
+      data: {
+        roles: [
+          { id: "org_admin", name: "Org Admin" },
+          { id: "office_head", name: "Office Head" },
+          { id: "caretaker", name: "Caretaker" },
+          { id: "employee", name: "Employee" },
+        ],
+      },
+      isLoading: false,
     });
   });
 
   it("should render a loading state while users are being fetched", () => {
-    useQueryMock.mockImplementation(({ queryKey }: { queryKey: unknown[] }) => {
-      if (queryKey[0] === "users-management") {
-        return { data: undefined, isLoading: true };
-      }
-      if (queryKey[0] === "locations-management") {
-        return { data: locationsData, isLoading: false };
-      }
-      return { data: { roles: [] }, isLoading: false };
-    });
+    usePagedUsersMock.mockReturnValue({ data: undefined, isLoading: true });
 
     const { container } = render(<UserManagement />);
 
@@ -318,7 +273,7 @@ describe("UserManagement page", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: /^create user$/i }));
 
     await waitFor(() => {
-      expect(createUserMock).toHaveBeenCalledWith(
+      expect(createUserMutateAsyncMock).toHaveBeenCalledWith(
         expect.objectContaining({
           email: "john@example.com",
           password: "Secret123",
@@ -331,7 +286,6 @@ describe("UserManagement page", () => {
         })
       );
     });
-    expect(toastSuccessMock).toHaveBeenCalledWith("User created successfully");
   });
 
   it("should edit an existing user role and location", async () => {
@@ -345,13 +299,19 @@ describe("UserManagement page", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: /save changes/i }));
 
     await waitFor(() => {
-      expect(updateRoleMock).toHaveBeenCalledWith("user-1", {
-        role: "caretaker",
-        activeRole: "caretaker",
-        roles: ["caretaker"],
+      expect(updateRoleMutateAsyncMock).toHaveBeenCalledWith({
+        userId: "user-1",
+        payload: {
+          role: "caretaker",
+          activeRole: "caretaker",
+          roles: ["caretaker"],
+        },
       });
     });
-    expect(updateLocationMock).toHaveBeenCalledWith("user-1", "office-2");
+    expect(updateLocationMutateAsyncMock).toHaveBeenCalledWith({
+      userId: "user-1",
+      locationId: "office-2",
+    });
   });
 
   it("should delete users and reset passwords", async () => {
@@ -360,7 +320,7 @@ describe("UserManagement page", () => {
     await userEvent.click(screen.getAllByTitle(/delete user/i)[0]);
     const alert = screen.getByRole("alertdialog");
     await userEvent.click(within(alert).getByRole("button", { name: /^delete$/i }));
-    await waitFor(() => expect(deleteUserMock).toHaveBeenCalledWith("user-1"));
+    await waitFor(() => expect(deleteUserMutateMock).toHaveBeenCalledWith("user-1", expect.any(Object)));
 
     await userEvent.click(screen.getAllByTitle(/reset password/i)[0]);
     const dialog = screen.getByRole("dialog");
@@ -372,6 +332,14 @@ describe("UserManagement page", () => {
     await userEvent.type(within(dialog).getByLabelText(/confirm password/i), "Secret123");
     await userEvent.click(within(dialog).getByRole("button", { name: /reset password/i }));
 
-    await waitFor(() => expect(resetPasswordMock).toHaveBeenCalledWith("user-1", "Secret123"));
+    await waitFor(() =>
+      expect(resetPasswordMutateMock).toHaveBeenCalledWith(
+        {
+          userId: "user-1",
+          newPassword: "Secret123",
+        },
+        expect.any(Object)
+      )
+    );
   });
 });

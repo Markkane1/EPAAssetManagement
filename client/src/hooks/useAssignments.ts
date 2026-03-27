@@ -114,6 +114,64 @@ export const useRequestReturn = () => {
   });
 };
 
+export const useUploadSignedHandoverSlip = (options: { requisitionId?: string; officeId?: string } = {}) => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, formData }: { id: string; formData: FormData }) =>
+      assignmentService.uploadSignedHandoverSlip(id, formData),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.assignments });
+      if (options.requisitionId) {
+        queryClient.invalidateQueries({
+          queryKey: [...queryKeys.requisitions, 'detail', options.requisitionId],
+        });
+        queryClient.invalidateQueries({
+          queryKey: [...queryKeys.assignments, 'requisition', options.requisitionId],
+        });
+      }
+      if (options.officeId) {
+        queryClient.invalidateQueries({
+          queryKey: [...queryKeys.assetItems, 'byLocation', options.officeId],
+        });
+      }
+      toast.success('Signed handover slip uploaded.');
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to upload signed handover slip.');
+    },
+  });
+};
+
+export const useUploadSignedReturnSlip = (options: { requisitionId?: string; officeId?: string } = {}) => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, formData }: { id: string; formData: FormData }) =>
+      assignmentService.uploadSignedReturnSlip(id, formData),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.assignments });
+      if (options.requisitionId) {
+        queryClient.invalidateQueries({
+          queryKey: [...queryKeys.requisitions, 'detail', options.requisitionId],
+        });
+        queryClient.invalidateQueries({
+          queryKey: [...queryKeys.assignments, 'requisition', options.requisitionId],
+        });
+      }
+      if (options.officeId) {
+        queryClient.invalidateQueries({
+          queryKey: [...queryKeys.assetItems, 'byLocation', options.officeId],
+        });
+      }
+      toast.success('Signed return slip uploaded.');
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to upload signed return slip.');
+    },
+  });
+};
+
 export const useReassignAsset = () => {
   const queryClient = useQueryClient();
   

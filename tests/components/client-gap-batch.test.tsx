@@ -353,14 +353,15 @@ describe("client gap batch", () => {
     await userEvent.click(screen.getByRole("button", { name: /one/i }));
     expect(onValueChange).toHaveBeenCalledWith("one");
 
-    const dateButtons = screen.getAllByRole("button", { name: /pick-date/i });
-    await userEvent.click(dateButtons[0]);
-    await userEvent.click(dateButtons[1]);
+    fireEvent.change(screen.getByLabelText(/start date/i), { target: { value: "2026-03-07" } });
+    fireEvent.change(screen.getByLabelText(/end date/i), { target: { value: "2026-03-21" } });
     expect(onStartDateChange).toHaveBeenCalled();
     expect(onEndDateChange).toHaveBeenCalled();
     await userEvent.click(screen.getByRole("button", { name: /clear/i }));
     expect(onClear).toHaveBeenCalled();
 
+    await waitFor(() => expect(screen.getByTestId("qr-svg")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole("button", { name: /download/i })).toBeEnabled());
     await userEvent.click(screen.getByRole("button", { name: /download/i }));
     expect(linkClickMock).toHaveBeenCalled();
     await userEvent.click(screen.getByRole("button", { name: /print/i }));

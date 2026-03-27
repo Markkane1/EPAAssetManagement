@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -6,11 +6,9 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -21,8 +19,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2 } from "lucide-react";
 import { Project, Scheme } from "@/types";
+import { FormDialogActions } from "@/components/forms/FormDialogActions";
+import { useDialogFormReset } from "@/components/forms/useDialogFormReset";
 
 const schemeSchema = z.object({
   name: z.string().min(1, "Name is required").max(100),
@@ -53,21 +52,21 @@ export function SchemeFormModal({ open, onOpenChange, scheme, projects, onSubmit
     },
   });
 
-  useEffect(() => {
+  const resetValues = useMemo(() => {
     if (scheme) {
-      form.reset({
+      return {
         name: scheme.name,
         projectId: scheme.project_id,
         description: scheme.description || "",
-      });
-    } else {
-      form.reset({
-        name: "",
-        projectId: "",
-        description: "",
-      });
+      };
     }
-  }, [scheme, form]);
+    return {
+      name: "",
+      projectId: "",
+      description: "",
+    };
+  }, [scheme]);
+  useDialogFormReset({ open, form, values: resetValues });
 
   const handleSubmit = async (data: SchemeFormData) => {
     setIsSubmitting(true);
@@ -122,15 +121,11 @@ export function SchemeFormModal({ open, onOpenChange, scheme, projects, onSubmit
             <Label htmlFor="description">Description</Label>
             <Textarea id="description" {...form.register("description")} placeholder="Scheme description..." rows={3} />
           </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={isSubmitting}>
-              {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {isEditing ? "Update" : "Create"}
-            </Button>
-          </DialogFooter>
+          <FormDialogActions
+            isSubmitting={isSubmitting}
+            onCancel={() => onOpenChange(false)}
+            submitLabel={isEditing ? "Update" : "Create"}
+          />
         </form>
       </DialogContent>
     </Dialog>

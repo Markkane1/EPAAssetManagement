@@ -4,7 +4,10 @@ import { UserModel } from '../src/models/user.model';
 import { OfficeModel } from '../src/models/office.model';
 import { VendorModel } from '../src/models/vendor.model';
 import { ProjectModel } from '../src/models/project.model';
+import { CategoryModel } from '../src/models/category.model';
+import { AssetModel } from '../src/models/asset.model';
 import { buildSearchTerms } from '../src/utils/searchTerms';
+import { runMigration } from './utils/migrationRunner';
 
 type SearchBackfillConfig = {
   label: string;
@@ -80,13 +83,7 @@ async function backfillSearchTerms(config: SearchBackfillConfig, dryRun: boolean
 }
 
 async function run() {
-  const dryRun = process.argv.includes('--dry-run');
-  console.warn('WARNING: Back up your database before running this migration.');
-  console.log(`Mode: ${dryRun ? 'DRY RUN (no writes)' : 'LIVE RUN (writes enabled)'}`);
-
-  try {
-    await connectDatabase();
-
+  await runMigration('search-term backfill', async ({ dryRun }) => {
     await backfillSearchTerms(
       {
         label: 'users',
@@ -126,11 +123,27 @@ async function run() {
       },
       dryRun
     );
-  } finally {
-    if (mongoose.connection.readyState !== 0) {
-      await mongoose.disconnect();
-    }
-  }
+
+    await backfillSearchTerms(
+      {
+        label: 'categories',
+        model: CategoryModel,
+        projection: { name: 1 },
+        resolveTerms: (doc) => buildSearchTerms([doc.name]),
+      },
+      dryRun
+    );
+
+    await backfillSearchTerms(
+      {
+        label: 'assets',
+        model: AssetModel,
+        projection: { name: 1, description: 1, specification: 1 },
+        resolveTerms: (doc) => buildSearchTerms([doc.name, doc.description, doc.specification]),
+      },
+      dryRun
+    );
+  });
 }
 
 run().catch((error) => {

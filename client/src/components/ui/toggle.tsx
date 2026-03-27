@@ -1,6 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
 import * as React from "react";
-import * as TogglePrimitive from "@radix-ui/react-toggle";
 import { cva, type VariantProps } from "class-variance-authority";
 
 import { cn } from "@/lib/utils";
@@ -27,12 +26,42 @@ const toggleVariants = cva(
 );
 
 const Toggle = React.forwardRef<
-  React.ElementRef<typeof TogglePrimitive.Root>,
-  React.ComponentPropsWithoutRef<typeof TogglePrimitive.Root> & VariantProps<typeof toggleVariants>
->(({ className, variant, size, ...props }, ref) => (
-  <TogglePrimitive.Root ref={ref} className={cn(toggleVariants({ variant, size, className }))} {...props} />
-));
+  HTMLButtonElement,
+  React.ButtonHTMLAttributes<HTMLButtonElement> &
+    VariantProps<typeof toggleVariants> & {
+      pressed?: boolean;
+      defaultPressed?: boolean;
+      onPressedChange?: (pressed: boolean) => void;
+    }
+>(({ className, variant, size, pressed, defaultPressed = false, onPressedChange, onClick, ...props }, ref) => {
+  const [internalPressed, setInternalPressed] = React.useState(defaultPressed);
+  const isControlled = pressed !== undefined;
+  const isPressed = isControlled ? pressed : internalPressed;
 
-Toggle.displayName = TogglePrimitive.Root.displayName;
+  const updatePressed = (nextPressed: boolean) => {
+    if (!isControlled) {
+      setInternalPressed(nextPressed);
+    }
+    onPressedChange?.(nextPressed);
+  };
+
+  return (
+    <button
+      ref={ref}
+      type="button"
+      aria-pressed={isPressed}
+      data-state={isPressed ? "on" : "off"}
+      {...props}
+      className={cn(toggleVariants({ variant, size, className }))}
+      onClick={(event) => {
+        onClick?.(event);
+        if (event.defaultPrevented || props.disabled) return;
+        updatePressed(!isPressed);
+      }}
+    />
+  );
+});
+
+Toggle.displayName = "Toggle";
 
 export { Toggle, toggleVariants };

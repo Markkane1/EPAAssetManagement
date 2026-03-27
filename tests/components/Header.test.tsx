@@ -106,8 +106,9 @@ describe("Header", () => {
     render(<Header title="Dashboard" />);
 
     await userEvent.click(getAvatarButton());
-    expect(screen.getByText("Procurement Officer")).toBeInTheDocument();
-    expect(screen.getByRole("menuitem", { name: /settings/i })).toBeInTheDocument();
+    const menu = screen.getByRole("menu");
+    expect(within(menu).getByText("Procurement Officer")).toBeInTheDocument();
+    expect(within(menu).getByRole("button", { name: /settings/i })).toBeInTheDocument();
   });
 
   it("should omit settings when page access does not allow it", async () => {
@@ -125,7 +126,8 @@ describe("Header", () => {
     render(<Header title="Dashboard" />);
 
     await userEvent.click(getAvatarButton());
-    expect(screen.queryByRole("menuitem", { name: /settings/i })).not.toBeInTheDocument();
+    const menu = screen.getByRole("menu");
+    expect(within(menu).queryByRole("button", { name: /settings/i })).not.toBeInTheDocument();
   });
 
   it("should mark notifications read on open, render the list, and navigate from notification actions", async () => {
@@ -231,7 +233,7 @@ describe("Header", () => {
     render(<Header title="Dashboard" />);
     await userEvent.click(getAvatarButton());
     const menu = screen.getByRole("menu");
-    await userEvent.click(within(menu).getByRole("menuitem", { name: /sign out/i }));
+    await userEvent.click(within(menu).getByRole("button", { name: /sign out/i }));
 
     expect(logoutMock).toHaveBeenCalledTimes(1);
     expect(navigateMock).toHaveBeenCalledWith("/login");

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -6,7 +6,6 @@ import {
     Dialog,
     DialogContent,
     DialogDescription,
-    DialogFooter,
     DialogHeader,
     DialogTitle,
 } from "@/components/ui/dialog";
@@ -21,9 +20,11 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
-import { Loader2 } from "lucide-react";
 import { Asset, Location } from "@/types";
 import { useAuth } from "@/contexts/AuthContext";
+import { FormDialogActions } from "@/components/forms/FormDialogActions";
+import { useDialogFormReset } from "@/components/forms/useDialogFormReset";
+import { useAssetOptions, useEntityById } from "@/components/forms/useFormSearchLookups";
 
 const assetItemSchema = z.object({
     assetId: z.string().min(1, "Asset is required"),
@@ -73,28 +74,31 @@ export function OfficeAssetItemFormModal({ open, onOpenChange, assets, locations
         },
     });
 
+    const resetValues = useMemo(() => ({
+        assetId: "",
+        locationId: user?.locationId || "",
+        itemStatus: "Available",
+        itemCondition: "New",
+        functionalStatus: "Functional",
+        notes: "",
+    }), [user?.locationId]);
+    useDialogFormReset({ open, form, values: resetValues });
+
     const [items, setItems] = useState<Array<{ id: string; serialNumber: string; warrantyExpiry?: string }>>([
         { id: crypto.randomUUID(), serialNumber: "", warrantyExpiry: "" },
     ]);
     const [itemsError, setItemsError] = useState<string | null>(null);
     const selectedAssetId = form.watch("assetId");
-    const selectedAsset = assets.find((asset) => asset.id === selectedAssetId);
+    const getAssetById = useEntityById(assets);
+    const selectedAsset = getAssetById(selectedAssetId);
     const assetQuantity = selectedAsset?.quantity || 0;
+    const assetOptions = useAssetOptions(assets);
 
     useEffect(() => {
-        if (open) {
-            form.reset({
-                assetId: "",
-                locationId: user?.locationId || "",
-                itemStatus: "Available",
-                itemCondition: "New",
-                functionalStatus: "Functional",
-                notes: "",
-            });
-            setItems([{ id: crypto.randomUUID(), serialNumber: "", warrantyExpiry: "" }]);
-            setItemsError(null);
-        }
-    }, [open, form, user?.locationId]);
+        if (!open) return;
+        setItems([{ id: crypto.randomUUID(), serialNumber: "", warrantyExpiry: "" }]);
+        setItemsError(null);
+    }, [open]);
 
     const handleSubmit = async (data: AssetItemFormData) => {
         setIsSubmitting(true);
@@ -178,8 +182,8 @@ export function OfficeAssetItemFormModal({ open, onOpenChange, assets, locations
                             <Select value={form.watch("assetId")} onValueChange={(v) => form.setValue("assetId", v)}>
                                 <SelectTrigger><SelectValue placeholder="Select asset" /></SelectTrigger>
                                 <SelectContent>
-                                    {assets.map((a) => (
-                                        <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+                                    {assetOptions.map((asset) => (
+                                        <SelectItem key={asset.value} value={asset.value}>{asset.primaryText}</SelectItem>
                                     ))}
                                 </SelectContent>
                             </Select>
@@ -297,15 +301,11 @@ export function OfficeAssetItemFormModal({ open, onOpenChange, assets, locations
                         )}
                     </div>
 
-                    <DialogFooter>
-                        <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
-                            Cancel
-                        </Button>
-                        <Button type="submit" disabled={isSubmitting}>
-                            {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                            Create Item
-                        </Button>
-                    </DialogFooter>
+                    <FormDialogActions
+                        isSubmitting={isSubmitting}
+                        onCancel={() => onOpenChange(false)}
+                        submitLabel="Create Item"
+                    />
                 </form>
             </DialogContent>
         </Dialog>

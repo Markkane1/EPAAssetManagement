@@ -6,11 +6,9 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -21,10 +19,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2 } from "lucide-react";
 import { ConsumableAsset, Employee, Location, ConsumableAssigneeType } from "@/types";
 import { convertQuantity, getCompatibleUnits } from "@/lib/unitUtils";
 import { useAuth } from "@/contexts/AuthContext";
+import { FormDialogActions } from "@/components/forms/FormDialogActions";
 
 const assignSchema = z.object({
   assigneeType: z.enum(["employee", "location"]),
@@ -269,15 +267,12 @@ export function ConsumableAssignModal({
             <Textarea id="notes" {...form.register("notes")} rows={2} />
           </div>
 
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={isSubmitting || !consumable}>
-              {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Assign
-            </Button>
-          </DialogFooter>
+          <FormDialogActions
+            isSubmitting={isSubmitting}
+            onCancel={() => onOpenChange(false)}
+            submitLabel="Assign"
+            disableSubmit={!consumable}
+          />
         </form>
       </DialogContent>
     </Dialog>

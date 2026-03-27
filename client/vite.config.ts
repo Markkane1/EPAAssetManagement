@@ -2,6 +2,60 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
 
+function getNodeModulePackageName(id: string) {
+  const normalized = id.replace(/\\/g, "/");
+  const marker = "/node_modules/";
+  const markerIndex = normalized.lastIndexOf(marker);
+  if (markerIndex === -1) return null;
+  const remainder = normalized.slice(markerIndex + marker.length);
+  if (!remainder) return null;
+  const [scopeOrName, maybeName] = remainder.split("/");
+  if (!scopeOrName) return null;
+  if (scopeOrName.startsWith("@") && maybeName) {
+    return `${scopeOrName}/${maybeName}`;
+  }
+  return scopeOrName;
+}
+
+function resolveVendorChunk(id: string) {
+  const pkg = getNodeModulePackageName(id);
+  if (!pkg) return undefined;
+
+  if (["@remix-run/router", "react", "react-dom", "react-router", "react-router-dom", "scheduler"].includes(pkg)) {
+    return "vendor-react";
+  }
+
+  if (["@tanstack/react-query", "@tanstack/query-core"].includes(pkg)) {
+    return "vendor-query";
+  }
+
+  if (
+    [
+      "class-variance-authority",
+      "clsx",
+      "lucide-react",
+      "sonner",
+      "tailwind-merge",
+    ].includes(pkg)
+  ) {
+    return "vendor-ui";
+  }
+
+  if (["@hookform/resolvers", "react-hook-form", "zod"].includes(pkg)) {
+    return "vendor-forms";
+  }
+
+  if (
+    pkg === "recharts" ||
+    pkg.startsWith("d3-") ||
+    ["eventemitter3", "internmap", "lodash", "lodash-es", "react-is", "robust-predicates", "victory-vendor"].includes(pkg)
+  ) {
+    return "vendor-charts";
+  }
+
+  return "vendor";
+}
+
 // https://vitejs.dev/config/
 export default defineConfig(() => ({
   root: __dirname,
@@ -24,27 +78,7 @@ export default defineConfig(() => ({
     rollupOptions: {
       output: {
         manualChunks(id) {
-          if (!id.includes("node_modules")) return;
-          if (id.includes("react") || id.includes("react-dom") || id.includes("react-router-dom")) {
-            return "vendor-react";
-          }
-          if (id.includes("@tanstack/react-query")) {
-            return "vendor-query";
-          }
-          if (id.includes("recharts")) {
-            return "vendor-charts";
-          }
-          if (
-            id.includes("jspdf") ||
-            id.includes("html2canvas") ||
-            id.includes("qrcode.react")
-          ) {
-            return "vendor-export";
-          }
-          if (id.includes("@radix-ui")) {
-            return "vendor-radix";
-          }
-          return "vendor";
+          return resolveVendorChunk(id);
         },
       },
     },

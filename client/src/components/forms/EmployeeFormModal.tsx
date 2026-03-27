@@ -6,16 +6,14 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2 } from "lucide-react";
 import { Employee, Directorate, Location } from "@/types";
 import { SearchableSelect } from "@/components/shared/SearchableSelect";
+import { FormDialogActions } from "@/components/forms/FormDialogActions";
 
 const employeeSchema = z.object({
   firstName: z.string().min(1, "First name is required").max(50),
@@ -222,15 +220,11 @@ export function EmployeeFormModal({
             )}
           </div>
 
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={isSubmitting}>
-              {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {isEditing ? "Update" : "Create"}
-            </Button>
-          </DialogFooter>
+          <FormDialogActions
+            isSubmitting={isSubmitting}
+            onCancel={() => onOpenChange(false)}
+            submitLabel={isEditing ? "Update" : "Create"}
+          />
         </form>
       </DialogContent>
     </Dialog>

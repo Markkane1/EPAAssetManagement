@@ -17,6 +17,11 @@ import { API_CONFIG } from '@/config/api.config';
 import { ApiError } from '@/lib/api';
 
 const { queryKeys, messages, query } = API_CONFIG;
+const { detail } = query.profiles;
+
+type QueryToggleOptions = {
+  enabled?: boolean;
+};
 
 function getApprovalRequestId(error: Error) {
   if (!(error instanceof ApiError) || error.status !== 409) return '';
@@ -27,18 +32,29 @@ function getApprovalRequestId(error: Error) {
   return String(approvalRequest?.id || approvalRequest?._id || '').trim();
 }
 
-export const useConsumableBalances = (filters?: BalancesQuery) =>
+export const useConsumableBalances = (filters?: BalancesQuery, options: QueryToggleOptions = {}) =>
   useQuery({
     queryKey: [...queryKeys.consumableBalances, filters || {}],
     queryFn: () => consumableInventoryService.getBalances(filters),
     staleTime: query.staleTime,
+    enabled: options.enabled ?? true,
   });
 
-export const useConsumableLedger = (filters?: LedgerQuery) =>
+export const useConsumableLedger = (filters?: LedgerQuery, options: QueryToggleOptions = {}) =>
   useQuery({
     queryKey: [...queryKeys.consumableLedger, filters || {}],
     queryFn: () => consumableInventoryService.getLedger(filters),
     staleTime: query.staleTime,
+    enabled: options.enabled ?? true,
+  });
+
+export const useConsumableRollup = (itemId?: string, options: QueryToggleOptions = {}) =>
+  useQuery({
+    queryKey: [...queryKeys.consumableRollup, itemId || 'all'],
+    queryFn: () => consumableInventoryService.getRollup(itemId),
+    enabled: (options.enabled ?? true) && !!itemId,
+    staleTime: detail.staleTime,
+    refetchOnWindowFocus: detail.refetchOnWindowFocus,
   });
 
 export const useConsumableExpiry = (

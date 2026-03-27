@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -6,16 +6,15 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2 } from "lucide-react";
 import type { District, Division } from "@/types";
 import { SearchableSelect } from "@/components/shared/SearchableSelect";
+import { FormDialogActions } from "@/components/forms/FormDialogActions";
+import { useDialogFormReset } from "@/components/forms/useDialogFormReset";
 
 const districtSchema = z.object({
   name: z.string().min(1, "Name is required").max(120),
@@ -50,13 +49,14 @@ export function DistrictFormModal({
     },
   });
 
-  useEffect(() => {
-    if (!open) return;
-    form.reset({
+  const resetValues = useMemo(
+    () => ({
       name: district?.name || "",
       divisionId: district?.division_id || "",
-    });
-  }, [open, district, form]);
+    }),
+    [district]
+  );
+  useDialogFormReset({ open, form, values: resetValues });
 
   const handleSubmit = async (data: DistrictFormData) => {
     setIsSubmitting(true);
@@ -104,15 +104,11 @@ export function DistrictFormModal({
               <p className="text-sm text-destructive">{form.formState.errors.divisionId.message}</p>
             )}
           </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={isSubmitting}>
-              {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {isEditing ? "Update" : "Create"}
-            </Button>
-          </DialogFooter>
+          <FormDialogActions
+            isSubmitting={isSubmitting}
+            onCancel={() => onOpenChange(false)}
+            submitLabel={isEditing ? "Update" : "Create"}
+          />
         </form>
       </DialogContent>
     </Dialog>

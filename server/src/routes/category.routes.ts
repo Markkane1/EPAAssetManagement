@@ -6,6 +6,7 @@ import { requireAdmin, requireOrgAdminOrCentralStoreCaretaker } from '../middlew
 const router = Router();
 
 router.get('/', requireAuth, categoryController.list);
+router.get('/counts', requireAuth, categoryController.counts);
 router.get('/:id', requireAuth, categoryController.getById);
 router.post('/', requireAuth, requireOrgAdminOrCentralStoreCaretaker, categoryController.create);
 router.put('/:id', requireAuth, requireOrgAdminOrCentralStoreCaretaker, categoryController.update);

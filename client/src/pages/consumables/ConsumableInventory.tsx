@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { DataTable } from '@/components/shared/DataTable';
@@ -12,13 +11,12 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { useConsumableBalances, useConsumableLedger } from '@/hooks/useConsumableInventory';
+import { useConsumableBalances, useConsumableLedger, useConsumableRollup } from '@/hooks/useConsumableInventory';
 import { useConsumableItems } from '@/hooks/useConsumableItems';
 import { useOffices } from '@/hooks/useOffices';
 import { useEmployees } from '@/hooks/useEmployees';
 import { useOfficeSubLocations } from '@/hooks/useOfficeSubLocations';
 import { useConsumableLots } from '@/hooks/useConsumableLots';
-import { consumableInventoryService } from '@/services/consumableInventoryService';
 import type { ConsumableInventoryBalance } from '@/types';
 import { useConsumableMode } from '@/hooks/useConsumableMode';
 import { filterItemsByMode, filterLocationsByMode } from '@/lib/consumableMode';
@@ -164,11 +162,10 @@ export default function ConsumableInventory() {
 
   const { data: balances = [] } = useConsumableBalances(balanceFilters);
 
-  const { data: rollup } = useQuery({
-    queryKey: ['consumableRollup', itemId !== ALL_VALUE ? itemId : 'all'],
-    queryFn: () => consumableInventoryService.getRollup(itemId !== ALL_VALUE ? itemId : undefined),
-    enabled: itemId !== ALL_VALUE,
-  });
+  const { data: rollup } = useConsumableRollup(
+    itemId !== ALL_VALUE ? itemId : undefined,
+    { enabled: itemId !== ALL_VALUE }
+  );
 
   const { data: ledger = [] } = useConsumableLedger(itemId !== ALL_VALUE ? { itemId } : undefined);
 

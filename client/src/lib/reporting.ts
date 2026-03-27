@@ -1,6 +1,4 @@
 import { format } from "date-fns";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
 
 export function filterByDateRange<T extends Record<string, unknown>>(
   data: T[] | undefined,
@@ -42,7 +40,7 @@ export function getDateRangeText(startDate?: Date, endDate?: Date) {
   return "All Time";
 }
 
-export function generateReportPDF(params: {
+export async function generateReportPDF(params: {
   title: string;
   headers: string[];
   data: (string | number)[][];
@@ -50,6 +48,10 @@ export function generateReportPDF(params: {
   dateRangeText: string;
 }) {
   const { title, headers, data, filename, dateRangeText } = params;
+  const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
+    import("jspdf"),
+    import("jspdf-autotable"),
+  ]);
   const doc = new jsPDF();
 
   // Add EPA branding header

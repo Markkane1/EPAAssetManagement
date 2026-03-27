@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useMutation } from "@tanstack/react-query";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,7 +13,7 @@ import { useAssignments } from "@/hooks/useAssignments";
 import { useEmployees } from "@/hooks/useEmployees";
 import { useAssetItems } from "@/hooks/useAssetItems";
 import { useAssets } from "@/hooks/useAssets";
-import { returnRequestService } from "@/services/returnRequestService";
+import { useCreateReturnRequest } from "@/hooks/useReturnRequests";
 
 type MongoIdLike = {
   id?: unknown;
@@ -50,6 +49,7 @@ export default function ReturnRequestNew() {
 
   const [selectedAssetItemIds, setSelectedAssetItemIds] = useState<string[]>([]);
   const [returnAll, setReturnAll] = useState(false);
+  const createMutation = useCreateReturnRequest();
 
   const employeeList = useMemo(() => employees || [], [employees]);
   const assignmentList = useMemo(() => assignments || [], [assignments]);
@@ -109,31 +109,31 @@ export default function ReturnRequestNew() {
       .filter((row): row is NonNullable<typeof row> => Boolean(row));
   }, [myAssignments, assetItemList, assetList]);
 
-  const createMutation = useMutation({
-    mutationFn: async () => {
-      if (!currentEmployeeId) {
-        throw new Error("Your account is not mapped to an employee record.");
-      }
-      if (!returnAll && selectedAssetItemIds.length === 0) {
-        throw new Error("Select at least one assigned asset, or use Return All.");
-      }
-      return returnRequestService.create({
+  const handleSubmit = async () => {
+    if (!currentEmployeeId) {
+      toast.error("Your account is not mapped to an employee record.");
+      return;
+    }
+    if (!returnAll && selectedAssetItemIds.length === 0) {
+      toast.error("Select at least one assigned asset, or use Return All.");
+      return;
+    }
+
+    try {
+      const created = await createMutation.mutateAsync({
         employeeId: currentEmployeeId,
         officeId: asId(locationId) || asId(currentEmployee?.location_id) || undefined,
         returnAll,
         assetItemIds: returnAll ? undefined : selectedAssetItemIds,
       });
-    },
-    onSuccess: (created) => {
-      toast.success("Return request submitted.");
       const id = created.id || created._id;
-      if (!id) return;
-      navigate(`/returns/${id}`);
-    },
-    onError: (error: Error) => {
-      toast.error(error.message || "Failed to submit return request.");
-    },
-  });
+      if (id) {
+        navigate(`/returns/${id}`);
+      }
+    } catch {
+      // Mutation hook already handles user-facing error feedback.
+    }
+  };
 
   const toggleAsset = (assetItemId: string, checked: boolean) => {
     setSelectedAssetItemIds((previous) => {
@@ -244,7 +244,7 @@ export default function ReturnRequestNew() {
               </Button>
               <Button
                 type="button"
-                onClick={() => createMutation.mutate()}
+                onClick={() => void handleSubmit()}
                 disabled={createMutation.isPending || !currentEmployee}
               >
                 {createMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

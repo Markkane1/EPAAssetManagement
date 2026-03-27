@@ -112,7 +112,7 @@ export default function Transfers() {
     assetItems: selectedAssetItemIds.length === 0 ? "Select at least one asset item." : "",
     approvalOrderFile: !approvalOrderFile ? "Attach the approval order before submitting." : "",
   };
-  const hasFormErrors = Object.values(formErrors).some(Boolean);
+  const _hasFormErrors = Object.values(formErrors).some(Boolean);
 
   useEffect(() => {
     if (!canManage) return;

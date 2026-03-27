@@ -10,12 +10,8 @@ const workspaceRoot = path.resolve(process.cwd());
 const testCacheRoot = path.resolve(workspaceRoot, '..', '.ams-test-cache', path.basename(workspaceRoot));
 const mongoCacheDir = path.join(testCacheRoot, 'mongodb-binaries');
 const securityMongoRoot = path.join(testCacheRoot, 'security-mongo');
-const defaultWindowsMongoPath = 'C:\\Program Files\\MongoDB\\Server\\8.2\\bin\\mongod.exe';
-
 function resolveMongoBinaryConfig() {
-  const systemBinary =
-    process.env.MONGOMS_SYSTEM_BINARY ||
-    (fs.existsSync(defaultWindowsMongoPath) ? defaultWindowsMongoPath : undefined);
+  const systemBinary = process.env.MONGOMS_SYSTEM_BINARY;
 
   if (systemBinary) {
     return { systemBinary };

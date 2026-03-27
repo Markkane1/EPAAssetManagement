@@ -1,7 +1,12 @@
 import api from '@/lib/api';
 import { Asset } from '@/types';
+import { ListQuery, PagedListResponse, toListQueryString } from '@/services/pagination';
 
 const LIST_LIMIT = 2000;
+
+export interface AssetListQuery extends ListQuery {
+  search?: string;
+}
 
 export interface AssetCreateDto {
   name: string;
@@ -113,8 +118,23 @@ function toAssetFormData(data: AssetCreateDto | AssetUpdateDto) {
   return form;
 }
 
+function buildAssetQuery(query: AssetListQuery = {}, meta = false) {
+  const params = new URLSearchParams();
+  const pagination = toListQueryString({ limit: LIST_LIMIT, ...query, meta });
+  if (pagination.startsWith('?')) {
+    const queryString = new URLSearchParams(pagination.slice(1));
+    queryString.forEach((value, key) => params.set(key, value));
+  }
+  if (query.search?.trim()) params.set('search', query.search.trim());
+  const encoded = params.toString();
+  return encoded ? `?${encoded}` : '';
+}
+
 export const assetService = {
-  getAll: () => api.get<Asset[]>(`/assets?limit=${LIST_LIMIT}`),
+  getAll: (query: AssetListQuery = {}) => api.get<Asset[]>(`/assets${buildAssetQuery(query)}`),
+
+  getPaged: (query: AssetListQuery = {}) =>
+    api.get<PagedListResponse<Asset>>(`/assets${buildAssetQuery(query, true)}`),
   
   getById: (id: string) => api.get<Asset>(`/assets/${id}`),
 

@@ -1,17 +1,11 @@
-import { useCallback, useMemo, useState } from "react";
-import { MainLayout } from "@/components/layout/MainLayout";
-import { PageHeader } from "@/components/shared/PageHeader";
-import { DataTable } from "@/components/shared/DataTable";
-import { DateRangeFilter } from "@/components/reports/DateRangeFilter";
-import { Button } from "@/components/ui/button";
-import { Download, FileDown } from "lucide-react";
+import { useMemo, useState } from "react";
+import { ReportTablePage } from "@/components/reports/ReportTablePage";
 import { toast } from "sonner";
 import { useEmployees } from "@/hooks/useEmployees";
 import { useAssignments } from "@/hooks/useAssignments";
 import { useAssetItems } from "@/hooks/useAssetItems";
 import { useDirectorates } from "@/hooks/useDirectorates";
 import { useLocations } from "@/hooks/useLocations";
-import { isHeadOfficeLocation } from "@/lib/locationUtils";
 import {
   exportToCSV,
   filterRowsBySearch,
@@ -19,6 +13,7 @@ import {
 import { filterByDateRange, generateReportPDF, getDateRangeText } from "@/lib/reporting";
 import { usePageSearch } from "@/contexts/PageSearchContext";
 import { useAuth } from "@/contexts/AuthContext";
+import { buildDirectorateNameResolver, buildIdMap, findCurrentEmployee } from "@/pages/reports/reportResolvers";
 
 export default function EmployeeAssetsReport() {
   const { role, user } = useAuth();
@@ -38,27 +33,22 @@ export default function EmployeeAssetsReport() {
     [assignments, startDate, endDate]
   );
   const currentEmployee = useMemo(() => {
-    const list = employees || [];
-    const byUserId = list.find((employee) => employee.user_id === user?.id);
-    const byEmail = list.find(
-      (employee) => employee.email?.toLowerCase() === (user?.email || "").toLowerCase()
-    );
-    return byUserId || byEmail || null;
+    return findCurrentEmployee(employees || [], user?.id, user?.email);
   }, [employees, user?.id, user?.email]);
 
-  const getDirectorateName = useCallback((employeeId?: string) => {
-    const employee = employees?.find((e) => e.id === employeeId);
-    if (!employee) return "N/A";
-    const location = locations?.find((l) => l.id === employee.location_id);
-    if (!isHeadOfficeLocation(location)) return "N/A";
-    const directorate = directorates?.find((d) => d.id === employee.directorate_id);
-    return directorate?.name || "N/A";
-  }, [employees, locations, directorates]);
+  const assetItemById = useMemo(() => buildIdMap(assetItems || []), [assetItems]);
+  const reportLocations = useMemo(
+    () => [...(locations || []), ...(directorates || [])],
+    [locations, directorates]
+  );
+  const getDirectorateName = useMemo(
+    () => buildDirectorateNameResolver(reportLocations, employees || []),
+    [reportLocations, employees]
+  );
 
   const reportRows = useMemo(() => {
     const employeeList = isEmployeeRole ? (currentEmployee ? [currentEmployee] : []) : employees || [];
     const assignmentList = filteredAssignments || [];
-    const itemList = assetItems || [];
 
     return employeeList.map((employee) => {
       const employeeAssignments = assignmentList.filter(
@@ -66,7 +56,7 @@ export default function EmployeeAssetsReport() {
       );
       const assetTags = employeeAssignments
         .map((assignment) => {
-          const item = itemList.find((i) => i.id === assignment.asset_item_id);
+          const item = assignment.asset_item_id ? assetItemById.get(assignment.asset_item_id) : undefined;
           return item?.tag || "N/A";
         })
         .join("; ");
@@ -81,7 +71,7 @@ export default function EmployeeAssetsReport() {
         assetTags: assetTags || "None",
       };
     });
-  }, [isEmployeeRole, currentEmployee, employees, filteredAssignments, assetItems, getDirectorateName]);
+  }, [isEmployeeRole, currentEmployee, employees, filteredAssignments, assetItemById, getDirectorateName]);
 
   const searchTerm = pageSearch?.term || "";
   const filteredRows = useMemo(
@@ -144,39 +134,23 @@ export default function EmployeeAssetsReport() {
   };
 
   return (
-    <MainLayout title="Employee Assets Report" description="Assets assigned to employees">
-      <PageHeader
-        title="Employee Assets Report"
-        description={
-          isEmployeeRole ? "Assets currently assigned to you" : "Assets assigned to each employee"
-        }
-        extra={
-          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-            <Button variant="outline" className="gap-2" onClick={handleExportCSV}>
-              <Download className="h-4 w-4" />
-              CSV
-            </Button>
-            <Button className="gap-2" onClick={handleExportPDF}>
-              <FileDown className="h-4 w-4" />
-              PDF
-            </Button>
-          </div>
-        }
-      />
-
-      <DateRangeFilter
-        startDate={startDate}
-        endDate={endDate}
-        onStartDateChange={setStartDate}
-        onEndDateChange={setEndDate}
-        onClear={() => {
-          setStartDate(undefined);
-          setEndDate(undefined);
-        }}
-        rangeText={dateRangeText}
-      />
-
-      <DataTable columns={columns} data={reportRows as any} searchable />
-    </MainLayout>
+    <ReportTablePage
+      title="Employee Assets Report"
+      description={isEmployeeRole ? "Assets currently assigned to you" : "Assets assigned to each employee"}
+      layoutDescription="Assets assigned to employees"
+      columns={columns}
+      data={reportRows}
+      startDate={startDate}
+      endDate={endDate}
+      onStartDateChange={setStartDate}
+      onEndDateChange={setEndDate}
+      onClearDateRange={() => {
+        setStartDate(undefined);
+        setEndDate(undefined);
+      }}
+      dateRangeText={dateRangeText}
+      onExportCSV={handleExportCSV}
+      onExportPDF={handleExportPDF}
+    />
   );
 }

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
@@ -11,9 +11,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useCategories, useCreateCategory, useUpdateCategory, useDeleteCategory } from "@/hooks/useCategories";
-import { useAssets } from "@/hooks/useAssets";
-import { useConsumableItems } from "@/hooks/useConsumableItems";
+import {
+  useCategoryCounts,
+  usePagedCategories,
+  useCreateCategory,
+  useUpdateCategory,
+  useDeleteCategory,
+} from "@/hooks/useCategories";
 import { CategoryFormModal } from "@/components/forms/CategoryFormModal";
 import { Category } from "@/types";
 import { usePageSearch } from "@/contexts/PageSearchContext";
@@ -22,55 +26,50 @@ import { useViewMode } from "@/hooks/useViewMode";
 import { DataTable } from "@/components/shared/DataTable";
 import { useAuth } from "@/contexts/AuthContext";
 
+const EMPTY_CATEGORIES: Category[] = [];
 
 export default function Categories() {
+  const PAGE_SIZE = 60;
   const { isOrgAdmin } = useAuth();
-  const { data: categories, isLoading } = useCategories();
-  const { data: assets, isLoading: assetsLoading } = useAssets();
-  const { data: consumableItems, isLoading: consumableItemsLoading } = useConsumableItems();
   const createCategory = useCreateCategory();
   const updateCategory = useUpdateCategory();
   const deleteCategory = useDeleteCategory();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
+  const [page, setPage] = useState(1);
   const { mode: viewMode, setMode: setViewMode } = useViewMode("categories");
   const pageSearch = usePageSearch();
-  const searchTerm = (pageSearch?.term || "").trim().toLowerCase();
+  const searchTerm = useDeferredValue((pageSearch?.term || "").trim());
+  const { data: categoriesResponse, isLoading } = usePagedCategories({
+    page,
+    limit: PAGE_SIZE,
+    search: searchTerm || undefined,
+  });
+  const visibleCategories = useMemo(() => categoriesResponse?.items ?? EMPTY_CATEGORIES, [categoriesResponse?.items]);
+  const totalCategories = categoriesResponse?.total || visibleCategories.length;
+  const totalPages = Math.max(1, Math.ceil(totalCategories / PAGE_SIZE));
+  const categoryIds = useMemo(() => visibleCategories.map((category) => category.id), [visibleCategories]);
+  const { data: categoryCounts, isLoading: isCountsLoading } = useCategoryCounts(categoryIds);
 
-  const filteredCategories = useMemo(
-    () =>
-      (categories || []).filter((category) => {
-        if (!searchTerm) return true;
-        return [category.name, category.description, category.scope, category.asset_type]
-          .join(" ")
-          .toLowerCase()
-          .includes(searchTerm);
-      }),
-    [categories, searchTerm]
+  useEffect(() => {
+    setPage(1);
+  }, [searchTerm]);
+
+  const assetCountByCategoryId = useMemo(
+    () => categoryCounts?.assets || {},
+    [categoryCounts]
   );
-  const assetCountByCategoryId = useMemo(() => {
-    const counts = new Map<string, number>();
-    (assets || []).forEach((asset) => {
-      if (!asset.category_id || asset.is_active === false) return;
-      counts.set(asset.category_id, (counts.get(asset.category_id) || 0) + 1);
-    });
-    return counts;
-  }, [assets]);
-  const consumableCountByCategoryId = useMemo(() => {
-    const counts = new Map<string, number>();
-    (consumableItems || []).forEach((item) => {
-      if (!item.category_id) return;
-      counts.set(item.category_id, (counts.get(item.category_id) || 0) + 1);
-    });
-    return counts;
-  }, [consumableItems]);
+  const consumableCountByCategoryId = useMemo(
+    () => categoryCounts?.consumables || {},
+    [categoryCounts]
+  );
 
   const getCategoryItemCount = (category: Category) => {
     if (category.asset_type === "CONSUMABLE") {
-      return consumableCountByCategoryId.get(category.id) || 0;
+      return consumableCountByCategoryId[category.id] || 0;
     }
-    return assetCountByCategoryId.get(category.id) || 0;
+    return assetCountByCategoryId[category.id] || 0;
   };
 
   const handleAddCategory = () => {
@@ -162,7 +161,7 @@ export default function Categories() {
     </DropdownMenu>
   );
 
-  if (isLoading || assetsLoading || consumableItemsLoading) {
+  if (isLoading || isCountsLoading) {
     return (
       <MainLayout title="Categories" description="Organize categories by module">
         <div className="flex items-center justify-center h-64">
@@ -184,7 +183,8 @@ export default function Categories() {
       {viewMode === "list" ? (
         <DataTable
           columns={columns}
-          data={filteredCategories}
+          data={visibleCategories}
+          pagination={false}
           searchable={false}
           useGlobalPageSearch={false}
           actions={actions}
@@ -192,7 +192,7 @@ export default function Categories() {
       ) : (
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredCategories.map((category) => (
+            {visibleCategories.map((category) => (
               <Card key={category.id} className="group hover:shadow-md transition-all animate-fade-in">
                 <CardContent className="p-6">
                   <div className="flex items-start justify-between mb-4">
@@ -242,7 +242,7 @@ export default function Categories() {
               </Card>
             ))}
           </div>
-          {filteredCategories.length === 0 && (
+          {visibleCategories.length === 0 && (
             <Card>
               <CardContent className="py-8 text-sm text-muted-foreground">
                 No categories found.
@@ -251,6 +251,27 @@ export default function Categories() {
           )}
         </>
       )}
+      <div className="mt-4 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
+        <p className="text-sm text-muted-foreground">
+          Showing {visibleCategories.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1} to{" "}
+          {Math.min(page * PAGE_SIZE, totalCategories)} of {totalCategories} categories
+        </p>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page === 1}>
+            Previous
+          </Button>
+          <span className="text-sm font-medium">
+            Page {page} of {totalPages}
+          </span>
+          <Button
+            variant="outline"
+            onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+            disabled={page >= totalPages}
+          >
+            Next
+          </Button>
+        </div>
+      </div>
 
       <CategoryFormModal
         open={isModalOpen}

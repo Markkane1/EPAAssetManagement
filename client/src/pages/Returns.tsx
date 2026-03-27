@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTable } from "@/components/shared/DataTable";
@@ -8,13 +7,13 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Loader2, RotateCcw, CheckCircle2, Clock3, UserRound } from "lucide-react";
-import { returnRequestService } from "@/services/returnRequestService";
 import { useEmployees } from "@/hooks/useEmployees";
 import { useLocations } from "@/hooks/useLocations";
 import { useAuth } from "@/contexts/AuthContext";
 import { ReturnRequestStatus } from "@/types";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { FilterBar, FilterField, MetricCard, TimelineList, WorkflowPanel } from "@/components/shared/workflow";
+import { useReturnRequests } from "@/hooks/useReturnRequests";
 
 const STATUS_OPTIONS = [
   "ALL",
@@ -64,28 +63,20 @@ export default function Returns() {
     return byUserId || byEmail || null;
   }, [employees, user?.id, user?.email]);
 
-  const query = useQuery({
-    queryKey: [
-      "return-requests",
-      appliedFilters.status,
-      isEmployeeRole ? currentEmployee?.id || "SELF" : appliedFilters.employeeId,
-      appliedFilters.fromDate,
-      appliedFilters.toDate,
-    ],
-    enabled: !isEmployeeRole || Boolean(currentEmployee?.id),
-    queryFn: () =>
-      returnRequestService.list({
-        limit: 200,
-        status: appliedFilters.status !== "ALL" ? appliedFilters.status : undefined,
-        employeeId: isEmployeeRole
-          ? currentEmployee?.id || undefined
-          : appliedFilters.employeeId !== "ALL"
-            ? appliedFilters.employeeId
-            : undefined,
-        from: appliedFilters.fromDate || undefined,
-        to: appliedFilters.toDate || undefined,
-      }),
-  });
+  const query = useReturnRequests(
+    {
+      limit: 200,
+      status: appliedFilters.status !== "ALL" ? appliedFilters.status : undefined,
+      employeeId: isEmployeeRole
+        ? currentEmployee?.id || undefined
+        : appliedFilters.employeeId !== "ALL"
+          ? appliedFilters.employeeId
+          : undefined,
+      from: appliedFilters.fromDate || undefined,
+      to: appliedFilters.toDate || undefined,
+    },
+    { enabled: !isEmployeeRole || Boolean(currentEmployee?.id) }
+  );
 
   const employeeNameById = useMemo(() => {
     const map = new Map<string, string>();

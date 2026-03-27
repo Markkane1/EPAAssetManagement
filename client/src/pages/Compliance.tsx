@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,12 +9,12 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertCircle, Loader2 } from "lucide-react";
-import { reportService } from "@/services/reportService";
 import { useLocations } from "@/hooks/useLocations";
 import { useAuth } from "@/contexts/AuthContext";
 import { isHeadOfficeLocation } from "@/lib/locationUtils";
 import { usePageSearch } from "@/contexts/PageSearchContext";
 import { SearchableSelect } from "@/components/shared/SearchableSelect";
+import { useNonComplianceReport } from "@/hooks/useCompliance";
 
 type ComplianceIssue = {
   type: "REQUISITION" | "RETURN_REQUEST";
@@ -51,27 +50,16 @@ export default function Compliance() {
     toDate: "",
   });
 
-  const query = useQuery({
-    queryKey: [
-      "compliance",
-      appliedFilters.selectedOfficeId,
-      appliedFilters.fromDate,
-      appliedFilters.toDate,
-      isHqView ? "hq" : "office",
-      locationId || "",
-    ],
-    queryFn: () =>
-      reportService.getNonCompliance({
-        officeId: isHqView
-          ? appliedFilters.selectedOfficeId !== "ALL"
-            ? appliedFilters.selectedOfficeId
-            : undefined
-          : locationId || undefined,
-        from: appliedFilters.fromDate || undefined,
-        to: appliedFilters.toDate || undefined,
-        page: 1,
-        limit: 1000,
-      }),
+  const query = useNonComplianceReport({
+    officeId: isHqView
+      ? appliedFilters.selectedOfficeId !== "ALL"
+        ? appliedFilters.selectedOfficeId
+        : undefined
+      : locationId || undefined,
+    from: appliedFilters.fromDate || undefined,
+    to: appliedFilters.toDate || undefined,
+    page: 1,
+    limit: 1000,
   });
 
   const officeNameById = useMemo(() => {

@@ -1,29 +1,143 @@
 import * as React from "react";
-import * as PopoverPrimitive from "@radix-ui/react-popover";
+import { createPortal } from "react-dom";
 
 import { cn } from "@/lib/utils";
+import {
+  callEventHandler,
+  composeRefs,
+  type LayerAlign,
+  useAnchoredPosition,
+  useControllableState,
+  useDismissableLayer,
+} from "@/components/ui/layer-utils";
 
-const Popover = PopoverPrimitive.Root;
+type PopoverContextValue = {
+  open: boolean;
+  setOpen: (nextValue: boolean) => void;
+  triggerRef: React.RefObject<HTMLElement>;
+  contentRef: React.RefObject<HTMLDivElement>;
+};
 
-const PopoverTrigger = PopoverPrimitive.Trigger;
+const PopoverContext = React.createContext<PopoverContextValue | null>(null);
 
-const PopoverContent = React.forwardRef<
-  React.ElementRef<typeof PopoverPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof PopoverPrimitive.Content>
->(({ className, align = "center", sideOffset = 4, ...props }, ref) => (
-  <PopoverPrimitive.Portal>
-    <PopoverPrimitive.Content
-      ref={ref}
-      align={align}
-      sideOffset={sideOffset}
-      className={cn(
-        "z-50 w-72 rounded-md border bg-popover p-4 text-popover-foreground shadow-md outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
-        className,
-      )}
-      {...props}
-    />
-  </PopoverPrimitive.Portal>
-));
-PopoverContent.displayName = PopoverPrimitive.Content.displayName;
+function usePopoverContext() {
+  const context = React.useContext(PopoverContext);
+  if (!context) {
+    throw new Error("Popover components must be used within <Popover>");
+  }
+  return context;
+}
+
+const Popover = ({
+  children,
+  open,
+  defaultOpen,
+  onOpenChange,
+}: {
+  children: React.ReactNode;
+  open?: boolean;
+  defaultOpen?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}) => {
+  const [isOpen, setIsOpen] = useControllableState({
+    value: open,
+    defaultValue: defaultOpen,
+    onChange: onOpenChange,
+  });
+  const triggerRef = React.useRef<HTMLElement>(null);
+  const contentRef = React.useRef<HTMLDivElement>(null);
+
+  return (
+    <PopoverContext.Provider value={{ open: isOpen, setOpen: setIsOpen, triggerRef, contentRef }}>
+      {children}
+    </PopoverContext.Provider>
+  );
+};
+
+const PopoverTrigger = React.forwardRef<HTMLElement, React.HTMLAttributes<HTMLElement> & { asChild?: boolean }>(
+  ({ asChild = false, children, onClick, ...props }, ref) => {
+    const { open, setOpen, triggerRef } = usePopoverContext();
+    const mergedRef = composeRefs(triggerRef, ref);
+
+    if (asChild && React.isValidElement(children)) {
+      const child = children as React.ReactElement<any>;
+      return React.cloneElement(child, {
+        ...props,
+        ...child.props,
+        ref: composeRefs(mergedRef, child.ref),
+        onClick: (event: React.MouseEvent<HTMLElement>) => {
+          callEventHandler(child.props.onClick, event);
+          if (!event.defaultPrevented) {
+            callEventHandler(onClick, event);
+          }
+          if (!event.defaultPrevented) {
+            setOpen(!open);
+          }
+        },
+      });
+    }
+
+    return (
+      <button
+        type="button"
+        {...props}
+        ref={mergedRef as React.Ref<HTMLButtonElement>}
+        onClick={(event) => {
+          callEventHandler(onClick, event);
+          if (!event.defaultPrevented) {
+            setOpen(!open);
+          }
+        }}
+      >
+        {children}
+      </button>
+    );
+  }
+);
+PopoverTrigger.displayName = "PopoverTrigger";
+
+type PopoverContentProps = React.HTMLAttributes<HTMLDivElement> & {
+  align?: LayerAlign;
+  sideOffset?: number;
+};
+
+const PopoverContent = React.forwardRef<HTMLDivElement, PopoverContentProps>(
+  ({ className, align = "center", sideOffset = 4, ...props }, ref) => {
+    const { open, setOpen, triggerRef, contentRef } = usePopoverContext();
+    const mergedRef = composeRefs(contentRef, ref);
+    const style = useAnchoredPosition({
+      open,
+      triggerRef,
+      contentRef,
+      align,
+      sideOffset,
+    });
+
+    useDismissableLayer({
+      open,
+      onDismiss: () => setOpen(false),
+      contentRef,
+      triggerRef,
+    });
+
+    if (!open || typeof document === "undefined") {
+      return null;
+    }
+
+    return createPortal(
+      <div
+        ref={mergedRef}
+        className={cn(
+          "z-50 w-72 rounded-md border bg-popover p-4 text-popover-foreground shadow-md outline-none",
+          className
+        )}
+        style={style}
+        {...props}
+      />,
+      document.body
+    );
+  }
+);
+PopoverContent.displayName = "PopoverContent";
 
 export { Popover, PopoverTrigger, PopoverContent };

@@ -1,4 +1,4 @@
-import { useState, useEffect, type ChangeEvent } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -6,11 +6,9 @@ import {
     Dialog,
     DialogContent,
     DialogDescription,
-    DialogFooter,
     DialogHeader,
     DialogTitle,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -22,8 +20,11 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
-import { Loader2 } from "lucide-react";
 import { Asset, Category, Vendor } from "@/types";
+import { FormDialogActions } from "@/components/forms/FormDialogActions";
+import { getFormEntityId } from "@/components/forms/formEntityUtils";
+import { useDialogFormReset } from "@/components/forms/useDialogFormReset";
+import { usePdfAttachmentField } from "@/components/forms/usePdfAttachmentField";
 
 const optionalDimension = z.preprocess(
     (value) => {
@@ -78,36 +79,17 @@ function hasDimensionValues(dimensions?: Asset["dimensions"] | null) {
     return dimensions.length != null || dimensions.width != null || dimensions.height != null;
 }
 
-function getEntityId(value: unknown): string {
-    if (!value) return "";
-    if (typeof value === "string") return value;
-    if (typeof value === "object") {
-        const record = value as { id?: unknown; _id?: unknown; toString?: () => string };
-        if (typeof record.id === "string") return record.id;
-        if (typeof record._id === "string") return record._id;
-        if (record._id && typeof record._id === "object" && "toString" in (record._id as object)) {
-            const parsed = String(record._id);
-            if (parsed && parsed !== "[object Object]") return parsed;
-        }
-        if (typeof record.toString === "function") {
-            const parsed = record.toString();
-            if (parsed && parsed !== "[object Object]") return parsed;
-        }
-    }
-    return "";
-}
-
-function isPdfAttachment(file: File) {
-    if (file.type === "application/pdf") return true;
-    return /\.pdf$/i.test(file.name);
-}
-
 export function OfficeAssetFormModal({ open, onOpenChange, asset, categories, vendors, onSubmit }: OfficeAssetFormModalProps) {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [showDimensions, setShowDimensions] = useState(false);
-    const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
-    const [attachmentError, setAttachmentError] = useState<string | null>(null);
     const isEditing = !!asset;
+    const {
+        attachmentFile,
+        attachmentError,
+        handleAttachmentChange,
+        resetAttachment,
+        validateAttachment,
+    } = usePdfAttachmentField();
 
     const form = useForm<AssetFormData>({
         resolver: zodResolver(assetSchema),
@@ -130,16 +112,14 @@ export function OfficeAssetFormModal({ open, onOpenChange, asset, categories, ve
         },
     });
 
-    useEffect(() => {
-        if (!open) return;
-
+    const resetValues = useMemo(() => {
         if (asset) {
-            form.reset({
+            return {
                 name: asset.name,
                 description: asset.description || "",
                 specification: asset.specification || "",
                 categoryId: asset.category_id || "",
-                assetSource: "procurement",
+                assetSource: "procurement" as const,
                 vendorId: asset.vendor_id || "",
                 price: asset.unit_price || undefined,
                 acquisitionDate: asset.acquisition_date
@@ -150,54 +130,36 @@ export function OfficeAssetFormModal({ open, onOpenChange, asset, categories, ve
                 dimensionWidth: asset.dimensions?.width ?? undefined,
                 dimensionHeight: asset.dimensions?.height ?? undefined,
                 dimensionUnit: asset.dimensions?.unit || "cm",
-            });
-            setShowDimensions(hasDimensionValues(asset.dimensions));
-            setAttachmentFile(null);
-            setAttachmentError(null);
-        } else {
-            form.reset({
-                name: "",
-                description: "",
-                specification: "",
-                categoryId: "",
-                assetSource: "procurement",
-                vendorId: "",
-                price: undefined,
-                acquisitionDate: new Date().toISOString().split("T")[0],
-                quantity: 1,
-                dimensionLength: undefined,
-                dimensionWidth: undefined,
-                dimensionHeight: undefined,
-                dimensionUnit: "cm",
-            });
-            setShowDimensions(false);
-            setAttachmentFile(null);
-            setAttachmentError(null);
-        }
-    }, [asset, open, form]);
-
-    const handleAttachmentChange = (event: ChangeEvent<HTMLInputElement>) => {
-        const selected = event.target.files?.[0] || null;
-        if (!selected) {
-            setAttachmentFile(null);
-            setAttachmentError(null);
-            return;
+            };
         }
 
-        if (!isPdfAttachment(selected)) {
-            setAttachmentFile(null);
-            setAttachmentError("Attachment must be a PDF file.");
-            event.target.value = "";
-            return;
-        }
+        return {
+            name: "",
+            description: "",
+            specification: "",
+            categoryId: "",
+            assetSource: "procurement" as const,
+            vendorId: "",
+            price: undefined,
+            acquisitionDate: new Date().toISOString().split("T")[0],
+            quantity: 1,
+            dimensionLength: undefined,
+            dimensionWidth: undefined,
+            dimensionHeight: undefined,
+            dimensionUnit: "cm" as const,
+        };
+    }, [asset]);
+    useDialogFormReset({ open, form, values: resetValues });
 
-        setAttachmentFile(selected);
-        setAttachmentError(null);
-    };
+    useEffect(() => {
+        if (!open) return;
+
+        setShowDimensions(asset ? hasDimensionValues(asset.dimensions) : false);
+        resetAttachment();
+    }, [asset, open, resetAttachment]);
 
     const handleSubmit = async (data: AssetFormData) => {
-        if (attachmentFile && !isPdfAttachment(attachmentFile)) {
-            setAttachmentError("Attachment must be a PDF file.");
+        if (!validateAttachment()) {
             return;
         }
 
@@ -216,8 +178,7 @@ export function OfficeAssetFormModal({ open, onOpenChange, asset, categories, ve
             await onSubmit(payload);
             form.reset();
             setShowDimensions(false);
-            setAttachmentFile(null);
-            setAttachmentError(null);
+            resetAttachment();
             onOpenChange(false);
         } finally {
             setIsSubmitting(false);
@@ -305,7 +266,7 @@ export function OfficeAssetFormModal({ open, onOpenChange, asset, categories, ve
                                 <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
                                 <SelectContent>
                                     {categories.map((c) => {
-                                        const id = getEntityId(c);
+                                        const id = getFormEntityId(c);
                                         if (!id) return null;
                                         return <SelectItem key={id} value={id}>{c.name}</SelectItem>;
                                     })}
@@ -330,7 +291,7 @@ export function OfficeAssetFormModal({ open, onOpenChange, asset, categories, ve
                                 <SelectContent>
                                     <SelectItem value="none">Select vendor</SelectItem>
                                     {vendors.map((v) => {
-                                        const id = getEntityId(v);
+                                        const id = getFormEntityId(v);
                                         if (!id) return null;
                                         return <SelectItem key={id} value={id}>{v.name}</SelectItem>;
                                     })}
@@ -385,15 +346,11 @@ export function OfficeAssetFormModal({ open, onOpenChange, asset, categories, ve
                         <Label htmlFor="description">Description</Label>
                         <Textarea id="description" {...form.register("description")} placeholder="Optional description..." rows={2} />
                     </div>
-                    <DialogFooter>
-                        <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
-                            Cancel
-                        </Button>
-                        <Button type="submit" disabled={isSubmitting}>
-                            {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                            {isEditing ? "Update" : "Create"}
-                        </Button>
-                    </DialogFooter>
+                    <FormDialogActions
+                        isSubmitting={isSubmitting}
+                        onCancel={() => onOpenChange(false)}
+                        submitLabel={isEditing ? "Update" : "Create"}
+                    />
                 </form>
             </DialogContent>
         </Dialog>

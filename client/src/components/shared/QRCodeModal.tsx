@@ -1,5 +1,4 @@
-import { useRef } from "react";
-import { QRCodeSVG } from "qrcode.react";
+import { useEffect, useRef, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -9,7 +8,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Download, Printer } from "lucide-react";
+import { Download, Loader2, Printer } from "lucide-react";
+
+type QRCodeRenderer = typeof import("qrcode.react")["QRCodeSVG"];
 
 interface QRCodeModalProps {
   open: boolean;
@@ -27,6 +28,8 @@ export function QRCodeModal({
   serialNumber,
 }: QRCodeModalProps) {
   const qrRef = useRef<HTMLDivElement>(null);
+  const [QRCodeSVG, setQRCodeSVG] = useState<QRCodeRenderer | null>(null);
+  const [isLoadingQRCode, setIsLoadingQRCode] = useState(false);
 
   const escapeHtml = (value: string) =>
     value
@@ -42,7 +45,32 @@ export function QRCodeModal({
     serial: serialNumber || "",
   });
 
+  useEffect(() => {
+    if (!open || QRCodeSVG) return;
+
+    let isCancelled = false;
+    setIsLoadingQRCode(true);
+
+    import("qrcode.react")
+      .then((module) => {
+        if (!isCancelled) {
+          setQRCodeSVG(() => module.QRCodeSVG);
+          setIsLoadingQRCode(false);
+        }
+      })
+      .catch(() => {
+        if (!isCancelled) {
+          setIsLoadingQRCode(false);
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [QRCodeSVG, open]);
+
   const handleDownload = () => {
+    if (isLoadingQRCode) return;
     const svg = qrRef.current?.querySelector("svg");
     if (!svg) return;
 
@@ -66,6 +94,7 @@ export function QRCodeModal({
   };
 
   const handlePrint = () => {
+    if (isLoadingQRCode) return;
     const printWindow = window.open("", "_blank");
     if (!printWindow) return;
 
@@ -147,12 +176,18 @@ export function QRCodeModal({
 
         <div className="flex flex-col items-center py-6" ref={qrRef}>
           <div className="bg-white p-4 rounded-lg">
-            <QRCodeSVG
-              value={qrValue}
-              size={180}
-              level="H"
-              includeMargin
-            />
+            {QRCodeSVG ? (
+              <QRCodeSVG
+                value={qrValue}
+                size={180}
+                level="H"
+                includeMargin
+              />
+            ) : (
+              <div className="flex h-[180px] w-[180px] items-center justify-center">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              </div>
+            )}
           </div>
           <div className="mt-4 text-center">
             <p className="font-mono text-lg font-bold text-primary">{tag}</p>
@@ -164,11 +199,11 @@ export function QRCodeModal({
         </div>
 
         <DialogFooter className="flex gap-2 sm:gap-0">
-          <Button variant="outline" onClick={handleDownload}>
+          <Button variant="outline" onClick={handleDownload} disabled={isLoadingQRCode || !QRCodeSVG}>
             <Download className="h-4 w-4 mr-2" />
             Download
           </Button>
-          <Button onClick={handlePrint}>
+          <Button onClick={handlePrint} disabled={isLoadingQRCode || !QRCodeSVG}>
             <Printer className="h-4 w-4 mr-2" />
             Print
           </Button>

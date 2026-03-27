@@ -1,17 +1,14 @@
 import { useState, useEffect, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useQuery } from "@tanstack/react-query";
 import * as z from "zod";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -22,18 +19,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import {
-  Command,
-  CommandEmpty,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
-import { Loader2 } from "lucide-react";
-import { vendorService } from "@/services/vendorService";
 import { getOfficeHolderId } from "@/lib/assetItemHolder";
-import { MaintenanceRecord, MaintenanceType, MaintenanceStatus, AssetItem, Asset, Vendor } from "@/types";
+import { MaintenanceRecord, MaintenanceType, MaintenanceStatus, AssetItem, Asset } from "@/types";
+import { FormDialogActions } from "@/components/forms/FormDialogActions";
+import { SearchableComboboxField } from "@/components/forms/SearchableComboboxField";
+import {
+  useAssetItemOptions,
+  useAssetNameMap,
+  useEntityById,
+  useVendorOptions,
+} from "@/components/forms/useFormSearchLookups";
+import { useVendors } from "@/hooks/useVendors";
 
 const maintenanceSchema = z.object({
   assetItemId: z.string().min(1, "Asset item is required"),
@@ -125,18 +121,22 @@ export function MaintenanceFormModal({
   const officeAssetItems = isEmployeeRequest
     ? assetItems
     : assetItems.filter((item) => Boolean(getOfficeHolderId(item)));
-  const selectedAssetItem = officeAssetItems.find((item) => item.id === form.watch("assetItemId"));
+  const getAssetItemById = useEntityById(officeAssetItems);
+  const selectedAssetItem = getAssetItemById(form.watch("assetItemId"));
   const selectedOfficeId = selectedAssetItem ? getOfficeHolderId(selectedAssetItem) : null;
   const selectedVendorId = form.watch("performedByVendorId");
 
-  const { data: vendorsData, isLoading: vendorsLoading } = useQuery({
-    queryKey: ["vendors", "maintenance-form", selectedOfficeId || "none"],
-    queryFn: () => vendorService.getAll({ officeId: selectedOfficeId || undefined }),
-    enabled: Boolean(selectedOfficeId),
-    staleTime: 30_000,
-  });
+  const { data: vendorsData, isLoading: vendorsLoading } = useVendors(
+    selectedOfficeId || undefined,
+    undefined,
+    { enabled: Boolean(selectedOfficeId) }
+  );
   const vendorList = useMemo(() => vendorsData || [], [vendorsData]);
-  const selectedVendor = vendorList.find((vendor) => vendor.id === selectedVendorId);
+  const assetNameById = useAssetNameMap(assets);
+  const assetOptions = useAssetItemOptions(officeAssetItems, assetNameById);
+  const vendorOptions = useVendorOptions(vendorList);
+  const getVendorById = useEntityById(vendorList);
+  const selectedVendor = getVendorById(selectedVendorId);
 
   useEffect(() => {
     if (!selectedOfficeId && selectedVendorId) {
@@ -167,7 +167,7 @@ export function MaintenanceFormModal({
 
     setIsSubmitting(true);
     try {
-      const resolvedVendor = vendorList.find((vendor) => vendor.id === data.performedByVendorId);
+      const resolvedVendor = getVendorById(data.performedByVendorId);
       await onSubmit({
         ...data,
         performedByVendorId: isEmployeeRequest ? undefined : data.performedByVendorId,
@@ -181,10 +181,6 @@ export function MaintenanceFormModal({
     } finally {
       setIsSubmitting(false);
     }
-  };
-
-  const getAssetName = (assetId: string) => {
-    return assets.find((a) => a.id === assetId)?.name || "Unknown";
   };
 
   return (
@@ -203,45 +199,32 @@ export function MaintenanceFormModal({
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
-          <div className="space-y-2">
-            <Label>Asset Item *</Label>
-            <Popover open={assetPickerOpen} onOpenChange={setAssetPickerOpen}>
-              <PopoverTrigger asChild>
-                <Button variant="outline" role="combobox" className="w-full justify-between">
-                  {selectedAssetItem
-                    ? `${selectedAssetItem.tag || selectedAssetItem.serial_number || "Asset"} - ${getAssetName(selectedAssetItem.asset_id)}`
-                    : "Search asset items..."}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-                <Command>
-                  <CommandInput placeholder="Search by tag, serial, or asset..." />
-                  <CommandList>
-                    <CommandEmpty>No asset items found.</CommandEmpty>
-                    {officeAssetItems.map((item) => (
-                      <CommandItem
-                        key={item.id}
-                        value={`${item.tag || ""} ${item.serial_number || ""} ${getAssetName(item.asset_id)}`}
-                        onSelect={() => {
-                          form.setValue("assetItemId", item.id);
-                          if (!isEmployeeRequest && selectedOfficeId !== getOfficeHolderId(item)) {
-                            form.setValue("performedByVendorId", "");
-                          }
-                          setAssetPickerOpen(false);
-                        }}
-                      >
-                        <span className="font-mono">{item.tag || item.serial_number || "Asset"}</span>
-                        <span className="ml-2 text-xs text-muted-foreground">{getAssetName(item.asset_id)}</span>
-                      </CommandItem>
-                    ))}
-                  </CommandList>
-                </Command>
-              </PopoverContent>
-            </Popover>
-            {form.formState.errors.assetItemId && (
-              <p className="text-sm text-destructive">{form.formState.errors.assetItemId.message}</p>
-            )}
-          </div>
+          <SearchableComboboxField
+            label="Asset Item *"
+            open={assetPickerOpen}
+            onOpenChange={setAssetPickerOpen}
+            value={
+              selectedAssetItem
+                ? `${selectedAssetItem.tag || selectedAssetItem.serial_number || "Asset"} - ${assetNameById.get(selectedAssetItem.asset_id) || "Unknown"}`
+                : undefined
+            }
+            options={assetOptions}
+            placeholder="Search asset items..."
+            searchPlaceholder="Search by tag, serial, or asset..."
+            emptyText="No asset items found."
+            onValueChange={(value) => {
+              const nextItem = getAssetItemById(value);
+              form.setValue("assetItemId", value);
+              if (
+                !isEmployeeRequest &&
+                nextItem &&
+                selectedOfficeId !== getOfficeHolderId(nextItem)
+              ) {
+                form.setValue("performedByVendorId", "");
+              }
+            }}
+            error={form.formState.errors.assetItemId?.message}
+          />
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
@@ -322,53 +305,21 @@ export function MaintenanceFormModal({
           </div>
 
           {!isEmployeeRequest && (
-            <div className="space-y-2">
-              <Label>Performed By Vendor *</Label>
-              <Popover open={vendorPickerOpen} onOpenChange={setVendorPickerOpen}>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    role="combobox"
-                    className="w-full justify-between"
-                    disabled={!selectedOfficeId}
-                  >
-                    {selectedVendor
-                      ? selectedVendor.name
-                      : selectedOfficeId
-                      ? "Search office vendors..."
-                      : "Select office-held asset item first"}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-                  <Command>
-                    <CommandInput placeholder="Search vendor by name, email, phone..." />
-                    <CommandList>
-                      <CommandEmpty>
-                        {vendorsLoading ? "Loading vendors..." : "No vendors found for selected office."}
-                      </CommandEmpty>
-                      {vendorList.map((vendor: Vendor) => (
-                        <CommandItem
-                          key={vendor.id}
-                          value={`${vendor.name || ""} ${vendor.email || ""} ${vendor.phone || ""}`}
-                          onSelect={() => {
-                            form.setValue("performedByVendorId", vendor.id);
-                            setVendorPickerOpen(false);
-                          }}
-                        >
-                          <span>{vendor.name}</span>
-                          {vendor.phone ? (
-                            <span className="ml-2 text-xs text-muted-foreground">{vendor.phone}</span>
-                          ) : null}
-                        </CommandItem>
-                      ))}
-                    </CommandList>
-                  </Command>
-                </PopoverContent>
-              </Popover>
-              {form.formState.errors.performedByVendorId && (
-                <p className="text-sm text-destructive">{form.formState.errors.performedByVendorId.message}</p>
-              )}
-            </div>
+            <SearchableComboboxField
+              label="Performed By Vendor *"
+              open={vendorPickerOpen}
+              onOpenChange={setVendorPickerOpen}
+              value={selectedVendor?.name}
+              options={vendorOptions}
+              placeholder={
+                selectedOfficeId ? "Search office vendors..." : "Select office-held asset item first"
+              }
+              searchPlaceholder="Search vendor by name, email, phone..."
+              emptyText={vendorsLoading ? "Loading vendors..." : "No vendors found for selected office."}
+              onValueChange={(value) => form.setValue("performedByVendorId", value)}
+              error={form.formState.errors.performedByVendorId?.message}
+              disabled={!selectedOfficeId}
+            />
           )}
 
           {!isEditing && !isEmployeeRequest && (
@@ -404,15 +355,11 @@ export function MaintenanceFormModal({
             />
           </div>
 
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={isSubmitting}>
-              {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {isEditing ? "Update" : isEmployeeRequest ? "Submit Request" : "Schedule"}
-            </Button>
-          </DialogFooter>
+          <FormDialogActions
+            isSubmitting={isSubmitting}
+            onCancel={() => onOpenChange(false)}
+            submitLabel={isEditing ? "Update" : isEmployeeRequest ? "Submit Request" : "Schedule"}
+          />
         </form>
       </DialogContent>
     </Dialog>

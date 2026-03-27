@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -6,17 +6,16 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Loader2 } from "lucide-react";
 import { Location, Vendor } from "@/types";
 import { SearchableSelect } from "@/components/shared/SearchableSelect";
+import { FormDialogActions } from "@/components/forms/FormDialogActions";
+import { useDialogFormReset } from "@/components/forms/useDialogFormReset";
 
 const vendorSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(100),
@@ -64,27 +63,27 @@ export function VendorFormModal({
     },
   });
 
-  useEffect(() => {
+  const resetValues = useMemo(() => {
     if (vendor) {
-      form.reset({
+      return {
         name: vendor.name,
         contactInfo: vendor.contact_info || "",
         email: vendor.email || "",
         phone: vendor.phone || "",
         address: vendor.address || "",
         officeId: vendor.office_id || defaultOfficeId || "",
-      });
-    } else {
-      form.reset({
-        name: "",
-        contactInfo: "",
-        email: "",
-        phone: "",
-        address: "",
-        officeId: defaultOfficeId || "",
-      });
+      };
     }
-  }, [vendor, defaultOfficeId, form]);
+    return {
+      name: "",
+      contactInfo: "",
+      email: "",
+      phone: "",
+      address: "",
+      officeId: defaultOfficeId || "",
+    };
+  }, [vendor, defaultOfficeId]);
+  useDialogFormReset({ open, form, values: resetValues });
 
   const handleSubmit = async (data: VendorFormData) => {
     if (isOrgAdmin && !String(data.officeId || "").trim()) {
@@ -165,15 +164,12 @@ export function VendorFormModal({
               <p className="text-sm text-destructive">{form.formState.errors.address.message}</p>
             )}
           </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={isSubmitting || !form.formState.isValid}>
-              {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {isEditing ? "Update" : "Create"}
-            </Button>
-          </DialogFooter>
+          <FormDialogActions
+            isSubmitting={isSubmitting}
+            onCancel={() => onOpenChange(false)}
+            submitLabel={isEditing ? "Update" : "Create"}
+            disableSubmit={!form.formState.isValid}
+          />
         </form>
       </DialogContent>
     </Dialog>

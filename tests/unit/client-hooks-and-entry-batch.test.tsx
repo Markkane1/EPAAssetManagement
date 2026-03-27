@@ -6,6 +6,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const useQueryMock = vi.fn();
 const useMutationMock = vi.fn();
 const invalidateQueriesMock = vi.fn();
+const setQueryDataMock = vi.fn();
+const removeQueriesMock = vi.fn();
 const toastSuccessMock = vi.fn();
 const toastErrorMock = vi.fn();
 const categoryServiceMock = {
@@ -39,7 +41,11 @@ const assignmentServiceMock = {
 vi.mock("@tanstack/react-query", () => ({
   useQuery: (config: unknown) => useQueryMock(config),
   useMutation: (config: unknown) => useMutationMock(config),
-  useQueryClient: () => ({ invalidateQueries: invalidateQueriesMock }),
+  useQueryClient: () => ({
+    invalidateQueries: invalidateQueriesMock,
+    setQueryData: setQueryDataMock,
+    removeQueries: removeQueriesMock,
+  }),
 }));
 
 vi.mock("sonner", () => ({
@@ -60,13 +66,13 @@ describe("client hooks and entry batch", () => {
     useMutationMock.mockImplementation((config: any) => ({
       mutateAsync: async (input: unknown) => {
         const result = await config.mutationFn(input);
-        await config.onSuccess?.(result);
+        await config.onSuccess?.(result, input);
         return result;
       },
       mutate: async (input: unknown) => {
         try {
           const result = await config.mutationFn(input);
-          await config.onSuccess?.(result);
+          await config.onSuccess?.(result, input);
         } catch (error) {
           config.onError?.(error);
         }
@@ -79,7 +85,7 @@ describe("client hooks and entry batch", () => {
     const { useCategories, useCategory, useCreateCategory, useUpdateCategory, useDeleteCategory } = hooks;
 
     const categoriesQuery = useCategories({ scope: "GENERAL", assetType: "ASSET", search: "lap" } as any);
-    expect(categoriesQuery.queryKey).toEqual(["categories", "GENERAL", "ASSET", "lap"]);
+    expect(categoriesQuery.queryKey).toEqual(["categories", "list", "GENERAL", "ASSET", "lap"]);
     const categoryQuery = useCategory("category-1");
     expect(categoryQuery.enabled).toBe(true);
 
@@ -103,8 +109,8 @@ describe("client hooks and entry batch", () => {
     const assetHooks = await import("../../client/src/hooks/useAssets");
     const assignmentHooks = await import("../../client/src/hooks/useAssignments");
 
-    expect(assetHooks.useAssets().queryKey).toEqual(["assets"]);
-    expect(assetHooks.useAsset("asset-1").enabled).toBe(true);
+    expect(assetHooks.useAssets().queryKey).toEqual(["assets", "list", ""]);
+    expect(assetHooks.useAsset("asset-1").queryKey).toEqual(["assets", "detail", "asset-1"]);
     expect(assetHooks.useAssetsByCategory("category-1").queryKey).toEqual(["assets", "byCategory", "category-1"]);
     expect(assetHooks.useAssetsByVendor("vendor-1").queryKey).toEqual(["assets", "byVendor", "vendor-1"]);
 

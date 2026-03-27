@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const useAuthMock = vi.fn();
 const useLocationsMock = vi.fn();
-const useVendorsMock = vi.fn();
+const usePagedVendorsMock = vi.fn();
 const useVendorMock = vi.fn();
 const useCreateVendorMock = vi.fn();
 const useUpdateVendorMock = vi.fn();
@@ -56,7 +56,7 @@ vi.mock("@/hooks/useLocations", () => ({
 }));
 
 vi.mock("@/hooks/useVendors", () => ({
-  useVendors: (officeId?: string) => useVendorsMock(officeId),
+  usePagedVendors: (filters?: unknown) => usePagedVendorsMock(filters),
   useVendor: (id: string) => useVendorMock(id),
   useCreateVendor: () => useCreateVendorMock(),
   useUpdateVendor: () => useUpdateVendorMock(),
@@ -95,20 +95,25 @@ describe("Vendors page", () => {
     useLocationsMock.mockReturnValue({
       data: [{ id: "office-1", name: "Central Lab", created_at: "", updated_at: "" }],
     });
-    useVendorsMock.mockReturnValue({
-      data: [
-        {
-          id: "vendor-1",
-          name: "Lab Supply Co.",
-          contact_info: "Sarah Khan",
-          email: "sarah@labsupply.test",
-          phone: "+92-300-0000000",
-          address: "12 Science Road",
-          office_id: "office-1",
-          created_at: "2026-02-01T00:00:00.000Z",
-          updated_at: "2026-02-02T00:00:00.000Z",
-        },
-      ],
+    usePagedVendorsMock.mockReturnValue({
+      data: {
+        items: [
+          {
+            id: "vendor-1",
+            name: "Lab Supply Co.",
+            contact_info: "Sarah Khan",
+            email: "sarah@labsupply.test",
+            phone: "+92-300-0000000",
+            address: "12 Science Road",
+            office_id: "office-1",
+            created_at: "2026-02-01T00:00:00.000Z",
+            updated_at: "2026-02-02T00:00:00.000Z",
+          },
+        ],
+        total: 1,
+        page: 1,
+        limit: 60,
+      },
       isLoading: false,
     });
     useVendorMock.mockImplementation((id: string) =>

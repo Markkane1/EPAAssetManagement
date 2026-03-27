@@ -206,6 +206,10 @@ vi.mock("@/components/forms/ConsumableItemFormModal", () => ({ ConsumableItemFor
 
 vi.mock("@/hooks/useAssets", () => ({
   useAssets: () => ({ data: assets, isLoading: false }),
+  usePagedAssets: () => ({
+    data: { items: assets, total: assets.length, page: 1, limit: 60 },
+    isLoading: false,
+  }),
   useCreateAsset: () => createMutation(),
   useUpdateAsset: () => createMutation(),
   useDeleteAsset: () => createMutation(),
@@ -221,12 +225,35 @@ vi.mock("@/hooks/useAssetItems", () => ({
 }));
 vi.mock("@/hooks/useCategories", () => ({
   useCategories: ({ assetType }: any = {}) => ({ data: categories.filter((entry) => !assetType || entry.asset_type === assetType), isLoading: false }),
+  usePagedCategories: () => ({
+    data: { items: categories, total: categories.length, page: 1, limit: 60 },
+    isLoading: false,
+  }),
+  useCategoryCounts: () => ({
+    data: {
+      assets: { "cat-1": 1 },
+      consumables: { "cat-2": 1 },
+    },
+    isLoading: false,
+  }),
   useCreateCategory: () => createMutation(),
   useUpdateCategory: () => createMutation(),
   useDeleteCategory: () => createMutation(),
 }));
-vi.mock("@/hooks/useVendors", () => ({ useVendors: () => ({ data: vendors, isLoading: false }) }));
-vi.mock("@/hooks/useProjects", () => ({ useProjects: () => ({ data: projects, isLoading: false }) }));
+vi.mock("@/hooks/useVendors", () => ({
+  useVendors: () => ({ data: vendors, isLoading: false }),
+  usePagedVendors: () => ({
+    data: { items: vendors, total: vendors.length, page: 1, limit: 60 },
+    isLoading: false,
+  }),
+}));
+vi.mock("@/hooks/useProjects", () => ({
+  useProjects: () => ({ data: projects, isLoading: false }),
+  usePagedProjects: () => ({
+    data: { items: projects, total: projects.length, page: 1, limit: 60 },
+    isLoading: false,
+  }),
+}));
 vi.mock("@/hooks/useSchemes", () => ({ useSchemes: () => ({ data: schemes, isLoading: false }) }));
 vi.mock("@/hooks/useLocations", () => ({ useLocations: () => ({ data: locations, isLoading: false }) }));
 vi.mock("@/hooks/useAssignments", () => ({
@@ -248,7 +275,16 @@ vi.mock("@/hooks/useEmployees", () => ({
   useTransferEmployee: () => createMutation(),
 }));
 vi.mock("@/hooks/useDirectorates", () => ({ useDirectorates: () => ({ data: directorates, isLoading: false }) }));
-vi.mock("@/hooks/useOffices", () => ({ useOffices: () => ({ data: offices, isLoading: false }), useCreateOffice: () => createMutation(), useUpdateOffice: () => createMutation(), useDeleteOffice: () => createMutation() }));
+vi.mock("@/hooks/useOffices", () => ({
+  useOffices: () => ({ data: offices, isLoading: false }),
+  usePagedOffices: () => ({
+    data: { items: offices, total: offices.length, page: 1, limit: 60 },
+    isLoading: false,
+  }),
+  useCreateOffice: () => createMutation(),
+  useUpdateOffice: () => createMutation(),
+  useDeleteOffice: () => createMutation(),
+}));
 vi.mock("@/hooks/useDivisions", () => ({ useDivisions: () => ({ data: divisions, isLoading: false }) }));
 vi.mock("@/hooks/useDistricts", () => ({ useDistricts: () => ({ data: districts, isLoading: false }) }));
 vi.mock("@/hooks/usePurchaseOrders", () => ({ usePurchaseOrders: () => ({ data: purchaseOrders, isLoading: false }), useCreatePurchaseOrder: () => createMutation(), useUpdatePurchaseOrder: () => createMutation(), useDeletePurchaseOrder: () => createMutation() }));
@@ -257,7 +293,14 @@ vi.mock("@/hooks/useApprovalMatrix", () => ({ usePendingApprovalMatrixRequests: 
 vi.mock("@/hooks/useConsumableItems", () => ({ useConsumableItems: () => ({ data: consumableItems, isLoading: false }), useCreateConsumableItem: () => createMutation(), useUpdateConsumableItem: () => createMutation(), useDeleteConsumableItem: () => createMutation() }));
 vi.mock("@/hooks/useConsumableUnits", () => ({ useConsumableUnits: () => ({ data: consumableUnits, isLoading: false }) }));
 vi.mock("@/hooks/useConsumableMode", () => ({ useConsumableMode: () => ({ mode: "chemicals", setMode: vi.fn() }) }));
-vi.mock("@/hooks/useConsumableInventory", () => ({ useConsumableBalances: () => ({ data: consumableBalances, isLoading: false }), useConsumableLedger: () => ({ data: [{ id: "ledger-1", action: "RECEIVE" }], isLoading: false }) }));
+vi.mock("@/hooks/useConsumableInventory", () => ({
+  useConsumableBalances: () => ({ data: consumableBalances, isLoading: false }),
+  useConsumableLedger: () => ({ data: [{ id: "ledger-1", action: "RECEIVE", tx_type: "RECEIVE", qty_base: 2, consumable_item_id: "consumable-1", tx_time: "2026-01-03T00:00:00.000Z" }], isLoading: false }),
+  useConsumableRollup: () => ({
+    data: [{ itemId: "consumable-1", totalQtyBase: 8, byLocation: [{ locationId: "office-2", qtyOnHandBase: 8 }] }],
+    isLoading: false,
+  }),
+}));
 vi.mock("@/hooks/useConsumableLots", () => ({ useConsumableLots: () => ({ data: consumableLots, isLoading: false }) }));
 vi.mock("@/hooks/useMaintenance", () => ({ useMaintenance: () => ({ data: maintenance, isLoading: false }) }));
 

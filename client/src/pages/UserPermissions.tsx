@@ -1,5 +1,4 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -38,20 +37,20 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
-import { userService } from "@/services/userService";
 import { normalizeRole } from "@/services/authService";
 import {
   PAGE_ALLOWED_ROLES,
-  setRuntimeRolePermissions,
   type AppPageKey,
 } from "@/config/pagePermissions";
 import { usePageSearch } from "@/contexts/PageSearchContext";
-import {
-  userPermissionService,
-  type RolePermission,
-} from "@/services/userPermissionService";
+import { type RolePermission } from "@/services/userPermissionService";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { exportToCSV } from "@/lib/exportUtils";
+import { useUsersLookup } from "@/hooks/useUsers";
+import {
+  useRolePermissionsCatalog,
+  useUpdateRolePermissionsCatalog,
+} from "@/hooks/useUserPermissionsAdmin";
 
 type PermissionType = "view" | "create" | "edit" | "delete";
 type CoreRole = "org_admin" | "office_head" | "caretaker" | "employee";
@@ -301,7 +300,6 @@ const initialRoles: UserRole[] = [
 ];
 
 export default function UserPermissions() {
-  const queryClient = useQueryClient();
   const isMobile = useIsMobile();
   const [roles, setRoles] = useState<UserRole[]>(initialRoles);
   const [selectedRole, setSelectedRole] = useState<string>("org_admin");
@@ -313,36 +311,9 @@ export default function UserPermissions() {
   const [newRoleName, setNewRoleName] = useState("");
   const [newRoleDescription, setNewRoleDescription] = useState("");
 
-  const { data: users = [] } = useQuery({
-    queryKey: ["users-management"],
-    queryFn: () => userService.getAll(),
-  });
-  const rolePermissionsQuery = useQuery({
-    queryKey: ["settings", "page-permissions"],
-    queryFn: () => userPermissionService.getRolePermissions(),
-  });
-
-  const savePermissionsMutation = useMutation({
-    mutationFn: () =>
-      userPermissionService.updateRolePermissions({
-        roles: serializeRolesForSave(roles),
-      }),
-    onSuccess: (response) => {
-      const hydratedRoles = normalizeStoredRoles(response.roles);
-      if (hydratedRoles.length > 0) {
-        setRoles(hydratedRoles);
-        setRuntimeRolePermissions(response.roles);
-        if (!hydratedRoles.some((role) => role.id === selectedRole)) {
-          setSelectedRole(hydratedRoles[0].id);
-        }
-      }
-      queryClient.setQueryData(["settings", "page-permissions"], response);
-      toast.success("Permissions saved successfully");
-    },
-    onError: (error: Error) => {
-      toast.error(error.message || "Failed to save permissions");
-    },
-  });
+  const { data: users = [] } = useUsersLookup();
+  const rolePermissionsQuery = useRolePermissionsCatalog();
+  const savePermissionsMutation = useUpdateRolePermissionsCatalog();
 
   useEffect(() => {
     if (hasHydratedFromServer) return;
@@ -435,7 +406,22 @@ export default function UserPermissions() {
   };
 
   const handleSavePermissions = () => {
-    savePermissionsMutation.mutate();
+    savePermissionsMutation.mutate(
+      {
+        roles: serializeRolesForSave(roles),
+      },
+      {
+        onSuccess: (response) => {
+          const hydratedRoles = normalizeStoredRoles(response.roles);
+          if (hydratedRoles.length > 0) {
+            setRoles(hydratedRoles);
+            if (!hydratedRoles.some((role) => role.id === selectedRole)) {
+              setSelectedRole(hydratedRoles[0].id);
+            }
+          }
+        },
+      }
+    );
   };
 
   const handleExportCSV = () => {

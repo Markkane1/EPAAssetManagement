@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useState } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
@@ -13,7 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Office, OfficeType } from "@/types";
-import { useOffices, useCreateOffice, useUpdateOffice, useDeleteOffice } from "@/hooks/useOffices";
+import { usePagedOffices, useCreateOffice, useUpdateOffice, useDeleteOffice } from "@/hooks/useOffices";
 import { useDivisions } from "@/hooks/useDivisions";
 import { useDistricts } from "@/hooks/useDistricts";
 import { OfficeFormModal } from "@/components/forms/OfficeFormModal";
@@ -31,11 +31,6 @@ const OFFICE_VIEW_TABS: Array<{ value: OfficeType; label: string }> = [
   { value: "DISTRICT_LAB", label: "District Labs" },
 ];
 
-function normalizeOfficeTypeForView(type?: string | null): OfficeType | null {
-  if (type === "HEAD_OFFICE" || type === "DIRECTORATE" || type === "DISTRICT_OFFICE" || type === "DISTRICT_LAB") return type;
-  return null;
-}
-
 function officeTypeLabel(type?: string | null) {
   if (type === "HEAD_OFFICE") return "Head Office";
   if (type === "DIRECTORATE") return "Directorate";
@@ -46,8 +41,8 @@ function officeTypeLabel(type?: string | null) {
 }
 
 export default function Offices() {
+  const PAGE_SIZE = 60;
   const { isOrgAdmin } = useAuth();
-  const { data: offices, isLoading } = useOffices();
   const createOffice = useCreateOffice();
   const updateOffice = useUpdateOffice();
   const deleteOffice = useDeleteOffice();
@@ -59,28 +54,23 @@ export default function Offices() {
   const [divisionModalOpen, setDivisionModalOpen] = useState(false);
   const [districtModalOpen, setDistrictModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<OfficeType>("DIRECTORATE");
+  const [page, setPage] = useState(1);
   const { mode: viewMode, setMode: setViewMode } = useViewMode("offices");
   const pageSearch = usePageSearch();
-  const searchTerm = (pageSearch?.term || "").trim().toLowerCase();
-  const filteredOffices = useMemo(
-    () =>
-      (offices || []).filter((office) => {
-        if (normalizeOfficeTypeForView(office.type) !== activeTab) return false;
-        if (!searchTerm) return true;
-        const haystack = [
-          office.name,
-          office.division,
-          office.district,
-          office.address,
-          office.contact_number,
-          officeTypeLabel(office.type),
-        ]
-          .join(" ")
-          .toLowerCase();
-        return haystack.includes(searchTerm);
-      }),
-    [activeTab, offices, searchTerm]
-  );
+  const searchTerm = useDeferredValue((pageSearch?.term || "").trim());
+  const { data: officesResponse, isLoading } = usePagedOffices({
+    page,
+    limit: PAGE_SIZE,
+    type: activeTab,
+    search: searchTerm || undefined,
+  });
+  const visibleOffices = officesResponse?.items || [];
+  const totalOffices = officesResponse?.total || visibleOffices.length;
+  const totalPages = Math.max(1, Math.ceil(totalOffices / PAGE_SIZE));
+
+  useEffect(() => {
+    setPage(1);
+  }, [activeTab, searchTerm]);
 
   const handleAddOffice = () => {
     setEditingOffice(null);
@@ -200,7 +190,8 @@ export default function Offices() {
       {viewMode === "list" ? (
         <DataTable
           columns={columns}
-          data={filteredOffices}
+          data={visibleOffices}
+          pagination={false}
           searchable={false}
           useGlobalPageSearch={false}
           actions={actions}
@@ -208,7 +199,7 @@ export default function Offices() {
       ) : (
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredOffices.map((office) => (
+            {visibleOffices.map((office) => (
               <Card key={office.id} className="group hover:shadow-md transition-all animate-fade-in">
                 <CardContent className="p-6">
                   <div className="flex items-start justify-between mb-4">
@@ -246,7 +237,7 @@ export default function Offices() {
               </Card>
             ))}
           </div>
-          {filteredOffices.length === 0 && (
+          {visibleOffices.length === 0 && (
             <Card>
               <CardContent className="py-8 text-sm text-muted-foreground">
                 No offices found for this type.
@@ -255,6 +246,27 @@ export default function Offices() {
           )}
         </>
       )}
+      <div className="mt-4 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
+        <p className="text-sm text-muted-foreground">
+          Showing {visibleOffices.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1} to{" "}
+          {Math.min(page * PAGE_SIZE, totalOffices)} of {totalOffices} offices
+        </p>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page === 1}>
+            Previous
+          </Button>
+          <span className="text-sm font-medium">
+            Page {page} of {totalPages}
+          </span>
+          <Button
+            variant="outline"
+            onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+            disabled={page >= totalPages}
+          >
+            Next
+          </Button>
+        </div>
+      </div>
 
       <OfficeFormModal
         open={modalOpen}

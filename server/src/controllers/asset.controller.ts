@@ -11,6 +11,7 @@ import { createHttpError } from '../utils/httpError';
 import type { AuthRequest } from '../middleware/auth';
 import { officeAssetItemFilter } from '../utils/assetHolder';
 import { assertUploadedFileIntegrity } from '../utils/uploadValidation';
+import { buildSearchTermsQuery } from '../utils/searchTerms';
 
 const fieldMap = {
   categoryId: 'category_id',
@@ -154,27 +155,54 @@ async function ensureAssetCategoryType(categoryId: unknown) {
 export const assetController = {
   list: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
-      const { limit, skip } = readPagination(req.query as Record<string, unknown>);
+      const query = req.query as Record<string, unknown>;
+      const { limit, skip } = readPagination(query);
+      const page = Math.floor(skip / limit) + 1;
+      const meta = String(query.meta || '').trim() === '1';
+      const search = String(query.search || '').trim();
+      const searchFilter = search ? buildSearchTermsQuery(search) || {} : {};
       const access = await resolveAccessContext(req.user);
       if (access.isOrgAdmin) {
-        const assets = await AssetModel.find({ is_active: { $ne: false } })
+        const assetFilter = { is_active: { $ne: false }, ...searchFilter };
+        const assets = await AssetModel.find(assetFilter)
           .sort({ name: 1 })
           .skip(skip)
           .limit(limit)
           .lean();
-        return res.json(assets);
+        if (!meta) {
+          return res.json(assets);
+        }
+        const total = await AssetModel.countDocuments(assetFilter);
+        return res.json({
+          items: assets,
+          page,
+          limit,
+          total,
+          hasMore: skip + assets.length < total,
+        });
       }
       if (!access.officeId) throw createHttpError(403, 'User is not assigned to an office');
       const assetIds = await AssetItemModel.distinct('asset_id', {
         ...officeAssetItemFilter(access.officeId),
         is_active: { $ne: false },
       });
-      const assets = await AssetModel.find({ _id: { $in: assetIds }, is_active: { $ne: false } })
+      const assetFilter = { _id: { $in: assetIds }, is_active: { $ne: false }, ...searchFilter };
+      const assets = await AssetModel.find(assetFilter)
         .sort({ name: 1 })
         .skip(skip)
         .limit(limit)
         .lean();
-      res.json(assets);
+      if (!meta) {
+        return res.json(assets);
+      }
+      const total = await AssetModel.countDocuments(assetFilter);
+      return res.json({
+        items: assets,
+        page,
+        limit,
+        total,
+        hasMore: skip + assets.length < total,
+      });
     } catch (error) {
       next(error);
     }
@@ -362,5 +390,4 @@ export const assetController = {
     }
   },
 };
-
 

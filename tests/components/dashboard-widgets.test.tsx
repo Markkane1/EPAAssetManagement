@@ -33,15 +33,6 @@ vi.mock("@/hooks/useAssets", () => ({
   useAssets: (...args: unknown[]) => useAssetsMock(...args),
 }));
 
-vi.mock("recharts", () => ({
-  ResponsiveContainer: ({ children }: { children: React.ReactNode }) => <div data-testid="responsive">{children}</div>,
-  PieChart: ({ children }: { children: React.ReactNode }) => <div data-testid="pie-chart">{children}</div>,
-  Pie: ({ children }: { children: React.ReactNode }) => <div data-testid="pie">{children}</div>,
-  Cell: ({ fill }: { fill: string }) => <div data-testid="pie-cell">{fill}</div>,
-  Legend: () => <div data-testid="legend" />,
-  Tooltip: () => <div data-testid="chart-tooltip" />,
-}));
-
 import { StatsCard } from "../../client/src/components/dashboard/StatsCard";
 import { RecentActivity } from "../../client/src/components/dashboard/RecentActivity";
 import { PendingPurchaseOrders } from "../../client/src/components/dashboard/PendingPurchaseOrders";
@@ -171,10 +162,9 @@ describe("dashboard widgets", () => {
 
     rerender(<AssetStatusChart />);
 
-    expect(screen.getByTestId("pie-chart")).toBeInTheDocument();
-    expect(screen.getAllByTestId("pie-cell").map((node) => node.textContent)).toEqual([
-      "hsl(142, 76%, 36%)",
-      "hsl(215, 16%, 47%)",
-    ]);
+    expect(screen.getByText("Available")).toBeInTheDocument();
+    expect(screen.getByText("Unexpected")).toBeInTheDocument();
+    expect(screen.getByText("4 (80%)")).toBeInTheDocument();
+    expect(screen.getByText("1 (20%)")).toBeInTheDocument();
   });
 });

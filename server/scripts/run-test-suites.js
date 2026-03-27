@@ -4,8 +4,6 @@ const { spawn } = require('node:child_process');
 
 const TEST_FILE_PATTERN = /((\.|-)runtime-tests?|(\.|-)runtime-test|\.test|\.spec)\.ts$/i;
 const RUNTIME_FILE_PATTERN = /((\.|-)runtime-tests?|(\.|-)runtime-test)\.ts$/i;
-const DEFAULT_WINDOWS_MONGOD_PATH = 'C:\\Program Files\\MongoDB\\Server\\8.2\\bin\\mongod.exe';
-
 const SUITES = {
   security: ['tests/security'],
   consumables: ['tests/integration/runtime/consumables'],
@@ -102,9 +100,6 @@ async function runTestFiles(serverRoot, files) {
   fs.mkdirSync(mongoCacheDir, { recursive: true });
   fs.mkdirSync(runtimeTmpDir, { recursive: true });
 
-  if (fs.existsSync(DEFAULT_WINDOWS_MONGOD_PATH)) {
-    mongoEnv.MONGOMS_SYSTEM_BINARY = mongoEnv.MONGOMS_SYSTEM_BINARY || DEFAULT_WINDOWS_MONGOD_PATH;
-  }
   mongoEnv.MONGOMS_DOWNLOAD_DIR = mongoEnv.MONGOMS_DOWNLOAD_DIR || mongoCacheDir;
   mongoEnv.TMP = runtimeTmpDir;
   mongoEnv.TEMP = runtimeTmpDir;

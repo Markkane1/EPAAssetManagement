@@ -39,3 +39,7 @@ AGENTS.MD
 audit-results.json
 *.tmp
 zap-report.html
+client/eslint_report.json
+client/eslint_report.txt
+client/eslint_report_utf8.json
+client/lint_output.txt

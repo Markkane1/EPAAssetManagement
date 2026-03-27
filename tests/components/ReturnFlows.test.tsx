@@ -5,10 +5,6 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const navigateMock = vi.fn();
-const invalidateQueriesMock = vi.fn();
-const useQueryMock = vi.fn();
-const toastSuccessMock = vi.fn();
-const toastErrorMock = vi.fn();
 const useAssignmentsMock = vi.fn();
 const useEmployeesMock = vi.fn();
 const useAssetItemsMock = vi.fn();
@@ -16,9 +12,8 @@ const useAssetsMock = vi.fn();
 const useLocationsMock = vi.fn();
 const useAuthMock = vi.fn();
 const returnRequestCreateMock = vi.fn();
-const returnRequestGetByIdMock = vi.fn();
-const returnRequestReceiveMock = vi.fn();
-const returnRequestUploadSignedMock = vi.fn();
+const useReturnRequestDetailMock = vi.fn();
+const returnRequestReceiveMutateMock = vi.fn();
 
 vi.mock("react-router-dom", async () => {
   const actual = await vi.importActual<typeof import("react-router-dom")>("react-router-dom");
@@ -30,9 +25,8 @@ vi.mock("react-router-dom", async () => {
 });
 
 vi.mock("@tanstack/react-query", () => ({
-  useQuery: (config: unknown) => useQueryMock(config),
   useMutation: (config: {
-    mutationFn: (variables?: any) => Promise<unknown>;
+    mutationFn: (variables?: unknown) => Promise<unknown>;
     onSuccess?: (data: unknown) => void | Promise<void>;
     onError?: (error: Error) => void;
   }) => ({
@@ -57,14 +51,6 @@ vi.mock("@tanstack/react-query", () => ({
       }
     },
   }),
-  useQueryClient: () => ({ invalidateQueries: invalidateQueriesMock }),
-}));
-
-vi.mock("sonner", () => ({
-  toast: {
-    success: (...args: unknown[]) => toastSuccessMock(...args),
-    error: (...args: unknown[]) => toastErrorMock(...args),
-  },
 }));
 
 vi.mock("@/components/layout/MainLayout", () => ({
@@ -96,6 +82,12 @@ vi.mock("@/hooks/useEmployees", () => ({ useEmployees: () => useEmployeesMock() 
 vi.mock("@/hooks/useAssetItems", () => ({ useAssetItems: () => useAssetItemsMock() }));
 vi.mock("@/hooks/useAssets", () => ({ useAssets: () => useAssetsMock() }));
 vi.mock("@/hooks/useLocations", () => ({ useLocations: () => useLocationsMock() }));
+vi.mock("@/hooks/useReturnRequests", () => ({
+  useCreateReturnRequest: () => ({ mutateAsync: returnRequestCreateMock, isPending: false }),
+  useReturnRequestDetail: (id: string, options: unknown) => useReturnRequestDetailMock(id, options),
+  useReceiveReturnRequest: () => ({ mutate: returnRequestReceiveMutateMock, isPending: false }),
+  useUploadSignedReturnRequest: () => ({ mutate: vi.fn(), isPending: false }),
+}));
 vi.mock("@/hooks/use-mobile", () => ({ useIsMobile: () => false }));
 vi.mock("@/contexts/AuthContext", () => ({ useAuth: () => useAuthMock() }));
 vi.mock("@/lib/api", () => ({ buildApiUrl: (value: string | null) => value }));
@@ -104,9 +96,10 @@ vi.mock("@/services/returnRequestService", () => ({
   returnRequestService: {
     create: (...args: unknown[]) => returnRequestCreateMock(...args),
     list: vi.fn(),
-    getById: (...args: unknown[]) => returnRequestGetByIdMock(...args),
-    receive: (...args: unknown[]) => returnRequestReceiveMock(...args),
-    uploadSignedReturn: (...args: unknown[]) => returnRequestUploadSignedMock(...args),
+    getById: vi.fn(),
+    receive: vi.fn(),
+    uploadSignedReturn: vi.fn(),
+    downloadReturnReceiptPdf: vi.fn(),
   },
 }));
 
@@ -159,25 +152,24 @@ describe("return request flows", () => {
     useAssetsMock.mockReturnValue({ data: [{ id: "asset-1", name: "Laptop" }] });
     useLocationsMock.mockReturnValue({ data: [{ id: "office-1", name: "Main Office" }] });
     returnRequestCreateMock.mockResolvedValue({ id: "return-1" });
-    returnRequestGetByIdMock.mockReturnValue({
-      returnRequest: {
-        id: "return-1",
-        status: "SUBMITTED",
-        employee_id: "employee-1",
-        office_id: "office-1",
-        created_at: "2026-03-02T00:00:00.000Z",
+    useReturnRequestDetailMock.mockReturnValue({
+      data: {
+        returnRequest: {
+          id: "return-1",
+          status: "SUBMITTED",
+          employee_id: "employee-1",
+          office_id: "office-1",
+          created_at: "2026-03-02T00:00:00.000Z",
+        },
+        lines: [{ asset_item_id: "asset-item-1" }],
+        documents: { receiptDocument: null },
       },
-      lines: [{ asset_item_id: "asset-item-1" }],
-      documents: { receiptDocument: null },
+      isLoading: false,
+      isError: false,
     });
-    returnRequestReceiveMock.mockResolvedValue({});
-    returnRequestUploadSignedMock.mockResolvedValue({});
-    useQueryMock.mockImplementation(({ queryKey }: { queryKey: unknown[] }) => {
-      if (queryKey[0] === "return-request") {
-        return { data: returnRequestGetByIdMock(), isLoading: false, isError: false };
-      }
-      return { data: undefined, isLoading: false, isError: false };
-    });
+    returnRequestReceiveMutateMock.mockImplementation(
+      (_variables: unknown, options?: { onSuccess?: () => void }) => options?.onSuccess?.()
+    );
   });
 
   it("should render a loading state while assignments are loading", () => {
@@ -208,11 +200,10 @@ describe("return request flows", () => {
 
   it("should render an error state for an invalid return request detail", async () => {
     useAuthMock.mockReturnValue({ role: "employee", locationId: "office-1" });
-    useQueryMock.mockImplementation(({ queryKey }: { queryKey: unknown[] }) => {
-      if (queryKey[0] === "return-request") {
-        return { data: undefined, isLoading: false, isError: true };
-      }
-      return { data: undefined, isLoading: false, isError: false };
+    useReturnRequestDetailMock.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
     });
 
     render(<ReturnDetail />);
@@ -230,9 +221,7 @@ describe("return request flows", () => {
     await userEvent.click(screen.getByRole("button", { name: /receive \/ confirm return/i }));
 
     await waitFor(() => {
-      expect(returnRequestReceiveMock).toHaveBeenCalledWith("return-1");
+      expect(returnRequestReceiveMutateMock).toHaveBeenCalled();
     });
-    expect(toastSuccessMock).toHaveBeenCalled();
-    expect(invalidateQueriesMock).toHaveBeenCalledWith({ queryKey: ["return-request", "return-1"] });
   });
 });

@@ -6,11 +6,9 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -21,9 +19,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Loader2 } from 'lucide-react';
 import type { Category, ConsumableItem, ConsumableUnit } from '@/types';
 import { type ConsumableMode } from '@/lib/consumableMode';
+import { FormDialogActions } from '@/components/forms/FormDialogActions';
+import { useDialogFormReset } from '@/components/forms/useDialogFormReset';
 
 const itemSchema = z.object({
   name: z.string().min(1, 'Name is required').max(120),
@@ -85,9 +84,9 @@ export function ConsumableItemFormModal({
     },
   });
 
-  useEffect(() => {
+  const resetValues = useMemo(() => {
     if (item) {
-      form.reset({
+      return {
         name: item.name,
         casNumber: isChemicalMode ? item.cas_number || '' : '',
         categoryId: item.category_id || '',
@@ -100,24 +99,25 @@ export function ConsumableItemFormModal({
         defaultMinStock: item.default_min_stock ?? undefined,
         defaultReorderPoint: item.default_reorder_point ?? undefined,
         storageCondition: isChemicalMode ? item.storage_condition || '' : '',
-      });
-    } else {
-      form.reset({
-        name: '',
-        casNumber: '',
-        categoryId: '',
-        baseUom: fallbackUom,
-        isHazardous: false,
-        isControlled: false,
-        isChemical: false,
-        requiresLotTracking: true,
-        requiresContainerTracking: false,
-        defaultMinStock: undefined,
-        defaultReorderPoint: undefined,
-        storageCondition: '',
-      });
+      };
     }
-  }, [item, form, fallbackUom, isChemicalMode]);
+
+    return {
+      name: '',
+      casNumber: '',
+      categoryId: '',
+      baseUom: fallbackUom,
+      isHazardous: false,
+      isControlled: false,
+      isChemical: isChemicalMode,
+      requiresLotTracking: true,
+      requiresContainerTracking: false,
+      defaultMinStock: undefined,
+      defaultReorderPoint: undefined,
+      storageCondition: '',
+    };
+  }, [item, fallbackUom, isChemicalMode]);
+  useDialogFormReset({ open, form, values: resetValues });
 
   const filteredCategories = useMemo(() => {
     return categories.filter((category) => {
@@ -274,15 +274,11 @@ export function ConsumableItemFormModal({
             </div>
           )}
 
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={isSubmitting}>
-              {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {isEditing ? 'Update' : 'Create'}
-            </Button>
-          </DialogFooter>
+          <FormDialogActions
+            isSubmitting={isSubmitting}
+            onCancel={() => onOpenChange(false)}
+            submitLabel={isEditing ? 'Update' : 'Create'}
+          />
         </form>
       </DialogContent>
     </Dialog>

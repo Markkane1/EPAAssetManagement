@@ -3,16 +3,14 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2 } from "lucide-react";
 import type { Employee, Office } from "@/types";
 import { SearchableSelect } from "@/components/shared/SearchableSelect";
+import { FormDialogActions } from "@/components/forms/FormDialogActions";
 
 interface EmployeeTransferModalProps {
   open: boolean;
@@ -117,24 +115,14 @@ export function EmployeeTransferModal({
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
 
-        <DialogFooter>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={isSubmitting}
-          >
-            Cancel
-          </Button>
-          <Button
-            type="button"
-            onClick={handleSubmit}
-            disabled={isSubmitting || officeOptions.length === 0}
-          >
-            {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Transfer
-          </Button>
-        </DialogFooter>
+        <FormDialogActions
+          isSubmitting={isSubmitting}
+          onCancel={() => onOpenChange(false)}
+          submitLabel="Transfer"
+          submitType="button"
+          onSubmitClick={handleSubmit}
+          disableSubmit={officeOptions.length === 0}
+        />
       </DialogContent>
     </Dialog>
   );

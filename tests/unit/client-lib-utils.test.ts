@@ -100,7 +100,7 @@ describe("client library utilities", () => {
     expect(reporting.getDateRangeText(new Date("2026-01-01"), new Date("2026-01-31"))).toMatch(/Jan/);
     expect(reporting.getDateRangeText(undefined, undefined)).toBe("All Time");
 
-    reporting.generateReportPDF({
+    await reporting.generateReportPDF({
       title: "Asset Summary",
       headers: ["Name"],
       data: [["Laptop"]],

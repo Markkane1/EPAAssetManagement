@@ -144,21 +144,29 @@ describe("Returns page", () => {
     await userEvent.click(screen.getByRole("button", { name: /apply filters/i }));
 
     expect(capturedQueryKeys.at(-1)).toEqual([
-      "return-requests",
+      "returnRequests",
+      "list",
       "CLOSED",
       "employee-2",
+      "all",
       "2026-03-01",
       "2026-03-31",
+      1,
+      200,
     ]);
 
     await userEvent.click(screen.getByRole("button", { name: /reset/i }));
 
     expect(capturedQueryKeys.at(-1)).toEqual([
-      "return-requests",
-      "ALL",
-      "ALL",
+      "returnRequests",
+      "list",
+      "all",
+      "all",
+      "all",
       "",
       "",
+      1,
+      200,
     ]);
   });
 
@@ -180,11 +188,15 @@ describe("Returns page", () => {
 
     expect(screen.getByDisplayValue("Casey Manager")).toHaveAttribute("readonly");
     expect(capturedQueryKeys.at(-1)).toEqual([
-      "return-requests",
-      "ALL",
+      "returnRequests",
+      "list",
+      "all",
       "employee-1",
+      "all",
       "",
       "",
+      1,
+      200,
     ]);
   });
 });

@@ -6,11 +6,9 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import {
@@ -20,9 +18,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, ArrowRight } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { AssetItem, Employee, Asset, Assignment } from "@/types";
 import { getOfficeHolderId } from "@/lib/assetItemHolder";
+import { FormDialogActions } from "@/components/forms/FormDialogActions";
 
 const reassignSchema = z.object({
   assignmentId: z.string().min(1, "Assignment is required"),
@@ -225,15 +224,11 @@ export function ReassignmentFormModal({
             />
           </div>
 
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={isSubmitting}>
-              {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Reassign Asset
-            </Button>
-          </DialogFooter>
+          <FormDialogActions
+            isSubmitting={isSubmitting}
+            onCancel={() => onOpenChange(false)}
+            submitLabel="Reassign Asset"
+          />
         </form>
       </DialogContent>
     </Dialog>

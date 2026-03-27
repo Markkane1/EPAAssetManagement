@@ -9,12 +9,8 @@ const useDashboardMeMock = vi.fn();
 const useDashboardPanelsMock = vi.fn();
 const useDashboardStatsMock = vi.fn();
 const useAssignmentsByEmployeeMock = vi.fn();
+const useConsumableBalancesMock = vi.fn();
 const usePageSearchMock = vi.fn();
-const useQueryMock = vi.fn();
-
-vi.mock("@tanstack/react-query", () => ({
-  useQuery: (args: unknown) => useQueryMock(args),
-}));
 
 vi.mock("@/contexts/AuthContext", () => ({
   useAuth: () => useAuthMock(),
@@ -28,6 +24,10 @@ vi.mock("@/hooks/useDashboard", () => ({
 
 vi.mock("@/hooks/useAssignments", () => ({
   useAssignmentsByEmployee: (employeeId: string) => useAssignmentsByEmployeeMock(employeeId),
+}));
+
+vi.mock("@/hooks/useConsumableInventory", () => ({
+  useConsumableBalances: (filters: unknown, options: unknown) => useConsumableBalancesMock(filters, options),
 }));
 
 vi.mock("@/contexts/PageSearchContext", () => ({
@@ -104,13 +104,8 @@ describe("Dashboard", () => {
       isLoading: false,
     });
     useAssignmentsByEmployeeMock.mockReturnValue({ data: [], isLoading: false });
+    useConsumableBalancesMock.mockReturnValue({ data: [], isLoading: false });
     usePageSearchMock.mockReturnValue({ term: "", setTerm: vi.fn() });
-    useQueryMock.mockImplementation(({ queryKey }: { queryKey: string[] }) => {
-      if (queryKey.includes("consumable-balances")) {
-        return { data: [], isLoading: false };
-      }
-      return { data: undefined, isLoading: false };
-    });
   });
 
   it("should render an employee mapping warning when an employee login is not linked to an employee profile", () => {
@@ -137,14 +132,9 @@ describe("Dashboard", () => {
       ],
       isLoading: false,
     });
-    useQueryMock.mockImplementation(({ queryKey }: { queryKey: string[] }) => {
-      if (queryKey.includes("consumable-balances")) {
-        return {
-          data: [{ holder_type: "EMPLOYEE", qty_on_hand_base: 5 }],
-          isLoading: false,
-        };
-      }
-      return { data: undefined, isLoading: false };
+    useConsumableBalancesMock.mockReturnValue({
+      data: [{ holder_type: "EMPLOYEE", qty_on_hand_base: 5 }],
+      isLoading: false,
     });
 
     renderDashboard();

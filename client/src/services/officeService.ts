@@ -1,5 +1,6 @@
 import api from '@/lib/api';
 import { Office, OfficeType } from '@/types';
+import { ListQuery, PagedListResponse, toListQueryString } from '@/services/pagination';
 
 const LIST_LIMIT = 2000;
 
@@ -9,6 +10,8 @@ export interface OfficeFilters {
   isActive?: boolean;
   search?: string;
 }
+
+export type OfficeListQuery = ListQuery & OfficeFilters;
 
 export interface OfficeCreateDto {
   name: string;
@@ -42,18 +45,25 @@ export interface OfficeUpdateDto {
   };
 }
 
+function buildOfficeQuery(query: OfficeListQuery = {}, meta = false) {
+  const params = new URLSearchParams();
+  const pagination = toListQueryString({ limit: LIST_LIMIT, ...query, meta });
+  if (pagination.startsWith('?')) {
+    const queryString = new URLSearchParams(pagination.slice(1));
+    queryString.forEach((value, key) => params.set(key, value));
+  }
+  if (query.type) params.set('type', query.type);
+  if (query.capability) params.set('capability', query.capability);
+  if (query.isActive !== undefined) params.set('isActive', String(query.isActive));
+  if (query.search?.trim()) params.set('search', query.search.trim());
+  const encoded = params.toString();
+  return encoded ? `?${encoded}` : '';
+}
+
 export const officeService = {
-  getAll: (filters?: OfficeFilters) => {
-    const params = new URLSearchParams();
-    params.set('limit', String(LIST_LIMIT));
-    if (filters) {
-      if (filters.type) params.set('type', filters.type);
-      if (filters.capability) params.set('capability', filters.capability);
-      if (filters.isActive !== undefined) params.set('isActive', String(filters.isActive));
-      if (filters.search?.trim()) params.set('search', filters.search.trim());
-    }
-    return api.get<Office[]>(`/offices?${params.toString()}`);
-  },
+  getAll: (query: OfficeListQuery = {}) => api.get<Office[]>(`/offices${buildOfficeQuery(query)}`),
+  getPaged: (query: OfficeListQuery = {}) =>
+    api.get<PagedListResponse<Office>>(`/offices${buildOfficeQuery(query, true)}`),
   getById: (id: string) => api.get<Office>(`/offices/${id}`),
   create: (data: OfficeCreateDto) => api.post<Office>('/offices', data),
   update: (id: string, data: OfficeUpdateDto) => api.put<Office>(`/offices/${id}`, data),

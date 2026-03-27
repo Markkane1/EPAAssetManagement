@@ -1,10 +1,5 @@
-import { useCallback, useMemo, useState } from "react";
-import { MainLayout } from "@/components/layout/MainLayout";
-import { PageHeader } from "@/components/shared/PageHeader";
-import { DataTable } from "@/components/shared/DataTable";
-import { DateRangeFilter } from "@/components/reports/DateRangeFilter";
-import { Button } from "@/components/ui/button";
-import { Download, FileDown } from "lucide-react";
+import { useMemo, useState } from "react";
+import { ReportTablePage } from "@/components/reports/ReportTablePage";
 import { toast } from "sonner";
 import { useAssignments } from "@/hooks/useAssignments";
 import { useEmployees } from "@/hooks/useEmployees";
@@ -12,7 +7,6 @@ import { useAssetItems } from "@/hooks/useAssetItems";
 import { useAssets } from "@/hooks/useAssets";
 import { useDirectorates } from "@/hooks/useDirectorates";
 import { useLocations } from "@/hooks/useLocations";
-import { isHeadOfficeLocation } from "@/lib/locationUtils";
 import {
   exportToCSV,
   filterRowsBySearch,
@@ -21,6 +15,7 @@ import {
 import { filterByDateRange, generateReportPDF, getDateRangeText } from "@/lib/reporting";
 import { usePageSearch } from "@/contexts/PageSearchContext";
 import { useAuth } from "@/contexts/AuthContext";
+import { buildDirectorateNameResolver, buildIdMap, findCurrentEmployee } from "@/pages/reports/reportResolvers";
 
 export default function AssignmentSummaryReport() {
   const { role, user } = useAuth();
@@ -41,35 +36,30 @@ export default function AssignmentSummaryReport() {
     [assignments, startDate, endDate]
   );
   const currentEmployee = useMemo(() => {
-    const list = employees || [];
-    const byUserId = list.find((employee) => employee.user_id === user?.id);
-    const byEmail = list.find(
-      (employee) => employee.email?.toLowerCase() === (user?.email || "").toLowerCase()
-    );
-    return byUserId || byEmail || null;
+    return findCurrentEmployee(employees || [], user?.id, user?.email);
   }, [employees, user?.id, user?.email]);
 
-  const getDirectorateName = useCallback((employeeId?: string) => {
-    const employee = employees?.find((e) => e.id === employeeId);
-    if (!employee) return "N/A";
-    const location = locations?.find((l) => l.id === employee.location_id);
-    if (!isHeadOfficeLocation(location)) return "N/A";
-    const directorate = directorates?.find((d) => d.id === employee.directorate_id);
-    return directorate?.name || "N/A";
-  }, [employees, locations, directorates]);
+  const employeeById = useMemo(() => buildIdMap(employees || []), [employees]);
+  const assetItemById = useMemo(() => buildIdMap(assetItems || []), [assetItems]);
+  const assetById = useMemo(() => buildIdMap(assets || []), [assets]);
+  const reportLocations = useMemo(
+    () => [...(locations || []), ...(directorates || [])],
+    [locations, directorates]
+  );
+  const getDirectorateName = useMemo(
+    () => buildDirectorateNameResolver(reportLocations, employees || []),
+    [reportLocations, employees]
+  );
 
   const reportRows = useMemo(() => {
-    const employeeList = employees || [];
-    const assetItemList = assetItems || [];
-    const assetList = assets || [];
     const scopedAssignments = isEmployeeRole
       ? (filteredAssignments || []).filter((assignment) => assignment.employee_id === currentEmployee?.id)
       : filteredAssignments || [];
 
     return scopedAssignments.map((assignment) => {
-      const employee = employeeList.find((e) => e.id === assignment.employee_id);
-      const assetItem = assetItemList.find((i) => i.id === assignment.asset_item_id);
-      const asset = assetItem ? assetList.find((a) => a.id === assetItem.asset_id) : undefined;
+      const employee = assignment.employee_id ? employeeById.get(assignment.employee_id) : undefined;
+      const assetItem = assignment.asset_item_id ? assetItemById.get(assignment.asset_item_id) : undefined;
+      const asset = assetItem ? assetById.get(assetItem.asset_id) : undefined;
 
       return {
         id: assignment.id,
@@ -83,7 +73,7 @@ export default function AssignmentSummaryReport() {
         status: assignment.is_active ? "Active" : "Returned",
       };
     });
-  }, [isEmployeeRole, filteredAssignments, currentEmployee?.id, employees, assetItems, assets, getDirectorateName]);
+  }, [isEmployeeRole, filteredAssignments, currentEmployee?.id, employeeById, assetItemById, assetById, getDirectorateName]);
 
   const searchTerm = pageSearch?.term || "";
   const filteredRows = useMemo(
@@ -163,41 +153,27 @@ export default function AssignmentSummaryReport() {
   };
 
   return (
-    <MainLayout title="Assignment Summary" description="Assignments by employee and directorate">
-      <PageHeader
-        title="Assignment Summary"
-        description={
-          isEmployeeRole
-            ? "Your complete assignment history, including returned assets"
-            : "Assignments by employee, directorate, and asset item"
-        }
-        extra={
-          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-            <Button variant="outline" className="gap-2" onClick={handleExportCSV}>
-              <Download className="h-4 w-4" />
-              CSV
-            </Button>
-            <Button className="gap-2" onClick={handleExportPDF}>
-              <FileDown className="h-4 w-4" />
-              PDF
-            </Button>
-          </div>
-        }
-      />
-
-      <DateRangeFilter
-        startDate={startDate}
-        endDate={endDate}
-        onStartDateChange={setStartDate}
-        onEndDateChange={setEndDate}
-        onClear={() => {
-          setStartDate(undefined);
-          setEndDate(undefined);
-        }}
-        rangeText={dateRangeText}
-      />
-
-      <DataTable columns={columns} data={reportRows as any} searchable />
-    </MainLayout>
+    <ReportTablePage
+      title="Assignment Summary"
+      description={
+        isEmployeeRole
+          ? "Your complete assignment history, including returned assets"
+          : "Assignments by employee, directorate, and asset item"
+      }
+      layoutDescription="Assignments by employee and directorate"
+      columns={columns}
+      data={reportRows}
+      startDate={startDate}
+      endDate={endDate}
+      onStartDateChange={setStartDate}
+      onEndDateChange={setEndDate}
+      onClearDateRange={() => {
+        setStartDate(undefined);
+        setEndDate(undefined);
+      }}
+      dateRangeText={dateRangeText}
+      onExportCSV={handleExportCSV}
+      onExportPDF={handleExportPDF}
+    />
   );
 }

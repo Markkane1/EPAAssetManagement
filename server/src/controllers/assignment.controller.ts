@@ -1,7 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import type { Express, NextFunction, Response } from 'express';
-import mongoose, { Types } from 'mongoose';
+import mongoose, { Types, type PipelineStage } from 'mongoose';
 import type { AuthRequest } from '../middleware/auth';
 import { AssignmentModel } from '../models/assignment.model';
 import { AssetItemModel } from '../models/assetItem.model';
@@ -107,9 +107,9 @@ async function listAssignmentsWithDetails(params: {
   skip: number;
   limit: number;
 }) {
-  const pipeline: Record<string, unknown>[] = [];
+  const pipeline: PipelineStage[] = [];
   if (params.match && Object.keys(params.match).length > 0) {
-    pipeline.push({ $match: params.match });
+    pipeline.push({ $match: params.match } as PipelineStage);
   }
 
   pipeline.push(
@@ -135,7 +135,7 @@ async function listAssignmentsWithDetails(params: {
         ...prefixedFilter(officeAssetItemFilter(params.officeId), 'asset_item'),
         'asset_item.is_active': { $ne: false },
       },
-    });
+    } as PipelineStage);
   }
 
   pipeline.push(
@@ -204,9 +204,9 @@ async function countAssignmentsWithDetailsFilter(params: {
   match?: Record<string, unknown>;
   officeId?: string;
 }) {
-  const pipeline: Record<string, unknown>[] = [];
+  const pipeline: PipelineStage[] = [];
   if (params.match && Object.keys(params.match).length > 0) {
-    pipeline.push({ $match: params.match });
+    pipeline.push({ $match: params.match } as PipelineStage);
   }
 
   if (params.officeId) {

@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -39,10 +38,10 @@ import {
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
-import { activityService } from "@/services/activityService";
 import { format, formatDistanceToNow } from "date-fns";
 import { usePageSearch } from "@/contexts/PageSearchContext";
 import { exportToCSV } from "@/lib/exportUtils";
+import { usePagedActivities } from "@/hooks/useActivities";
 
 const activityIcons: Record<string, React.ElementType> = {
   login: LogIn,
@@ -83,15 +82,11 @@ export default function UserActivity() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["user-activities", page, pageSize, searchQuery, activityFilter],
-    queryFn: () =>
-      activityService.getPagedActivities({
-        page,
-        limit: pageSize,
-        search: searchQuery || undefined,
-        activityType: activityFilter === "all" ? undefined : activityFilter,
-      }),
+  const { data, isLoading } = usePagedActivities({
+    page,
+    limit: pageSize,
+    search: searchQuery || undefined,
+    activityType: activityFilter === "all" ? undefined : activityFilter,
   });
   const activities = useMemo(() => data?.items ?? [], [data?.items]);
   const totalActivities = data?.total || 0;

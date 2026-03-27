@@ -75,9 +75,11 @@ export const vendorController = {
   list: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const ctx = await getRequestContext(req);
-      const { limit, skip } = readPagination(req.query as Record<string, unknown>, { defaultLimit: 200, maxLimit: 1000 });
-      const search = String((req.query as Record<string, unknown>).search || '').trim();
-      const queryOfficeId = String((req.query as Record<string, unknown>).officeId || '').trim();
+      const query = req.query as Record<string, unknown>;
+      const { page, limit, skip } = readPagination(query, { defaultLimit: 200, maxLimit: 1000 });
+      const meta = String(query.meta || '').trim() === '1';
+      const search = String(query.search || '').trim();
+      const queryOfficeId = String(query.officeId || '').trim();
 
       const filter: Record<string, unknown> = {};
       if (search) {
@@ -109,7 +111,18 @@ export const vendorController = {
         .skip(skip)
         .limit(limit)
         .lean();
-      res.json(vendors);
+      if (!meta) {
+        return res.json(vendors);
+      }
+
+      const total = await VendorModel.countDocuments(filter);
+      return res.json({
+        items: vendors,
+        page,
+        limit,
+        total,
+        hasMore: skip + vendors.length < total,
+      });
     } catch (error) {
       next(error);
     }

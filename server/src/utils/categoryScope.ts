@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { AssetModel } from '../models/asset.model';
 import { CategoryModel } from '../models/category.model';
 import { OfficeModel } from '../models/office.model';
@@ -14,7 +13,7 @@ function normalizeOfficeType(value: unknown) {
 }
 
 export async function enforceAssetCategoryScopeForOffice(assetId: string, officeId: string) {
-  const asset = await AssetModel.findById(assetId, { category_id: 1 }).lean();
+  const asset = await AssetModel.findById(assetId, { category_id: 1 }).lean<{ category_id?: unknown } | null>();
   if (!asset) {
     throw createHttpError(404, 'Asset not found');
   }
@@ -23,13 +22,13 @@ export async function enforceAssetCategoryScopeForOffice(assetId: string, office
     return;
   }
 
-  const category = await CategoryModel.findById(asset.category_id, { scope: 1 }).lean();
+  const category = await CategoryModel.findById(asset.category_id, { scope: 1 }).lean<{ scope?: unknown } | null>();
   const scope = String(category?.scope || 'GENERAL').toUpperCase();
   if (scope !== 'LAB_ONLY') {
     return;
   }
 
-  const office = await OfficeModel.findById(officeId, { type: 1 }).lean();
+  const office = await OfficeModel.findById(officeId, { type: 1 }).lean<{ type?: unknown } | null>();
   if (!office) {
     throw createHttpError(404, 'Office not found');
   }

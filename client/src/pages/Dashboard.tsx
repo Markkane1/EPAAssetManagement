@@ -1,5 +1,4 @@
 import { useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { StatsCard } from "@/components/dashboard/StatsCard";
@@ -28,9 +27,9 @@ import {
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { useDashboardMe, useDashboardPanels, useDashboardStats } from "@/hooks/useDashboard";
 import { useAssignmentsByEmployee } from "@/hooks/useAssignments";
+import { useConsumableBalances } from "@/hooks/useConsumableInventory";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePageSearch } from "@/contexts/PageSearchContext";
-import { consumableInventoryService } from "@/services/consumableInventoryService";
 import { TimelineList, WorkflowPanel } from "@/components/shared/workflow";
 
 function safeId(value: unknown): string | null {
@@ -55,15 +54,15 @@ export default function Dashboard() {
 
   const { data: employeeAssignmentData, isLoading: employeeAssignmentsLoading } = useAssignmentsByEmployee(currentEmployeeId || "");
 
-  const employeeConsumableBalancesQuery = useQuery({
-    queryKey: ["dashboard", "employee", "consumable-balances", currentEmployeeId],
-    queryFn: () =>
-      consumableInventoryService.getBalances({
-        holderType: "EMPLOYEE",
-        holderId: String(currentEmployeeId),
-      }),
-    enabled: isEmployee && Boolean(currentEmployeeId),
-  });
+  const employeeConsumableBalancesQuery = useConsumableBalances(
+    currentEmployeeId
+      ? {
+          holderType: "EMPLOYEE",
+          holderId: String(currentEmployeeId),
+        }
+      : undefined,
+    { enabled: isEmployee && Boolean(currentEmployeeId) }
+  );
 
   const employeeAssignments = useMemo(() => {
     if (!isEmployee || !currentEmployeeId) return [];

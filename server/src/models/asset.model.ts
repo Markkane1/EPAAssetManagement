@@ -1,5 +1,6 @@
 import mongoose, { Schema } from 'mongoose';
 import { baseSchemaOptions } from './base';
+import { buildSearchTerms } from '../utils/searchTerms';
 
 const AssetDimensionSchema = new Schema<any>(
   {
@@ -51,14 +52,21 @@ const AssetSchema = new Schema<any>(
     attachment_path: { type: String, default: null },
     // Soft-active flag to preserve history
     is_active: { type: Boolean, default: true },
+    search_terms: { type: [String], default: undefined, select: false },
   },
   baseSchemaOptions
 );
+
+AssetSchema.pre('validate', function (next) {
+  this.search_terms = buildSearchTerms([this.name, this.description, this.specification]);
+  next();
+});
 
 AssetSchema.index({ category_id: 1, is_active: 1 });
 AssetSchema.index({ vendor_id: 1, is_active: 1 });
 AssetSchema.index({ created_at: -1 });
 AssetSchema.index({ is_active: 1, name: 1 });
+AssetSchema.index({ search_terms: 1, is_active: 1, name: 1 });
 
 export const AssetModel = mongoose.model<any>('Asset', AssetSchema);
 

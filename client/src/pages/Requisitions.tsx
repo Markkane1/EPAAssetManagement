@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTable } from "@/components/shared/DataTable";
@@ -8,11 +7,11 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Loader2, CheckCircle2, ClipboardList, Clock3, PackageCheck } from "lucide-react";
-import { requisitionService } from "@/services/requisitionService";
 import { useLocations } from "@/hooks/useLocations";
 import { useAuth } from "@/contexts/AuthContext";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { FilterBar, FilterField, MetricCard, TimelineList, WorkflowPanel } from "@/components/shared/workflow";
+import { useRequisitions } from "@/hooks/useRequisitions";
 
 function asId<T extends { id?: string; _id?: string }>(row: T): string {
   return String(row.id || row._id || "");
@@ -128,24 +127,13 @@ export default function Requisitions() {
     toDate: "",
   });
 
-  const query = useQuery({
-    queryKey: [
-      "requisitions",
-      queueParam || "all",
-      appliedFilters.status,
-      appliedFilters.fileNumber,
-      appliedFilters.fromDate,
-      appliedFilters.toDate,
-    ],
-    queryFn: () =>
-      requisitionService.list({
-        limit: 200,
-        queue: queueParam,
-        status: getBackendStatusForFilter(appliedFilters.status),
-        fileNumber: appliedFilters.fileNumber || undefined,
-        from: appliedFilters.fromDate || undefined,
-        to: appliedFilters.toDate || undefined,
-      }),
+  const query = useRequisitions({
+    limit: 200,
+    queue: queueParam,
+    status: getBackendStatusForFilter(appliedFilters.status),
+    fileNumber: appliedFilters.fileNumber || undefined,
+    from: appliedFilters.fromDate || undefined,
+    to: appliedFilters.toDate || undefined,
   });
 
   const officeNameById = useMemo(() => {

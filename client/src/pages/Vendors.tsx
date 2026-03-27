@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTable } from "@/components/shared/DataTable";
@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Vendor } from "@/types";
 import {
-  useVendors,
+  usePagedVendors,
   useVendor,
   useCreateVendor,
   useUpdateVendor,
@@ -31,14 +31,24 @@ import { VendorFormModal } from "@/components/forms/VendorFormModal";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLocations } from "@/hooks/useLocations";
 import { SearchableSelect } from "@/components/shared/SearchableSelect";
+import { usePageSearch } from "@/contexts/PageSearchContext";
 
 export default function Vendors() {
+  const PAGE_SIZE = 60;
   const { role, locationId } = useAuth();
   const isOrgAdmin = role === "org_admin";
   const [officeFilter, setOfficeFilter] = useState<string>("all");
+  const [page, setPage] = useState(1);
   const { data: locations = [] } = useLocations();
   const selectedOfficeId = isOrgAdmin && officeFilter !== "all" ? officeFilter : undefined;
-  const { data: vendors, isLoading } = useVendors(selectedOfficeId);
+  const pageSearch = usePageSearch();
+  const searchTerm = useDeferredValue((pageSearch?.term || "").trim());
+  const { data: vendors, isLoading } = usePagedVendors({
+    page,
+    limit: PAGE_SIZE,
+    officeId: selectedOfficeId,
+    search: searchTerm || undefined,
+  });
   const createVendor = useCreateVendor();
   const updateVendor = useUpdateVendor();
   const deleteVendor = useDeleteVendor();
@@ -52,15 +62,25 @@ export default function Vendors() {
     isError: isViewingVendorError,
   } = useVendor(viewingVendorId || "");
 
-  const vendorList = vendors || [];
+  const vendorList = vendors?.items || [];
+  const totalVendors = vendors?.total || vendorList.length;
+  const totalPages = Math.max(1, Math.ceil(totalVendors / PAGE_SIZE));
   const scopedLocations = isOrgAdmin
     ? locations
     : locations.filter((office) => office.id === locationId);
 
-  const locationNameById = locations.reduce<Record<string, string>>((acc, office) => {
-    acc[office.id] = office.name;
-    return acc;
-  }, {});
+  const locationNameById = useMemo(
+    () =>
+      locations.reduce<Record<string, string>>((acc, office) => {
+        acc[office.id] = office.name;
+        return acc;
+      }, {}),
+    [locations]
+  );
+
+  useEffect(() => {
+    setPage(1);
+  }, [officeFilter, searchTerm]);
 
   const columns = [
     { key: "name", label: "Vendor Name", render: (value: string, row: Vendor) => (
@@ -176,7 +196,36 @@ export default function Vendors() {
         </div>
       )}
 
-      <DataTable columns={columns} data={vendorList} searchPlaceholder="Search vendors..." actions={actions} />
+      <DataTable
+        columns={columns}
+        data={vendorList}
+        pagination={false}
+        searchable={false}
+        useGlobalPageSearch={false}
+        searchPlaceholder="Search vendors..."
+        actions={actions}
+      />
+      <div className="mt-4 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
+        <p className="text-sm text-muted-foreground">
+          Showing {vendorList.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1} to{" "}
+          {Math.min(page * PAGE_SIZE, totalVendors)} of {totalVendors} vendors
+        </p>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page === 1}>
+            Previous
+          </Button>
+          <span className="text-sm font-medium">
+            Page {page} of {totalPages}
+          </span>
+          <Button
+            variant="outline"
+            onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+            disabled={page >= totalPages}
+          >
+            Next
+          </Button>
+        </div>
+      </div>
 
       <VendorFormModal
         open={isModalOpen}

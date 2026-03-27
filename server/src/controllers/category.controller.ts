@@ -1,7 +1,19 @@
 import { Request, Response, NextFunction } from 'express';
+import { Types } from 'mongoose';
 import { CategoryModel } from '../models/category.model';
+import { AssetModel } from '../models/asset.model';
+import { AssetItemModel } from '../models/assetItem.model';
 import { createHttpError } from '../utils/httpError';
-import { escapeRegex, readPagination } from '../utils/requestParsing';
+import { readPagination } from '../utils/requestParsing';
+import { buildSearchTerms, buildSearchTermsQuery } from '../utils/searchTerms';
+import type { AuthRequest } from '../middleware/auth';
+import { resolveAccessContext } from '../utils/accessControl';
+import { officeAssetItemFilter } from '../utils/assetHolder';
+import { ConsumableItemModel } from '../modules/consumables/models/consumableItem.model';
+import {
+  resolveConsumableRequestScope,
+  resolveScopeLabOnlyRestrictions,
+} from '../modules/consumables/utils/accessScope';
 
 const CATEGORY_SCOPES = new Set(['GENERAL', 'LAB_ONLY']);
 const CATEGORY_ASSET_TYPES = new Set(['ASSET', 'CONSUMABLE']);
@@ -49,7 +61,8 @@ export const categoryController = {
   list: async (req: Request, res: Response, next: NextFunction) => {
     try {
       const query = req.query as Record<string, unknown>;
-      const { limit, skip } = readPagination(query, { defaultLimit: 200, maxLimit: 1000 });
+      const { page, limit, skip } = readPagination(query, { defaultLimit: 200, maxLimit: 1000 });
+      const meta = String(query.meta || '').trim() === '1';
       const filter: Record<string, unknown> = {};
       if (query.scope !== undefined) {
         filter.scope = parseScope(query.scope, 'GENERAL');
@@ -64,7 +77,7 @@ export const categoryController = {
       }
       const search = String(query.search || '').trim();
       if (search) {
-        filter.name = new RegExp(escapeRegex(search), 'i');
+        Object.assign(filter, buildSearchTermsQuery(search) || {});
       }
 
       const categories = await CategoryModel.find(filter, { name: 1, description: 1, scope: 1, asset_type: 1, created_at: 1 })
@@ -72,7 +85,96 @@ export const categoryController = {
         .skip(skip)
         .limit(limit)
         .lean();
-      res.json(categories);
+      if (!meta) {
+        return res.json(categories);
+      }
+
+      const total = await CategoryModel.countDocuments(filter);
+      return res.json({
+        items: categories,
+        page,
+        limit,
+        total,
+        hasMore: skip + categories.length < total,
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+  counts: async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const rawIds = String((req.query as Record<string, unknown>).ids || '').trim();
+      const categoryIds = rawIds
+        .split(',')
+        .map((entry) => entry.trim())
+        .filter((entry) => Types.ObjectId.isValid(entry))
+        .map((entry) => new Types.ObjectId(entry));
+
+      if (categoryIds.length === 0) {
+        return res.json({ assets: {}, consumables: {} });
+      }
+
+      const assetCounts: Record<string, number> = {};
+      const consumableCounts: Record<string, number> = {};
+
+      const access = await resolveAccessContext(req.user);
+      const assetMatch: Record<string, unknown> = {
+        category_id: { $in: categoryIds },
+        is_active: { $ne: false },
+      };
+
+      if (!access.isOrgAdmin) {
+        if (!access.officeId) {
+          throw createHttpError(403, 'User is not assigned to an office');
+        }
+        const visibleAssetIds = await AssetItemModel.distinct('asset_id', {
+          ...officeAssetItemFilter(access.officeId),
+          is_active: { $ne: false },
+        });
+        if (visibleAssetIds.length === 0) {
+          assetMatch._id = { $in: [] };
+        } else {
+          assetMatch._id = { $in: visibleAssetIds };
+        }
+      }
+
+      const assetGroups = await AssetModel.aggregate([
+        { $match: assetMatch },
+        { $group: { _id: '$category_id', count: { $sum: 1 } } },
+      ]);
+      assetGroups.forEach((entry) => {
+        if (entry?._id) {
+          assetCounts[String(entry._id)] = Number(entry.count || 0);
+        }
+      });
+
+      const consumableScope = await resolveConsumableRequestScope(req);
+      const consumableMatch: Record<string, unknown> = {
+        category_id: { $in: categoryIds },
+      };
+      if (!consumableScope.canAccessLabOnly) {
+        const { labOnlyCategoryIds } = await resolveScopeLabOnlyRestrictions(consumableScope);
+        if (labOnlyCategoryIds.length > 0) {
+          const blockedIds = new Set(labOnlyCategoryIds.map((id) => String(id)));
+          const allowedCategoryIds = categoryIds.filter((id) => !blockedIds.has(String(id)));
+          consumableMatch.category_id = { $in: allowedCategoryIds };
+        }
+      }
+
+      const scopedCategoryIds = consumableMatch.category_id as { $in: Types.ObjectId[] };
+      if (scopedCategoryIds.$in.length > 0) {
+        const consumableGroups = await ConsumableItemModel.aggregate([
+          { $match: consumableMatch },
+          { $group: { _id: '$category_id', count: { $sum: 1 } } },
+        ]);
+        consumableGroups.forEach((entry) => {
+          if (entry?._id) {
+            consumableCounts[String(entry._id)] = Number(entry.count || 0);
+          }
+        });
+      }
+
+      return res.json({ assets: assetCounts, consumables: consumableCounts });
     } catch (error) {
       next(error);
     }
@@ -98,6 +200,7 @@ export const categoryController = {
       };
       const description = parseDescription((req.body as Record<string, unknown>).description);
       if (description !== undefined) payload.description = description;
+      payload.search_terms = buildSearchTerms([payload.name]);
 
       const category = await CategoryModel.create(payload);
       res.status(201).json(category);
@@ -109,12 +212,15 @@ export const categoryController = {
     try {
       const body = req.body as Record<string, unknown>;
       const payload: Record<string, unknown> = {};
+      const existing = await CategoryModel.findById(req.params.id, { name: 1 }).lean<{ name?: string } | null>();
+      if (!existing) return res.status(404).json({ message: 'Not found' });
       if (body.name !== undefined) payload.name = parseName(body.name);
       if (body.description !== undefined) payload.description = parseDescription(body.description);
       if (body.scope !== undefined) payload.scope = parseScope(body.scope);
       if (body.assetType !== undefined || body.asset_type !== undefined) {
         payload.asset_type = parseAssetType(body.assetType ?? body.asset_type);
       }
+      payload.search_terms = buildSearchTerms([payload.name ?? existing.name]);
 
       const category = await CategoryModel.findByIdAndUpdate(req.params.id, payload, {
         new: true,

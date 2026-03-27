@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useState } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
@@ -19,7 +19,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
-  useProjects,
+  usePagedProjects,
   useProject,
   useCreateProject,
   useUpdateProject,
@@ -33,7 +33,7 @@ import { useViewMode } from "@/hooks/useViewMode";
 import { DataTable } from "@/components/shared/DataTable";
 
 export default function Projects() {
-  const { data: projects, isLoading } = useProjects();
+  const PAGE_SIZE = 60;
   const createProject = useCreateProject();
   const updateProject = useUpdateProject();
   const deleteProject = useDeleteProject();
@@ -41,26 +41,27 @@ export default function Projects() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [viewingProjectId, setViewingProjectId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
   const { mode: viewMode, setMode: setViewMode } = useViewMode("projects");
   const pageSearch = usePageSearch();
-  const searchTerm = (pageSearch?.term || "").trim().toLowerCase();
+  const searchTerm = useDeferredValue((pageSearch?.term || "").trim());
+  const { data: projectsResponse, isLoading } = usePagedProjects({
+    page,
+    limit: PAGE_SIZE,
+    search: searchTerm || undefined,
+  });
   const {
     data: viewingProject,
     isLoading: isViewingProject,
     isError: isViewingProjectError,
   } = useProject(viewingProjectId || "");
+  const visibleProjects = projectsResponse?.items || [];
+  const totalProjects = projectsResponse?.total || visibleProjects.length;
+  const totalPages = Math.max(1, Math.ceil(totalProjects / PAGE_SIZE));
 
-  const filteredProjects = useMemo(
-    () =>
-      (projects || []).filter((project) => {
-        if (!searchTerm) return true;
-        return [project.code, project.name, project.description, project.is_active ? "active" : "inactive"]
-          .join(" ")
-          .toLowerCase()
-          .includes(searchTerm);
-      }),
-    [projects, searchTerm]
-  );
+  useEffect(() => {
+    setPage(1);
+  }, [searchTerm]);
 
   const handleAddProject = () => {
     setEditingProject(null);
@@ -161,7 +162,8 @@ export default function Projects() {
       {viewMode === "list" ? (
         <DataTable
           columns={columns}
-          data={filteredProjects}
+          data={visibleProjects}
+          pagination={false}
           searchable={false}
           useGlobalPageSearch={false}
           actions={actions}
@@ -169,7 +171,7 @@ export default function Projects() {
       ) : (
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredProjects.map((project) => (
+            {visibleProjects.map((project) => (
               <Card key={project.id} className="group hover:shadow-md transition-all animate-fade-in">
                 <CardContent className="p-6">
                   <div className="flex items-start justify-between mb-4">
@@ -213,7 +215,7 @@ export default function Projects() {
               </Card>
             ))}
           </div>
-          {filteredProjects.length === 0 && (
+          {visibleProjects.length === 0 && (
             <Card>
               <CardContent className="py-8 text-sm text-muted-foreground">
                 No projects found.
@@ -222,6 +224,27 @@ export default function Projects() {
           )}
         </>
       )}
+      <div className="mt-4 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
+        <p className="text-sm text-muted-foreground">
+          Showing {visibleProjects.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1} to{" "}
+          {Math.min(page * PAGE_SIZE, totalProjects)} of {totalProjects} projects
+        </p>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page === 1}>
+            Previous
+          </Button>
+          <span className="text-sm font-medium">
+            Page {page} of {totalPages}
+          </span>
+          <Button
+            variant="outline"
+            onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+            disabled={page >= totalPages}
+          >
+            Next
+          </Button>
+        </div>
+      </div>
 
       <ProjectFormModal
         open={isModalOpen}

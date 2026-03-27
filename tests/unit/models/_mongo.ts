@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { mkdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import mongoose from "mongoose";
 import { MongoMemoryServer } from "mongodb-memory-server";
@@ -6,7 +6,6 @@ import { afterAll, afterEach, beforeAll } from "vitest";
 
 const DEFAULT_MONGOMS_VERSION = "7.0.14";
 const MONGO_HOOK_TIMEOUT_MS = 10 * 60 * 1000;
-const DEFAULT_WINDOWS_MONGOD_PATH = "C:\\Program Files\\MongoDB\\Server\\8.2\\bin\\mongod.exe";
 const REPO_ROOT = path.resolve(process.cwd());
 const TEST_CACHE_ROOT = path.resolve(REPO_ROOT, "..", ".ams-test-cache", path.basename(REPO_ROOT));
 const MONGO_CACHE_DIR = path.join(TEST_CACHE_ROOT, "mongodb-binaries");
@@ -29,9 +28,7 @@ const state =
   });
 
 function resolveMongoBinaryConfig() {
-  const systemBinary =
-    process.env.MONGOMS_SYSTEM_BINARY ||
-    (existsSync(DEFAULT_WINDOWS_MONGOD_PATH) ? DEFAULT_WINDOWS_MONGOD_PATH : undefined);
+  const systemBinary = process.env.MONGOMS_SYSTEM_BINARY;
 
   if (systemBinary) {
     return { systemBinary };

@@ -57,11 +57,12 @@ export const useAssetItemsByAsset = (assetId: string) => {
   });
 };
 
-export const useAssetItemsByLocation = (locationId: string) => {
+export const useAssetItemsByLocation = (locationId: string, options: QueryToggleOptions = {}) => {
+  const { enabled = true } = options;
   return useQuery({
     queryKey: [...queryKeys.assetItems, 'byLocation', locationId],
     queryFn: () => assetItemService.getByLocation(locationId),
-    enabled: !!locationId,
+    enabled: enabled && !!locationId,
     staleTime: heavyList.staleTime,
     refetchOnWindowFocus: heavyList.refetchOnWindowFocus,
   });

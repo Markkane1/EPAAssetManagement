@@ -234,7 +234,8 @@ export const officeController = {
   list: async (req: Request, res: Response, next: NextFunction) => {
     try {
       const query = req.query as Record<string, unknown>;
-      const { limit, skip } = readPagination(query, { defaultLimit: 200, maxLimit: 2000 });
+      const { page, limit, skip } = readPagination(query, { defaultLimit: 200, maxLimit: 2000 });
+      const meta = String(query.meta || '').trim() === '1';
       const andFilters: Record<string, unknown>[] = [];
       const search = String(query.search || '').trim();
       if (search) {
@@ -295,7 +296,18 @@ export const officeController = {
         .skip(skip)
         .limit(limit)
         .lean();
-      res.json(data);
+      if (!meta) {
+        return res.json(data);
+      }
+
+      const total = await OfficeModel.countDocuments(filter);
+      return res.json({
+        items: data,
+        page,
+        limit,
+        total,
+        hasMore: skip + data.length < total,
+      });
     } catch (error) {
       next(error);
     }

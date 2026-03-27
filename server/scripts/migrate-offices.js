@@ -3,6 +3,10 @@ const dotenv = require('dotenv');
 
 dotenv.config();
 
+// Legacy import-only migration: folds historical `locations` and `directorates`
+// collections into `offices`. This is intentionally separate from the newer
+// office-type normalization migration.
+
 const MONGO_URI = process.env.MONGO_URI || process.env.DATABASE_URL;
 
 if (!MONGO_URI) {

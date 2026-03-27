@@ -6,24 +6,21 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import {
-  Command,
-  CommandEmpty,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
-import { Loader2 } from "lucide-react";
 import { Assignment, AssetItem, Employee, Asset } from "@/types";
+import { FormDialogActions } from "@/components/forms/FormDialogActions";
+import { SearchableComboboxField } from "@/components/forms/SearchableComboboxField";
+import {
+  useAssetItemOptions,
+  useAssetNameMap,
+  useEmployeeOptions,
+  useEntityById,
+} from "@/components/forms/useFormSearchLookups";
 
 const assignmentSchema = z.object({
   assetItemId: z.string().min(1, "Asset item is required"),
@@ -119,12 +116,13 @@ export function AssignmentFormModal({
       item.id === selectedAssetItem?.id
   );
 
-  const selectedAsset = availableItems.find((item) => item.id === form.watch("assetItemId"));
-  const selectedEmployee = employees.find((emp) => emp.id === form.watch("employeeId"));
-
-  const getAssetName = (assetId: string) => {
-    return assets.find((a) => a.id === assetId)?.name || "Unknown";
-  };
+  const assetNameById = useAssetNameMap(assets);
+  const assetOptions = useAssetItemOptions(availableItems, assetNameById);
+  const employeeOptions = useEmployeeOptions(employees.filter((employee) => employee.is_active));
+  const getAssetById = useEntityById(availableItems);
+  const getEmployeeById = useEntityById(employees);
+  const selectedAsset = getAssetById(form.watch("assetItemId"));
+  const selectedEmployee = getEmployeeById(form.watch("employeeId"));
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -136,81 +134,39 @@ export function AssignmentFormModal({
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
-          <div className="space-y-2">
-            <Label>Asset Item *</Label>
-            <Popover open={assetPickerOpen} onOpenChange={setAssetPickerOpen}>
-              <PopoverTrigger asChild>
-                <Button variant="outline" role="combobox" className="w-full justify-between">
-                  {selectedAsset
-                    ? `${selectedAsset.tag || selectedAsset.serial_number || "Asset"} - ${getAssetName(selectedAsset.asset_id)}`
-                    : "Search asset items..."}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-                <Command>
-                  <CommandInput placeholder="Search by tag, serial, or asset..." />
-                  <CommandList>
-                    <CommandEmpty>No asset items found.</CommandEmpty>
-                    {availableItems.map((item) => (
-                      <CommandItem
-                        key={item.id}
-                        value={`${item.tag || ""} ${item.serial_number || ""} ${getAssetName(item.asset_id)}`}
-                        onSelect={() => {
-                          form.setValue("assetItemId", item.id);
-                          setAssetPickerOpen(false);
-                        }}
-                      >
-                        <span className="font-mono">{item.tag || item.serial_number || "Asset"}</span>
-                        <span className="ml-2 text-xs text-muted-foreground">{getAssetName(item.asset_id)}</span>
-                      </CommandItem>
-                    ))}
-                  </CommandList>
-                </Command>
-              </PopoverContent>
-            </Popover>
-            {form.formState.errors.assetItemId && (
-              <p className="text-sm text-destructive">{form.formState.errors.assetItemId.message}</p>
-            )}
-          </div>
+          <SearchableComboboxField
+            label="Asset Item *"
+            open={assetPickerOpen}
+            onOpenChange={setAssetPickerOpen}
+            value={
+              selectedAsset
+                ? `${selectedAsset.tag || selectedAsset.serial_number || "Asset"} - ${assetNameById.get(selectedAsset.asset_id) || "Unknown"}`
+                : undefined
+            }
+            options={assetOptions}
+            placeholder="Search asset items..."
+            searchPlaceholder="Search by tag, serial, or asset..."
+            emptyText="No asset items found."
+            onValueChange={(value) => form.setValue("assetItemId", value)}
+            error={form.formState.errors.assetItemId?.message}
+          />
 
-          <div className="space-y-2">
-            <Label>Employee *</Label>
-            <Popover open={employeePickerOpen} onOpenChange={setEmployeePickerOpen}>
-              <PopoverTrigger asChild>
-                <Button variant="outline" role="combobox" className="w-full justify-between">
-                  {selectedEmployee
-                    ? `${selectedEmployee.first_name} ${selectedEmployee.last_name} - ${selectedEmployee.email}`
-                    : "Search employees..."}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-                <Command>
-                  <CommandInput placeholder="Type name or email..." />
-                  <CommandList>
-                    <CommandEmpty>No employees found.</CommandEmpty>
-                    {employees
-                      .filter((e) => e.is_active)
-                      .map((emp) => (
-                        <CommandItem
-                          key={emp.id}
-                          value={`${emp.first_name} ${emp.last_name} ${emp.email}`}
-                          onSelect={() => {
-                            form.setValue("employeeId", emp.id);
-                            setEmployeePickerOpen(false);
-                          }}
-                        >
-                          <span className="font-medium">{emp.first_name} {emp.last_name}</span>
-                          <span className="ml-2 text-xs text-muted-foreground">{emp.email}</span>
-                        </CommandItem>
-                      ))}
-                  </CommandList>
-                </Command>
-              </PopoverContent>
-            </Popover>
-            {form.formState.errors.employeeId && (
-              <p className="text-sm text-destructive">{form.formState.errors.employeeId.message}</p>
-            )}
-          </div>
+          <SearchableComboboxField
+            label="Employee *"
+            open={employeePickerOpen}
+            onOpenChange={setEmployeePickerOpen}
+            value={
+              selectedEmployee
+                ? `${selectedEmployee.first_name} ${selectedEmployee.last_name} - ${selectedEmployee.email}`
+                : undefined
+            }
+            options={employeeOptions}
+            placeholder="Search employees..."
+            searchPlaceholder="Type name or email..."
+            emptyText="No employees found."
+            onValueChange={(value) => form.setValue("employeeId", value)}
+            error={form.formState.errors.employeeId?.message}
+          />
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
@@ -266,15 +222,11 @@ export function AssignmentFormModal({
             />
           </div>
 
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={isSubmitting}>
-              {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {isEditing ? "Update" : "Create Assignment"}
-            </Button>
-          </DialogFooter>
+          <FormDialogActions
+            isSubmitting={isSubmitting}
+            onCancel={() => onOpenChange(false)}
+            submitLabel={isEditing ? "Update" : "Create Assignment"}
+          />
         </form>
       </DialogContent>
     </Dialog>

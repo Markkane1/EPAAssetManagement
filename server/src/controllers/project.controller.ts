@@ -117,8 +117,10 @@ export const projectController = {
   },
   list: async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { limit, skip } = readPagination(req.query as Record<string, unknown>, { defaultLimit: 200, maxLimit: 1000 });
-      const search = String((req.query as Record<string, unknown>).search || '').trim();
+      const query = req.query as Record<string, unknown>;
+      const { page, limit, skip } = readPagination(query, { defaultLimit: 200, maxLimit: 1000 });
+      const meta = String(query.meta || '').trim() === '1';
+      const search = String(query.search || '').trim();
       const filter: Record<string, unknown> = {};
       if (search) {
         Object.assign(filter, buildSearchTermsQuery(search) || {});
@@ -132,15 +134,28 @@ export const projectController = {
         .skip(skip)
         .limit(limit)
         .lean();
-      res.json(projects);
+      if (!meta) {
+        return res.json(projects);
+      }
+
+      const total = await ProjectModel.countDocuments(filter);
+      return res.json({
+        items: projects,
+        page,
+        limit,
+        total,
+        hasMore: skip + projects.length < total,
+      });
     } catch (error) {
       next(error);
     }
   },
   getActive: async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { limit, skip } = readPagination(req.query as Record<string, unknown>, { defaultLimit: 200, maxLimit: 1000 });
-      const search = String((req.query as Record<string, unknown>).search || '').trim();
+      const query = req.query as Record<string, unknown>;
+      const { page, limit, skip } = readPagination(query, { defaultLimit: 200, maxLimit: 1000 });
+      const meta = String(query.meta || '').trim() === '1';
+      const search = String(query.search || '').trim();
       const filter: Record<string, unknown> = { is_active: true };
       if (search) {
         Object.assign(filter, buildSearchTermsQuery(search) || {});
@@ -151,7 +166,18 @@ export const projectController = {
         .skip(skip)
         .limit(limit)
         .lean();
-      res.json(projects);
+      if (!meta) {
+        return res.json(projects);
+      }
+
+      const total = await ProjectModel.countDocuments(filter);
+      return res.json({
+        items: projects,
+        page,
+        limit,
+        total,
+        hasMore: skip + projects.length < total,
+      });
     } catch (error) {
       next(error);
     }

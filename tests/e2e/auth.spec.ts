@@ -45,7 +45,7 @@ test.describe("Authentication flows", () => {
     await expect(page).toHaveURL("/");
 
     await page.locator("header button").last().click();
-    await page.getByRole("menuitem", { name: /sign out/i }).click();
+    await page.getByRole("button", { name: /sign out/i }).click();
 
     await expect(page).toHaveURL(/\/login$/);
     await expect

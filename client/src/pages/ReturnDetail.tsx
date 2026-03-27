@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,6 +11,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { returnRequestService } from "@/services/returnRequestService";
+import { useReturnRequestDetail, useReceiveReturnRequest, useUploadSignedReturnRequest } from "@/hooks/useReturnRequests";
 import { useEmployees } from "@/hooks/useEmployees";
 import { useLocations } from "@/hooks/useLocations";
 import { useAssetItems } from "@/hooks/useAssetItems";
@@ -57,7 +57,6 @@ export default function ReturnDetail() {
   const navigate = useNavigate();
   const isMobile = useIsMobile();
   const { id } = useParams<{ id: string }>();
-  const queryClient = useQueryClient();
   const { role } = useAuth();
   const { data: employees } = useEmployees();
   const { data: locations } = useLocations();
@@ -66,11 +65,7 @@ export default function ReturnDetail() {
 
   const [signedFile, setSignedFile] = useState<File | null>(null);
 
-  const detailQuery = useQuery({
-    queryKey: ["return-request", id],
-    queryFn: () => returnRequestService.getById(String(id)),
-    enabled: Boolean(id),
-  });
+  const detailQuery = useReturnRequestDetail(String(id || ""), { enabled: Boolean(id) });
 
   const returnRequest = detailQuery.data?.returnRequest;
   const lines = useMemo(() => detailQuery.data?.lines || [], [detailQuery.data?.lines]);
@@ -116,37 +111,8 @@ export default function ReturnDetail() {
     });
   }, [lines, assetItems, assets]);
 
-  const receiveMutation = useMutation({
-    mutationFn: () => returnRequestService.receive(String(id)),
-    onSuccess: async () => {
-      toast.success("Return request received.");
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["return-request", id] }),
-        queryClient.invalidateQueries({ queryKey: ["return-requests"] }),
-      ]);
-    },
-    onError: (error: Error) => toast.error(error.message || "Failed to receive return request."),
-  });
-
-  const uploadMutation = useMutation({
-    mutationFn: async () => {
-      if (!signedFile) {
-        throw new Error("Select a signed return receipt file first.");
-      }
-      const form = new FormData();
-      form.append("signedReturnFile", signedFile);
-      return returnRequestService.uploadSignedReturn(String(id), form);
-    },
-    onSuccess: async () => {
-      toast.success("Signed return receipt uploaded.");
-      setSignedFile(null);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["return-request", id] }),
-        queryClient.invalidateQueries({ queryKey: ["return-requests"] }),
-      ]);
-    },
-    onError: (error: Error) => toast.error(error.message || "Failed to upload signed return receipt."),
-  });
+  const receiveMutation = useReceiveReturnRequest(String(id || ""));
+  const uploadMutation = useUploadSignedReturnRequest(String(id || ""));
 
   if (detailQuery.isLoading) {
     return (
@@ -343,7 +309,17 @@ export default function ReturnDetail() {
                 />
                 <Button
                   type="button"
-                  onClick={() => uploadMutation.mutate()}
+                  onClick={() => {
+                    if (!signedFile) {
+                      toast.error("Select a signed return receipt file first.");
+                      return;
+                    }
+                    const form = new FormData();
+                    form.append("signedReturnFile", signedFile);
+                    uploadMutation.mutate(form, {
+                      onSuccess: () => setSignedFile(null),
+                    });
+                  }}
                   disabled={uploadMutation.isPending}
                   className="w-full sm:w-auto"
                 >

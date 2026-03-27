@@ -1,10 +1,5 @@
 import { useMemo, useState } from "react";
-import { MainLayout } from "@/components/layout/MainLayout";
-import { PageHeader } from "@/components/shared/PageHeader";
-import { DataTable } from "@/components/shared/DataTable";
-import { DateRangeFilter } from "@/components/reports/DateRangeFilter";
-import { Button } from "@/components/ui/button";
-import { Download, FileDown } from "lucide-react";
+import { ReportTablePage } from "@/components/reports/ReportTablePage";
 import { toast } from "sonner";
 import { useLocations } from "@/hooks/useLocations";
 import { useAssetItems } from "@/hooks/useAssetItems";
@@ -170,37 +165,23 @@ export default function LocationInventoryReport() {
   };
 
   return (
-    <MainLayout title="Location Inventory" description="Inventory by location">
-      <PageHeader
-        title="Location Inventory"
-        description="Detailed inventory totals by physical location"
-        extra={
-          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-            <Button variant="outline" className="gap-2" onClick={handleExportCSV}>
-              <Download className="h-4 w-4" />
-              CSV
-            </Button>
-            <Button className="gap-2" onClick={handleExportPDF}>
-              <FileDown className="h-4 w-4" />
-              PDF
-            </Button>
-          </div>
-        }
-      />
-
-      <DateRangeFilter
-        startDate={startDate}
-        endDate={endDate}
-        onStartDateChange={setStartDate}
-        onEndDateChange={setEndDate}
-        onClear={() => {
-          setStartDate(undefined);
-          setEndDate(undefined);
-        }}
-        rangeText={dateRangeText}
-      />
-
-      <DataTable columns={columns} data={reportRows as any} searchable />
-    </MainLayout>
+    <ReportTablePage
+      title="Location Inventory"
+      description="Detailed inventory totals by physical location"
+      layoutDescription="Inventory by location"
+      columns={columns}
+      data={reportRows}
+      startDate={startDate}
+      endDate={endDate}
+      onStartDateChange={setStartDate}
+      onEndDateChange={setEndDate}
+      onClearDateRange={() => {
+        setStartDate(undefined);
+        setEndDate(undefined);
+      }}
+      dateRangeText={dateRangeText}
+      onExportCSV={handleExportCSV}
+      onExportPDF={handleExportPDF}
+    />
   );
 }

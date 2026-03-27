@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ChangeEvent } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -33,6 +33,8 @@ import { filterConsumableCategoriesByMode, filterItemsByMode } from '@/lib/consu
 import { ConsumableModeToggle } from '@/components/consumables/ConsumableModeToggle';
 import { useAuth } from '@/contexts/AuthContext';
 import { canAccessPage } from '@/config/pagePermissions';
+import { getFormEntityId } from '@/components/forms/formEntityUtils';
+import { usePdfAttachmentField } from '@/components/forms/usePdfAttachmentField';
 
 const receiveSchema = z.object({
   categoryId: z.string().min(1, 'Category is required'),
@@ -89,30 +91,6 @@ function buildAutoLotNumber(itemName?: string) {
   return `${token}-${stamp}-${random}`;
 }
 
-function getEntityId(value: unknown): string {
-  if (!value) return '';
-  if (typeof value === 'string') return value;
-  if (typeof value === 'object') {
-    const record = value as { id?: unknown; _id?: unknown; toString?: () => string };
-    if (typeof record.id === 'string') return record.id;
-    if (typeof record._id === 'string') return record._id;
-    if (record._id && typeof record._id === 'object' && 'toString' in (record._id as object)) {
-      const parsed = String(record._id);
-      if (parsed && parsed !== '[object Object]') return parsed;
-    }
-    if (typeof record.toString === 'function') {
-      const parsed = record.toString();
-      if (parsed && parsed !== '[object Object]') return parsed;
-    }
-  }
-  return '';
-}
-
-function isPdfAttachment(file: File) {
-  if (file.type === 'application/pdf') return true;
-  return /\.pdf$/i.test(file.name);
-}
-
 export default function ConsumableReceive() {
   const { role, isOrgAdmin, locationId } = useAuth();
   const officeScopedFlow =
@@ -154,8 +132,12 @@ export default function ConsumableReceive() {
   const { data: vendors } = useVendors(selectedReceivingOfficeId || undefined);
 
   const [containers, setContainers] = useState<ContainerInput[]>([]);
-  const [handoverDocumentationFile, setHandoverDocumentationFile] = useState<File | null>(null);
-  const [handoverDocumentationError, setHandoverDocumentationError] = useState<string | null>(null);
+  const {
+    attachmentFile: handoverDocumentationFile,
+    attachmentError: handoverDocumentationError,
+    handleAttachmentChange: handleHandoverDocumentationChange,
+    resetAttachment: resetHandoverDocumentation,
+  } = usePdfAttachmentField();
   const availableLabOffices = useMemo(
     () => (labOffices || []).filter((office) => office.is_active !== false),
     [labOffices]
@@ -229,7 +211,7 @@ export default function ConsumableReceive() {
   const selectedUom = form.watch('uom');
   const attachmentLabel = selectedSource === 'project' ? 'Project Handover Documentation' : 'Invoice';
   const filteredSchemes = useMemo(
-    () => (schemes || []).filter((scheme) => getEntityId(scheme.project_id) === selectedProjectId),
+    () => (schemes || []).filter((scheme) => getFormEntityId(scheme.project_id) === selectedProjectId),
     [schemes, selectedProjectId]
   );
 
@@ -261,7 +243,7 @@ export default function ConsumableReceive() {
   useEffect(() => {
     const currentVendorId = form.getValues('vendorId');
     if (!currentVendorId) return;
-    const exists = (vendors || []).some((vendor) => getEntityId(vendor) === currentVendorId);
+    const exists = (vendors || []).some((vendor) => getFormEntityId(vendor) === currentVendorId);
     if (!exists) {
       form.setValue('vendorId', '');
     }
@@ -278,7 +260,7 @@ export default function ConsumableReceive() {
 
   useEffect(() => {
     const currentCategory = form.getValues('categoryId');
-    if (currentCategory && !filteredCategories.some((category) => getEntityId(category) === currentCategory)) {
+    if (currentCategory && !filteredCategories.some((category) => getFormEntityId(category) === currentCategory)) {
       form.setValue('categoryId', '');
       form.setValue('itemId', '');
       form.setValue('uom', '');
@@ -330,25 +312,6 @@ export default function ConsumableReceive() {
 
   const updateContainer = (index: number, key: keyof ContainerInput, value: string) => {
     setContainers((prev) => prev.map((item, idx) => (idx === index ? { ...item, [key]: value } : item)));
-  };
-
-  const handleHandoverDocumentationChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const selected = event.target.files?.[0] || null;
-    if (!selected) {
-      setHandoverDocumentationFile(null);
-      setHandoverDocumentationError(null);
-      return;
-    }
-
-    if (!isPdfAttachment(selected)) {
-      setHandoverDocumentationFile(null);
-      setHandoverDocumentationError('Attachment must be a PDF file.');
-      event.target.value = '';
-      return;
-    }
-
-    setHandoverDocumentationFile(selected);
-    setHandoverDocumentationError(null);
   };
 
   const handleSubmit = async (data: ReceiveFormData) => {
@@ -406,8 +369,7 @@ export default function ConsumableReceive() {
       notes: '',
     });
     setContainers([]);
-    setHandoverDocumentationFile(null);
-    setHandoverDocumentationError(null);
+    resetHandoverDocumentation();
   };
 
   return (
@@ -481,7 +443,7 @@ export default function ConsumableReceive() {
                   <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
                   <SelectContent>
                     {filteredCategories.map((category: Category) => {
-                      const id = getEntityId(category);
+                      const id = getFormEntityId(category);
                       if (!id) return null;
                       return <SelectItem key={id} value={id}>{category.name}</SelectItem>;
                     })}
@@ -566,7 +528,7 @@ export default function ConsumableReceive() {
                       <SelectTrigger><SelectValue placeholder="Select vendor" /></SelectTrigger>
                       <SelectContent>
                         {(vendors || []).map((vendor: Vendor) => {
-                          const id = getEntityId(vendor);
+                          const id = getFormEntityId(vendor);
                           if (!id) return null;
                           return <SelectItem key={id} value={id}>{vendor.name}</SelectItem>;
                         })}
@@ -607,7 +569,7 @@ export default function ConsumableReceive() {
                       <SelectTrigger><SelectValue placeholder="Select project" /></SelectTrigger>
                       <SelectContent>
                         {(projects || []).map((project: Project) => {
-                          const id = getEntityId(project);
+                          const id = getFormEntityId(project);
                           if (!id) return null;
                           return <SelectItem key={id} value={id}>{project.name}</SelectItem>;
                         })}
@@ -627,7 +589,7 @@ export default function ConsumableReceive() {
                       <SelectTrigger><SelectValue placeholder={selectedProjectId ? 'Select scheme' : 'Select project first'} /></SelectTrigger>
                       <SelectContent>
                         {filteredSchemes.map((scheme: Scheme) => {
-                          const id = getEntityId(scheme);
+                          const id = getFormEntityId(scheme);
                           if (!id) return null;
                           return <SelectItem key={id} value={id}>{scheme.name}</SelectItem>;
                         })}

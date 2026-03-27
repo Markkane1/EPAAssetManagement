@@ -8,12 +8,8 @@ const runtimeDir = path.join(testCacheRoot, "integration");
 const stateFile = path.join(runtimeDir, "mongo-state.json");
 const mongoCacheDir = path.join(testCacheRoot, "mongodb-binaries");
 const mongoDbPath = path.join(runtimeDir, "mongo-db");
-const defaultWindowsMongoPath = "C:\\Program Files\\MongoDB\\Server\\8.2\\bin\\mongod.exe";
-
 function resolveBinaryConfig() {
-  const systemBinary =
-    process.env.MONGOMS_SYSTEM_BINARY ||
-    (fs.existsSync(defaultWindowsMongoPath) ? defaultWindowsMongoPath : undefined);
+  const systemBinary = process.env.MONGOMS_SYSTEM_BINARY;
 
   if (systemBinary) {
     return { systemBinary };

@@ -5,7 +5,6 @@ import { useForm } from "react-hook-form";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
@@ -16,6 +15,7 @@ import {
 } from "@/components/ui/select";
 import type { Office, Division, District, OfficeType } from "@/types";
 import { SearchableSelect } from "@/components/shared/SearchableSelect";
+import { FormDialogActions } from "@/components/forms/FormDialogActions";
 
 const OFFICE_TYPE_OPTIONS: Array<{ value: OfficeType; label: string }> = [
   { value: "DIRECTORATE", label: "Directorate" },
@@ -370,12 +370,11 @@ export function OfficeFormModal({
                 <FormLabel>Chemicals</FormLabel>
               </div>
             </div>
-            <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-                Cancel
-              </Button>
-              <Button type="submit">{isEditing ? "Update Office" : "Create Office"}</Button>
-            </div>
+            <FormDialogActions
+              isSubmitting={false}
+              onCancel={() => onOpenChange(false)}
+              submitLabel={isEditing ? "Update Office" : "Create Office"}
+            />
           </form>
         </Form>
       </DialogContent>

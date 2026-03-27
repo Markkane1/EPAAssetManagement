@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ChangeEvent } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -6,11 +6,9 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -21,8 +19,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2 } from "lucide-react";
 import { PurchaseOrder, PurchaseOrderStatus, Vendor, Project, Scheme } from "@/types";
+import { FormDialogActions } from "@/components/forms/FormDialogActions";
+import { getFormEntityId } from "@/components/forms/formEntityUtils";
+import { useDialogFormReset } from "@/components/forms/useDialogFormReset";
+import { usePdfAttachmentField } from "@/components/forms/usePdfAttachmentField";
 
 const purchaseOrderSchema = z
   .object({
@@ -82,26 +83,6 @@ interface PurchaseOrderFormModalProps {
   onSubmit: (data: PurchaseOrderSubmitData) => Promise<void>;
 }
 
-function getEntityId(value: unknown): string {
-  if (!value) return "";
-  if (typeof value === "string") return value;
-  if (typeof value === "object") {
-    const record = value as { id?: unknown; _id?: unknown; toString?: () => string };
-    if (typeof record.id === "string") return record.id;
-    if (typeof record._id === "string") return record._id;
-    if (typeof record.toString === "function") {
-      const parsed = record.toString();
-      if (parsed && parsed !== "[object Object]") return parsed;
-    }
-  }
-  return "";
-}
-
-function isPdfAttachment(file: File) {
-  if (file.type === "application/pdf") return true;
-  return /\.pdf$/i.test(file.name);
-}
-
 export function PurchaseOrderFormModal({
   open,
   onOpenChange,
@@ -113,9 +94,14 @@ export function PurchaseOrderFormModal({
 }: PurchaseOrderFormModalProps) {
   const NONE_VALUE = "__none__";
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
-  const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const isEditing = !!purchaseOrder;
+  const {
+    attachmentFile,
+    attachmentError,
+    handleAttachmentChange,
+    resetAttachment,
+    validateAttachment,
+  } = usePdfAttachmentField();
 
   const form = useForm<PurchaseOrderFormData>({
     resolver: zodResolver(purchaseOrderSchema),
@@ -136,9 +122,9 @@ export function PurchaseOrderFormModal({
     },
   });
 
-  useEffect(() => {
+  const resetValues = useMemo(() => {
     if (purchaseOrder) {
-      form.reset({
+      return {
         sourceType: purchaseOrder.source_type || "procurement",
         sourceName: purchaseOrder.source_name || "",
         vendorId: purchaseOrder.vendor_id || "",
@@ -154,27 +140,31 @@ export function PurchaseOrderFormModal({
         taxAmount: purchaseOrder.tax_amount || 0,
         status: purchaseOrder.status || PurchaseOrderStatus.Draft,
         notes: purchaseOrder.notes || "",
-      });
-    } else {
-      form.reset({
-        sourceType: "procurement",
-        sourceName: "",
-        vendorId: "",
-        projectId: "",
-        schemeId: "",
-        orderDate: new Date().toISOString().split("T")[0],
-        expectedDeliveryDate: "",
-        unitPrice: 0,
-        totalAmount: 0,
-        taxPercentage: 0,
-        taxAmount: 0,
-        status: PurchaseOrderStatus.Draft,
-        notes: "",
-      });
+      };
     }
-    setAttachmentFile(null);
-    setAttachmentError(null);
-  }, [purchaseOrder, form]);
+
+    return {
+      sourceType: "procurement" as const,
+      sourceName: "",
+      vendorId: "",
+      projectId: "",
+      schemeId: "",
+      orderDate: new Date().toISOString().split("T")[0],
+      expectedDeliveryDate: "",
+      unitPrice: 0,
+      totalAmount: 0,
+      taxPercentage: 0,
+      taxAmount: 0,
+      status: PurchaseOrderStatus.Draft,
+      notes: "",
+    };
+  }, [purchaseOrder]);
+  useDialogFormReset({ open, form, values: resetValues });
+
+  useEffect(() => {
+    if (!open) return;
+    resetAttachment();
+  }, [open, purchaseOrder, resetAttachment]);
 
   const selectedSourceType = form.watch("sourceType");
   const selectedProjectId = form.watch("projectId");
@@ -182,7 +172,7 @@ export function PurchaseOrderFormModal({
   const selectedTaxPercentage = form.watch("taxPercentage");
 
   const filteredSchemes = useMemo(
-    () => (schemes || []).filter((scheme) => getEntityId(scheme.project_id) === selectedProjectId),
+    () => (schemes || []).filter((scheme) => getFormEntityId(scheme.project_id) === selectedProjectId),
     [schemes, selectedProjectId]
   );
 
@@ -195,34 +185,15 @@ export function PurchaseOrderFormModal({
     form.setValue("taxAmount", computedTax);
   }, [selectedTotalAmount, selectedTaxPercentage, form]);
 
-  const handleAttachmentChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const selected = event.target.files?.[0] || null;
-    if (!selected) {
-      setAttachmentFile(null);
-      setAttachmentError(null);
-      return;
-    }
-    if (!isPdfAttachment(selected)) {
-      setAttachmentFile(null);
-      setAttachmentError("Attachment must be a PDF file.");
-      event.target.value = "";
-      return;
-    }
-    setAttachmentFile(selected);
-    setAttachmentError(null);
-  };
-
   const handleSubmit = async (data: PurchaseOrderFormData) => {
-    if (attachmentFile && !isPdfAttachment(attachmentFile)) {
-      setAttachmentError("Attachment must be a PDF file.");
+    if (!validateAttachment()) {
       return;
     }
     setIsSubmitting(true);
     try {
       await onSubmit({ ...data, attachmentFile });
       form.reset();
-      setAttachmentFile(null);
-      setAttachmentError(null);
+      resetAttachment();
       onOpenChange(false);
     } finally {
       setIsSubmitting(false);
@@ -346,7 +317,7 @@ export function PurchaseOrderFormModal({
                     <SelectContent>
                       <SelectItem value={NONE_VALUE}>Select scheme</SelectItem>
                       {filteredSchemes.map((scheme) => {
-                        const schemeId = getEntityId(scheme);
+                        const schemeId = getFormEntityId(scheme);
                         if (!schemeId) return null;
                         return (
                           <SelectItem key={schemeId} value={schemeId}>
@@ -456,18 +427,13 @@ export function PurchaseOrderFormModal({
             <Textarea id="notes" {...form.register("notes")} placeholder="Additional notes..." rows={2} />
           </div>
 
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={isSubmitting}>
-              {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {isEditing ? "Update" : "Create Order"}
-            </Button>
-          </DialogFooter>
+          <FormDialogActions
+            isSubmitting={isSubmitting}
+            onCancel={() => onOpenChange(false)}
+            submitLabel={isEditing ? "Update" : "Create Order"}
+          />
         </form>
       </DialogContent>
     </Dialog>
   );
 }
-

@@ -1,46 +1,37 @@
-import { useCallback, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import type { ElementType } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { 
-  Download, 
-  PieChart, 
-  DollarSign,
-  Package,
-  Users,
-  MapPin,
-  Wrench,
-  Loader2,
-  FileText,
+import {
   ClipboardList,
-  FileDown
+  DollarSign,
+  Download,
+  FileDown,
+  FileText,
+  Loader2,
+  MapPin,
+  Package,
+  PieChart,
+  Users,
+  Wrench,
 } from "lucide-react";
 import { toast } from "sonner";
-import { useAssets } from "@/hooks/useAssets";
-import { useAssetItems } from "@/hooks/useAssetItems";
-import { useLocations } from "@/hooks/useLocations";
-import { useCategories } from "@/hooks/useCategories";
-import { useEmployees } from "@/hooks/useEmployees";
-import { useAssignments } from "@/hooks/useAssignments";
-import { useMaintenance } from "@/hooks/useMaintenance";
-import { useDirectorates } from "@/hooks/useDirectorates";
-import { exportToCSV, formatDateForExport, formatCurrencyForExport } from "@/lib/exportUtils";
-import { isHeadOfficeLocation } from "@/lib/locationUtils";
 import { DateRangeFilter } from "@/components/reports/DateRangeFilter";
-import { filterByDateRange, generateReportPDF, getDateRangeText } from "@/lib/reporting";
-import { getOfficeHolderId, isStoreHolder } from "@/lib/assetItemHolder";
+import { getDateRangeText } from "@/lib/reporting";
 import { usePageSearch } from "@/contexts/PageSearchContext";
 import { ViewModeToggle } from "@/components/shared/ViewModeToggle";
 import { useViewMode } from "@/hooks/useViewMode";
 import { DataTable } from "@/components/shared/DataTable";
 import { useAuth } from "@/contexts/AuthContext";
+import type { ReportExportType, ReportId } from "@/pages/reports/reportGeneration";
 
 interface ReportCard {
-  id: string;
+  id: ReportId;
   title: string;
   description: string;
-  icon: React.ElementType;
+  icon: ElementType;
   category: string;
 }
 
@@ -111,701 +102,53 @@ const categoryColors: Record<string, string> = {
   Inventory: "bg-accent text-accent-foreground",
 };
 
-const EMPLOYEE_REPORT_IDS = new Set(["assignment-summary", "employee-assets"]);
+const EMPLOYEE_REPORT_IDS = new Set<ReportId>(["assignment-summary", "employee-assets"]);
 
 export default function Reports() {
   const { role, user } = useAuth();
+  const isEmployeeRole = role === "employee";
   const [generatingReport, setGeneratingReport] = useState<string | null>(null);
   const [startDate, setStartDate] = useState<Date | undefined>(undefined);
   const [endDate, setEndDate] = useState<Date | undefined>(undefined);
   const { mode: viewMode, setMode: setViewMode } = useViewMode("reports");
   const pageSearch = usePageSearch();
   const searchTerm = (pageSearch?.term || "").trim().toLowerCase();
-  const isEmployeeRole = role === "employee";
-  
-  const { data: assets } = useAssets();
-  const { data: assetItems } = useAssetItems();
-  const { data: locations } = useLocations();
-  const { data: categories } = useCategories({ assetType: "ASSET" });
-  const { data: employees } = useEmployees();
-  const { data: assignments } = useAssignments();
-  const { data: maintenance } = useMaintenance();
-  const { data: directorates } = useDirectorates();
-  const currentEmployee = useMemo(() => {
-    const list = employees || [];
-    const byUserId = list.find((employee) => employee.user_id === user?.id);
-    const byEmail = list.find(
-      (employee) => employee.email?.toLowerCase() === (user?.email || "").toLowerCase()
-    );
-    return byUserId || byEmail || null;
-  }, [employees, user?.id, user?.email]);
 
-  const categoryById = useMemo(
-    () => new Map((categories || []).map((category) => [category.id, category])),
-    [categories]
-  );
-  const assetById = useMemo(
-    () => new Map((assets || []).map((asset) => [asset.id, asset])),
-    [assets]
-  );
-  const assetItemsById = useMemo(
-    () => new Map((assetItems || []).map((item) => [item.id, item])),
-    [assetItems]
-  );
-  const assetItemsByAssetId = useMemo(() => {
-    const map = new Map<string, number>();
-    (assetItems || []).forEach((item) => {
-      map.set(item.asset_id, (map.get(item.asset_id) || 0) + 1);
-    });
-    return map;
-  }, [assetItems]);
-  const assetItemsByLocationId = useMemo(() => {
-    const map = new Map<string, any[]>();
-    (assetItems || []).forEach((item) => {
-      const officeId = getOfficeHolderId(item);
-      if (!officeId) return;
-      const existing = map.get(officeId) || [];
-      map.set(officeId, [...existing, item]);
-    });
-    return map;
-  }, [assetItems]);
-  const locationById = useMemo(
-    () => new Map((locations || []).map((location) => [location.id, location])),
-    [locations]
-  );
-  const employeeById = useMemo(
-    () => new Map((employees || []).map((employee) => [employee.id, employee])),
-    [employees]
-  );
-  const directorateById = useMemo(
-    () => new Map((directorates || []).map((directorate) => [directorate.id, directorate])),
-    [directorates]
-  );
-
-  const getDirectorateName = useCallback((employeeId?: string) => {
-    const employee = employeeId ? employeeById.get(employeeId) : undefined;
-    if (!employee) return "N/A";
-    const location = locationById.get(employee.location_id);
-    if (!isHeadOfficeLocation(location)) return "N/A";
-    const directorate = employee.directorate_id ? directorateById.get(employee.directorate_id) : undefined;
-    return directorate?.name || "N/A";
-  }, [directorateById, employeeById, locationById]);
-
-  const handleGenerateReport = async (reportId: string, reportTitle: string, exportType: "csv" | "pdf") => {
+  const handleGenerateReport = async (
+    reportId: ReportId,
+    reportTitle: string,
+    exportType: ReportExportType
+  ) => {
     if (isEmployeeRole && !EMPLOYEE_REPORT_IDS.has(reportId)) {
       toast.error("You can only generate your own assignment reports.");
       return;
     }
 
     setGeneratingReport(`${reportId}-${exportType}`);
-    
-    try {
-      await new Promise(resolve => setTimeout(resolve, 500));
 
-      switch (reportId) {
-        case "asset-summary":
-          await generateAssetSummaryReport(exportType);
-          break;
-        case "asset-items-inventory":
-          await generateAssetItemsInventoryReport(exportType);
-          break;
-        case "assignment-summary":
-          await generateAssignmentSummaryReport(exportType);
-          break;
-        case "status-report":
-          await generateStatusDistributionReport(exportType);
-          break;
-        case "maintenance-report":
-          await generateMaintenanceReport(exportType);
-          break;
-        case "location-inventory":
-          await generateLocationInventoryReport(exportType);
-          break;
-        case "financial-summary":
-          await generateFinancialSummaryReport(exportType);
-          break;
-        case "employee-assets":
-          await generateEmployeeAssetsReport(exportType);
-          break;
-        default:
-          toast.error("Report not available");
+    try {
+      const { generateRequestedReport } = await import("@/pages/reports/reportGeneration");
+      const result = await generateRequestedReport({
+        reportId,
+        exportType,
+        startDate,
+        endDate,
+        isEmployeeRole,
+        userId: user?.id || null,
+        userEmail: user?.email || null,
+      });
+
+      if (result.notice) {
+        toast.info(result.notice);
       }
-      
+
       toast.success(`${reportTitle} generated!`, {
         description: `Your ${exportType.toUpperCase()} report has been downloaded.`,
       });
-    } catch {
-      toast.error("Failed to generate report");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to generate report.");
     } finally {
       setGeneratingReport(null);
-    }
-  };
-
-  const generateAssetSummaryReport = async (exportType: "csv" | "pdf") => {
-    const filteredAssets = filterByDateRange(assets, "acquisition_date", startDate, endDate);
-    if (!filteredAssets || filteredAssets.length === 0) {
-      toast.error("No asset data available for selected date range");
-      return;
-    }
-
-    const reportData = filteredAssets.map(asset => {
-      const category = categoryById.get(asset.category_id || "");
-      const itemCount = assetItemsByAssetId.get(asset.id) || 0;
-      
-      return {
-        name: asset.name,
-        description: asset.description || "",
-        category: category?.name || "Uncategorized",
-        quantity: asset.quantity || 0,
-        itemCount,
-        unitPrice: asset.unit_price || 0,
-        totalValue: (asset.unit_price || 0) * (asset.quantity || 0),
-        acquisitionDate: asset.acquisition_date,
-        status: asset.is_active ? "Active" : "Inactive",
-      };
-    });
-
-    const filename = `asset-summary-${new Date().toISOString().split('T')[0]}`;
-
-    if (exportType === "csv") {
-      exportToCSV(reportData, [
-        { key: "name", header: "Asset Name" },
-        { key: "description", header: "Description" },
-        { key: "category", header: "Category" },
-        { key: "quantity", header: "Quantity" },
-        { key: "itemCount", header: "Items Registered" },
-        { key: "unitPrice", header: "Unit Price", formatter: (v) => formatCurrencyForExport(v as number) },
-        { key: "totalValue", header: "Total Value", formatter: (v) => formatCurrencyForExport(v as number) },
-        { key: "acquisitionDate", header: "Acquisition Date", formatter: (v) => formatDateForExport(v as string) },
-        { key: "status", header: "Status" },
-      ], filename);
-    } else {
-      await generateReportPDF({
-        title: "Asset Summary Report",
-        headers: ["Name", "Category", "Qty", "Items", "Unit Price", "Total Value", "Acq. Date", "Status"],
-        data: reportData.map(r => [
-          r.name,
-          r.category,
-          r.quantity,
-          r.itemCount,
-          formatCurrencyForExport(r.unitPrice),
-          formatCurrencyForExport(r.totalValue),
-          formatDateForExport(r.acquisitionDate),
-          r.status,
-        ]),
-        filename,
-        dateRangeText: getDateRangeText(startDate, endDate),
-      });
-    }
-  };
-
-  const generateAssetItemsInventoryReport = async (exportType: "csv" | "pdf") => {
-    const filteredItems = filterByDateRange(assetItems, "created_at", startDate, endDate);
-    if (!filteredItems || filteredItems.length === 0) {
-      toast.error("No asset items data available for selected date range");
-      return;
-    }
-
-    const reportData = filteredItems.map(item => {
-      const asset = assetById.get(item.asset_id);
-      const officeId = getOfficeHolderId(item);
-      const location = officeId ? locationById.get(officeId) : null;
-      
-      return {
-        tag: item.tag || "N/A",
-        assetName: asset?.name || "Unknown",
-        serialNumber: item.serial_number || "N/A",
-        location: isStoreHolder(item) ? "Head Office Store" : location?.name || "Unassigned",
-        status: item.item_status || "Unknown",
-        condition: item.item_condition || "Unknown",
-        assignmentStatus: item.assignment_status || "Unknown",
-        source: item.item_source || "Unknown",
-        purchaseDate: item.purchase_date,
-        warrantyExpiry: item.warranty_expiry,
-      };
-    });
-
-    const filename = `asset-items-inventory-${new Date().toISOString().split('T')[0]}`;
-
-    if (exportType === "csv") {
-      exportToCSV(reportData, [
-        { key: "tag", header: "Asset Tag" },
-        { key: "assetName", header: "Asset Name" },
-        { key: "serialNumber", header: "Serial Number" },
-        { key: "location", header: "Location" },
-        { key: "status", header: "Status" },
-        { key: "condition", header: "Condition" },
-        { key: "assignmentStatus", header: "Assignment Status" },
-        { key: "source", header: "Source" },
-        { key: "purchaseDate", header: "Purchase Date", formatter: (v) => formatDateForExport(v as string) },
-        { key: "warrantyExpiry", header: "Warranty Expiry", formatter: (v) => formatDateForExport(v as string) },
-      ], filename);
-    } else {
-      await generateReportPDF({
-        title: "Asset Items Inventory Report",
-        headers: ["Tag", "Asset", "Serial #", "Location", "Status", "Condition", "Assignment"],
-        data: reportData.map(r => [
-          r.tag,
-          r.assetName,
-          r.serialNumber,
-          r.location,
-          r.status,
-          r.condition,
-          r.assignmentStatus,
-        ]),
-        filename,
-        dateRangeText: getDateRangeText(startDate, endDate),
-      });
-    }
-  };
-
-  const generateAssignmentSummaryReport = async (exportType: "csv" | "pdf") => {
-    const filteredAssignments = filterByDateRange(assignments, "assigned_date", startDate, endDate) || [];
-    const scopedAssignments = isEmployeeRole
-      ? filteredAssignments.filter((assignment) => assignment.employee_id === currentEmployee?.id)
-      : filteredAssignments;
-
-    if (scopedAssignments.length === 0) {
-      toast.error("No assignment data available for selected date range");
-      return;
-    }
-
-    const reportData = scopedAssignments.map(assignment => {
-      const employee = employeeById.get(assignment.employee_id || "");
-      const assetItem = assetItemsById.get(assignment.asset_item_id || "");
-      const asset = assetItem ? assetById.get(assetItem.asset_id) : null;
-      
-      return {
-        employeeName: employee ? `${employee.first_name} ${employee.last_name}` : "Unknown",
-        employeeEmail: employee?.email || "",
-        directorate: getDirectorateName(employee?.id),
-        assetTag: assetItem?.tag || "N/A",
-        assetName: asset?.name || "Unknown",
-        assignedDate: assignment.assigned_date,
-        expectedReturnDate: assignment.expected_return_date,
-        returnedDate: assignment.returned_date,
-        status: assignment.is_active ? "Active" : "Returned",
-        notes: assignment.notes || "",
-      };
-    });
-
-    const filename = `assignment-summary-${new Date().toISOString().split('T')[0]}`;
-
-    if (exportType === "csv") {
-      exportToCSV(reportData, [
-        { key: "employeeName", header: "Employee Name" },
-        { key: "employeeEmail", header: "Email" },
-        { key: "directorate", header: "Directorate" },
-        { key: "assetTag", header: "Asset Tag" },
-        { key: "assetName", header: "Asset Name" },
-        { key: "assignedDate", header: "Assigned Date", formatter: (v) => formatDateForExport(v as string) },
-        { key: "expectedReturnDate", header: "Expected Return", formatter: (v) => formatDateForExport(v as string) },
-        { key: "returnedDate", header: "Returned Date", formatter: (v) => formatDateForExport(v as string) },
-        { key: "status", header: "Status" },
-        { key: "notes", header: "Notes" },
-      ], filename);
-    } else {
-      await generateReportPDF({
-        title: "Assignment Summary Report",
-        headers: ["Employee", "Directorate", "Asset Tag", "Asset", "Assigned", "Expected Return", "Status"],
-        data: reportData.map(r => [
-          r.employeeName,
-          r.directorate,
-          r.assetTag,
-          r.assetName,
-          formatDateForExport(r.assignedDate),
-          formatDateForExport(r.expectedReturnDate),
-          r.status,
-        ]),
-        filename,
-        dateRangeText: getDateRangeText(startDate, endDate),
-      });
-    }
-  };
-
-  const generateStatusDistributionReport = async (exportType: "csv" | "pdf") => {
-    const filteredItems = filterByDateRange(assetItems, "created_at", startDate, endDate);
-    if (!filteredItems || filteredItems.length === 0) {
-      toast.error("No asset items data available for selected date range");
-      return;
-    }
-
-    const statusCounts: Record<string, number> = {};
-    const conditionCounts: Record<string, number> = {};
-    const assignmentCounts: Record<string, number> = {};
-
-    filteredItems.forEach(item => {
-      const status = item.item_status || "Unknown";
-      const condition = item.item_condition || "Unknown";
-      const assignment = item.assignment_status || "Unknown";
-
-      statusCounts[status] = (statusCounts[status] || 0) + 1;
-      conditionCounts[condition] = (conditionCounts[condition] || 0) + 1;
-      assignmentCounts[assignment] = (assignmentCounts[assignment] || 0) + 1;
-    });
-
-    const filename = `status-distribution-${new Date().toISOString().split('T')[0]}`;
-
-    if (exportType === "csv") {
-      const reportData = [
-        { category: "--- STATUS DISTRIBUTION ---", type: "", count: "", percentage: "" },
-        ...Object.entries(statusCounts).map(([type, count]) => ({
-          category: "Status",
-          type,
-          count: count.toString(),
-          percentage: ((count / filteredItems.length) * 100).toFixed(1) + "%",
-        })),
-        { category: "--- CONDITION DISTRIBUTION ---", type: "", count: "", percentage: "" },
-        ...Object.entries(conditionCounts).map(([type, count]) => ({
-          category: "Condition",
-          type,
-          count: count.toString(),
-          percentage: ((count / filteredItems.length) * 100).toFixed(1) + "%",
-        })),
-        { category: "--- ASSIGNMENT DISTRIBUTION ---", type: "", count: "", percentage: "" },
-        ...Object.entries(assignmentCounts).map(([type, count]) => ({
-          category: "Assignment",
-          type,
-          count: count.toString(),
-          percentage: ((count / filteredItems.length) * 100).toFixed(1) + "%",
-        })),
-      ];
-
-      exportToCSV(reportData, [
-        { key: "category", header: "Category" },
-        { key: "type", header: "Type" },
-        { key: "count", header: "Count" },
-        { key: "percentage", header: "Percentage" },
-      ], filename);
-    } else {
-      const pdfData: (string | number)[][] = [];
-      
-      pdfData.push(["STATUS DISTRIBUTION", "", "", ""]);
-      Object.entries(statusCounts).forEach(([type, count]) => {
-        pdfData.push(["Status", type, count, ((count / filteredItems.length) * 100).toFixed(1) + "%"]);
-      });
-      
-      pdfData.push(["CONDITION DISTRIBUTION", "", "", ""]);
-      Object.entries(conditionCounts).forEach(([type, count]) => {
-        pdfData.push(["Condition", type, count, ((count / filteredItems.length) * 100).toFixed(1) + "%"]);
-      });
-      
-      pdfData.push(["ASSIGNMENT DISTRIBUTION", "", "", ""]);
-      Object.entries(assignmentCounts).forEach(([type, count]) => {
-        pdfData.push(["Assignment", type, count, ((count / filteredItems.length) * 100).toFixed(1) + "%"]);
-      });
-
-      await generateReportPDF({
-        title: "Status Distribution Report",
-        headers: ["Category", "Type", "Count", "Percentage"],
-        data: pdfData,
-        filename,
-        dateRangeText: getDateRangeText(startDate, endDate),
-      });
-    }
-  };
-
-  const generateMaintenanceReport = async (exportType: "csv" | "pdf") => {
-    const filteredMaintenance = filterByDateRange(maintenance, "scheduled_date", startDate, endDate);
-    if (!filteredMaintenance || filteredMaintenance.length === 0) {
-      toast.error("No maintenance data available for selected date range");
-      return;
-    }
-
-    const reportData = filteredMaintenance.map(record => {
-      const assetItem = assetItemsById.get(record.asset_item_id || "");
-      const asset = assetItem ? assetById.get(assetItem.asset_id) : null;
-      
-      return {
-        assetTag: assetItem?.tag || "N/A",
-        assetName: asset?.name || "Unknown",
-        maintenanceType: record.maintenance_type || "N/A",
-        status: record.maintenance_status || "N/A",
-        description: record.description || "",
-        scheduledDate: record.scheduled_date,
-        completedDate: record.completed_date,
-        performedBy: record.performed_by || "",
-        cost: record.cost || 0,
-        notes: record.notes || "",
-      };
-    });
-
-    const totalCost = reportData.reduce((sum, r) => sum + (r.cost || 0), 0);
-    const filename = `maintenance-report-${new Date().toISOString().split('T')[0]}`;
-
-    if (exportType === "csv") {
-      exportToCSV(reportData, [
-        { key: "assetTag", header: "Asset Tag" },
-        { key: "assetName", header: "Asset Name" },
-        { key: "maintenanceType", header: "Type" },
-        { key: "status", header: "Status" },
-        { key: "description", header: "Description" },
-        { key: "scheduledDate", header: "Scheduled Date", formatter: (v) => formatDateForExport(v as string) },
-        { key: "completedDate", header: "Completed Date", formatter: (v) => formatDateForExport(v as string) },
-        { key: "performedBy", header: "Performed By" },
-        { key: "cost", header: "Cost", formatter: (v) => formatCurrencyForExport(v as number) },
-        { key: "notes", header: "Notes" },
-      ], filename);
-    } else {
-      await generateReportPDF({
-        title: "Maintenance Report",
-        headers: ["Tag", "Asset", "Type", "Status", "Scheduled", "Completed", "Cost"],
-        data: reportData.map(r => [
-          r.assetTag,
-          r.assetName,
-          r.maintenanceType,
-          r.status,
-          formatDateForExport(r.scheduledDate),
-          formatDateForExport(r.completedDate),
-          formatCurrencyForExport(r.cost),
-        ]),
-        filename,
-        dateRangeText: getDateRangeText(startDate, endDate),
-      });
-    }
-
-    toast.info(`Total maintenance cost: ${formatCurrencyForExport(totalCost)}`);
-  };
-
-  const generateLocationInventoryReport = async (exportType: "csv" | "pdf") => {
-    if (!locations || locations.length === 0) {
-      toast.error("No location data available");
-      return;
-    }
-
-    const filteredItems = filterByDateRange(assetItems, "created_at", startDate, endDate);
-    const filteredItemIds = filteredItems ? new Set(filteredItems.map((item) => item.id)) : null;
-    const storeItems = (assetItems || []).filter((item) => {
-      if (!isStoreHolder(item)) return false;
-      if (!filteredItemIds) return true;
-      return filteredItemIds.has(item.id);
-    });
-
-    const officeRows = locations.map(location => {
-      const itemsAtLocation = (assetItemsByLocationId.get(location.id) || []).filter((item) => {
-        if (!filteredItemIds) return true;
-        return filteredItemIds.has(item.id);
-      });
-      const totalValue = itemsAtLocation.reduce((sum, item) => {
-        const asset = assetById.get(item.asset_id);
-        return sum + (asset?.unit_price || 0);
-      }, 0);
-      
-      const statusBreakdown = itemsAtLocation.reduce((acc, item) => {
-        const status = item.item_status || "Unknown";
-        acc[status] = (acc[status] || 0) + 1;
-        return acc;
-      }, {} as Record<string, number>);
-
-      return {
-        locationName: location.name,
-        address: location.address || "",
-        totalItems: itemsAtLocation.length,
-        totalValue,
-        available: statusBreakdown["Available"] || 0,
-        assigned: statusBreakdown["Assigned"] || 0,
-        maintenance: statusBreakdown["Maintenance"] || 0,
-        damaged: statusBreakdown["Damaged"] || 0,
-        retired: statusBreakdown["Retired"] || 0,
-      };
-    });
-
-    const storeValue = storeItems.reduce((sum, item) => {
-      const asset = assetById.get(item.asset_id);
-      return sum + (asset?.unit_price || 0);
-    }, 0);
-    const storeStatusBreakdown = storeItems.reduce((acc, item) => {
-      const status = item.item_status || "Unknown";
-      acc[status] = (acc[status] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>);
-
-    const reportData = [
-      ...officeRows,
-      {
-        locationName: "Head Office Store",
-        address: "System Store",
-        totalItems: storeItems.length,
-        totalValue: storeValue,
-        available: storeStatusBreakdown["Available"] || 0,
-        assigned: storeStatusBreakdown["Assigned"] || 0,
-        maintenance: storeStatusBreakdown["Maintenance"] || 0,
-        damaged: storeStatusBreakdown["Damaged"] || 0,
-        retired: storeStatusBreakdown["Retired"] || 0,
-      },
-    ];
-
-    const filename = `location-inventory-${new Date().toISOString().split('T')[0]}`;
-
-    if (exportType === "csv") {
-      exportToCSV(reportData, [
-        { key: "locationName", header: "Location" },
-        { key: "address", header: "Address" },
-        { key: "totalItems", header: "Total Items" },
-        { key: "totalValue", header: "Total Value", formatter: (v) => formatCurrencyForExport(v as number) },
-        { key: "available", header: "Available" },
-        { key: "assigned", header: "Assigned" },
-        { key: "maintenance", header: "In Maintenance" },
-        { key: "damaged", header: "Damaged" },
-        { key: "retired", header: "Retired" },
-      ], filename);
-    } else {
-      await generateReportPDF({
-        title: "Location Inventory Report",
-        headers: ["Location", "Items", "Value", "Available", "Assigned", "Maintenance", "Damaged"],
-        data: reportData.map(r => [
-          r.locationName,
-          r.totalItems,
-          formatCurrencyForExport(r.totalValue),
-          r.available,
-          r.assigned,
-          r.maintenance,
-          r.damaged,
-        ]),
-        filename,
-        dateRangeText: getDateRangeText(startDate, endDate),
-      });
-    }
-  };
-
-  const generateFinancialSummaryReport = async (exportType: "csv" | "pdf") => {
-    const filteredAssets = filterByDateRange(assets, "acquisition_date", startDate, endDate);
-    if (!filteredAssets || filteredAssets.length === 0) {
-      toast.error("No asset data available for selected date range");
-      return;
-    }
-
-    const categoryTotals: Record<string, { count: number; value: number }> = {};
-    
-    filteredAssets.forEach(asset => {
-      const category = categoryById.get(asset.category_id || "");
-      const categoryName = category?.name || "Uncategorized";
-      const value = (asset.unit_price || 0) * (asset.quantity || 0);
-      
-      if (!categoryTotals[categoryName]) {
-        categoryTotals[categoryName] = { count: 0, value: 0 };
-      }
-      categoryTotals[categoryName].count += asset.quantity || 0;
-      categoryTotals[categoryName].value += value;
-    });
-
-    const reportData = Object.entries(categoryTotals).map(([category, data]) => ({
-      category,
-      assetCount: data.count,
-      totalValue: data.value,
-    }));
-
-    const grandTotal = reportData.reduce((sum, r) => sum + r.totalValue, 0);
-    const totalCount = reportData.reduce((sum, r) => sum + r.assetCount, 0);
-
-    const filename = `financial-summary-${new Date().toISOString().split('T')[0]}`;
-
-    if (exportType === "csv") {
-      reportData.push({
-        category: "GRAND TOTAL",
-        assetCount: totalCount,
-        totalValue: grandTotal,
-      });
-
-      exportToCSV(reportData, [
-        { key: "category", header: "Category" },
-        { key: "assetCount", header: "Asset Count" },
-        { key: "totalValue", header: "Total Value", formatter: (v) => formatCurrencyForExport(v as number) },
-      ], filename);
-    } else {
-      const pdfData = reportData.map(r => [
-        r.category,
-        r.assetCount,
-        formatCurrencyForExport(r.totalValue),
-      ]);
-      pdfData.push(["GRAND TOTAL", totalCount, formatCurrencyForExport(grandTotal)]);
-
-      await generateReportPDF({
-        title: "Financial Summary Report",
-        headers: ["Category", "Asset Count", "Total Value"],
-        data: pdfData,
-        filename,
-        dateRangeText: getDateRangeText(startDate, endDate),
-      });
-    }
-
-    toast.info(`Total asset value: ${formatCurrencyForExport(grandTotal)}`);
-  };
-
-  const generateEmployeeAssetsReport = async (exportType: "csv" | "pdf") => {
-    if (!employees || employees.length === 0) {
-      toast.error("No employee data available");
-      return;
-    }
-
-    const filteredAssignments = filterByDateRange(assignments, "assigned_date", startDate, endDate);
-    const activeAssignmentsByEmployeeId = (filteredAssignments || []).reduce((acc, assignment) => {
-      if (!assignment.is_active || !assignment.employee_id) return acc;
-      const existing = acc.get(assignment.employee_id) || [];
-      acc.set(assignment.employee_id, [...existing, assignment]);
-      return acc;
-    }, new Map<string, any[]>());
-
-    const reportData: Array<{
-      employeeName: string;
-      email: string;
-      directorate: string;
-      jobTitle: string;
-      activeAssignments: number;
-      assetTags: string;
-    }> = [];
-
-    const scopedEmployees = isEmployeeRole ? (currentEmployee ? [currentEmployee] : []) : employees;
-    if (scopedEmployees.length === 0) {
-      toast.error("Your account is not linked to an employee profile.");
-      return;
-    }
-
-    scopedEmployees.forEach(employee => {
-      const directorateName = getDirectorateName(employee.id);
-      const employeeAssignments = activeAssignmentsByEmployeeId.get(employee.id) || [];
-      
-      const assetTags = employeeAssignments.map(a => {
-        const item = assetItemsById.get(a.asset_item_id || "");
-        return item?.tag || "N/A";
-      }).join("; ");
-
-      reportData.push({
-        employeeName: `${employee.first_name} ${employee.last_name}`,
-        email: employee.email,
-        directorate: directorateName,
-        jobTitle: employee.job_title || "",
-        activeAssignments: employeeAssignments.length,
-        assetTags: assetTags || "None",
-      });
-    });
-
-    const filename = `employee-assets-${new Date().toISOString().split('T')[0]}`;
-
-    if (exportType === "csv") {
-      exportToCSV(reportData, [
-        { key: "employeeName", header: "Employee Name" },
-        { key: "email", header: "Email" },
-        { key: "directorate", header: "Directorate" },
-        { key: "jobTitle", header: "Job Title" },
-        { key: "activeAssignments", header: "Active Assignments" },
-        { key: "assetTags", header: "Assigned Asset Tags" },
-      ], filename);
-    } else {
-      await generateReportPDF({
-        title: "Employee Assets Report",
-        headers: ["Employee", "Email", "Directorate", "Job Title", "Assignments", "Asset Tags"],
-        data: reportData.map(r => [
-          r.employeeName,
-          r.email,
-          r.directorate,
-          r.jobTitle,
-          r.activeAssignments,
-          r.assetTags,
-        ]),
-        filename,
-        dateRangeText: getDateRangeText(startDate, endDate),
-      });
     }
   };
 
@@ -813,17 +156,18 @@ export default function Reports() {
     setStartDate(undefined);
     setEndDate(undefined);
   };
+
   const filteredReports = useMemo(
     () =>
       reports
         .filter((report) => (isEmployeeRole ? EMPLOYEE_REPORT_IDS.has(report.id) : true))
         .filter((report) => {
-        if (!searchTerm) return true;
-        return [report.title, report.description, report.category]
-          .join(" ")
-          .toLowerCase()
-          .includes(searchTerm);
-      }),
+          if (!searchTerm) return true;
+          return [report.title, report.description, report.category]
+            .join(" ")
+            .toLowerCase()
+            .includes(searchTerm);
+        }),
     [isEmployeeRole, searchTerm]
   );
 
@@ -844,6 +188,7 @@ export default function Reports() {
   const actions = (row: ReportCard) => {
     const isGeneratingCSV = generatingReport === `${row.id}-csv`;
     const isGeneratingPDF = generatingReport === `${row.id}-pdf`;
+
     return (
       <div className="flex flex-wrap gap-2">
         <Button
@@ -901,17 +246,19 @@ export default function Reports() {
         />
       ) : (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {filteredReports.map((report) => {
               const Icon = report.icon;
               const isGeneratingCSV = generatingReport === `${report.id}-csv`;
               const isGeneratingPDF = generatingReport === `${report.id}-pdf`;
 
               return (
-                <Card key={report.id} className="group hover:shadow-md transition-all">
+                <Card key={report.id} className="group transition-all hover:shadow-md">
                   <CardHeader className="pb-3">
                     <div className="flex items-start justify-between">
-                      <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${categoryColors[report.category]}`}>
+                      <div
+                        className={`flex h-10 w-10 items-center justify-center rounded-lg ${categoryColors[report.category]}`}
+                      >
                         <Icon className="h-5 w-5" />
                       </div>
                       <span className="text-xs font-medium text-muted-foreground">
@@ -920,10 +267,8 @@ export default function Reports() {
                     </div>
                   </CardHeader>
                   <CardContent>
-                    <h3 className="font-semibold mb-1">{report.title}</h3>
-                    <p className="text-sm text-muted-foreground mb-4">
-                      {report.description}
-                    </p>
+                    <h3 className="mb-1 font-semibold">{report.title}</h3>
+                    <p className="mb-4 text-sm text-muted-foreground">{report.description}</p>
                     <div className="flex flex-wrap gap-2">
                       <Button
                         variant="outline"
@@ -957,6 +302,7 @@ export default function Reports() {
               );
             })}
           </div>
+
           {filteredReports.length === 0 && (
             <Card>
               <CardContent className="py-8 text-sm text-muted-foreground">

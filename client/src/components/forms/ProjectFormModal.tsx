@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -6,16 +6,15 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Loader2 } from "lucide-react";
 import { Project } from "@/types";
+import { FormDialogActions } from "@/components/forms/FormDialogActions";
+import { useDialogFormReset } from "@/components/forms/useDialogFormReset";
 
 const projectSchema = z.object({
   name: z.string().min(1, "Name is required").max(100),
@@ -80,25 +79,25 @@ export function ProjectFormModal({ open, onOpenChange, project, onSubmit }: Proj
     },
   });
 
-  useEffect(() => {
+  const resetValues = useMemo(() => {
     if (project) {
-      form.reset({
+      return {
         name: project.name,
         code: project.code || "",
         description: project.description || "",
-        startDate: project.start_date ? new Date(project.start_date).toISOString().split('T')[0] : "",
-        endDate: project.end_date ? new Date(project.end_date).toISOString().split('T')[0] : "",
-      });
-    } else {
-      form.reset({
-        name: "",
-        code: "",
-        description: "",
-        startDate: new Date().toISOString().split('T')[0],
-        endDate: defaultEndDate,
-      });
+        startDate: project.start_date ? new Date(project.start_date).toISOString().split("T")[0] : "",
+        endDate: project.end_date ? new Date(project.end_date).toISOString().split("T")[0] : "",
+      };
     }
-  }, [project, form, defaultEndDate]);
+    return {
+      name: "",
+      code: "",
+      description: "",
+      startDate: new Date().toISOString().split("T")[0],
+      endDate: defaultEndDate,
+    };
+  }, [project, defaultEndDate]);
+  useDialogFormReset({ open, form, values: resetValues });
 
   const handleSubmit = async (data: ProjectFormData) => {
     setIsSubmitting(true);
@@ -157,15 +156,11 @@ export function ProjectFormModal({ open, onOpenChange, project, onSubmit }: Proj
               )}
             </div>
           </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={isSubmitting}>
-              {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {isEditing ? "Update" : "Create"}
-            </Button>
-          </DialogFooter>
+          <FormDialogActions
+            isSubmitting={isSubmitting}
+            onCancel={() => onOpenChange(false)}
+            submitLabel={isEditing ? "Update" : "Create"}
+          />
         </form>
       </DialogContent>
     </Dialog>

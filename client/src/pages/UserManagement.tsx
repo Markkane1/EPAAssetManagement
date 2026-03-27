@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
@@ -68,18 +67,21 @@ import {
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { AppRole } from "@/services/authService";
-import { userService, UserWithDetails } from "@/services/userService";
-import { locationService } from "@/services/locationService";
-import { userPermissionService } from "@/services/userPermissionService";
+import { UserWithDetails } from "@/services/userService";
+import {
+  useCreateUser,
+  useDeleteUser,
+  usePagedUsers,
+  useResetUserPassword,
+  useUpdateUserLocation,
+  useUpdateUserRole,
+  useUserRolePermissionsCatalog,
+} from "@/hooks/useUsers";
+import { useLocations } from "@/hooks/useLocations";
 import { usePageSearch } from "@/contexts/PageSearchContext";
 import { cn } from "@/lib/utils";
 import { exportToCSV } from "@/lib/exportUtils";
 import { SearchableSelect } from "@/components/shared/SearchableSelect";
-
-interface Location {
-  id: string;
-  name: string;
-}
 
 const CORE_ROLE_OPTIONS: Array<{ id: string; label: string }> = [
   { id: "org_admin", label: "Org Admin" },
@@ -128,7 +130,6 @@ function parseRoleList(text: string) {
 }
 
 export default function UserManagement() {
-  const queryClient = useQueryClient();
   const pageSearch = usePageSearch();
   const searchQuery = pageSearch?.term || "";
   const [page, setPage] = useState(1);
@@ -157,112 +158,22 @@ export default function UserManagement() {
 
   // Fetch all users with their profiles and roles
   const { data: users = { items: [], page: 1, limit: 50, total: 0, hasMore: false }, isLoading: usersLoading } =
-    useQuery({
-    queryKey: ["users-management", page, pageSize, searchQuery],
-    queryFn: () => userService.getPaged({ page, limit: pageSize, search: searchQuery || undefined }),
-    });
+    usePagedUsers({ page, limit: pageSize, search: searchQuery || undefined });
 
   useEffect(() => {
     setPage(1);
   }, [searchQuery, pageSize]);
 
   // Fetch all locations
-  const { data: locations = [] } = useQuery({
-    queryKey: ["locations-management"],
-    queryFn: () => locationService.getAll() as Promise<Location[]>,
-  });
+  const { data: locations = [] } = useLocations();
 
-  const { data: rolePermissionsCatalog } = useQuery({
-    queryKey: ["settings", "page-permissions", "catalog"],
-    queryFn: () => userPermissionService.getRolePermissions(),
-  });
+  const { data: rolePermissionsCatalog } = useUserRolePermissionsCatalog();
 
-  // Update user role mutation
-  const updateRoleMutation = useMutation({
-    mutationFn: ({ userId, payload }: { userId: string; payload: { role?: AppRole; roles?: AppRole[]; activeRole?: AppRole } }) =>
-      userService.updateRole(userId, payload),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["users-management"] });
-      toast.success("User role updated successfully");
-    },
-    onError: (error) => {
-      toast.error("Failed to update role: " + error.message);
-    },
-  });
-
-  // Update user location mutation
-  const updateLocationMutation = useMutation({
-    mutationFn: ({ userId, locationId }: { userId: string; locationId: string | null }) =>
-      userService.updateLocation(userId, locationId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["users-management"] });
-      toast.success("User location updated successfully");
-    },
-    onError: (error) => {
-      toast.error("Failed to update location: " + error.message);
-    },
-  });
-
-  // Create user mutation
-  const createUserMutation = useMutation({
-    mutationFn: (data: { 
-      email: string; 
-      password: string; 
-      firstName?: string; 
-      lastName?: string;
-      role?: string;
-      roles?: string[];
-      activeRole?: string;
-      locationId?: string;
-    }) =>
-      userService.create({
-        email: data.email,
-        password: data.password,
-        firstName: data.firstName,
-        lastName: data.lastName,
-        role: data.role as AppRole,
-        roles: (data.roles || []) as AppRole[],
-        activeRole: data.activeRole as AppRole,
-        locationId: data.locationId,
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["users-management"] });
-      toast.success("User created successfully");
-      setIsCreateDialogOpen(false);
-      resetNewUserForm();
-    },
-    onError: (error) => {
-      toast.error("Failed to create user: " + error.message);
-    },
-  });
-
-  // Delete user mutation
-  const deleteUserMutation = useMutation({
-    mutationFn: (userId: string) => userService.delete(userId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["users-management"] });
-      toast.success("User deleted successfully");
-      setDeleteUserId(null);
-    },
-    onError: (error) => {
-      toast.error("Failed to delete user: " + error.message);
-    },
-  });
-
-  // Reset password mutation
-  const resetPasswordMutation = useMutation({
-    mutationFn: ({ userId, newPassword }: { userId: string; newPassword: string }) =>
-      userService.resetPassword(userId, newPassword),
-    onSuccess: () => {
-      toast.success("Password reset successfully");
-      setResetPasswordUser(null);
-      setNewPassword("");
-      setConfirmPassword("");
-    },
-    onError: (error) => {
-      toast.error("Failed to reset password: " + error.message);
-    },
-  });
+  const updateRoleMutation = useUpdateUserRole();
+  const updateLocationMutation = useUpdateUserLocation();
+  const createUserMutation = useCreateUser();
+  const deleteUserMutation = useDeleteUser();
+  const resetPasswordMutation = useResetUserPassword();
 
   const resetNewUserForm = () => {
     setNewUserEmail("");
@@ -303,6 +214,8 @@ export default function UserManagement() {
       activeRole: newUserRole as AppRole,
       locationId: newUserLocation,
     });
+    setIsCreateDialogOpen(false);
+    resetNewUserForm();
   };
 
   const handleDeleteUser = (userId: string) => {
@@ -311,7 +224,9 @@ export default function UserManagement() {
 
   const confirmDeleteUser = () => {
     if (deleteUserId) {
-      deleteUserMutation.mutate(deleteUserId);
+      deleteUserMutation.mutate(deleteUserId, {
+        onSuccess: () => setDeleteUserId(null),
+      });
     }
   };
 
@@ -975,10 +890,19 @@ export default function UserManagement() {
             <Button 
               onClick={() => {
                 if (resetPasswordUser && newPassword === confirmPassword) {
-                  resetPasswordMutation.mutate({ 
-                    userId: resetPasswordUser.user_id, 
-                    newPassword 
-                  });
+                  resetPasswordMutation.mutate(
+                    {
+                      userId: resetPasswordUser.user_id,
+                      newPassword,
+                    },
+                    {
+                      onSuccess: () => {
+                        setResetPasswordUser(null);
+                        setNewPassword("");
+                        setConfirmPassword("");
+                      },
+                    }
+                  );
                 }
               }}
               disabled={

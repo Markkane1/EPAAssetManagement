@@ -26,6 +26,24 @@ type ActivityEntry = {
   user?: string;
 };
 
+type StatusBucket = {
+  _id: string;
+  count: number;
+};
+
+type OfficeScopedAssetOverview = {
+  assetIds: mongoose.Types.ObjectId[];
+  statusBuckets: StatusBucket[];
+};
+
+type HolderCountBucket = {
+  _id: {
+    holderType: string | null;
+    holderId: mongoose.Types.ObjectId | null;
+  };
+  count: number;
+};
+
 const EMPLOYEE_OPEN_REQUISITION_STATUSES = [
   'SUBMITTED',
   'PENDING_VERIFICATION',
@@ -310,7 +328,7 @@ async function dispatchThresholdNotifications(access: { isOrgAdmin: boolean; off
 async function getOfficeScopedAssetOverview(officeId: string) {
   const [summary] = await AssetItemModel.aggregate<{
     assetIds: Array<{ _id: mongoose.Types.ObjectId }>;
-    statusBuckets: Array<{ _id: string; count: number }>;
+    statusBuckets: StatusBucket[];
   }>([
     {
       $match: {
@@ -457,7 +475,7 @@ async function getAdminPanelsInternal(access: AccessContext, searchTermRaw: unkn
       .limit(5)
       .lean()
       .exec(),
-    AssetItemModel.aggregate<Array<{ _id: { holderType: string | null; holderId: mongoose.Types.ObjectId | null }; count: number }>>([
+    AssetItemModel.aggregate<HolderCountBucket>([
       { $match: itemScopeMatch },
       {
         $group: {
@@ -507,8 +525,8 @@ async function getStatsInternal(access: AccessContext) {
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
   const assetMatch: Record<string, any> = { is_active: { $ne: false } };
-  const itemStatusBucketsPromise = access.isOrgAdmin
-    ? AssetItemModel.aggregate<{ _id: string; count: number }>([
+  const itemStatusBucketsPromise: Promise<OfficeScopedAssetOverview> = access.isOrgAdmin
+    ? AssetItemModel.aggregate<StatusBucket>([
         { $match: { is_active: { $ne: false } } },
         {
           $group: {
@@ -516,10 +534,10 @@ async function getStatsInternal(access: AccessContext) {
             count: { $sum: 1 },
           },
         },
-      ])
+      ]).then((statusBuckets) => ({ assetIds: [], statusBuckets }))
     : access.officeId
       ? getOfficeScopedAssetOverview(access.officeId)
-      : Promise.resolve({ assetIds: [], statusBuckets: [] as Array<{ _id: string; count: number }> });
+      : Promise.resolve({ assetIds: [], statusBuckets: [] });
 
   const recentAssignmentsPromise = access.isOrgAdmin
     ? AssignmentModel.countDocuments({
@@ -543,9 +561,7 @@ async function getStatsInternal(access: AccessContext) {
     getLowStockAlertCount(access),
   ]);
 
-  const itemStatusBuckets = Array.isArray(officeScopedSummary)
-    ? officeScopedSummary
-    : officeScopedSummary.statusBuckets;
+  const itemStatusBuckets = officeScopedSummary.statusBuckets;
   if (!access.isOrgAdmin) {
     if (!access.officeId || officeScopedSummary.assetIds.length === 0) {
       assetMatch._id = new mongoose.Types.ObjectId();

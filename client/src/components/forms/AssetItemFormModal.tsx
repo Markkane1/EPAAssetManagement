@@ -6,7 +6,6 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -14,18 +13,16 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import {
-  Command,
-  CommandEmpty,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2 } from "lucide-react";
 import { Asset, Location } from "@/types";
 import { useAuth } from "@/contexts/AuthContext";
+import { FormDialogActions } from "@/components/forms/FormDialogActions";
+import { SearchableComboboxField } from "@/components/forms/SearchableComboboxField";
+import {
+  useAssetOptions,
+  useEntityById,
+  useNamedEntityOptions,
+} from "@/components/forms/useFormSearchLookups";
 
 const assetItemSchema = z.object({
   assetId: z.string().min(1, "Asset is required"),
@@ -107,9 +104,17 @@ export function AssetItemFormModal({ open, onOpenChange, assets, locations, onSu
   const [itemsError, setItemsError] = useState<string | null>(null);
   const selectedAssetId = form.watch("assetId");
   const selectedLocationId = form.watch("locationId");
-  const selectedAsset = assets.find((asset) => asset.id === selectedAssetId);
-  const selectedLocation = locationOptions.find((location) => location.id === selectedLocationId);
+  const getAssetById = useEntityById(assets);
+  const getLocationById = useEntityById(locationOptions);
+  const selectedAsset = getAssetById(selectedAssetId);
+  const selectedLocation = getLocationById(selectedLocationId);
   const assetQuantity = selectedAsset?.quantity || 0;
+  const assetOptions = useAssetOptions(assets);
+  const officeOptions = useNamedEntityOptions(locationOptions, (location) =>
+    location.id === CENTRAL_STORE_LOCATION_ID
+      ? `${location.name} head office store`
+      : location.name,
+  );
 
   useEffect(() => {
     if (open) {
@@ -209,80 +214,32 @@ export function AssetItemFormModal({ open, onOpenChange, assets, locations, onSu
         </DialogHeader>
         <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
+            <SearchableComboboxField
+              label="Asset *"
+              open={assetPickerOpen}
+              onOpenChange={setAssetPickerOpen}
+              value={selectedAsset?.name}
+              options={assetOptions}
+              placeholder="Search asset by name..."
+              searchPlaceholder="Type asset name..."
+              emptyText="No asset found."
+              onValueChange={(value) => form.setValue("assetId", value)}
+              error={form.formState.errors.assetId?.message}
+            />
             <div className="space-y-2">
-              <Label>Asset *</Label>
-              <Popover open={assetPickerOpen} onOpenChange={setAssetPickerOpen}>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" role="combobox" className="w-full justify-between">
-                    {selectedAsset ? selectedAsset.name : "Search asset by name..."}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-                  <Command>
-                    <CommandInput placeholder="Type asset name..." />
-                    <CommandList>
-                      <CommandEmpty>No asset found.</CommandEmpty>
-                      {assets.map((asset) => (
-                        <CommandItem
-                          key={asset.id}
-                          value={`${asset.name} ${asset.description || ""}`}
-                          onSelect={() => {
-                            form.setValue("assetId", asset.id);
-                            setAssetPickerOpen(false);
-                          }}
-                        >
-                          {asset.name}
-                        </CommandItem>
-                      ))}
-                    </CommandList>
-                  </Command>
-                </PopoverContent>
-              </Popover>
-              {form.formState.errors.assetId && (
-                <p className="text-sm text-destructive">{form.formState.errors.assetId.message}</p>
-              )}
-            </div>
-            <div className="space-y-2">
-              <Label>Office *</Label>
-              <Popover open={locationPickerOpen} onOpenChange={setLocationPickerOpen}>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    role="combobox"
-                  className="w-full justify-between"
-                  disabled={!isOrgAdmin}
-                  >
-                    {selectedLocation ? selectedLocation.name : "Search office by name..."}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-                  <Command>
-                    <CommandInput placeholder="Type office name..." />
-                    <CommandList>
-                      <CommandEmpty>No location found.</CommandEmpty>
-                      {locationOptions.map((location) => (
-                        <CommandItem
-                          key={location.id}
-                          value={
-                            location.id === CENTRAL_STORE_LOCATION_ID
-                              ? `${location.name} head office store`
-                              : location.name
-                          }
-                          onSelect={() => {
-                            form.setValue("locationId", location.id);
-                            setLocationPickerOpen(false);
-                          }}
-                        >
-                          {location.name}
-                        </CommandItem>
-                      ))}
-                    </CommandList>
-                  </Command>
-                </PopoverContent>
-              </Popover>
-              {form.formState.errors.locationId && (
-                <p className="text-sm text-destructive">{form.formState.errors.locationId.message}</p>
-              )}
+              <SearchableComboboxField
+                label="Office *"
+                open={locationPickerOpen}
+                onOpenChange={setLocationPickerOpen}
+                value={selectedLocation?.name}
+                options={officeOptions}
+                placeholder="Search office by name..."
+                searchPlaceholder="Type office name..."
+                emptyText="No location found."
+                onValueChange={(value) => form.setValue("locationId", value)}
+                error={form.formState.errors.locationId?.message}
+                disabled={!isOrgAdmin}
+              />
               {!isOrgAdmin && (
                 <p className="text-xs text-muted-foreground">Only your assigned office is available.</p>
               )}
@@ -388,15 +345,11 @@ export function AssetItemFormModal({ open, onOpenChange, assets, locations, onSu
             )}
           </div>
 
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={isSubmitting}>
-              {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Create Item
-            </Button>
-          </DialogFooter>
+          <FormDialogActions
+            isSubmitting={isSubmitting}
+            onCancel={() => onOpenChange(false)}
+            submitLabel="Create Item"
+          />
         </form>
       </DialogContent>
     </Dialog>

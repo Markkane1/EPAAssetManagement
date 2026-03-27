@@ -5,13 +5,22 @@ import type { ConsumableItemCreateDto, ConsumableItemUpdateDto } from '@/service
 import { API_CONFIG } from '@/config/api.config';
 
 const { queryKeys, messages, query } = API_CONFIG;
+const { heavyList } = query.profiles;
 
-export const useConsumableItems = () =>
-  useQuery({
+type QueryToggleOptions = {
+  enabled?: boolean;
+};
+
+export const useConsumableItems = (options: QueryToggleOptions = {}) => {
+  const { enabled = true } = options;
+  return useQuery({
     queryKey: queryKeys.consumableItems,
     queryFn: consumableItemService.getAll,
-    staleTime: query.staleTime,
+    staleTime: heavyList.staleTime,
+    refetchOnWindowFocus: heavyList.refetchOnWindowFocus,
+    enabled,
   });
+};
 
 export const useCreateConsumableItem = () => {
   const queryClient = useQueryClient();

@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
-import { connectDatabase } from '../src/config/db';
 import { OfficeModel } from '../src/models/office.model';
+import { runMigration } from './utils/migrationRunner';
 
 type NewOfficeType = 'HEAD_OFFICE' | 'DIRECTORATE' | 'DISTRICT_OFFICE' | 'DISTRICT_LAB';
 
@@ -72,14 +72,7 @@ function printCounts(label: string, counts: Record<string, number>) {
 }
 
 async function run() {
-  const dryRun = process.argv.includes('--dry-run');
-
-  console.warn('WARNING: Back up your database before running this migration.');
-  console.log(`Mode: ${dryRun ? 'DRY RUN (no writes)' : 'LIVE RUN (writes enabled)'}`);
-
-  try {
-    await connectDatabase();
-
+  await runMigration('office type normalization migration', async ({ dryRun }) => {
     const docs = (await OfficeModel.collection
       .find(
         {},
@@ -163,13 +156,10 @@ async function run() {
       printCounts('After migration - current type counts', afterTypeCounts);
       console.log(`\nAfter migration unknown type count: ${afterUnknownCount}`);
     }
-  } catch (error) {
-    console.error('Migration failed:', error);
-    process.exitCode = 1;
-  } finally {
-    await mongoose.disconnect();
-    process.exit();
-  }
+  });
 }
 
-run();
+run().catch((error) => {
+  console.error('Office type normalization migration failed:', error);
+  process.exit(1);
+});
