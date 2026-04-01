@@ -48,7 +48,7 @@ export const useEmployees = (
 
 export const usePagedEmployees = (query: EmployeeListQuery) => {
   return useQuery({
-    queryKey: [...queryKeys.employees, 'paged', query.page ?? 1, query.limit ?? null],
+    queryKey: [...queryKeys.employees, 'paged', query.page ?? 1, query.limit ?? null, query.search?.trim() ?? ''],
     queryFn: () => employeeService.getPaged(query),
     staleTime: heavyList.staleTime,
     refetchOnWindowFocus: heavyList.refetchOnWindowFocus,
@@ -83,6 +83,21 @@ function sortEmployees(items: Employee[]) {
   );
 }
 
+function matchesEmployeeSearch(employee: Employee, rawSearch: unknown) {
+  const search = String(rawSearch || '').trim().toLowerCase();
+  if (!search) return true;
+  const haystack = [
+    employee.first_name,
+    employee.last_name,
+    employee.email,
+    employee.phone,
+    employee.job_title,
+  ]
+    .map((value) => String(value || '').toLowerCase())
+    .join(' ');
+  return haystack.includes(search);
+}
+
 function syncEmployeeCaches(queryClient: ReturnType<typeof useQueryClient>, employee: Employee) {
   syncEntityInQueryCaches(queryClient, {
     queryKey: queryKeys.employees,
@@ -90,6 +105,12 @@ function syncEmployeeCaches(queryClient: ReturnType<typeof useQueryClient>, empl
     matchesQuery: (queryKey, entity) => {
       if (queryKey[1] === 'byDirectorate') {
         return String(entity.directorate_id || '') === String(queryKey[2] || '');
+      }
+      if (queryKey[1] === 'list') {
+        return matchesEmployeeSearch(entity, queryKey[2]);
+      }
+      if (queryKey[1] === 'paged') {
+        return matchesEmployeeSearch(entity, queryKey[4]);
       }
       return true;
     },
@@ -112,7 +133,7 @@ export const useCreateEmployee = () => {
     mutationFn: (data: EmployeeCreateDto) => employeeService.create(data),
     onSuccess: async (employee) => {
       syncEmployeeCaches(queryClient, employee);
-      await refreshActiveQueries(queryClient, [queryKeys.employees]);
+      await refreshActiveQueries(queryClient, [queryKeys.employees, queryKeys.users]);
       toast.success(messages.employeeCreated);
     },
     onError: (error: Error) => {
@@ -129,7 +150,7 @@ export const useUpdateEmployee = () => {
       employeeService.update(id, data),
     onSuccess: async (employee) => {
       syncEmployeeCaches(queryClient, employee);
-      await refreshActiveQueries(queryClient, [queryKeys.employees]);
+      await refreshActiveQueries(queryClient, [queryKeys.employees, queryKeys.users]);
       toast.success(messages.employeeUpdated);
     },
     onError: (error: Error) => {
@@ -145,7 +166,7 @@ export const useDeleteEmployee = () => {
     mutationFn: (id: string) => employeeService.delete(id),
     onSuccess: async (_data, id) => {
       removeEntityFromQueryCaches(queryClient, queryKeys.employees, id);
-      await refreshActiveQueries(queryClient, [queryKeys.employees]);
+      await refreshActiveQueries(queryClient, [queryKeys.employees, queryKeys.users]);
       toast.success(messages.employeeDeleted);
     },
     onError: (error: Error) => {
@@ -162,7 +183,7 @@ export const useTransferEmployee = () => {
       employeeService.transfer(id, data),
     onSuccess: async (employee) => {
       syncEmployeeCaches(queryClient, employee);
-      await refreshActiveQueries(queryClient, [queryKeys.employees]);
+      await refreshActiveQueries(queryClient, [queryKeys.employees, queryKeys.users]);
       toast.success('Employee transferred successfully');
     },
     onError: (error: Error) => {

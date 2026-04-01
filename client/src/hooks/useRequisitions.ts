@@ -113,6 +113,8 @@ export const useFulfillRequisition = (requisitionId: string, issuingOfficeId?: s
         queryKeys.consumableLedger,
         queryKeys.consumableRollup,
         queryKeys.consumableExpiry,
+        queryKeys.consumableLots,
+        queryKeys.consumableContainers,
       ];
       if (issuingOfficeId) {
         queryFamilies.push([...queryKeys.assetItems, 'byLocation', issuingOfficeId]);

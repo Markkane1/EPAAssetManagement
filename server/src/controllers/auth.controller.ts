@@ -5,6 +5,7 @@ import jwt from 'jsonwebtoken';
 import { UserModel } from '../models/user.model';
 import { EmployeeModel } from '../models/employee.model';
 import { ActivityLogModel } from '../models/activityLog.model';
+import { OfficeModel } from '../models/office.model';
 import { env } from '../config/env';
 import type { AuthRequest } from '../middleware/auth';
 import { ADMIN_ROLES } from '../middleware/authorize';
@@ -151,6 +152,60 @@ function ensureCsrfCookie(req: Request, res: Response) {
   res.setHeader('x-csrf-token', csrfToken);
 }
 
+async function validateLocationId(locationId: string | null | undefined) {
+  const normalized = readTrimmedString(locationId);
+  if (!normalized) return null;
+  const office = await OfficeModel.findOne({ _id: normalized, is_active: { $ne: false } }, { _id: 1 }).lean();
+  if (!(office as { _id?: unknown } | null)?._id) {
+    throw new Error('Assigned office was not found or is inactive');
+  }
+  return normalized;
+}
+
+function ensureEmployeeRolesHaveLocation(roles: string[], locationId: string | null) {
+  if (hasRoleCapability(roles, ['employee']) && !locationId) {
+    throw new Error('Employee-role users must be assigned to an office');
+  }
+}
+
+async function ensureEmployeeProfileForUser(input: {
+  userId: string;
+  email: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  locationId?: string | null;
+}) {
+  const normalizedEmail = readNormalizedEmail(input.email);
+  if (!normalizedEmail) return;
+
+  const existing = await EmployeeModel.findOne({
+    $or: [
+      { user_id: input.userId },
+      { email: { $regex: `^${normalizedEmail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' } },
+    ],
+  });
+
+  if (existing) {
+    existing.user_id = input.userId as any;
+    existing.email = normalizedEmail;
+    if (!existing.first_name && input.firstName) existing.first_name = input.firstName;
+    if (!existing.last_name && input.lastName) existing.last_name = input.lastName;
+    if (input.locationId !== undefined) existing.location_id = input.locationId || null;
+    if (existing.is_active === false) existing.is_active = true;
+    await existing.save();
+    return;
+  }
+
+  await EmployeeModel.create({
+    user_id: input.userId,
+    email: normalizedEmail,
+    first_name: readTrimmedString(input.firstName) || 'Employee',
+    last_name: readTrimmedString(input.lastName) || 'User',
+    location_id: input.locationId || null,
+    is_active: true,
+  });
+}
+
 export const authController = {
   register: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
@@ -173,8 +228,9 @@ export const authController = {
       if (!normalizedEmail || !normalizedPassword) {
         return res.status(400).json({ message: 'Email and password are required' });
       }
-      if (normalizedPassword.length < 8) {
-        return res.status(400).json({ message: 'Password must be at least 8 characters' });
+      const passwordValidationError = validateStrongPassword(normalizedPassword);
+      if (passwordValidationError) {
+        return res.status(400).json({ message: passwordValidationError });
       }
 
       const existing = await UserModel.findOne({ email: normalizedEmail });
@@ -202,6 +258,13 @@ export const authController = {
       if (hasRoleCapability(normalizedRoles, ['org_admin']) && !req.user.isOrgAdmin) {
         return res.status(403).json({ message: 'Forbidden' });
       }
+      let validatedLocationId: string | null = null;
+      try {
+        validatedLocationId = await validateLocationId(locationId || null);
+        ensureEmployeeRolesHaveLocation(normalizedRoles, validatedLocationId);
+      } catch (validationError) {
+        return res.status(400).json({ message: (validationError as Error).message });
+      }
       const user = await UserModel.create({
         email: normalizedEmail,
         password_hash: passwordHash,
@@ -210,8 +273,18 @@ export const authController = {
         role: normalizedActiveRole,
         roles: normalizedRoles,
         active_role: normalizedActiveRole,
-        location_id: locationId || null,
+        location_id: validatedLocationId,
       });
+
+      if (hasRoleCapability(normalizedRoles, ['employee'])) {
+        await ensureEmployeeProfileForUser({
+          userId: user.id,
+          email: user.email,
+          firstName: user.first_name,
+          lastName: user.last_name,
+          locationId: user.location_id ? String(user.location_id) : null,
+        });
+      }
 
       res.status(201).json({
         user: {

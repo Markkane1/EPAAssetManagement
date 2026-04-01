@@ -906,6 +906,28 @@ export default function Reports() {
     ],
     [categories],
   );
+  const holderOptions = useMemo(
+    () => (isOrgAdmin ? HOLDER_OPTIONS : HOLDER_OPTIONS.filter((option) => option.value !== "STORE")),
+    [isOrgAdmin],
+  );
+
+  useEffect(() => {
+    if (isOrgAdmin) return;
+    if (draftFilters.holderType === "STORE" || draftFilters.consumptionMode === "central") {
+      setDraftFilters((current) => ({
+        ...current,
+        holderType: current.holderType === "STORE" ? "ALL" : current.holderType,
+        consumptionMode: "office",
+      }));
+    }
+    if (appliedFilters.holderType === "STORE" || appliedFilters.consumptionMode === "central") {
+      setAppliedFilters((current) => ({
+        ...current,
+        holderType: current.holderType === "STORE" ? "ALL" : current.holderType,
+        consumptionMode: "office",
+      }));
+    }
+  }, [isOrgAdmin, draftFilters.holderType, draftFilters.consumptionMode, appliedFilters.holderType, appliedFilters.consumptionMode]);
 
   const filteredReports = useMemo(
     () =>
@@ -1293,7 +1315,7 @@ export default function Reports() {
                       <SelectValue placeholder="All holder types" />
                     </SelectTrigger>
                     <SelectContent>
-                      {HOLDER_OPTIONS.map((option) => (
+                      {holderOptions.map((option) => (
                         <SelectItem key={option.value} value={option.value}>
                           {option.label}
                         </SelectItem>
@@ -1339,13 +1361,13 @@ export default function Reports() {
                   <SelectTrigger>
                     <SelectValue placeholder="Select mode" />
                   </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="office">Office</SelectItem>
-                    <SelectItem value="central">Central Store</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
+                    <SelectContent>
+                      <SelectItem value="office">Office</SelectItem>
+                      {isOrgAdmin ? <SelectItem value="central">Central Store</SelectItem> : null}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
 
             {reportNeedsStatus(selectedReportId) && (
               <div className="space-y-2">

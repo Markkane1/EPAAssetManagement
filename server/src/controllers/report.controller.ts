@@ -15,6 +15,14 @@ import { RequisitionLineModel } from '../models/requisitionLine.model';
 import { createHttpError } from '../utils/httpError';
 import { getRequestContext } from '../utils/scope';
 import { parseDateInput, readPagination } from '../utils/requestParsing';
+import {
+  isHolderInEmployeeScope,
+  isHolderInOfficeScope,
+  resolveEmployeeScopedHolderIds,
+  resolveOfficeScopedHolderIds,
+  type EmployeeScopedHolderIds,
+  type OfficeScopedHolderIds,
+} from '../modules/consumables/utils/accessScope';
 
 function resolveScopedOfficeId(ctx: { isOrgAdmin: boolean; locationId: string | null }, rawOfficeId: unknown) {
   const requestedOfficeId = rawOfficeId === undefined || rawOfficeId === null ? null : String(rawOfficeId).trim();
@@ -152,10 +160,180 @@ function applyTxTimeRange(filter: Record<string, unknown>, from: Date | null, to
   filter.tx_time = range;
 }
 
+const REPORT_HOLDER_TYPES = new Set(['OFFICE', 'STORE', 'EMPLOYEE', 'SUB_LOCATION']);
+
+function normalizeReportHolderType(value: unknown) {
+  const normalized = String(value || '').trim().toUpperCase();
+  if (!normalized) return null;
+  if (!REPORT_HOLDER_TYPES.has(normalized)) {
+    throw createHttpError(400, 'holderType is invalid');
+  }
+  return normalized as 'OFFICE' | 'STORE' | 'EMPLOYEE' | 'SUB_LOCATION';
+}
+
+function buildOfficeScopedLedgerFilter(scope: OfficeScopedHolderIds) {
+  const filters: Record<string, unknown>[] = [
+    { from_holder_type: 'OFFICE', from_holder_id: new Types.ObjectId(scope.officeId) },
+    { to_holder_type: 'OFFICE', to_holder_id: new Types.ObjectId(scope.officeId) },
+  ];
+  if (scope.subLocationIds.length > 0) {
+    filters.push({
+      from_holder_type: 'SUB_LOCATION',
+      from_holder_id: { $in: scope.subLocationIds.map((id) => new Types.ObjectId(id)) },
+    });
+    filters.push({
+      to_holder_type: 'SUB_LOCATION',
+      to_holder_id: { $in: scope.subLocationIds.map((id) => new Types.ObjectId(id)) },
+    });
+  }
+  if (scope.employeeIds.length > 0) {
+    filters.push({
+      from_holder_type: 'EMPLOYEE',
+      from_holder_id: { $in: scope.employeeIds.map((id) => new Types.ObjectId(id)) },
+    });
+    filters.push({
+      to_holder_type: 'EMPLOYEE',
+      to_holder_id: { $in: scope.employeeIds.map((id) => new Types.ObjectId(id)) },
+    });
+  }
+  return { $or: filters };
+}
+
+function buildEmployeeScopedLedgerFilter(scope: EmployeeScopedHolderIds) {
+  const filters: Record<string, unknown>[] = [
+    { from_holder_type: 'EMPLOYEE', from_holder_id: new Types.ObjectId(scope.employeeId) },
+    { to_holder_type: 'EMPLOYEE', to_holder_id: new Types.ObjectId(scope.employeeId) },
+  ];
+  if (scope.subLocationIds.length > 0) {
+    filters.push({
+      from_holder_type: 'SUB_LOCATION',
+      from_holder_id: { $in: scope.subLocationIds.map((id) => new Types.ObjectId(id)) },
+    });
+    filters.push({
+      to_holder_type: 'SUB_LOCATION',
+      to_holder_id: { $in: scope.subLocationIds.map((id) => new Types.ObjectId(id)) },
+    });
+  }
+  return { $or: filters };
+}
+
+function buildOfficeScopedBalanceMatch(scope: OfficeScopedHolderIds) {
+  const filters: Record<string, unknown>[] = [
+    { holder_type: 'OFFICE', holder_id: new Types.ObjectId(scope.officeId) },
+  ];
+  if (scope.subLocationIds.length > 0) {
+    filters.push({
+      holder_type: 'SUB_LOCATION',
+      holder_id: { $in: scope.subLocationIds.map((id) => new Types.ObjectId(id)) },
+    });
+  }
+  if (scope.employeeIds.length > 0) {
+    filters.push({
+      holder_type: 'EMPLOYEE',
+      holder_id: { $in: scope.employeeIds.map((id) => new Types.ObjectId(id)) },
+    });
+  }
+  return { $or: filters };
+}
+
+function buildEmployeeScopedBalanceMatch(scope: EmployeeScopedHolderIds) {
+  const filters: Record<string, unknown>[] = [
+    { holder_type: 'EMPLOYEE', holder_id: new Types.ObjectId(scope.employeeId) },
+  ];
+  if (scope.subLocationIds.length > 0) {
+    filters.push({
+      holder_type: 'SUB_LOCATION',
+      holder_id: { $in: scope.subLocationIds.map((id) => new Types.ObjectId(id)) },
+    });
+  }
+  return { $or: filters };
+}
+
+function withAnd(base: Record<string, unknown>, clause: Record<string, unknown> | null) {
+  if (!clause || Object.keys(clause).length === 0) return base;
+  if (Object.keys(base).length === 0) return clause;
+  return { $and: [base, clause] };
+}
+
+function ensureOperationalReportAccess(ctx: { role: string }) {
+  if (String(ctx.role || '').trim().toLowerCase() === 'employee') {
+    throw createHttpError(403, 'Employees are not permitted to access operational reports');
+  }
+}
+
+async function resolveScopedConsumableFilters(
+  ctx: { userId: string; role: string; locationId: string | null; isOrgAdmin: boolean },
+  params: { officeId?: unknown; holderType?: unknown; holderId?: unknown }
+) {
+  const officeId = resolveScopedOfficeId(ctx, params.officeId);
+  const holderType = normalizeReportHolderType(params.holderType);
+  const holderId = toObjectId(params.holderId);
+  if ((holderType && !holderId) || (!holderType && holderId)) {
+    throw createHttpError(400, 'holderType and holderId must be provided together');
+  }
+
+  if (ctx.isOrgAdmin) {
+    const officeScope = officeId ? await resolveOfficeScopedHolderIds(officeId) : null;
+    return {
+      officeId,
+      balanceScope: officeScope ? buildOfficeScopedBalanceMatch(officeScope) : null,
+      ledgerScope: officeScope ? buildOfficeScopedLedgerFilter(officeScope) : null,
+      explicitHolder:
+        holderType && holderId
+          ? { holderType, holderId }
+          : null,
+    };
+  }
+
+  if (ctx.role === 'employee') {
+    const employeeScope = await resolveEmployeeScopedHolderIds(ctx.userId);
+    if (holderType || holderId) {
+      if (!holderType || !holderId) {
+        throw createHttpError(400, 'holderType and holderId must be provided together');
+      }
+      if (!isHolderInEmployeeScope(holderType, String(holderId), employeeScope)) {
+        throw createHttpError(403, 'User does not have access to this holder');
+      }
+    }
+    return {
+      officeId,
+      balanceScope: buildEmployeeScopedBalanceMatch(employeeScope),
+      ledgerScope: buildEmployeeScopedLedgerFilter(employeeScope),
+      explicitHolder:
+        holderType && holderId
+          ? { holderType, holderId }
+          : null,
+    };
+  }
+
+  if (!ctx.locationId) {
+    throw createHttpError(403, 'User is not assigned to an office');
+  }
+  const officeScope = await resolveOfficeScopedHolderIds(ctx.locationId);
+  if (holderType || holderId) {
+    if (!holderType || !holderId) {
+      throw createHttpError(400, 'holderType and holderId must be provided together');
+    }
+    if (!isHolderInOfficeScope(holderType, String(holderId), officeScope)) {
+      throw createHttpError(403, 'User does not have access to this holder');
+    }
+  }
+  return {
+    officeId: ctx.locationId,
+    balanceScope: buildOfficeScopedBalanceMatch(officeScope),
+    ledgerScope: buildOfficeScopedLedgerFilter(officeScope),
+    explicitHolder:
+      holderType && holderId
+        ? { holderType, holderId }
+        : null,
+  };
+}
+
 export const reportController = {
   inventorySnapshot: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const ctx = await getRequestContext(req);
+      ensureOperationalReportAccess(ctx);
       const query = req.query as Record<string, unknown>;
       const { page, limit, skip } = readPagination(query, { defaultLimit: 100, maxLimit: 500 });
       const from = parseDateInput(query.from, 'from');
@@ -170,16 +348,31 @@ export const reportController = {
       }
 
       const officeId = resolveScopedOfficeId(ctx, query.officeId);
-      const holderTypeRaw = String(query.holderType || '').trim() || null;
-      const holderIdObj = toObjectId(query.holderId);
       const categoryIdObj = toObjectId(query.categoryId);
 
       if (mode === 'moveable') {
         const matchStage: Record<string, unknown> = { is_active: true };
-        if (officeId || holderTypeRaw || holderIdObj) {
-          if (holderTypeRaw) matchStage.holder_type = holderTypeRaw;
+        const holderType = normalizeReportHolderType(query.holderType);
+        const holderIdObj = toObjectId(query.holderId);
+        if ((holderType && !holderIdObj) || (!holderType && holderIdObj)) {
+          throw createHttpError(400, 'holderType and holderId must be provided together');
+        }
+        if (ctx.isOrgAdmin) {
+          if (holderType) matchStage.holder_type = holderType;
           const effectiveHolderId = holderIdObj ?? (officeId ? new Types.ObjectId(officeId) : null);
           if (effectiveHolderId) matchStage.holder_id = effectiveHolderId;
+        } else {
+          if (holderType && holderType !== 'OFFICE') {
+            throw createHttpError(403, 'Access restricted to office-held moveable inventory');
+          }
+          if (holderIdObj && String(holderIdObj) !== officeId) {
+            throw createHttpError(403, 'Access restricted to assigned office');
+          }
+          if (!officeId) {
+            throw createHttpError(403, 'User is not assigned to an office');
+          }
+          matchStage.holder_type = 'OFFICE';
+          matchStage.holder_id = new Types.ObjectId(officeId);
         }
         if (from || to) {
           const range: Record<string, Date> = {};
@@ -222,10 +415,21 @@ export const reportController = {
       }
 
       // mode === 'consumable'
-      const balanceMatch: Record<string, unknown> = {};
-      if (holderTypeRaw) balanceMatch.holder_type = holderTypeRaw;
-      const effectiveHolderId = holderIdObj ?? (officeId ? new Types.ObjectId(officeId) : null);
-      if (effectiveHolderId) balanceMatch.holder_id = effectiveHolderId;
+      const holderFilters = await resolveScopedConsumableFilters(ctx, {
+        officeId: query.officeId,
+        holderType: query.holderType,
+        holderId: query.holderId,
+      });
+      let balanceMatch: Record<string, unknown> = {};
+      if (holderFilters.balanceScope) {
+        balanceMatch = withAnd(balanceMatch, holderFilters.balanceScope);
+      }
+      if (holderFilters.explicitHolder) {
+        balanceMatch = withAnd(balanceMatch, {
+          holder_type: holderFilters.explicitHolder.holderType,
+          holder_id: holderFilters.explicitHolder.holderId,
+        });
+      }
 
       const consumablePipeline: PipelineStage[] = [
         { $match: balanceMatch },
@@ -257,7 +461,7 @@ export const reportController = {
 
       const [cResult] = await ConsumableInventoryBalanceModel.aggregate(consumablePipeline);
       const cTotal = Number(cResult?.total?.[0]?.count || 0);
-      return res.json({ page, limit, total: cTotal, mode, officeId, items: cResult?.data || [] });
+      return res.json({ page, limit, total: cTotal, mode, officeId: holderFilters.officeId, items: cResult?.data || [] });
     } catch (error) {
       return next(error);
     }
@@ -266,6 +470,7 @@ export const reportController = {
   moveableAssigned: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const ctx = await getRequestContext(req);
+      ensureOperationalReportAccess(ctx);
       const query = req.query as Record<string, unknown>;
       const { page, limit, skip } = readPagination(query, { defaultLimit: 100, maxLimit: 500 });
       const from = parseDateInput(query.from, 'from');
@@ -275,14 +480,31 @@ export const reportController = {
       }
 
       const officeId = resolveScopedOfficeId(ctx, query.officeId);
-      const holderTypeRaw = String(query.holderType || '').trim() || null;
+      const holderType = normalizeReportHolderType(query.holderType);
       const holderIdObj = toObjectId(query.holderId);
+      if ((holderType && !holderIdObj) || (!holderType && holderIdObj)) {
+        throw createHttpError(400, 'holderType and holderId must be provided together');
+      }
       const categoryIdObj = toObjectId(query.categoryId);
 
       const assetItemMatch: Record<string, unknown> = { is_active: true };
-      if (holderTypeRaw) assetItemMatch.holder_type = holderTypeRaw;
-      const effectiveHolderId = holderIdObj ?? (officeId ? new Types.ObjectId(officeId) : null);
-      if (effectiveHolderId) assetItemMatch.holder_id = effectiveHolderId;
+      if (ctx.isOrgAdmin) {
+        if (holderType) assetItemMatch.holder_type = holderType;
+        const effectiveHolderId = holderIdObj ?? (officeId ? new Types.ObjectId(officeId) : null);
+        if (effectiveHolderId) assetItemMatch.holder_id = effectiveHolderId;
+      } else {
+        if (holderType && holderType !== 'OFFICE') {
+          throw createHttpError(403, 'Access restricted to office-held moveable inventory');
+        }
+        if (holderIdObj && String(holderIdObj) !== officeId) {
+          throw createHttpError(403, 'Access restricted to assigned office');
+        }
+        if (!officeId) {
+          throw createHttpError(403, 'User is not assigned to an office');
+        }
+        assetItemMatch.holder_type = 'OFFICE';
+        assetItemMatch.holder_id = new Types.ObjectId(officeId);
+      }
 
       const assignmentMatch: Record<string, unknown> = {};
       if (from || to) {
@@ -361,19 +583,28 @@ export const reportController = {
   consumableAssigned: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const ctx = await getRequestContext(req);
+      ensureOperationalReportAccess(ctx);
       const query = req.query as Record<string, unknown>;
       const { page, limit, skip } = readPagination(query, { defaultLimit: 100, maxLimit: 500 });
 
-      const officeId = resolveScopedOfficeId(ctx, query.officeId);
-      const holderTypeRaw = String(query.holderType || '').trim() || null;
-      const holderIdObj = toObjectId(query.holderId);
+      const holderFilters = await resolveScopedConsumableFilters(ctx, {
+        officeId: query.officeId,
+        holderType: query.holderType,
+        holderId: query.holderId,
+      });
       const categoryIdObj = toObjectId(query.categoryId);
       const itemIdObj = toObjectId(query.itemId);
 
-      const matchStage: Record<string, unknown> = {};
-      if (holderTypeRaw) matchStage.holder_type = holderTypeRaw;
-      const effectiveHolderId = holderIdObj ?? (officeId ? new Types.ObjectId(officeId) : null);
-      if (effectiveHolderId) matchStage.holder_id = effectiveHolderId;
+      let matchStage: Record<string, unknown> = {};
+      if (holderFilters.balanceScope) {
+        matchStage = withAnd(matchStage, holderFilters.balanceScope);
+      }
+      if (holderFilters.explicitHolder) {
+        matchStage = withAnd(matchStage, {
+          holder_type: holderFilters.explicitHolder.holderType,
+          holder_id: holderFilters.explicitHolder.holderId,
+        });
+      }
       if (itemIdObj) matchStage.consumable_item_id = itemIdObj;
 
       const pipeline: PipelineStage[] = [
@@ -413,7 +644,7 @@ export const reportController = {
 
       const [result] = await ConsumableInventoryBalanceModel.aggregate(pipeline);
       const total = Number(result?.total?.[0]?.count || 0);
-      return res.json({ page, limit, total, officeId, items: result?.items || [] });
+      return res.json({ page, limit, total, officeId: holderFilters.officeId, items: result?.items || [] });
     } catch (error) {
       return next(error);
     }
@@ -422,6 +653,7 @@ export const reportController = {
   consumableConsumed: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const ctx = await getRequestContext(req);
+      ensureOperationalReportAccess(ctx);
       const query = req.query as Record<string, unknown>;
       const { page, limit, skip } = readPagination(query, { defaultLimit: 100, maxLimit: 500 });
       const from = parseDateInput(query.from, 'from');
@@ -435,13 +667,21 @@ export const reportController = {
       if (mode !== 'office' && mode !== 'central') {
         throw createHttpError(400, "mode must be 'office' or 'central'");
       }
+      if (!ctx.isOrgAdmin && mode === 'central') {
+        throw createHttpError(403, 'Central store consumption reports are restricted to org admins');
+      }
       const categoryIdObj = toObjectId(query.categoryId);
       const itemIdObj = toObjectId(query.itemId);
 
       const matchStage: Record<string, unknown> = { tx_type: 'CONSUME' };
-      const holderType = mode === 'office' ? 'OFFICE' : 'STORE';
-      matchStage.from_holder_type = holderType;
-      if (officeId) matchStage.from_holder_id = new Types.ObjectId(officeId);
+      if (mode === 'office') {
+        if (officeId) {
+          const officeScope = await resolveOfficeScopedHolderIds(officeId);
+          matchStage.$or = buildOfficeScopedLedgerFilter(officeScope).$or;
+        }
+      } else {
+        matchStage.from_holder_type = 'STORE';
+      }
       if (itemIdObj) matchStage.consumable_item_id = itemIdObj;
       applyTxTimeRange(matchStage, from, to);
 
@@ -498,6 +738,7 @@ export const reportController = {
   moveableLifecycle: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const ctx = await getRequestContext(req);
+      ensureOperationalReportAccess(ctx);
       const assetItemId = String(req.params?.assetItemId || '').trim();
       if (!Types.ObjectId.isValid(assetItemId)) {
         throw createHttpError(400, 'assetItemId is invalid');
@@ -575,6 +816,7 @@ export const reportController = {
   requisitions: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const ctx = await getRequestContext(req);
+      ensureOperationalReportAccess(ctx);
       const { page, limit, skip } = readPagination(req.query as Record<string, unknown>, {
         defaultLimit: 100,
         maxLimit: 500,
@@ -621,6 +863,7 @@ export const reportController = {
   noncompliance: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const ctx = await getRequestContext(req);
+      ensureOperationalReportAccess(ctx);
       const { page, limit, skip } = readPagination(req.query as Record<string, unknown>, {
         defaultLimit: 100,
         maxLimit: 500,
@@ -700,6 +943,7 @@ export const reportController = {
   lotLifecycle: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const ctx = await getRequestContext(req);
+      ensureOperationalReportAccess(ctx);
       const lotId = String(req.params?.lotId || '').trim();
       if (!Types.ObjectId.isValid(lotId)) {
         throw createHttpError(400, 'lotId is invalid');
@@ -736,6 +980,7 @@ export const reportController = {
   assignmentTrace: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const ctx = await getRequestContext(req);
+      ensureOperationalReportAccess(ctx);
       const assignmentId = String(req.params?.assignmentId || '').trim();
       if (!Types.ObjectId.isValid(assignmentId)) {
         throw createHttpError(400, 'assignmentId is invalid');
@@ -785,6 +1030,7 @@ export const reportController = {
   requisitionAging: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const ctx = await getRequestContext(req);
+      ensureOperationalReportAccess(ctx);
       const query = req.query as Record<string, unknown>;
       const { page, limit, skip } = readPagination(query, { defaultLimit: 100, maxLimit: 500 });
       const from = parseDateInput(query.from, 'from');
@@ -856,6 +1102,7 @@ export const reportController = {
   returnAging: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const ctx = await getRequestContext(req);
+      ensureOperationalReportAccess(ctx);
       const query = req.query as Record<string, unknown>;
       const { page, limit, skip } = readPagination(query, { defaultLimit: 100, maxLimit: 500 });
       const from = parseDateInput(query.from, 'from');
@@ -927,6 +1174,7 @@ export const reportController = {
   analyticsTrends: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const ctx = await getRequestContext(req);
+      ensureOperationalReportAccess(ctx);
       const query = req.query as Record<string, unknown>;
       const from = parseDateInput(query.from, 'from');
       const to = parseDateInput(query.to, 'to');
@@ -949,11 +1197,8 @@ export const reportController = {
         tx_type: { $in: ['CONSUME', 'TRANSFER', 'RECEIPT'] },
       };
       if (officeId) {
-        const officeObjId = new Types.ObjectId(officeId);
-        matchStage.$or = [
-          { from_holder_id: officeObjId },
-          { to_holder_id: officeObjId },
-        ];
+        const officeScope = await resolveOfficeScopedHolderIds(officeId);
+        matchStage.$or = buildOfficeScopedLedgerFilter(officeScope).$or;
       }
       if (itemIdObj) matchStage.consumable_item_id = itemIdObj;
 
@@ -1014,4 +1259,3 @@ export const reportController = {
     }
   },
 };
-

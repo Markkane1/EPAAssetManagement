@@ -104,6 +104,14 @@ export default function ConsumableInventory() {
     setHolderIdFilter(ALL_VALUE);
   }, [holderTypeFilter, ALL_VALUE]);
 
+  useEffect(() => {
+    if (role === 'org_admin') return;
+    if (holderTypeFilter === 'STORE') {
+      setHolderTypeFilter(ALL_VALUE);
+      setHolderIdFilter(ALL_VALUE);
+    }
+  }, [holderTypeFilter, role, ALL_VALUE]);
+
   const holderOptions = useMemo(() => {
     if (holderTypeFilter === 'STORE') {
       return [{ id: STORE_CODE, label: 'Head Office Store' }];
@@ -142,6 +150,19 @@ export default function ConsumableInventory() {
     }
     return [];
   }, [holderTypeFilter, locationId, filteredLocations, employees, sections, ALL_VALUE, STORE_FILTER, STORE_CODE]);
+
+  useEffect(() => {
+    if (holderTypeFilter === ALL_VALUE) {
+      if (holderIdFilter !== ALL_VALUE) {
+        setHolderIdFilter(ALL_VALUE);
+      }
+      return;
+    }
+    if (holderIdFilter === ALL_VALUE) return;
+    if (!holderOptions.some((option) => option.id === holderIdFilter)) {
+      setHolderIdFilter(ALL_VALUE);
+    }
+  }, [ALL_VALUE, holderIdFilter, holderOptions, holderTypeFilter]);
 
   const balanceFilters = useMemo(() => {
     const filters: any = {};
@@ -330,7 +351,7 @@ export default function ConsumableInventory() {
                 <SelectTrigger><SelectValue placeholder="All holder types" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value={ALL_VALUE}>All holder types</SelectItem>
-                  <SelectItem value="STORE">Store</SelectItem>
+                  {role === 'org_admin' && <SelectItem value="STORE">Store</SelectItem>}
                   <SelectItem value="OFFICE">Office</SelectItem>
                   <SelectItem value="SUB_LOCATION">Section / Room</SelectItem>
                   <SelectItem value="EMPLOYEE">Employee</SelectItem>

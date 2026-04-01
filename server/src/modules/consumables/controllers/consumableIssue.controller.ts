@@ -66,17 +66,26 @@ async function enforceLabOnlyDestination(
   if (toType === 'OFFICE') {
     const office = await OfficeModel.findById(toId).session(session).lean();
     if (!office) throw createHttpError(404, 'Destination office not found');
+    if ((office as any).is_active === false) {
+      throw createHttpError(400, 'Destination office is inactive');
+    }
     await assertLabOnlyOfficeType((office as any).type, false);
     return;
   }
 
   const user = await UserModel.findById(toId).session(session).lean();
   if (!user) throw createHttpError(404, 'Destination user not found');
+  if ((user as any).is_active === false) {
+    throw createHttpError(400, 'Destination user is inactive');
+  }
   if (!(user as any).location_id) {
     throw createHttpError(400, 'Destination user is not assigned to an office');
   }
   const office = await OfficeModel.findById((user as any).location_id).session(session).lean();
   if (!office) throw createHttpError(404, 'Destination user office not found');
+  if ((office as any).is_active === false) {
+    throw createHttpError(400, 'Destination user office is inactive');
+  }
   await assertLabOnlyOfficeType((office as any).type, true);
 }
 
@@ -84,10 +93,16 @@ async function ensureDestinationExists(toType: 'OFFICE' | 'USER', toId: string, 
   if (toType === 'OFFICE') {
     const office = await OfficeModel.findById(toId).session(session).lean();
     if (!office) throw createHttpError(404, 'Destination office not found');
+    if ((office as any).is_active === false) {
+      throw createHttpError(400, 'Destination office is inactive');
+    }
     return;
   }
   const user = await UserModel.findById(toId).session(session).lean();
   if (!user) throw createHttpError(404, 'Destination user not found');
+  if ((user as any).is_active === false) {
+    throw createHttpError(400, 'Destination user is inactive');
+  }
 }
 
 async function resolveIssueApprovalGate(input: {

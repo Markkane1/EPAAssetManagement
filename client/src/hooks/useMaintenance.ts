@@ -44,7 +44,7 @@ export const useCreateMaintenance = () => {
   return useMutation({
     mutationFn: (data: MaintenanceCreateDto) => maintenanceService.create(data),
     onSuccess: async () => {
-      await refreshActiveQueries(queryClient, [['maintenance']]);
+      await refreshActiveQueries(queryClient, [['maintenance'], ['assetItems'], ['assignments']]);
       toast.success('Maintenance record created successfully');
     },
     onError: (error: Error) => {
@@ -60,7 +60,7 @@ export const useUpdateMaintenance = () => {
     mutationFn: ({ id, data }: { id: string; data: MaintenanceUpdateDto }) =>
       maintenanceService.update(id, data),
     onSuccess: async () => {
-      await refreshActiveQueries(queryClient, [['maintenance']]);
+      await refreshActiveQueries(queryClient, [['maintenance'], ['assetItems'], ['assignments']]);
       toast.success('Maintenance record updated successfully');
     },
     onError: (error: Error) => {
@@ -76,7 +76,7 @@ export const useCompleteMaintenance = () => {
     mutationFn: ({ id, completedDate }: { id: string; completedDate: string; notes?: string }) =>
       maintenanceService.complete(id, completedDate),
     onSuccess: async () => {
-      await refreshActiveQueries(queryClient, [['maintenance']]);
+      await refreshActiveQueries(queryClient, [['maintenance'], ['assetItems'], ['assignments']]);
       toast.success('Maintenance completed successfully');
     },
     onError: (error: Error) => {
@@ -91,7 +91,7 @@ export const useDeleteMaintenance = () => {
   return useMutation({
     mutationFn: (id: string) => maintenanceService.delete(id),
     onSuccess: async () => {
-      await refreshActiveQueries(queryClient, [['maintenance']]);
+      await refreshActiveQueries(queryClient, [['maintenance'], ['assetItems'], ['assignments']]);
       toast.success('Maintenance record deleted successfully');
     },
     onError: (error: Error) => {

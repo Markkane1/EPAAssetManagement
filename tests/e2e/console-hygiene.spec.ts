@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { closeSeedConnection, seedE2E } from "./seed";
-import { login } from "./helpers";
+import { expectAuthenticatedSession, login } from "./helpers";
 
 const adminRoutes = [
   "/",
@@ -98,10 +98,10 @@ test.describe("console hygiene", () => {
 
     await login(page, "admin@test.com", "AdminPass123!");
     attachConsoleCollectors(page, errors);
-    await expect(page).toHaveURL("/");
+    await expectAuthenticatedSession(page);
 
     for (const path of adminRoutes) {
-      await page.goto(path, { waitUntil: "domcontentloaded" });
+      await page.goto(path, { waitUntil: "commit" });
       await expect(page).not.toHaveURL(/\/login$/);
       await expectPageReady(page);
     }
@@ -114,10 +114,10 @@ test.describe("console hygiene", () => {
 
     await login(page, "testuser@test.com", "TestPass123!");
     attachConsoleCollectors(page, errors);
-    await expect(page).toHaveURL("/");
+    await expectAuthenticatedSession(page);
 
     for (const path of employeeRoutes) {
-      await page.goto(path, { waitUntil: "domcontentloaded" });
+      await page.goto(path, { waitUntil: "commit" });
       await expect(page).not.toHaveURL(/\/login$/);
       await expectPageReady(page);
     }

@@ -26,6 +26,7 @@ export type AssignmentListQuery = ListQuery;
 
 export interface AssignmentListItem extends Assignment {
   itemTag?: string | null;
+  serialNumber?: string | null;
   assetName?: string | null;
   employeeName?: string | null;
   employeeEmail?: string | null;
@@ -50,7 +51,7 @@ export const assignmentService = {
   getById: (id: string) => api.get<Assignment>(`/assignments/${id}`),
   
   getByEmployee: (employeeId: string) =>
-    api.get<Assignment[]>(`/assignments/employee/${employeeId}?limit=${LIST_LIMIT}`),
+    api.get<AssignmentListItem[]>(`/assignments/employee/${employeeId}?limit=${LIST_LIMIT}&details=1`),
   
   getByAssetItem: (assetItemId: string) =>
     api.get<Assignment[]>(`/assignments/asset-item/${assetItemId}?limit=${LIST_LIMIT}`),

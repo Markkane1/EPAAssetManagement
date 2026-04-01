@@ -43,6 +43,23 @@ function escapeRegex(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+function buildDuplicateNameFilter(options: {
+  name: string;
+  categoryId?: unknown;
+  subcategory?: unknown;
+  excludeId?: string;
+}) {
+  const filter: Record<string, unknown> = {
+    name: { $regex: `^${escapeRegex(options.name)}$`, $options: 'i' },
+    category_id: options.categoryId || null,
+    subcategory: options.subcategory || null,
+  };
+  if (options.excludeId) {
+    filter._id = { $ne: options.excludeId };
+  }
+  return filter;
+}
+
 function buildPayload(body: Record<string, unknown>) {
   const payload = mapFields(body, fieldMap);
   Object.values(fieldMap).forEach((dbKey) => {
@@ -51,6 +68,9 @@ function buildPayload(body: Record<string, unknown>) {
     }
   });
   if (body.name !== undefined) payload.name = body.name;
+  if (payload.name !== undefined) {
+    payload.name = String(payload.name).trim();
+  }
   if (payload.category_id === '') payload.category_id = null;
   if (body.subcategory !== undefined) payload.subcategory = parseOptionalSubcategory(body.subcategory);
 
@@ -120,6 +140,9 @@ export const consumableItemController = {
     try {
       const scope = await resolveConsumableRequestScope(req);
       const payload = buildPayload(req.body);
+      if (!payload.name) {
+        throw createHttpError(400, 'Name is required');
+      }
       payload.subcategory = await ensureConsumableCategorySelection(payload.category_id, payload.subcategory);
       await ensureScopeCategoryAccess(scope, payload.category_id);
       if (payload.base_uom) {
@@ -131,6 +154,17 @@ export const consumableItemController = {
       await syncChemicalFlagWithCategoryScope(payload);
       if (!payload.created_by && req.user?.userId) {
         payload.created_by = req.user.userId;
+      }
+      const existing = await ConsumableItemModel.findOne(
+        buildDuplicateNameFilter({
+          name: String(payload.name),
+          categoryId: payload.category_id,
+          subcategory: payload.subcategory,
+        }),
+        { _id: 1 }
+      ).lean();
+      if (existing?._id) {
+        throw createHttpError(409, 'Consumable item already exists in this category/subcategory');
       }
       const item = await ConsumableItemModel.create(payload);
       try {
@@ -152,6 +186,7 @@ export const consumableItemController = {
       await ensureScopeItemAccess(scope, { category_id: (existing as any).category_id });
 
       const payload = buildPayload(req.body);
+      const nextName = payload.name ? String(payload.name) : String((existing as any).name || '').trim();
       if (payload.category_id !== undefined) {
         await ensureScopeCategoryAccess(scope, payload.category_id);
       }
@@ -166,6 +201,18 @@ export const consumableItemController = {
         payload.base_uom = normalizeUom(String(payload.base_uom), lookup);
       }
       await syncChemicalFlagWithCategoryScope(payload, existing.category_id);
+      const duplicate = await ConsumableItemModel.findOne(
+        buildDuplicateNameFilter({
+          name: nextName,
+          categoryId: payload.category_id !== undefined ? payload.category_id : (existing as any).category_id,
+          subcategory: payload.subcategory !== undefined ? payload.subcategory : (existing as any).subcategory,
+          excludeId: String(req.params.id || ''),
+        }),
+        { _id: 1 }
+      ).lean();
+      if (duplicate?._id) {
+        throw createHttpError(409, 'Consumable item already exists in this category/subcategory');
+      }
       const item = await ConsumableItemModel.findByIdAndUpdate(req.params.id, payload, { new: true });
       if (!item) return res.status(404).json({ message: 'Not found' });
       try {

@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { closeSeedConnection, seedE2E } from "./seed";
-import { login } from "./helpers";
+import { expectAuthenticatedSession, login } from "./helpers";
 
 const adminRoutes = [
   "/",
@@ -93,10 +93,10 @@ async function expectPageReady(page: Parameters<typeof test>[0]["page"]) {
 test.describe("Page smoke coverage", () => {
   test("should let an admin open every major top-level page without falling back to login", async ({ page }) => {
     await login(page, "admin@test.com", "AdminPass123!");
-    await expect(page).toHaveURL("/");
+    await expectAuthenticatedSession(page);
 
     for (const path of adminRoutes) {
-      await page.goto(path, { waitUntil: "domcontentloaded" });
+      await page.goto(path, { waitUntil: "commit" });
       await expect(page).not.toHaveURL(/\/login$/);
       await expectPageReady(page);
     }
@@ -104,15 +104,15 @@ test.describe("Page smoke coverage", () => {
 
   test("should let an employee open employee routes and redirect assignments to my-assets", async ({ page }) => {
     await login(page, "testuser@test.com", "TestPass123!");
-    await expect(page).toHaveURL("/");
+    await expectAuthenticatedSession(page);
 
     for (const path of employeeRoutes) {
-      await page.goto(path, { waitUntil: "domcontentloaded" });
+      await page.goto(path, { waitUntil: "commit" });
       await expect(page).not.toHaveURL(/\/login$/);
       await expectPageReady(page);
     }
 
-    await page.goto("/assignments", { waitUntil: "domcontentloaded" });
+    await page.goto("/assignments", { waitUntil: "commit" });
     await expect(page).toHaveURL(/\/my-assets$/);
   });
 
@@ -127,7 +127,7 @@ test.describe("Page smoke coverage", () => {
         return cookies.some((cookie) => cookie.name === "auth_token");
       })
       .toBe(true);
-    await page.goto("/assets", { waitUntil: "domcontentloaded" });
+    await page.goto("/assets", { waitUntil: "commit" });
     await expect(page).not.toHaveURL(/\/login$/);
 
     await context.clearCookies();
@@ -136,7 +136,7 @@ test.describe("Page smoke coverage", () => {
       window.sessionStorage.clear();
     });
 
-    await page.goto("/assets", { waitUntil: "domcontentloaded" });
+    await page.goto("/assets", { waitUntil: "commit" });
     await expect(page).toHaveURL(/\/login$/);
   });
 });

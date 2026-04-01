@@ -59,6 +59,7 @@ export default function MyAssets() {
   const [consumeTarget, setConsumeTarget] = useState<ConsumableRow | null>(null);
   const [consumeQty, setConsumeQty] = useState("1");
   const [consumeNotes, setConsumeNotes] = useState("");
+  const [consumeError, setConsumeError] = useState("");
 
   const employeeList = useMemo(() => employees || [], [employees]);
   const assetItemList = useMemo(() => assetItems || [], [assetItems]);
@@ -176,6 +177,7 @@ export default function MyAssets() {
     setConsumeTarget(row);
     setConsumeQty("1");
     setConsumeNotes("");
+    setConsumeError("");
   };
 
   const closeConsumeDialog = () => {
@@ -183,12 +185,21 @@ export default function MyAssets() {
     setConsumeTarget(null);
     setConsumeQty("1");
     setConsumeNotes("");
+    setConsumeError("");
   };
 
   const submitConsume = async () => {
     if (!consumeTarget || !currentEmployeeId) return;
     const qty = Number(consumeQty);
-    if (!Number.isFinite(qty) || qty <= 0) return;
+    if (!Number.isFinite(qty) || qty <= 0) {
+      setConsumeError("Quantity must be greater than zero");
+      return;
+    }
+    if (qty > consumeTarget.onHand) {
+      setConsumeError(`Available stock is ${consumeTarget.onHand} ${consumeTarget.uom || ""}`.trim());
+      return;
+    }
+    setConsumeError("");
     await consumeMutation.mutateAsync({
       holderType: "EMPLOYEE",
       holderId: currentEmployeeId,
@@ -275,7 +286,10 @@ export default function MyAssets() {
                 min="0.01"
                 step="0.01"
                 value={consumeQty}
-                onChange={(event) => setConsumeQty(event.target.value)}
+                onChange={(event) => {
+                  setConsumeQty(event.target.value);
+                  if (consumeError) setConsumeError("");
+                }}
               />
               <p className="text-xs text-muted-foreground">
                 Available: {Number(consumeTarget?.onHand || 0).toLocaleString()} {consumeTarget?.uom || ""}
@@ -287,10 +301,14 @@ export default function MyAssets() {
               <Input
                 id="my-assets-consume-notes"
                 value={consumeNotes}
-                onChange={(event) => setConsumeNotes(event.target.value)}
+                onChange={(event) => {
+                  setConsumeNotes(event.target.value);
+                  if (consumeError) setConsumeError("");
+                }}
                 placeholder="Optional notes"
               />
             </div>
+            {consumeError && <p className="text-sm text-destructive">{consumeError}</p>}
           </div>
 
           <DialogFooter>

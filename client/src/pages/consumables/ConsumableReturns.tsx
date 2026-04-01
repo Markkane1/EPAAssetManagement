@@ -48,7 +48,7 @@ type ReturnFormData = z.infer<typeof returnSchema>;
 export default function ConsumableReturns() {
   const FEFO_VALUE = '__fefo__';
   const STORE_CODE = 'HEAD_OFFICE_STORE';
-  const { locationId } = useAuth();
+  const { locationId, role } = useAuth();
   const { mode, setMode } = useConsumableMode();
   const { data: items } = useConsumableItems();
   const { data: units } = useConsumableUnits();
@@ -75,28 +75,19 @@ export default function ConsumableReturns() {
 
   const filteredItems = useMemo(() => filterItemsByMode(items || [], mode), [items, mode]);
   const filteredLocations = useMemo(() => filterLocationsByMode(locations || [], mode), [locations, mode]);
+  const restrictToAssignedLocation = role !== 'org_admin' && Boolean(locationId);
+  const scopedLocations = useMemo(
+    () =>
+      restrictToAssignedLocation
+        ? filteredLocations.filter((location) => location.id === locationId)
+        : filteredLocations,
+    [restrictToAssignedLocation, filteredLocations, locationId]
+  );
   const unitList = useMemo(() => units || [], [units]);
   const selectedItemId = form.watch('itemId');
   const selectedContainerId = form.watch('containerId');
   const selectedLotId = form.watch('lotId');
   const selectedUom = form.watch('uom');
-  const allowedItemIds = useMemo(
-    () => new Set(filteredItems.map((item) => item.id)),
-    [filteredItems]
-  );
-
-  const selectedItem: ConsumableItem | undefined = useMemo(() => {
-    return filteredItems.find((item) => item.id === selectedItemId);
-  }, [filteredItems, selectedItemId]);
-
-  useEffect(() => {
-    const currentItem = form.getValues('itemId');
-    if (currentItem && !filteredItems.some((item) => item.id === currentItem)) {
-      form.setValue('itemId', '');
-      form.setValue('lotId', FEFO_VALUE);
-      form.setValue('containerId', '');
-    }
-  }, [filteredItems, form, FEFO_VALUE]);
 
   const fromLocationId = form.watch('fromLocationId');
   const containerFilters = useMemo(() => {
@@ -106,6 +97,55 @@ export default function ConsumableReturns() {
 
   const { data: containers = [] } = useConsumableContainers(containerFilters);
 
+  useEffect(() => {
+    if (scopedLocations.length === 0) return;
+    const current = form.getValues('fromLocationId');
+    if (!current || !scopedLocations.some((loc) => loc.id === current)) {
+      form.setValue('fromLocationId', scopedLocations[0].id);
+    }
+  }, [scopedLocations, form]);
+
+  const officeBalanceFilters = useMemo(() => {
+    if (!fromLocationId) return undefined;
+    return {
+      holderType: 'OFFICE' as const,
+      holderId: fromLocationId,
+    };
+  }, [fromLocationId]);
+
+  const { data: officeBalances = [] } = useConsumableBalances(officeBalanceFilters);
+  const availableByItemId = useMemo(() => {
+    const map = new Map<string, number>();
+    officeBalances.forEach((balance) => {
+      map.set(
+        balance.consumable_item_id,
+        (map.get(balance.consumable_item_id) || 0) + Number(balance.qty_on_hand_base || 0)
+      );
+    });
+    return map;
+  }, [officeBalances]);
+
+  const visibleItems = useMemo(
+    () => filteredItems.filter((item) => (availableByItemId.get(item.id) || 0) > 0),
+    [filteredItems, availableByItemId]
+  );
+
+  const selectedItem: ConsumableItem | undefined = useMemo(() => {
+    return visibleItems.find((item) => item.id === selectedItemId);
+  }, [visibleItems, selectedItemId]);
+
+  useEffect(() => {
+    const currentItem = form.getValues('itemId');
+    if (currentItem && !visibleItems.some((item) => item.id === currentItem)) {
+      form.setValue('itemId', '');
+      form.setValue('lotId', FEFO_VALUE);
+      form.setValue('containerId', '');
+    }
+  }, [visibleItems, form, FEFO_VALUE]);
+  const allowedItemIds = useMemo(
+    () => new Set(visibleItems.map((item) => item.id)),
+    [visibleItems]
+  );
   const compatibleUnits = useMemo(() => {
     if (!selectedItem) return [] as string[];
     return getCompatibleUnits(selectedItem.base_uom, unitList);
@@ -132,14 +172,6 @@ export default function ConsumableReturns() {
   }, [selectedItem, form]);
 
   useEffect(() => {
-    if (filteredLocations.length === 0) return;
-    const current = form.getValues('fromLocationId');
-    if (!current || !filteredLocations.some((loc) => loc.id === current)) {
-      form.setValue('fromLocationId', filteredLocations[0].id);
-    }
-  }, [filteredLocations, form]);
-
-  useEffect(() => {
     if (!selectedContainer) return;
     form.setValue('lotId', selectedContainer.lot_id);
     form.setValue('qty', selectedContainer.current_qty_base);
@@ -159,10 +191,20 @@ export default function ConsumableReturns() {
 
   const { data: balances = [] } = useConsumableBalances(balanceFilters);
   const availableQty = balances.reduce((total, balance) => total + (balance.qty_on_hand_base || 0), 0);
-  const locationCount = filteredLocations.length;
-  const itemCount = filteredItems.length;
+  const locationCount = scopedLocations.length;
+  const itemCount = visibleItems.length;
 
   const handleSubmit = async (data: ReturnFormData) => {
+    if (!visibleItems.some((item) => item.id === data.itemId)) {
+      form.setError('itemId', { message: 'Select an item with available stock' });
+      return;
+    }
+    if (availableQty > 0 && data.qty > availableQty) {
+      form.setError('qty', {
+        message: `Available stock is ${availableQty} ${selectedItem?.base_uom || ''}`,
+      });
+      return;
+    }
     if (requiresContainer && !data.containerId) {
       form.setError('containerId', { message: 'Container is required for this item' });
       return;
@@ -217,7 +259,7 @@ export default function ConsumableReturns() {
                   placeholder="Select lab"
                   searchPlaceholder="Search locations..."
                   emptyText="No locations found."
-                  options={filteredLocations.map((loc) => ({ value: loc.id, label: loc.name }))}
+                  options={scopedLocations.map((loc) => ({ value: loc.id, label: loc.name }))}
                 />
               </div>
               <div className="space-y-2">
@@ -232,7 +274,7 @@ export default function ConsumableReturns() {
                 <Select value={selectedItemId} onValueChange={(v) => form.setValue('itemId', v)}>
                   <SelectTrigger><SelectValue placeholder="Select item" /></SelectTrigger>
                   <SelectContent>
-                    {filteredItems.map((item) => (
+                    {visibleItems.map((item) => (
                       <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>
                     ))}
                   </SelectContent>

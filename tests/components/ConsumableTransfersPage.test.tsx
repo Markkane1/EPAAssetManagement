@@ -171,7 +171,9 @@ describe("ConsumableTransfers page", () => {
     });
     useConsumableLotsMock.mockReturnValue({ data: [{ id: "lot-1", consumable_id: "item-1", batch_no: "LOT-1" }] });
     useConsumableContainersMock.mockReturnValue({ data: [] });
-    useConsumableBalancesMock.mockReturnValue({ data: [{ qty_on_hand_base: 25 }] });
+    useConsumableBalancesMock.mockReturnValue({
+      data: [{ consumable_item_id: "item-1", qty_on_hand_base: 25 }],
+    });
     useConsumableUnitsMock.mockReturnValue({ data: [{ code: "pcs", name: "Pieces" }, { code: "box", name: "Boxes" }] });
     useTransferConsumablesMock.mockReturnValue({ isPending: false, mutateAsync: vi.fn().mockResolvedValue({}) });
   });

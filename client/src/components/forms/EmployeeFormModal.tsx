@@ -14,13 +14,24 @@ import { Label } from "@/components/ui/label";
 import { Employee, Directorate, Location } from "@/types";
 import { SearchableSelect } from "@/components/shared/SearchableSelect";
 import { FormDialogActions } from "@/components/forms/FormDialogActions";
+import { strongPasswordSchema } from "@/lib/securityUtils";
+
+const pakistanPhoneSchema = z
+  .string()
+  .trim()
+  .optional()
+  .refine((value) => {
+    if (!value) return true;
+    const compact = value.replace(/[\s()-]+/g, "");
+    return /^03\d{9}$/.test(compact) || /^92\d{10}$/.test(compact) || /^\+92\d{10}$/.test(compact);
+  }, "Enter a valid Pakistani mobile number");
 
 const employeeSchema = z.object({
   firstName: z.string().min(1, "First name is required").max(50),
   lastName: z.string().min(1, "Last name is required").max(50),
   email: z.string().email("Invalid email address"),
-  userPassword: z.string().min(6, "Password must be at least 6 characters").optional().or(z.literal("")),
-  phone: z.string().max(20).optional(),
+  userPassword: strongPasswordSchema.optional().or(z.literal("")),
+  phone: pakistanPhoneSchema,
   jobTitle: z.string().max(100).optional(),
   locationId: z.string().min(1, "Office is required"),
 });
@@ -191,10 +202,16 @@ export function EmployeeFormModal({
             <div className="space-y-2">
               <Label htmlFor="phone">Phone</Label>
               <Input id="phone" {...form.register("phone")} placeholder="+92 300 1234567" />
+              {form.formState.errors.phone && (
+                <p className="text-sm text-destructive">{form.formState.errors.phone.message}</p>
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="jobTitle">Designation</Label>
               <Input id="jobTitle" {...form.register("jobTitle")} placeholder="Designation" />
+              {form.formState.errors.jobTitle && (
+                <p className="text-sm text-destructive">{form.formState.errors.jobTitle.message}</p>
+              )}
             </div>
           </div>
           <div className="space-y-2">

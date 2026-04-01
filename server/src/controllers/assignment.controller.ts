@@ -174,6 +174,7 @@ async function listAssignmentsWithDetails(params: {
     {
       $addFields: {
         itemTag: '$asset_item.tag',
+        serialNumber: '$asset_item.serial_number',
         assetName: '$asset.name',
         employeeName: {
           $trim: {
@@ -337,6 +338,8 @@ export const assignmentController = {
     try {
       const limit = clampInt(req.query.limit, 200, 1000);
       const page = clampInt(req.query.page, 1, 10_000);
+      const skip = (page - 1) * limit;
+      const includeDetails = String(req.query.details || '') === '1';
       const access = await resolveAccessContext(req.user);
       const requestedEmployeeId = readParam(req, 'employeeId');
 
@@ -356,12 +359,15 @@ export const assignmentController = {
         }
       }
 
-      const assignments = await AssignmentModel.find({
+      const match = {
         employee_id: requestedEmployeeId,
-      })
-        .sort({ assigned_date: -1, created_at: -1 })
-        .skip((page - 1) * limit)
-        .limit(limit);
+      };
+      const assignments = includeDetails
+        ? await listAssignmentsWithDetails({ match, skip, limit })
+        : await AssignmentModel.find(match)
+            .sort({ assigned_date: -1, created_at: -1 })
+            .skip(skip)
+            .limit(limit);
       return res.json(assignments);
     } catch (error) {
       return next(error);
@@ -472,8 +478,11 @@ export const assignmentController = {
 
       let employeeId: string | null = null;
       if (targetType === 'EMPLOYEE') {
-        const targetEmployee: any = await EmployeeModel.findById(targetId, { _id: 1, location_id: 1 }).lean();
+        const targetEmployee: any = await EmployeeModel.findById(targetId, { _id: 1, location_id: 1, is_active: 1 }).lean();
         if (!targetEmployee) throw createHttpError(404, 'Target employee not found');
+        if (targetEmployee.is_active === false) {
+          throw createHttpError(400, 'Target employee is inactive');
+        }
         if (
           targetEmployee.location_id &&
           requisitionOfficeId &&
@@ -960,6 +969,22 @@ export const assignmentController = {
           throw createHttpError(400, assignmentBlockReason);
         }
       }
+      if (payload.employee_id !== undefined && payload.employee_id !== null) {
+        const targetEmployee: any = await EmployeeModel.findById(String(payload.employee_id), {
+          _id: 1,
+          location_id: 1,
+          is_active: 1,
+        }).lean();
+        if (!targetEmployee) {
+          throw createHttpError(404, 'Employee not found');
+        }
+        if (targetEmployee.is_active === false) {
+          throw createHttpError(400, 'Employee is inactive');
+        }
+        if (!access.isOrgAdmin && targetEmployee.location_id) {
+          ensureOfficeScope(access, targetEmployee.location_id.toString());
+        }
+      }
 
       const updated = await AssignmentModel.findByIdAndUpdate(assignment._id, payload, { new: true });
       if (!updated) return res.status(404).json({ message: 'Not found' });
@@ -995,6 +1020,9 @@ export const assignmentController = {
 
       const employee = await EmployeeModel.findById(newEmployeeId);
       if (!employee) throw createHttpError(404, 'Employee not found');
+      if (employee.is_active === false) {
+        throw createHttpError(400, 'Employee is inactive');
+      }
       if (!access.isOrgAdmin && employee.location_id) {
         ensureOfficeScope(access, employee.location_id.toString());
       }

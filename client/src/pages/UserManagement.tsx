@@ -293,6 +293,11 @@ export default function UserManagement() {
         return;
       }
       const allRoles = Array.from(new Set([selectedRole, ...extraRoles])).filter(Boolean) as AppRole[];
+      const requiresOfficeLocation = allRoles.includes("employee");
+      if (requiresOfficeLocation && selectedLocation === "none") {
+        toast.error("Employee-role users must be assigned to an office");
+        return;
+      }
       const currentActiveRole = String(editingUser.activeRole || editingUser.role || "").trim().toLowerCase();
       const currentRoles = (editingUser.roles || [editingUser.role || ""])
         .map((entry) => String(entry || "").trim().toLowerCase())
@@ -730,12 +735,14 @@ export default function UserManagement() {
                 searchPlaceholder="Search locations..."
                 emptyText="No locations found."
                 options={[
-                  { value: "none", label: "No Location (All Access)" },
+                  ...(selectedRole === "employee" ? [] : [{ value: "none", label: "No Location (All Access)" }]),
                   ...locations.map((location) => ({ value: location.id, label: location.name })),
                 ]}
               />
               <p className="text-xs text-muted-foreground">
-                {selectedRole === "org_admin"
+                {selectedRole === "employee"
+                  ? "Employees must be assigned to one office."
+                  : selectedRole === "org_admin"
                   ? "Org admins are global. Location assignment is optional."
                   : "Non-org-admin roles should be assigned to one office."}
               </p>

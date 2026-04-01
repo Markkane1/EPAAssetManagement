@@ -7,6 +7,7 @@ import { mapFields } from '../utils/mapFields';
 import { EmployeeModel } from '../models/employee.model';
 import { OfficeModel } from '../models/office.model';
 import { OfficeSubLocationModel } from '../models/officeSubLocation.model';
+import { AssignmentModel } from '../models/assignment.model';
 import { AuthRequest } from '../middleware/auth';
 import {
   OFFICE_ADMIN_ROLE_VALUES,
@@ -18,10 +19,12 @@ import {
 import { getRequestContext } from '../utils/scope';
 import { logAudit } from '../modules/records/services/audit.service';
 import { createBulkNotifications, resolveNotificationRecipientsByOffice } from '../services/notification.service';
+import { validateStrongPassword } from '../utils/passwordPolicy';
 
 const fieldMap = {
   firstName: 'first_name',
   lastName: 'last_name',
+  phone: 'phone',
   jobTitle: 'job_title',
   hireDate: 'hire_date',
   directorateId: 'directorate_id',
@@ -37,6 +40,7 @@ const baseController = createCrudController({
   updateMap: {
     firstName: 'first_name',
     lastName: 'last_name',
+    phone: 'phone',
     jobTitle: 'job_title',
     hireDate: 'hire_date',
     directorateId: 'directorate_id',
@@ -69,6 +73,47 @@ function buildPayload(body: Record<string, unknown>) {
   });
   if (body.email !== undefined) payload.email = body.email;
   return payload;
+}
+
+function escapeRegex(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function buildEmailQuery(email: string) {
+  return { $regex: `^${escapeRegex(email)}$`, $options: 'i' };
+}
+
+function buildEmployeeSearchQuery(rawSearch: unknown) {
+  const search = String(rawSearch || '').trim();
+  if (!search) return null;
+  const regex = new RegExp(escapeRegex(search), 'i');
+  return {
+    $or: [
+      { first_name: regex },
+      { last_name: regex },
+      { email: regex },
+      { phone: regex },
+      { job_title: regex },
+    ],
+  };
+}
+
+function normalizePakistaniPhone(value: unknown) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+
+  const compact = raw.replace(/[\s()-]+/g, '');
+  if (/^03\d{9}$/.test(compact)) {
+    return `+92${compact.slice(1)}`;
+  }
+  if (/^92\d{10}$/.test(compact)) {
+    return `+${compact}`;
+  }
+  if (/^\+92\d{10}$/.test(compact)) {
+    return compact;
+  }
+
+  throw new Error('Enter a valid Pakistani mobile number');
 }
 
 function normalizeObjectIdValue(value: unknown) {
@@ -140,6 +185,18 @@ async function resolveValidatedSectionScope(params: {
   };
 }
 
+async function ensureActiveOfficeLocation(locationId: string | null) {
+  if (!locationId) return null;
+  const office = (await OfficeModel.findOne(
+    { _id: locationId, is_active: { $ne: false } },
+    { _id: 1 }
+  ).lean()) as { _id?: unknown } | null;
+  if (!office?._id) {
+    throw new Error('Selected office was not found or is inactive');
+  }
+  return locationId;
+}
+
 function readParam(req: Request, key: string) {
   const raw = req.params?.[key];
   if (Array.isArray(raw)) return String(raw[0] || '').trim();
@@ -163,8 +220,10 @@ export const employeeController = {
       }
 
       const query = isGlobal ? {} : { location_id: locationId };
+      const searchQuery = buildEmployeeSearchQuery((req.query as Record<string, unknown>).search);
+      const scopedQuery = searchQuery ? { ...query, ...searchQuery } : query;
       const meta = String((req.query as Record<string, unknown>).meta || '') === '1';
-      const employees = await EmployeeModel.find(query)
+      const employees = await EmployeeModel.find(scopedQuery)
         .sort({ created_at: -1 })
         .skip(skip)
         .limit(limit)
@@ -173,7 +232,7 @@ export const employeeController = {
         return res.json(employees);
       }
 
-      const total = await EmployeeModel.countDocuments(query);
+      const total = await EmployeeModel.countDocuments(scopedQuery);
       return res.json({
         items: employees,
         page,
@@ -224,6 +283,11 @@ export const employeeController = {
       if (!email) {
         return res.status(400).json({ message: 'Email is required' });
       }
+      try {
+        payload.phone = normalizePakistaniPhone(payload.phone);
+      } catch (validationError) {
+        return res.status(400).json({ message: (validationError as Error).message });
+      }
 
       const firstName = payload.first_name ? String(payload.first_name) : null;
       const lastName = payload.last_name ? String(payload.last_name) : null;
@@ -237,6 +301,13 @@ export const employeeController = {
           return res.status(403).json({ message: 'Access restricted to assigned office' });
         }
         payload.location_id = authUser.locationId;
+      }
+      try {
+        payload.location_id = await ensureActiveOfficeLocation(
+          payload.location_id ? String(payload.location_id) : null
+        );
+      } catch (validationError) {
+        return res.status(400).json({ message: (validationError as Error).message });
       }
       try {
         const sectionScope = await resolveValidatedSectionScope({
@@ -255,7 +326,24 @@ export const employeeController = {
           ? req.body.userPassword.trim()
           : null;
 
+      if (providedPassword) {
+        const passwordValidationError = validateStrongPassword(providedPassword);
+        if (passwordValidationError) {
+          return res.status(400).json({ message: passwordValidationError });
+        }
+      }
+
       let user = await UserModel.findOne({ email });
+      const duplicateEmployeeFilters: Record<string, unknown>[] = [{ email: buildEmailQuery(email) }];
+      if (user?._id) {
+        duplicateEmployeeFilters.push({ user_id: user._id });
+      }
+      const existingEmployee = (await EmployeeModel.findOne({ $or: duplicateEmployeeFilters }).lean()) as {
+        _id?: unknown;
+      } | null;
+      if (existingEmployee?._id) {
+        return res.status(409).json({ message: 'Employee already exists for this email' });
+      }
 
       if (user) {
         const normalizedRoles = normalizeRoles(user.roles, user.role);
@@ -268,10 +356,10 @@ export const employeeController = {
         user.roles = mergedRoles;
         user.active_role = activeRole;
         if (!user.location_id || hasRoleCapability(mergedRoles, ['employee'])) {
-          user.location_id = locationId;
+          user.location_id = payload.location_id ? String(payload.location_id) : null;
         }
-        if (!user.first_name && firstName) user.first_name = firstName;
-        if (!user.last_name && lastName) user.last_name = lastName;
+        if (firstName && user.first_name !== firstName) user.first_name = firstName;
+        if (lastName && user.last_name !== lastName) user.last_name = lastName;
         await user.save();
       } else {
         if (!providedPassword) {
@@ -286,7 +374,7 @@ export const employeeController = {
           role: 'employee',
           roles: ['employee'],
           active_role: 'employee',
-          location_id: locationId,
+          location_id: payload.location_id ? String(payload.location_id) : null,
         });
       }
 
@@ -324,6 +412,35 @@ export const employeeController = {
       }
 
       const payload = buildPayload(req.body);
+      const normalizedEmail =
+        payload.email !== undefined ? String(payload.email || '').trim().toLowerCase() : null;
+      if (payload.email !== undefined) {
+        if (!normalizedEmail) {
+          return res.status(400).json({ message: 'Email is required' });
+        }
+        payload.email = normalizedEmail;
+        const duplicateEmployee = (await EmployeeModel.findOne({
+          _id: { $ne: employeeId },
+          email: buildEmailQuery(normalizedEmail),
+        }).lean()) as { _id?: unknown } | null;
+        if (duplicateEmployee?._id) {
+          return res.status(409).json({ message: 'Employee already exists for this email' });
+        }
+        const conflictingUser = (await UserModel.findOne({
+          _id: { $ne: existing.user_id || null },
+          email: normalizedEmail,
+        }).lean()) as { _id?: unknown } | null;
+        if (conflictingUser?._id) {
+          return res.status(409).json({ message: 'Email already in use' });
+        }
+      }
+      if (payload.phone !== undefined) {
+        try {
+          payload.phone = normalizePakistaniPhone(payload.phone);
+        } catch (validationError) {
+          return res.status(400).json({ message: (validationError as Error).message });
+        }
+      }
       if (!isGlobal) {
         const nextLocationId = payload.location_id ? String(payload.location_id) : null;
         if (nextLocationId && String(nextLocationId) !== String(user.locationId)) {
@@ -331,8 +448,14 @@ export const employeeController = {
         }
         payload.location_id = user.locationId;
       }
-
       const previousLocationId = existing.location_id ? String(existing.location_id) : null;
+      try {
+        payload.location_id = await ensureActiveOfficeLocation(
+          payload.location_id ? String(payload.location_id) : previousLocationId
+        );
+      } catch (validationError) {
+        return res.status(400).json({ message: (validationError as Error).message });
+      }
       const nextLocationId = payload.location_id ? String(payload.location_id) : previousLocationId;
       const locationChanged = previousLocationId !== nextLocationId;
 
@@ -363,8 +486,26 @@ export const employeeController = {
 
       const updated = await employeeRepository.updateById(employeeId, payload);
       if (!updated) return res.status(404).json({ message: 'Not found' });
-      if (payload.location_id && existing.user_id) {
-        await UserModel.findByIdAndUpdate(existing.user_id, { location_id: payload.location_id });
+      if (existing.user_id) {
+        const userUpdate: Record<string, unknown> = {};
+        if (payload.location_id !== undefined) {
+          userUpdate.location_id = payload.location_id;
+        }
+        if (normalizedEmail) {
+          userUpdate.email = normalizedEmail;
+        }
+        if (payload.first_name !== undefined) {
+          userUpdate.first_name = payload.first_name;
+        }
+        if (payload.last_name !== undefined) {
+          userUpdate.last_name = payload.last_name;
+        }
+        if (payload.is_active !== undefined) {
+          userUpdate.is_active = Boolean(payload.is_active);
+        }
+        if (Object.keys(userUpdate).length > 0) {
+          await UserModel.findByIdAndUpdate(existing.user_id, userUpdate);
+        }
       }
       return res.json(updated);
     } catch (error) {
@@ -396,6 +537,9 @@ export const employeeController = {
 
       existing.is_active = false;
       await existing.save();
+      if (existing.user_id) {
+        await UserModel.findByIdAndUpdate(existing.user_id, { is_active: false });
+      }
       return res.status(200).json(existing);
     } catch (error) {
       next(error);
@@ -441,6 +585,19 @@ export const employeeController = {
       const previousOfficeId = employee.location_id ? String(employee.location_id) : null;
       if (previousOfficeId === newOfficeId) {
         return res.status(400).json({ message: 'Employee already belongs to the selected office' });
+      }
+
+      const activeAssignments = await AssignmentModel.countDocuments({
+        is_active: true,
+        $or: [
+          { employee_id: employee._id },
+          { assigned_to_type: 'EMPLOYEE', assigned_to_id: employee._id },
+        ],
+      });
+      if (activeAssignments > 0) {
+        return res.status(400).json({
+          message: 'Return or close all active assigned assets before transferring this employee',
+        });
       }
 
       employee.location_id = newOfficeId;

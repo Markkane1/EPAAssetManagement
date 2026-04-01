@@ -31,7 +31,12 @@ export const useCreateTransfer = () => {
   return useMutation({
     mutationFn: (data: TransferCreateDto) => transferService.create(data),
     onSuccess: async () => {
-      await refreshActiveQueries(queryClient, [queryKeys.transfers, queryKeys.assetItems]);
+      await refreshActiveQueries(queryClient, [
+        queryKeys.transfers,
+        queryKeys.assetItems,
+        queryKeys.assets,
+        queryKeys.employees,
+      ]);
       toast.success(messages.transferCreated);
     },
     onError: (error: Error) => {
@@ -88,7 +93,12 @@ export const useTransferAction = () => {
       }
     },
     onSuccess: async () => {
-      await refreshActiveQueries(queryClient, [queryKeys.transfers, queryKeys.assetItems]);
+      await refreshActiveQueries(queryClient, [
+        queryKeys.transfers,
+        queryKeys.assetItems,
+        queryKeys.assets,
+        queryKeys.employees,
+      ]);
       toast.success(messages.transferUpdated);
     },
     onError: (error: Error) => {
@@ -116,7 +126,11 @@ export const useDeleteTransfer = () => {
   return useMutation({
     mutationFn: (id: string) => transferService.delete(id),
     onSuccess: async () => {
-      await refreshActiveQueries(queryClient, [queryKeys.transfers]);
+      await refreshActiveQueries(queryClient, [
+        queryKeys.transfers,
+        queryKeys.assetItems,
+        queryKeys.assets,
+      ]);
       toast.success(messages.transferDeleted);
     },
     onError: (error: Error) => {

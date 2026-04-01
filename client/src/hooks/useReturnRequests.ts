@@ -53,6 +53,7 @@ export const useReceiveReturnRequest = (id: string) => {
         queryKeys.returnRequests,
         queryKeys.assignments,
         queryKeys.assetItems,
+        queryKeys.employees,
       ]);
       toast.success('Return request received.');
     },
@@ -67,7 +68,11 @@ export const useUploadSignedReturnRequest = (id: string) => {
   return useMutation({
     mutationFn: (formData: FormData) => returnRequestService.uploadSignedReturn(id, formData),
     onSuccess: async () => {
-      await refreshActiveQueries(queryClient, [queryKeys.returnRequests]);
+      await refreshActiveQueries(queryClient, [
+        queryKeys.returnRequests,
+        queryKeys.assignments,
+        queryKeys.assetItems,
+      ]);
       toast.success('Signed return receipt uploaded.');
     },
     onError: (error: Error) => {
@@ -81,7 +86,12 @@ export const useCreateReturnRequest = () => {
   return useMutation({
     mutationFn: returnRequestService.create,
     onSuccess: async () => {
-      await refreshActiveQueries(queryClient, [queryKeys.returnRequests]);
+      await refreshActiveQueries(queryClient, [
+        queryKeys.returnRequests,
+        queryKeys.assignments,
+        queryKeys.assetItems,
+        queryKeys.employees,
+      ]);
       toast.success('Return request submitted.');
     },
     onError: (error: Error) => {

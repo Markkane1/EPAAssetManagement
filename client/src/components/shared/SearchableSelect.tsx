@@ -38,14 +38,22 @@ export function SearchableSelect({
   triggerClassName,
 }: SearchableSelectProps) {
   const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
 
   const selectedOption = useMemo(
     () => options.find((option) => option.value === value),
     [options, value]
   );
 
+  const handleOpenChange = (nextOpen: boolean) => {
+    setOpen(nextOpen);
+    if (!nextOpen) {
+      setSearch("");
+    }
+  };
+
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
         <Button
           id={id}
@@ -68,7 +76,11 @@ export function SearchableSelect({
       </PopoverTrigger>
       <PopoverContent className={cn("min-w-[18rem] max-w-[calc(100vw-1.5rem)] rounded-2xl border-border/80 p-0 shadow-[0_24px_60px_-32px_rgba(26,28,24,0.14)]", className)} align="start">
         <Command>
-          <CommandInput placeholder={searchPlaceholder} />
+          <CommandInput
+            placeholder={searchPlaceholder}
+            value={search}
+            onValueChange={setSearch}
+          />
           <CommandList>
             <CommandEmpty>{emptyText}</CommandEmpty>
             {options.map((option) => (
@@ -78,6 +90,7 @@ export function SearchableSelect({
                 onSelect={() => {
                   if (option.disabled) return;
                   onValueChange(option.value);
+                  setSearch("");
                   setOpen(false);
                 }}
                 disabled={option.disabled}

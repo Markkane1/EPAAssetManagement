@@ -29,6 +29,10 @@ function resolveVendorChunk(id: string) {
     return "vendor-query";
   }
 
+  if (pkg.startsWith("@radix-ui/")) {
+    return "vendor-radix";
+  }
+
   if (
     [
       "class-variance-authority",
@@ -43,6 +47,14 @@ function resolveVendorChunk(id: string) {
 
   if (["@hookform/resolvers", "react-hook-form", "zod"].includes(pkg)) {
     return "vendor-forms";
+  }
+
+  if (["date-fns"].includes(pkg)) {
+    return "vendor-date";
+  }
+
+  if (["jspdf", "jspdf-autotable", "qrcode.react"].includes(pkg)) {
+    return "vendor-docs";
   }
 
   if (

@@ -3,6 +3,7 @@ import { Types } from 'mongoose';
 import type { AuthRequest } from '../middleware/auth';
 import { RoleDelegationModel } from '../models/roleDelegation.model';
 import { UserModel } from '../models/user.model';
+import { OfficeModel } from '../models/office.model';
 import { ActivityLogModel } from '../models/activityLog.model';
 import { createHttpError } from '../utils/httpError';
 import { hasRoleCapability, normalizeRole, normalizeRoles } from '../utils/roles';
@@ -167,6 +168,13 @@ export const roleDelegationController = {
         : String(user.locationId || '').trim();
       if (!Types.ObjectId.isValid(officeId)) {
         throw createHttpError(400, 'officeId is invalid');
+      }
+      const office = (await OfficeModel.findOne(
+        { _id: officeId, is_active: { $ne: false } },
+        { _id: 1 }
+      ).lean()) as { _id?: unknown } | null;
+      if (!office?._id) {
+        throw createHttpError(400, 'officeId was not found or is inactive');
       }
 
       const delegateLocationId = String(delegateUser.location_id || '').trim();

@@ -30,6 +30,7 @@ import { filterItemsByMode, filterLocationsByMode } from '@/lib/consumableMode';
 import { ConsumableModeToggle } from '@/components/consumables/ConsumableModeToggle';
 import { SearchableSelect } from '@/components/shared/SearchableSelect';
 import { MetricCard, WorkflowPanel } from '@/components/shared/workflow';
+import { useAuth } from '@/contexts/AuthContext';
 
 const adjustSchema = z.object({
   locationId: z.string().min(1, 'Location is required'),
@@ -47,6 +48,7 @@ type AdjustFormData = z.infer<typeof adjustSchema>;
 
 export default function ConsumableAdjustments() {
   const ALL_VALUE = '__all__';
+  const { role, locationId } = useAuth();
   const { mode, setMode } = useConsumableMode();
   const { data: items } = useConsumableItems();
   const { data: units } = useConsumableUnits();
@@ -74,6 +76,13 @@ export default function ConsumableAdjustments() {
 
   const filteredItems = useMemo(() => filterItemsByMode(items || [], mode), [items, mode]);
   const filteredLocations = useMemo(() => filterLocationsByMode(locations || [], mode), [locations, mode]);
+  const scopedLocations = useMemo(
+    () =>
+      role === 'org_admin' || !locationId
+        ? filteredLocations
+        : filteredLocations.filter((location) => location.id === locationId),
+    [filteredLocations, locationId, role]
+  );
   const unitList = useMemo(() => units || [], [units]);
   const selectedLocationId = form.watch('locationId');
   const selectedItemId = form.watch('itemId');
@@ -133,12 +142,12 @@ export default function ConsumableAdjustments() {
   }, [selectedItem, form]);
 
   useEffect(() => {
-    if (filteredLocations.length === 0) return;
+    if (scopedLocations.length === 0) return;
     const current = form.getValues('locationId');
-    if (!current || !filteredLocations.some((loc) => loc.id === current)) {
-      form.setValue('locationId', filteredLocations[0].id);
+    if (!current || !scopedLocations.some((loc) => loc.id === current)) {
+      form.setValue('locationId', scopedLocations[0].id);
     }
-  }, [filteredLocations, form]);
+  }, [form, scopedLocations]);
 
   useEffect(() => {
     if (!selectedContainer) return;
@@ -168,16 +177,24 @@ export default function ConsumableAdjustments() {
   }, [systemQtyBase, selectedItem, selectedUom, unitList]);
 
   const variance = selectedActualQty - systemQtyInSelectedUom;
-  const locationCount = filteredLocations.length;
+  const locationCount = scopedLocations.length;
   const itemCount = filteredItems.length;
 
   const handleSubmit = async (data: AdjustFormData) => {
+    if (!scopedLocations.some((location) => location.id === data.locationId)) {
+      form.setError('locationId', { message: 'Selected location is invalid or unavailable' });
+      return;
+    }
     if (requiresContainer && !data.containerId) {
       form.setError('containerId', { message: 'Container is required for this item' });
       return;
     }
     const direction = variance >= 0 ? 'INCREASE' : 'DECREASE';
     const qty = Math.abs(variance);
+    if (!Number.isFinite(qty) || qty <= 0) {
+      form.setError('actualQty', { message: 'No adjustment is needed because the counted quantity matches system stock' });
+      return;
+    }
 
     await adjustMutation.mutateAsync({
       holderType: 'OFFICE',
@@ -230,7 +247,7 @@ export default function ConsumableAdjustments() {
                   placeholder="Select location"
                   searchPlaceholder="Search locations..."
                   emptyText="No locations found."
-                  options={filteredLocations.map((loc) => ({ value: loc.id, label: loc.name }))}
+                  options={scopedLocations.map((loc) => ({ value: loc.id, label: loc.name }))}
                 />
               </div>
               <div className="space-y-2">

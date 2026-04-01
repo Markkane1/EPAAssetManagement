@@ -25,7 +25,39 @@ export async function login(page: Page, email: string, password: string) {
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(password);
   await solveCaptcha(page);
-  await page.getByRole("button", { name: /sign in/i }).click();
+  const signInButton = page.getByRole("button", { name: /sign in/i });
+  await expect(signInButton).toBeEnabled();
+  await expect(page.getByText(/verified/i)).toBeVisible();
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await signInButton.click();
+
+    const navigatedAway = await page
+      .waitForURL((url) => !url.pathname.endsWith("/login"), { timeout: 5_000 })
+      .then(() => true)
+      .catch(() => false);
+
+    if (navigatedAway) {
+      return;
+    }
+
+    const networkErrorVisible = await page
+      .getByText(/unable to reach the api server/i)
+      .isVisible()
+      .catch(() => false);
+
+    if (!networkErrorVisible || attempt === 1) {
+      return;
+    }
+
+    await page.waitForTimeout(1_000);
+  }
+}
+
+export async function expectAuthenticatedSession(page: Page) {
+  await expect
+    .poll(() => page.evaluate(() => window.localStorage.getItem("user")))
+    .not.toBeNull();
 }
 
 export async function expectProtectedRedirect(page: Page, path: string) {

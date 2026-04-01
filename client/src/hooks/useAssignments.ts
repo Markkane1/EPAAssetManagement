@@ -89,7 +89,13 @@ export const useCreateAssignment = () => {
   return useMutation({
     mutationFn: (data: AssignmentCreateDto) => assignmentService.create(data),
     onSuccess: async () => {
-      await refreshActiveQueries(queryClient, [queryKeys.assignments, queryKeys.assetItems]);
+      await refreshActiveQueries(queryClient, [
+        queryKeys.assignments,
+        queryKeys.assetItems,
+        queryKeys.employees,
+        queryKeys.requisitions,
+        queryKeys.returnRequests,
+      ]);
       toast.success('Assignment created successfully');
     },
     onError: (error: Error) => {
@@ -105,7 +111,12 @@ export const useUpdateAssignment = () => {
     mutationFn: ({ id, data }: { id: string; data: AssignmentUpdateDto }) =>
       assignmentService.update(id, data),
     onSuccess: async () => {
-      await refreshActiveQueries(queryClient, [queryKeys.assignments]);
+      await refreshActiveQueries(queryClient, [
+        queryKeys.assignments,
+        queryKeys.assetItems,
+        queryKeys.employees,
+        queryKeys.returnRequests,
+      ]);
       toast.success('Assignment updated successfully');
     },
     onError: (error: Error) => {
@@ -120,7 +131,12 @@ export const useRequestReturn = () => {
   return useMutation({
     mutationFn: ({ id }: { id: string }) => assignmentService.requestReturn(id),
     onSuccess: async () => {
-      await refreshActiveQueries(queryClient, [queryKeys.assignments]);
+      await refreshActiveQueries(queryClient, [
+        queryKeys.assignments,
+        queryKeys.assetItems,
+        queryKeys.returnRequests,
+        queryKeys.employees,
+      ]);
       toast.success('Return requested successfully');
     },
     onError: (error: Error) => {
@@ -188,7 +204,11 @@ export const useReassignAsset = () => {
     mutationFn: ({ id, newEmployeeId, notes }: { id: string; newEmployeeId: string; notes?: string }) =>
       assignmentService.reassign(id, newEmployeeId, notes),
     onSuccess: async () => {
-      await refreshActiveQueries(queryClient, [queryKeys.assignments]);
+      await refreshActiveQueries(queryClient, [
+        queryKeys.assignments,
+        queryKeys.assetItems,
+        queryKeys.employees,
+      ]);
       toast.success('Asset reassigned successfully');
     },
     onError: (error: Error) => {
@@ -203,7 +223,12 @@ export const useDeleteAssignment = () => {
   return useMutation({
     mutationFn: (id: string) => assignmentService.delete(id),
     onSuccess: async () => {
-      await refreshActiveQueries(queryClient, [queryKeys.assignments]);
+      await refreshActiveQueries(queryClient, [
+        queryKeys.assignments,
+        queryKeys.assetItems,
+        queryKeys.employees,
+        queryKeys.returnRequests,
+      ]);
       toast.success('Assignment deleted successfully');
     },
     onError: (error: Error) => {

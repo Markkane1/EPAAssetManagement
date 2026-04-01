@@ -6,15 +6,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { ArrowLeft, Pencil, Mail, Phone, MapPin, Building2, Package, Loader2, ArrowRightLeft } from "lucide-react";
-import { useEmployees, useTransferEmployee } from "@/hooks/useEmployees";
+import { useEmployee, useTransferEmployee } from "@/hooks/useEmployees";
 import { useDirectorates } from "@/hooks/useDirectorates";
 import { useLocations } from "@/hooks/useLocations";
-import { useAssignments } from "@/hooks/useAssignments";
-import { useAssetItems } from "@/hooks/useAssetItems";
-import { useAssets } from "@/hooks/useAssets";
-import { isHeadOfficeLocation } from "@/lib/locationUtils";
+import { useAssignmentsByEmployee } from "@/hooks/useAssignments";
 import { useAuth } from "@/contexts/AuthContext";
 import { EmployeeTransferModal } from "@/components/forms/EmployeeTransferModal";
+import { isHeadOfficeLocation } from "@/lib/locationUtils";
 import { isOfficeAdminRole } from "@/services/authService";
 
 export default function EmployeeDetail() {
@@ -22,29 +20,21 @@ export default function EmployeeDetail() {
   const navigate = useNavigate();
   const { role, isOrgAdmin, locationId } = useAuth();
 
-  const { data: employees, isLoading } = useEmployees();
+  const { data: employee, isLoading: employeeLoading } = useEmployee(id || "");
   const { data: directorates } = useDirectorates();
   const { data: locations } = useLocations();
-  const { data: assignments } = useAssignments();
-  const { data: assetItems } = useAssetItems();
-  const { data: assets } = useAssets();
+  const { data: assignments, isLoading: assignmentsLoading } = useAssignmentsByEmployee(id || "");
   const transferEmployee = useTransferEmployee();
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
 
-  const employeeList = employees || [];
   const directorateList = directorates || [];
   const locationList = locations || [];
   const assignmentList = assignments || [];
-  const assetItemList = assetItems || [];
-  const assetList = assets || [];
-
-  const employee = employeeList.find((e) => e.id === id);
   const location = employee ? locationList.find((l) => l.id === employee.location_id) : null;
-  const currentLocation = locationId ? locationList.find((l) => l.id === locationId) : null;
-  const isHeadofficeIssuer =
-    isHeadOfficeLocation(currentLocation) &&
-    (isOfficeAdminRole(role) || role === "caretaker");
-  const canTransferEmployee = isOrgAdmin || isHeadofficeIssuer;
+  const currentLocation = locationId ? locationList.find((entry) => entry.id === locationId) : null;
+  const isOrgAdminHeadOffice = isOrgAdmin && isHeadOfficeLocation(currentLocation);
+  const canManageEmployees = isOrgAdminHeadOffice || isOfficeAdminRole(role) || (isOrgAdmin && !isOrgAdminHeadOffice);
+  const canTransferEmployee = isOrgAdmin;
   const directorate = employee && isHeadOfficeLocation(location)
     ? directorateList.find((d) => d.id === employee.directorate_id)
     : null;
@@ -58,12 +48,13 @@ export default function EmployeeDetail() {
     : null;
   
   // Get active assignments for this employee
-  const employeeAssignments = assignmentList.filter((a) => a.employee_id === id && a.is_active);
-  const assignedItems = employeeAssignments.map((assignment) => {
-    const item = assetItemList.find((i) => i.id === assignment.asset_item_id);
-    const asset = item ? assetList.find((a) => a.id === item.asset_id) : null;
-    return { assignment, item, asset };
-  }).filter((x) => x.item);
+  const employeeAssignments = assignmentList.filter((assignment) => assignment.is_active);
+  const assignedItems = employeeAssignments.map((assignment) => ({
+    assignment,
+    assetName: assignment.assetName || "Unknown Asset",
+    itemTag: assignment.itemTag || "N/A",
+    serialNumber: assignment.serialNumber || "N/A",
+  }));
 
   const handleTransferSubmit = async (payload: { newOfficeId: string; reason?: string }) => {
     if (!employee) return;
@@ -74,7 +65,7 @@ export default function EmployeeDetail() {
     setIsTransferModalOpen(false);
   };
 
-  if (isLoading) {
+  if (employeeLoading || assignmentsLoading) {
     return (
       <MainLayout title="Employee Details" description="Loading...">
         <div className="flex items-center justify-center h-64">
@@ -139,9 +130,11 @@ export default function EmployeeDetail() {
                 Transfer
               </Button>
             )}
-            <Button onClick={() => navigate(`/employees?edit=${employee.id}`)}>
-              <Pencil className="mr-2 h-4 w-4" /> Edit
-            </Button>
+            {canManageEmployees && (
+              <Button onClick={() => navigate(`/employees?edit=${employee.id}`)}>
+                <Pencil className="mr-2 h-4 w-4" /> Edit
+              </Button>
+            )}
           </div>
         </div>
 
@@ -165,7 +158,7 @@ export default function EmployeeDetail() {
                 <Phone className="h-5 w-5 text-muted-foreground" />
                 <div>
                   <p className="text-sm text-muted-foreground">Phone</p>
-                  <span>{employee.phone}</span>
+                  <span>{employee.phone || "Not recorded"}</span>
                 </div>
               </div>
               <div className="flex items-center gap-3">
@@ -229,18 +222,18 @@ export default function EmployeeDetail() {
                 <p className="text-muted-foreground text-center py-8">No assets currently assigned to this employee.</p>
               ) : (
                 <div className="space-y-3">
-                  {assignedItems.map(({ assignment, item, asset }) => (
+                  {assignedItems.map(({ assignment, assetName, itemTag, serialNumber }) => (
                     <div key={assignment.id} className="flex items-center justify-between p-3 rounded-lg border bg-muted/30">
                       <div className="flex items-center gap-3">
                         <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
                           <Package className="h-5 w-5 text-primary" />
                         </div>
                         <div>
-                          <p className="font-medium">{asset?.name || "Unknown Asset"}</p>
+                          <p className="font-medium">{assetName}</p>
                           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                            <span className="font-mono">{item?.tag}</span>
+                            <span className="font-mono">{itemTag}</span>
                             <span>-</span>
-                            <span>{item?.serial_number}</span>
+                            <span>{serialNumber}</span>
                           </div>
                         </div>
                       </div>
@@ -263,7 +256,7 @@ export default function EmployeeDetail() {
             <CardDescription>All asset assignments for this employee</CardDescription>
           </CardHeader>
           <CardContent>
-            {assignmentList.filter((a) => a.employee_id === id).length === 0 ? (
+            {assignmentList.length === 0 ? (
               <p className="text-muted-foreground text-center py-8">No assignment history found.</p>
             ) : (
               <div className="overflow-x-auto">
@@ -280,14 +273,11 @@ export default function EmployeeDetail() {
                   </thead>
                   <tbody>
                     {assignmentList
-                      .filter((a) => a.employee_id === id)
                       .map((assignment) => {
-                        const item = assetItemList.find((i) => i.id === assignment.asset_item_id);
-                        const asset = item ? assetList.find((a) => a.id === item.asset_id) : null;
                         return (
                           <tr key={assignment.id} className="border-b hover:bg-muted/50">
-                            <td className="py-3 px-4 font-medium">{asset?.name || "Unknown"}</td>
-                            <td className="py-3 px-4 font-mono text-primary">{item?.tag || "-"}</td>
+                            <td className="py-3 px-4 font-medium">{assignment.assetName || "Unknown"}</td>
+                            <td className="py-3 px-4 font-mono text-primary">{assignment.itemTag || "-"}</td>
                             <td className="py-3 px-4">{new Date(assignment.assigned_date).toLocaleDateString()}</td>
                             <td className="py-3 px-4">
                               {assignment.returned_date 

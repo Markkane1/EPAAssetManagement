@@ -15,6 +15,28 @@ import { buildSearchTermsQuery } from '../utils/searchTerms';
 
 const isAdminUser = (user?: AuthRequest['user']) => Boolean(user?.isOrgAdmin || hasRoleCapability(user?.roles || [], ['org_admin']));
 
+function ensureEmployeeRolesHaveLocation(roles: string[], locationId: string | null) {
+  if (hasRoleCapability(roles, ['employee']) && !locationId) {
+    throw new Error('Employee-role users must be assigned to an office');
+  }
+}
+
+async function validateLocationId(locationId: string | null | undefined) {
+  const normalized = String(locationId || '').trim();
+  if (!normalized) {
+    return null;
+  }
+
+  const office = (await OfficeModel.findOne(
+    { _id: normalized, is_active: { $ne: false } },
+    { _id: 1 }
+  ).lean()) as { _id?: unknown } | null;
+  if (!office?._id) {
+    throw new Error('Assigned office was not found or is inactive');
+  }
+  return normalized;
+}
+
 async function ensureEmployeeProfileForUser(input: {
   userId: string;
   email: string;
@@ -97,6 +119,42 @@ async function ensureEmployeeProfileForUser(input: {
     location_id: input.locationId || null,
     is_active: true,
   });
+}
+
+async function syncEmployeeProfileForUserRoleChange(input: {
+  userId: string;
+  roles: string[];
+  email: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  locationId?: string | null;
+}) {
+  if (hasRoleCapability(input.roles, ['employee'])) {
+    await ensureEmployeeProfileForUser(input);
+    return;
+  }
+
+  const normalizedEmail = String(input.email || '').trim().toLowerCase();
+  const employee = await EmployeeModel.findOne({
+    $or: [
+      { user_id: input.userId },
+      { email: { $regex: `^${escapeRegex(normalizedEmail)}$`, $options: 'i' } },
+    ],
+  });
+  if (!employee) return;
+
+  let changed = false;
+  if (employee.is_active !== false) {
+    employee.is_active = false;
+    changed = true;
+  }
+  if (employee.user_id) {
+    employee.user_id = null as any;
+    changed = true;
+  }
+  if (changed) {
+    await employee.save();
+  }
 }
 
 export const userController = {
@@ -192,33 +250,51 @@ export const userController = {
         activeRole?: string;
         locationId?: string;
       };
+      const normalizedEmail = String(email || '').trim().toLowerCase();
+      if (!normalizedEmail) {
+        return res.status(400).json({ message: 'Email is required' });
+      }
+      if (typeof password !== 'string' || !password.trim()) {
+        return res.status(400).json({ message: 'Password is required' });
+      }
 
       const normalizedRoles = normalizeRoles(roles, role || 'employee');
       const normalizedActiveRole = resolveActiveRole(activeRole || role || normalizedRoles[0], normalizedRoles);
-      const existing = await UserModel.findOne({ email: email.toLowerCase() });
+      const existing = await UserModel.findOne({ email: normalizedEmail });
       if (existing) return res.status(409).json({ message: 'Email already in use' });
+      let validatedLocationId: string | null = null;
+      try {
+        validatedLocationId = await validateLocationId(locationId);
+        ensureEmployeeRolesHaveLocation(normalizedRoles, validatedLocationId);
+      } catch (validationError) {
+        return res.status(400).json({ message: (validationError as Error).message });
+      }
+
+      const passwordValidationError = validateStrongPassword(password);
+      if (passwordValidationError) {
+        return res.status(400).json({ message: passwordValidationError });
+      }
 
       const passwordHash = await bcrypt.hash(password, 10);
       const user = await UserModel.create({
-        email,
+        email: normalizedEmail,
         password_hash: passwordHash,
         first_name: firstName || null,
         last_name: lastName || null,
         role: normalizedActiveRole,
         roles: normalizedRoles,
         active_role: normalizedActiveRole,
-        location_id: locationId || null,
+        location_id: validatedLocationId,
       });
 
-      if (hasRoleCapability(normalizedRoles, ['employee'])) {
-        await ensureEmployeeProfileForUser({
-          userId: user.id,
-          email: user.email,
-          firstName: user.first_name,
-          lastName: user.last_name,
-          locationId: user.location_id ? String(user.location_id) : null,
-        });
-      }
+      await syncEmployeeProfileForUserRoleChange({
+        userId: user.id,
+        roles: normalizedRoles,
+        email: normalizedEmail,
+        firstName: user.first_name,
+        lastName: user.last_name,
+        locationId: user.location_id ? String(user.location_id) : null,
+      });
 
       res.status(201).json({
         id: user.id,
@@ -253,6 +329,12 @@ export const userController = {
         activeRole || role || existing.active_role || existing.role,
         normalizedRoles
       );
+      const validatedLocationId = existing.location_id ? String(existing.location_id) : null;
+      try {
+        ensureEmployeeRolesHaveLocation(normalizedRoles, validatedLocationId);
+      } catch (validationError) {
+        return res.status(400).json({ message: (validationError as Error).message });
+      }
 
       const user = await UserModel.findByIdAndUpdate(
         req.params.id,
@@ -260,15 +342,14 @@ export const userController = {
         { new: true }
       );
       if (!user) return res.status(404).json({ message: 'Not found' });
-      if (hasRoleCapability(normalizedRoles, ['employee'])) {
-        await ensureEmployeeProfileForUser({
-          userId: user.id,
-          email: user.email,
-          firstName: user.first_name,
-          lastName: user.last_name,
-          locationId: user.location_id ? String(user.location_id) : null,
-        });
-      }
+      await syncEmployeeProfileForUserRoleChange({
+        userId: user.id,
+        roles: normalizedRoles,
+        email: user.email,
+        firstName: user.first_name,
+        lastName: user.last_name,
+        locationId: user.location_id ? String(user.location_id) : null,
+      });
       res.json({
         role: normalizedActiveRole,
         activeRole: normalizedActiveRole,
@@ -286,18 +367,24 @@ export const userController = {
       const existing = await UserModel.findById(req.params.id);
       if (!existing) return res.status(404).json({ message: 'Not found' });
       const { locationId } = req.body as { locationId: string | null };
-      const user = await UserModel.findByIdAndUpdate(req.params.id, { location_id: locationId }, { new: true });
+      let validatedLocationId: string | null = null;
+      try {
+        validatedLocationId = await validateLocationId(locationId);
+        ensureEmployeeRolesHaveLocation(normalizeRoles(existing.roles, existing.role), validatedLocationId);
+      } catch (validationError) {
+        return res.status(400).json({ message: (validationError as Error).message });
+      }
+      const user = await UserModel.findByIdAndUpdate(req.params.id, { location_id: validatedLocationId }, { new: true });
       if (!user) return res.status(404).json({ message: 'Not found' });
       const normalizedRoles = normalizeRoles(user.roles, user.role);
-      if (hasRoleCapability(normalizedRoles, ['employee'])) {
-        await ensureEmployeeProfileForUser({
-          userId: user.id,
-          email: user.email,
-          firstName: user.first_name,
-          lastName: user.last_name,
-          locationId: user.location_id ? String(user.location_id) : null,
-        });
-      }
+      await syncEmployeeProfileForUserRoleChange({
+        userId: user.id,
+        roles: normalizedRoles,
+        email: user.email,
+        firstName: user.first_name,
+        lastName: user.last_name,
+        locationId: user.location_id ? String(user.location_id) : null,
+      });
       res.json({ location_id: user.location_id });
     } catch (error) {
       next(error);
@@ -345,6 +432,12 @@ export const userController = {
       }
       const existing = await UserModel.findById(req.params.id);
       if (!existing) return res.status(404).json({ message: 'Not found' });
+      const employee = await EmployeeModel.findOne({ user_id: existing._id });
+      if (employee) {
+        employee.is_active = false;
+        employee.user_id = null;
+        await employee.save();
+      }
       const user = await UserModel.findByIdAndDelete(req.params.id);
       if (!user) return res.status(404).json({ message: 'Not found' });
       res.status(204).send();

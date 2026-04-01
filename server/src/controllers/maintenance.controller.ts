@@ -315,6 +315,66 @@ async function resolveActiveEmployeeAssetItemIds(employeeId: string, officeId?: 
   return scopedAssetItems.map((item) => String(item._id));
 }
 
+function isOpenMaintenanceStatus(value: unknown) {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized !== 'completed' && normalized !== 'cancelled' && normalized !== 'closed';
+}
+
+async function syncAssetItemStatusForMaintenance(params: {
+  assetItemId: string;
+  forceMaintenance?: boolean;
+  session?: mongoose.ClientSession;
+}) {
+  const itemId = String(params.assetItemId || '').trim();
+  if (!itemId) return;
+
+  if (params.forceMaintenance) {
+    await AssetItemModel.findByIdAndUpdate(
+      itemId,
+      { item_status: 'Maintenance' },
+      params.session ? { session: params.session } : undefined
+    );
+    return;
+  }
+
+  let recordQuery = MaintenanceRecordModel.find(
+    {
+      asset_item_id: itemId,
+      is_active: { $ne: false },
+    },
+    { maintenance_status: 1 }
+  ).lean();
+  if (params.session) {
+    recordQuery = recordQuery.session(params.session);
+  }
+  const relatedRecords = await recordQuery;
+  const hasOpenMaintenance = relatedRecords.some((record: any) =>
+    isOpenMaintenanceStatus(record?.maintenance_status)
+  );
+  if (hasOpenMaintenance) {
+    await AssetItemModel.findByIdAndUpdate(
+      itemId,
+      { item_status: 'Maintenance' },
+      params.session ? { session: params.session } : undefined
+    );
+    return;
+  }
+
+  let assetItemQuery = AssetItemModel.findById(itemId, { assignment_status: 1 }).lean();
+  if (params.session) {
+    assetItemQuery = assetItemQuery.session(params.session);
+  }
+  const assetItem: any = await assetItemQuery;
+  if (!assetItem) return;
+
+  const nextStatus = String(assetItem.assignment_status || '') === 'Assigned' ? 'Assigned' : 'Available';
+  await AssetItemModel.findByIdAndUpdate(
+    itemId,
+    { item_status: nextStatus },
+    params.session ? { session: params.session } : undefined
+  );
+}
+
 export const maintenanceController = {
   list: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
@@ -535,11 +595,11 @@ export const maintenanceController = {
             { session }
           );
         }
-        await AssetItemModel.findByIdAndUpdate(
-          payload.asset_item_id,
-          { item_status: 'Maintenance' },
-          { session }
-        );
+        await syncAssetItemStatusForMaintenance({
+          assetItemId: String(payload.asset_item_id),
+          forceMaintenance: true,
+          session,
+        });
 
         await createRecord(
           {
@@ -608,6 +668,7 @@ export const maintenanceController = {
       await ensureMaintenanceScope(access, current);
 
       const payload = buildPayload(req.body);
+      const previousAssetItemId = String(current.asset_item_id || '');
       let targetOfficeId: string | null = null;
       if (payload.asset_item_id) {
         const targetItem = await AssetItemModel.findById(payload.asset_item_id);
@@ -652,6 +713,20 @@ export const maintenanceController = {
 
       Object.assign(current, payload);
       await current.save();
+      if (payload.asset_item_id && String(payload.asset_item_id) !== previousAssetItemId) {
+        await syncAssetItemStatusForMaintenance({
+          assetItemId: String(payload.asset_item_id),
+          forceMaintenance: true,
+        });
+        await syncAssetItemStatusForMaintenance({
+          assetItemId: previousAssetItemId,
+        });
+      } else if (isOpenMaintenanceStatus(current.maintenance_status)) {
+        await syncAssetItemStatusForMaintenance({
+          assetItemId: String(current.asset_item_id),
+          forceMaintenance: true,
+        });
+      }
       if (payload.estimate_document_id) {
         await DocumentLinkModel.updateOne(
           {
@@ -714,12 +789,10 @@ export const maintenanceController = {
         record.completed_date = completedDate ? new Date(completedDate) : new Date();
         await record.save({ session });
 
-        const nextStatus = assetItem.assignment_status === 'Assigned' ? 'Assigned' : 'Available';
-        await AssetItemModel.findByIdAndUpdate(
-          record.asset_item_id,
-          { item_status: nextStatus },
-          { session }
-        );
+        await syncAssetItemStatusForMaintenance({
+          assetItemId: String(record.asset_item_id),
+          session,
+        });
 
         const existingRecord = await RecordModel.findOne({
           record_type: 'MAINTENANCE',
@@ -802,8 +875,12 @@ export const maintenanceController = {
       const record = await MaintenanceRecordModel.findById(req.params.id);
       if (!record) return res.status(404).json({ message: 'Not found' });
       const officeId = await ensureMaintenanceScope(access, record);
+      const targetAssetItemId = String(record.asset_item_id || '');
       record.is_active = false;
       await record.save();
+      await syncAssetItemStatusForMaintenance({
+        assetItemId: targetAssetItemId,
+      });
       await notifyMaintenanceEvent({
         maintenanceRecord: record,
         officeId,

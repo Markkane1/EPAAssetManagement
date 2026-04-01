@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { DataTable } from "@/components/shared/DataTable";
 import { Badge } from "@/components/ui/badge";
@@ -31,6 +31,7 @@ import { CollectionWorkspace } from "@/components/shared/CollectionWorkspace";
 
 export default function Employees() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { role, isOrgAdmin, locationId } = useAuth();
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
@@ -59,11 +60,8 @@ export default function Employees() {
   const currentLocation = locationId ? locationList.find((loc) => loc.id === locationId) : undefined;
   const isOrgAdminHeadOffice = isOrgAdmin && isHeadOfficeLocation(currentLocation);
   const isOfficeAdmin = isOfficeAdminRole(role) || (isOrgAdmin && !isOrgAdminHeadOffice);
-  const isHeadofficeIssuer =
-    isHeadOfficeLocation(currentLocation) &&
-    (isOfficeAdminRole(role) || role === "caretaker");
   const canManageEmployees = isOrgAdminHeadOffice || isOfficeAdmin;
-  const canTransferEmployees = isOrgAdmin || isHeadofficeIssuer;
+  const canTransferEmployees = isOrgAdmin;
 
   const allowedLocations = isOrgAdmin
     ? locationList
@@ -99,6 +97,24 @@ export default function Employees() {
     }
   }, [page, totalPages]);
 
+  useEffect(() => {
+    const editEmployeeId = searchParams.get("edit");
+    if (!editEmployeeId) return;
+    const targetEmployee = employeeList.find((employee) => employee.id === editEmployeeId) || null;
+    if (!targetEmployee) return;
+    setEditingEmployee(targetEmployee);
+    setIsModalOpen(true);
+  }, [employeeList, searchParams]);
+
+  useEffect(() => {
+    const editEmployeeId = searchParams.get("edit");
+    if (!editEmployeeId || isModalOpen) return;
+    const employee = employeeList.find((entry) => entry.id === editEmployeeId);
+    if (!employee) return;
+    setEditingEmployee(employee);
+    setIsModalOpen(true);
+  }, [employeeList, isModalOpen, searchParams]);
+
   const columns = [
     { key: "fullName", label: "Employee", render: (value: string, row: any) => (
       <div className="flex items-center gap-3">
@@ -120,11 +136,17 @@ export default function Employees() {
   const handleAddEmployee = () => {
     setEditingEmployee(null);
     setIsModalOpen(true);
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete("edit");
+    setSearchParams(nextParams, { replace: true });
   };
 
   const handleEdit = (employee: Employee) => {
     setEditingEmployee(employee);
     setIsModalOpen(true);
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set("edit", employee.id);
+    setSearchParams(nextParams, { replace: true });
   };
 
   const handleSubmit = async (data: any) => {
@@ -135,6 +157,9 @@ export default function Employees() {
       await createEmployee.mutateAsync(data);
       setPage(1);
     }
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete("edit");
+    setSearchParams(nextParams, { replace: true });
   };
 
   const handleToggleActive = async (employee: Employee) => {
@@ -257,7 +282,15 @@ export default function Employees() {
       </CollectionWorkspace>
       <EmployeeFormModal
         open={isModalOpen}
-        onOpenChange={setIsModalOpen}
+        onOpenChange={(open) => {
+          setIsModalOpen(open);
+          if (!open) {
+            setEditingEmployee(null);
+            const nextParams = new URLSearchParams(searchParams);
+            nextParams.delete("edit");
+            setSearchParams(nextParams, { replace: true });
+          }
+        }}
         employee={editingEmployee}
         directorates={directorateList}
         locations={allowedLocations}

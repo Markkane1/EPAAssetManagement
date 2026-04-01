@@ -79,7 +79,7 @@ export const useCreateUser = () => {
   return useMutation({
     mutationFn: (payload: CreateUserDto) => userService.create(payload),
     onSuccess: async () => {
-      await refreshActiveQueries(queryClient, [queryKeys.users]);
+      await refreshActiveQueries(queryClient, [queryKeys.users, queryKeys.employees]);
       toast.success('User created successfully');
     },
     onError: (error: Error) => {
@@ -99,7 +99,7 @@ export const useUpdateUserRole = () => {
       payload: { role?: AppRole; roles?: AppRole[]; activeRole?: AppRole };
     }) => userService.updateRole(userId, payload),
     onSuccess: async () => {
-      await refreshActiveQueries(queryClient, [queryKeys.users]);
+      await refreshActiveQueries(queryClient, [queryKeys.users, queryKeys.employees]);
       toast.success('User role updated successfully');
     },
     onError: (error: Error) => {
@@ -114,7 +114,7 @@ export const useUpdateUserLocation = () => {
     mutationFn: ({ userId, locationId }: { userId: string; locationId: string | null }) =>
       userService.updateLocation(userId, locationId),
     onSuccess: async () => {
-      await refreshActiveQueries(queryClient, [queryKeys.users]);
+      await refreshActiveQueries(queryClient, [queryKeys.users, queryKeys.employees]);
       toast.success('User location updated successfully');
     },
     onError: (error: Error) => {
@@ -128,7 +128,7 @@ export const useDeleteUser = () => {
   return useMutation({
     mutationFn: (userId: string) => userService.delete(userId),
     onSuccess: async () => {
-      await refreshActiveQueries(queryClient, [queryKeys.users]);
+      await refreshActiveQueries(queryClient, [queryKeys.users, queryKeys.employees]);
       toast.success('User deleted successfully');
     },
     onError: (error: Error) => {

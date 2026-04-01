@@ -36,6 +36,28 @@ function buildPayload(body: Record<string, unknown>) {
   return pickDefined(payload);
 }
 
+function validateContainerQuantities(payload: Record<string, unknown>) {
+  const initialQty =
+    payload.initial_qty_base !== undefined ? Number(payload.initial_qty_base) : null;
+  const currentQty =
+    payload.current_qty_base !== undefined ? Number(payload.current_qty_base) : null;
+  if (initialQty !== null && Number.isFinite(initialQty) && initialQty < 0) {
+    throw createHttpError(400, 'initial_qty_base must be greater than or equal to zero');
+  }
+  if (currentQty !== null && Number.isFinite(currentQty) && currentQty < 0) {
+    throw createHttpError(400, 'current_qty_base must be greater than or equal to zero');
+  }
+  if (
+    initialQty !== null &&
+    currentQty !== null &&
+    Number.isFinite(initialQty) &&
+    Number.isFinite(currentQty) &&
+    currentQty > initialQty
+  ) {
+    throw createHttpError(400, 'current_qty_base cannot exceed initial_qty_base');
+  }
+}
+
 export const consumableContainerController = {
   list: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
@@ -115,6 +137,7 @@ export const consumableContainerController = {
     try {
       const scope = await resolveConsumableRequestScope(req);
       const payload = buildPayload(req.body);
+      validateContainerQuantities(payload);
       const lotId = payload.lot_id ? String(payload.lot_id) : '';
       if (!lotId) {
         throw createHttpError(400, 'lot_id is required');
@@ -159,6 +182,12 @@ export const consumableContainerController = {
       await ensureScopeItemAccess(scope, String(existingLot.consumable_id || ''));
 
       const payload = buildPayload(req.body);
+      validateContainerQuantities({
+        initial_qty_base:
+          payload.initial_qty_base !== undefined ? payload.initial_qty_base : existing.initial_qty_base,
+        current_qty_base:
+          payload.current_qty_base !== undefined ? payload.current_qty_base : existing.current_qty_base,
+      });
       if (payload.lot_id) {
         const updatedLot = await ConsumableLotModel.findById(payload.lot_id, { consumable_id: 1 }).lean();
         if (!updatedLot) {

@@ -456,6 +456,9 @@ async function getAdminPanelsInternal(access: AccessContext, searchTermRaw: unkn
   }
 
   const officeFilter: Record<string, unknown> = {};
+  if (!access.isOrgAdmin && access.officeId) {
+    officeFilter._id = access.officeId;
+  }
   if (searchTerm) {
     const regex = new RegExp(escapeRegex(searchTerm), 'i');
     officeFilter.$or = [{ name: regex }, { address: regex }];

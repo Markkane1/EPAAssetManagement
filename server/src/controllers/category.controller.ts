@@ -228,7 +228,7 @@ export const categoryController = {
       if (isRestrictedConsumableCategory(category as { scope?: unknown; asset_type?: unknown }, consumableScope)) {
         return res.status(404).json({ message: 'Not found' });
       }
-      res.json(serializeCategory(category));
+      res.json(serializeCategory(category as Record<string, unknown>));
     } catch (error) {
       next(error);
     }

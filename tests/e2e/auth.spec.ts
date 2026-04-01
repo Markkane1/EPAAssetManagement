@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { closeSeedConnection, seedE2E } from "./seed";
-import { expectProtectedRedirect, login, solveCaptcha } from "./helpers";
+import { expectAuthenticatedSession, expectProtectedRedirect, login, solveCaptcha } from "./helpers";
 
 test.beforeEach(async () => {
   await seedE2E();
@@ -15,7 +15,7 @@ test.describe("Authentication flows", () => {
   test("should log in with valid admin credentials and reach the dashboard", async ({ page }) => {
     await login(page, "admin@test.com", "AdminPass123!");
 
-    await expect(page).toHaveURL("/");
+    await expectAuthenticatedSession(page);
     await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
   });
 
@@ -42,7 +42,7 @@ test.describe("Authentication flows", () => {
 
   test("should log out and redirect protected pages back to login", async ({ page }) => {
     await login(page, "admin@test.com", "AdminPass123!");
-    await expect(page).toHaveURL("/");
+    await expectAuthenticatedSession(page);
 
     await page.locator("header button").last().click();
     await page.getByRole("button", { name: /sign out/i }).click();

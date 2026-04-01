@@ -87,7 +87,7 @@ export function EmployeeTransferModal({
         <DialogHeader>
           <DialogTitle>Transfer Employee</DialogTitle>
           <DialogDescription>
-            Move this employee to a different office and record an optional reason.
+            Move this employee to a different office and record an optional reason. Employees with active assigned assets must have those assets returned or reassigned before transfer.
           </DialogDescription>
         </DialogHeader>
 

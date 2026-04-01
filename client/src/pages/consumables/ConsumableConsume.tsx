@@ -375,6 +375,16 @@ export default function ConsumableConsume() {
   const selectedHolder = holderOptions.find((holder) => holder.id === selectedHolderId);
 
   const handleSubmit = async (data: ConsumeFormData) => {
+    if (!selectedItem) {
+      form.setError('itemId', { message: 'Select an item with available stock' });
+      return;
+    }
+    if (availableQty > 0 && data.qty > availableQty) {
+      form.setError('qty', {
+        message: `Available stock is ${availableQty} ${selectedItem.base_uom || ''}`,
+      });
+      return;
+    }
     if (requiresContainer && data.holderType !== 'OFFICE') {
       form.setError('holderType', {
         message: 'Container-tracked items can only be consumed from office storage',

@@ -109,7 +109,10 @@ export default function ConsumableReceive() {
   const { data: schemes } = useSchemes();
   const { data: units } = useConsumableUnits();
   const { data: offices } = useOffices({ isActive: true });
-  const { data: labOffices } = useOffices({ capability: 'chemicals', isActive: true });
+  const { data: receiveTargetOffices } = useOffices({
+    capability: mode === 'chemicals' ? 'chemicals' : 'consumables',
+    isActive: true,
+  });
   const { data: purchaseOrders } = usePurchaseOrders();
   const createPurchaseOrder = useCreatePurchaseOrder();
   const { mode, setMode } = useConsumableMode();
@@ -145,19 +148,19 @@ export default function ConsumableReceive() {
     handleAttachmentChange: handleHandoverDocumentationChange,
     resetAttachment: resetHandoverDocumentation,
   } = usePdfAttachmentField();
-  const availableLabOffices = useMemo(
-    () => (labOffices || []).filter((office) => office.is_active !== false),
-    [labOffices]
+  const availableReceiveTargetOffices = useMemo(
+    () => (receiveTargetOffices || []).filter((office) => office.is_active !== false),
+    [receiveTargetOffices]
   );
   const receiveTargetOptions = useMemo(
     () => [
       { value: 'STORE:HEAD_OFFICE_STORE', label: 'Central Store' },
-      ...availableLabOffices.map((office) => ({
+      ...availableReceiveTargetOffices.map((office) => ({
         value: `OFFICE:${office.id}`,
         label: office.name,
       })),
     ],
-    [availableLabOffices]
+    [availableReceiveTargetOffices]
   );
   const selectedReceiveTargetLabel = useMemo(
     () =>
@@ -278,10 +281,10 @@ export default function ConsumableReceive() {
       setOrgAdminReceiveTarget('STORE:HEAD_OFFICE_STORE');
       return;
     }
-    if (!availableLabOffices.some((office) => office.id === officeId)) {
+    if (!availableReceiveTargetOffices.some((office) => office.id === officeId)) {
       setOrgAdminReceiveTarget('STORE:HEAD_OFFICE_STORE');
     }
-  }, [availableLabOffices, isOrgAdmin, officeScopedFlow, orgAdminReceiveTarget]);
+  }, [availableReceiveTargetOffices, isOrgAdmin, officeScopedFlow, orgAdminReceiveTarget]);
 
   useEffect(() => {
     const currentVendorId = form.getValues('vendorId');
@@ -392,6 +395,25 @@ export default function ConsumableReceive() {
       form.setError('itemId', { message: 'This item requires container entries' });
       return;
     }
+    if (containers.length > 0) {
+      const normalizedContainers = containers.map((container) => ({
+        containerCode: container.containerCode.trim(),
+        initialQty: Number(container.initialQty || 0),
+      }));
+      if (normalizedContainers.some((container) => !container.containerCode)) {
+        form.setError('itemId', { message: 'Each container must have a code' });
+        return;
+      }
+      if (normalizedContainers.some((container) => !Number.isFinite(container.initialQty) || container.initialQty <= 0)) {
+        form.setError('qty', { message: 'Each container quantity must be greater than zero' });
+        return;
+      }
+      const containerQtyTotal = normalizedContainers.reduce((sum, container) => sum + container.initialQty, 0);
+      if (Math.abs(containerQtyTotal - Number(data.qty || 0)) > 0.0001) {
+        form.setError('qty', { message: 'Container quantities must equal the received quantity' });
+        return;
+      }
+    }
 
     const payload: any = {
       holderType: activeReceiveTarget.holderType,
@@ -417,7 +439,7 @@ export default function ConsumableReceive() {
 
     if (containers.length > 0) {
       payload.containers = containers.map((container) => ({
-        containerCode: container.containerCode,
+        containerCode: container.containerCode.trim(),
         initialQty: Number(container.initialQty || 0),
       }));
     }

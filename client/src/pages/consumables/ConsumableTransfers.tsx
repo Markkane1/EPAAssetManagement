@@ -106,7 +106,7 @@ export default function ConsumableTransfers() {
     },
   });
 
-  const filteredItems = useMemo(() => filterItemsByMode(items || [], mode), [items, mode]);
+  const modeFilteredItems = useMemo(() => filterItemsByMode(items || [], mode), [items, mode]);
   const filteredLocations = useMemo(() => filterLocationsByMode(locations || [], mode), [locations, mode]);
   const restrictToAssignedLocation = role !== 'org_admin' && Boolean(locationId);
   const scopedLocations = useMemo(
@@ -148,6 +148,32 @@ export default function ConsumableTransfers() {
   const fromHolderKey = form.watch('fromHolderKey');
   const toHolderKey = form.watch('toHolderKey');
   const fromHolder = useMemo(() => parseHolderKey(fromHolderKey), [fromHolderKey]);
+
+  const sourceBalanceFilters = useMemo(() => {
+    if (!fromHolder) return undefined;
+    return {
+      holderType: fromHolder.holderType,
+      holderId: fromHolder.holderId,
+    };
+  }, [fromHolder]);
+
+  const { data: sourceBalances = [] } = useConsumableBalances(sourceBalanceFilters);
+
+  const availableByItemId = useMemo(() => {
+    const map = new Map<string, number>();
+    sourceBalances.forEach((balance) => {
+      map.set(
+        balance.consumable_item_id,
+        (map.get(balance.consumable_item_id) || 0) + Number(balance.qty_on_hand_base || 0)
+      );
+    });
+    return map;
+  }, [sourceBalances]);
+
+  const filteredItems = useMemo(
+    () => modeFilteredItems.filter((item) => (availableByItemId.get(item.id) || 0) > 0),
+    [modeFilteredItems, availableByItemId]
+  );
 
   const allowedItemIds = useMemo(
     () => new Set(filteredItems.map((item) => item.id)),
@@ -291,6 +317,16 @@ export default function ConsumableTransfers() {
 
     if (requiresContainer && !data.containerId) {
       form.setError('containerId', { message: 'Container is required for this item' });
+      return;
+    }
+    if (!selectedItem) {
+      form.setError('itemId', { message: 'Select an item with available stock' });
+      return;
+    }
+    if (availableQty > 0 && data.qty > availableQty) {
+      form.setError('qty', {
+        message: `Available stock is ${availableQty} ${selectedItem.base_uom || ''}`,
+      });
       return;
     }
 

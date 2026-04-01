@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -54,6 +54,14 @@ const containerSchema = z.object({
   currentLocationId: z.string().min(1, 'Location is required'),
   status: z.enum(['IN_STOCK', 'EMPTY', 'DISPOSED', 'LOST']),
   openedDate: z.string().optional(),
+}).superRefine((data, ctx) => {
+  if (data.currentQtyBase > data.initialQtyBase) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['currentQtyBase'],
+      message: 'Current quantity cannot exceed the initial quantity',
+    });
+  }
 });
 
 type ContainerFormData = z.infer<typeof containerSchema>;
@@ -81,6 +89,14 @@ function ContainerFormModal(props: {
       openedDate: editingContainer?.opened_date || '',
     },
   });
+
+  useEffect(() => {
+    if (!locations.length) return;
+    const currentLocationId = form.getValues('currentLocationId');
+    if (!currentLocationId || !locations.some((location) => location.id === currentLocationId)) {
+      form.setValue('currentLocationId', locations[0].id);
+    }
+  }, [form, locations]);
 
   const submit = async (data: ContainerFormData) => {
     setIsSubmitting(true);
@@ -190,7 +206,7 @@ function ContainerFormModal(props: {
 }
 
 export default function ConsumableContainers() {
-  const { role, isOrgAdmin } = useAuth();
+  const { role, isOrgAdmin, locationId } = useAuth();
   const [selectedLocationId, setSelectedLocationId] = useState(ALL_VALUE);
   const [selectedStatus, setSelectedStatus] = useState(ALL_VALUE);
   const [formOpen, setFormOpen] = useState(false);
@@ -212,10 +228,24 @@ export default function ConsumableContainers() {
   const deleteContainer = useDeleteConsumableContainer();
   const canCreateOrDelete = isOrgAdmin || role === 'caretaker';
   const canUpdate = canCreateOrDelete || isOfficeAdminRole(role);
+  const scopedLocations = useMemo(
+    () =>
+      isOrgAdmin || !locationId
+        ? locations
+        : locations.filter((location) => location.id === locationId),
+    [isOrgAdmin, locationId, locations]
+  );
+
+  useEffect(() => {
+    if (isOrgAdmin || !locationId) return;
+    if (selectedLocationId !== locationId) {
+      setSelectedLocationId(locationId);
+    }
+  }, [isOrgAdmin, locationId, selectedLocationId]);
 
   const lotMap = useMemo(() => new Map(lots.map((lot) => [lot.id, lot])), [lots]);
   const itemMap = useMemo(() => new Map(items.map((item) => [item.id, item])), [items]);
-  const locationMap = useMemo(() => new Map(locations.map((location) => [location.id, location.name])), [locations]);
+  const locationMap = useMemo(() => new Map(scopedLocations.map((location) => [location.id, location.name])), [scopedLocations]);
   const inStockCount = containers.filter((container) => container.status === 'IN_STOCK').length;
   const emptyCount = containers.filter((container) => container.status === 'EMPTY').length;
   const locationCoverage = new Set(containers.map((container) => container.current_location_id).filter(Boolean)).size;
@@ -352,8 +382,8 @@ export default function ConsumableContainers() {
                 searchPlaceholder="Search locations..."
                 emptyText="No locations found."
                 options={[
-                  { value: ALL_VALUE, label: 'All locations' },
-                  ...locations.map((location) => ({ value: location.id, label: location.name })),
+                  ...(isOrgAdmin ? [{ value: ALL_VALUE, label: 'All locations' }] : []),
+                  ...scopedLocations.map((location) => ({ value: location.id, label: location.name })),
                 ]}
               />
             </div>
@@ -394,7 +424,7 @@ export default function ConsumableContainers() {
         onOpenChange={setFormOpen}
         editingContainer={editingContainer}
         lots={lots}
-        locations={locations}
+        locations={scopedLocations}
         onSubmit={handleSubmit}
       />
     </MainLayout>

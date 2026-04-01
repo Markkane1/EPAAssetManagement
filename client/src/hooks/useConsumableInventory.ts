@@ -39,6 +39,8 @@ async function refreshConsumableInventoryQueries(queryClient: ReturnType<typeof 
     queryKeys.consumableLedger,
     queryKeys.consumableRollup,
     queryKeys.consumableExpiry,
+    queryKeys.consumableLots,
+    queryKeys.consumableContainers,
   ]);
 }
 
