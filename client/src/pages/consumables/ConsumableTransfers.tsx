@@ -3,8 +3,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { MainLayout } from '@/components/layout/MainLayout';
-import { PageHeader } from '@/components/shared/PageHeader';
-import { Card, CardContent } from '@/components/ui/card';
+import { CollectionWorkspace } from '@/components/shared/CollectionWorkspace';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -18,7 +17,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Loader2 } from 'lucide-react';
+import { ArrowRightLeft, Boxes, Loader2, MapPin, Package } from 'lucide-react';
 import { useConsumableItems } from '@/hooks/useConsumableItems';
 import { useOffices } from '@/hooks/useOffices';
 import { useConsumableLots } from '@/hooks/useConsumableLots';
@@ -259,6 +258,7 @@ export default function ConsumableTransfers() {
 
   const fromHolderName = holderOptions.find((holder) => holder.key === fromHolderKey)?.name || '';
   const toHolderName = holderOptions.find((holder) => holder.key === toHolderKey)?.name || '';
+  const holderCount = holderOptions.length;
 
   const handleSubmit = async (data: TransferFormData) => {
     const parsedFrom = parseHolderKey(data.fromHolderKey);
@@ -328,16 +328,29 @@ export default function ConsumableTransfers() {
 
   return (
     <MainLayout title="Consumable Transfers" description="Move stock between offices and central store">
-      <PageHeader
+      <CollectionWorkspace
         title="Transfers"
         description="Transfer stock between central store and offices"
+        eyebrow="Consumables workspace"
+        meta={
+          <>
+            <span>{holderCount} holders available in this mode</span>
+            <span className="hidden h-1 w-1 rounded-full bg-border sm:inline-block" />
+            <span>{filteredItems.length} consumable items available for transfer</span>
+          </>
+        }
         extra={<ConsumableModeToggle mode={mode} onChange={setMode} />}
-      />
-
-      <Card>
-        <CardContent className="pt-6">
+        metrics={[
+          { label: 'Holders', value: holderCount, helper: 'Store and office holders available in this mode', icon: MapPin, tone: 'primary' },
+          { label: 'Item options', value: filteredItems.length, helper: 'Consumable items in the active transfer mode', icon: Package, tone: 'success' },
+          { label: 'Containers', value: containersForItem.length, helper: 'Trackable containers for the selected item', icon: Boxes },
+          { label: 'Available qty', value: availableQty, helper: selectedItem?.base_uom || 'Base unit', icon: ArrowRightLeft, tone: 'warning' },
+        ]}
+        panelTitle="Consumable transfer"
+        panelDescription="Move stock between the central store and offices with the same dashboard-style shell used across the main operational workspace."
+      >
           <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label>From Holder *</Label>
                 <Select value={fromHolderKey} onValueChange={(v) => form.setValue('fromHolderKey', v)}>
@@ -379,7 +392,7 @@ export default function ConsumableTransfers() {
                       {selectedItem ? selectedItem.name : 'Search item by name...'}
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                  <PopoverContent className="p-0" align="start">
                     <Command>
                       <CommandInput placeholder="Type item name..." />
                       <CommandList>
@@ -434,7 +447,7 @@ export default function ConsumableTransfers() {
             </div>
 
             {requiresContainer && (
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label>Container *</Label>
                   <Select
@@ -541,8 +554,9 @@ export default function ConsumableTransfers() {
               </Button>
             </div>
           </form>
-        </CardContent>
-      </Card>
+      </CollectionWorkspace>
     </MainLayout>
   );
 }
+
+

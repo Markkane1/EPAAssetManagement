@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { MainLayout } from '@/components/layout/MainLayout';
-import { PageHeader } from '@/components/shared/PageHeader';
+import { CollectionWorkspace } from '@/components/shared/CollectionWorkspace';
 import { DataTable } from '@/components/shared/DataTable';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent } from '@/components/ui/card';
 import {
   Select,
   SelectContent,
@@ -12,6 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { CalendarClock, Download, FileSpreadsheet, MapPin, Package } from 'lucide-react';
 import { useConsumableLedger } from '@/hooks/useConsumableInventory';
 import { useConsumableItems } from '@/hooks/useConsumableItems';
 import { useOffices } from '@/hooks/useOffices';
@@ -203,6 +203,8 @@ export default function ConsumableLedger() {
       isHolderInOffice(entry.to_holder_type, entry.to_holder_id, locationId)
     );
   });
+  const uniqueLedgerItems = new Set(visibleLedger.map((entry) => entry.consumable_item_id)).size;
+  const transferCount = visibleLedger.filter((entry) => entry.tx_type === 'TRANSFER').length;
 
   useEffect(() => {
     if (itemId !== ALL_VALUE && !filteredItems.some((item) => item.id === itemId)) {
@@ -277,20 +279,34 @@ export default function ConsumableLedger() {
 
   return (
     <MainLayout title="Consumable Ledger" description="Transaction history">
-      <PageHeader
+      <CollectionWorkspace
         title="Ledger"
         description="Filterable transaction history"
+        eyebrow="Consumables workspace"
+        meta={
+          <>
+            <span>{visibleLedger.length} transaction rows in scope</span>
+            <span className="hidden h-1 w-1 rounded-full bg-border sm:inline-block" />
+            <span>{mode === 'chemicals' ? 'Chemical ledger' : 'General consumable ledger'}</span>
+          </>
+        }
         extra={
           <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
             <ConsumableModeToggle mode={mode} onChange={setMode} />
-            <Button variant="outline" onClick={handleExport}>Export CSV</Button>
+            <Button variant="outline" onClick={handleExport}>
+              <Download className="h-4 w-4" />
+              Export CSV
+            </Button>
           </div>
         }
-      />
-
-      <Card className="mb-6">
-        <CardContent className="pt-6">
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
+        metrics={[
+          { label: 'Transactions', value: visibleLedger.length, helper: 'Ledger rows matching the current filters', icon: FileSpreadsheet, tone: 'primary' },
+          { label: 'Transfers', value: transferCount, helper: 'Movement records in the current filtered ledger', icon: MapPin, tone: 'success' },
+          { label: 'Items', value: uniqueLedgerItems, helper: 'Distinct consumable items represented in the ledger', icon: Package },
+          { label: 'Date window', value: from && to ? `${from} to ${to}` : from || to || 'All dates', helper: 'Current time range filter', icon: CalendarClock, tone: 'warning' },
+        ]}
+        filterBar={
+          <div className="grid w-full grid-cols-1 gap-4 lg:grid-cols-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">From</label>
               <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
@@ -393,15 +409,18 @@ export default function ConsumableLedger() {
               </Select>
             </div>
           </div>
-        </CardContent>
-      </Card>
+        }
+        panelTitle="Ledger transactions"
+        panelDescription="Review transaction history in the same dashboard-aligned shell used across the inventory workspace."
+      >
 
-      <DataTable
-        columns={columns}
-        data={visibleLedger as ConsumableInventoryTransaction[] as any}
-        searchPlaceholder="Search ledger..."
-        virtualized
-      />
+        <DataTable
+          columns={columns}
+          data={visibleLedger as ConsumableInventoryTransaction[] as any}
+          searchPlaceholder="Search ledger..."
+          virtualized
+        />
+      </CollectionWorkspace>
     </MainLayout>
   );
 }

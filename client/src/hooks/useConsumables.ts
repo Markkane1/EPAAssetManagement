@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { consumableService } from "@/services/consumableService";
 import type { ConsumableCreateDto, ConsumableUpdateDto } from "@/services/consumableService";
 import { toast } from "sonner";
+import { refreshActiveQueries } from "@/lib/queryRefresh";
 
 const queryKey = ["consumables"];
 
@@ -18,8 +19,8 @@ export const useCreateConsumable = () => {
 
   return useMutation({
     mutationFn: (data: ConsumableCreateDto) => consumableService.create(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey });
+    onSuccess: async () => {
+      await refreshActiveQueries(queryClient, [queryKey]);
       toast.success("Consumable created successfully");
     },
     onError: (error: Error) => {
@@ -34,8 +35,8 @@ export const useUpdateConsumable = () => {
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: ConsumableUpdateDto }) =>
       consumableService.update(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey });
+    onSuccess: async () => {
+      await refreshActiveQueries(queryClient, [queryKey]);
       toast.success("Consumable updated successfully");
     },
     onError: (error: Error) => {
@@ -49,8 +50,8 @@ export const useDeleteConsumable = () => {
 
   return useMutation({
     mutationFn: (id: string) => consumableService.delete(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey });
+    onSuccess: async () => {
+      await refreshActiveQueries(queryClient, [queryKey]);
       toast.success("Consumable deleted successfully");
     },
     onError: (error: Error) => {

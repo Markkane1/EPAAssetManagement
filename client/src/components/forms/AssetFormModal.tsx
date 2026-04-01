@@ -20,11 +20,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Asset, Category, Project, Scheme, Vendor } from "@/types";
+import { Asset, Category, Project, PurchaseOrder, Scheme, Vendor } from "@/types";
 import { FormDialogActions } from "@/components/forms/FormDialogActions";
 import { getFormEntityId } from "@/components/forms/formEntityUtils";
 import { useDialogFormReset } from "@/components/forms/useDialogFormReset";
 import { usePdfAttachmentField } from "@/components/forms/usePdfAttachmentField";
+import { Button } from "@/components/ui/button";
+import { PurchaseOrderFormModal } from "@/components/forms/PurchaseOrderFormModal";
+import { useCreatePurchaseOrder, usePurchaseOrders } from "@/hooks/usePurchaseOrders";
 
 const optionalDimension = z.preprocess(
   (value) => {
@@ -40,8 +43,10 @@ const assetSchema = z.object({
   description: z.string().max(500).optional(),
   specification: z.string().min(1, "Specification is required").max(5000),
   categoryId: z.string().min(1, "Category is required"),
+  subcategory: z.string().optional(),
   assetSource: z.enum(["procurement", "project"]),
   vendorId: z.string().optional(),
+  purchaseOrderId: z.string().optional(),
   projectId: z.string().optional(),
   schemeId: z.string().optional(),
   price: z.coerce.number().min(0, "Price must be positive").optional(),
@@ -92,6 +97,7 @@ type AssetSubmitData = Omit<
   AssetFormData,
   "dimensionLength" | "dimensionWidth" | "dimensionHeight" | "dimensionUnit"
 > & {
+  subcategory?: string;
   dimensions: {
     length: number | null;
     width: number | null;
@@ -118,9 +124,13 @@ function hasDimensionValues(dimensions?: Asset["dimensions"] | null) {
 }
 
 export function AssetFormModal({ open, onOpenChange, asset, categories, vendors, projects, schemes, onSubmit }: AssetFormModalProps) {
+  const NONE_VALUE = "__none__";
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showDimensions, setShowDimensions] = useState(false);
+  const [isPurchaseOrderModalOpen, setIsPurchaseOrderModalOpen] = useState(false);
   const isEditing = !!asset;
+  const { data: purchaseOrders } = usePurchaseOrders();
+  const createPurchaseOrder = useCreatePurchaseOrder();
   const {
     attachmentFile,
     attachmentError,
@@ -136,8 +146,10 @@ export function AssetFormModal({ open, onOpenChange, asset, categories, vendors,
       description: asset?.description || "",
       specification: asset?.specification || "",
       categoryId: asset?.category_id || "",
+      subcategory: asset?.subcategory || "",
       assetSource: asset?.asset_source || (asset?.project_id ? "project" : "procurement"),
       vendorId: asset?.vendor_id || "",
+      purchaseOrderId: asset?.purchase_order_id || "",
       projectId: asset?.project_id || "",
       schemeId: asset?.scheme_id || "",
       price: asset?.unit_price || undefined,
@@ -159,8 +171,10 @@ export function AssetFormModal({ open, onOpenChange, asset, categories, vendors,
         description: asset.description || "",
         specification: asset.specification || "",
         categoryId: asset.category_id || "",
+        subcategory: asset.subcategory || "",
         assetSource: asset.asset_source || (asset.project_id ? "project" : "procurement"),
         vendorId: asset.vendor_id || "",
+        purchaseOrderId: asset.purchase_order_id || "",
         projectId: asset.project_id || "",
         schemeId: asset.scheme_id || "",
         price: asset.unit_price || undefined,
@@ -180,8 +194,10 @@ export function AssetFormModal({ open, onOpenChange, asset, categories, vendors,
       description: "",
       specification: "",
       categoryId: "",
+      subcategory: "",
       assetSource: "procurement" as const,
       vendorId: "",
+      purchaseOrderId: "",
       projectId: "",
       schemeId: "",
       price: undefined,
@@ -202,11 +218,96 @@ export function AssetFormModal({ open, onOpenChange, asset, categories, vendors,
   }, [asset, open, resetAttachment]);
 
   const selectedSource = form.watch("assetSource");
+  const selectedCategoryId = form.watch("categoryId");
+  const selectedVendorId = form.watch("vendorId");
+  const selectedPrice = form.watch("price");
   const selectedProjectId = form.watch("projectId");
+  const selectedQuantity = form.watch("quantity");
   const attachmentLabel = selectedSource === "project" ? "Project Handover Documentation" : "Invoice";
+  const selectedCategory = useMemo(
+    () => categories.find((category) => getFormEntityId(category) === selectedCategoryId) || null,
+    [categories, selectedCategoryId]
+  );
+  const availableSubcategories = useMemo(
+    () => selectedCategory?.subcategories || [],
+    [selectedCategory]
+  );
   const filteredSchemes = selectedProjectId
     ? schemes.filter((scheme) => getFormEntityId(scheme.project_id) === selectedProjectId)
     : [];
+  const purchaseOrderList = useMemo(
+    () => (purchaseOrders || []).filter((order) => order.source_type === "procurement"),
+    [purchaseOrders]
+  );
+  const accessibleVendorIds = useMemo(
+    () => new Set(vendors.map((vendor) => getFormEntityId(vendor)).filter(Boolean) as string[]),
+    [vendors]
+  );
+  const visiblePurchaseOrders = useMemo(
+    () =>
+      purchaseOrderList.filter((order) => {
+        if (order.vendor_id && !accessibleVendorIds.has(order.vendor_id)) {
+          return false;
+        }
+        if (selectedVendorId && order.vendor_id !== selectedVendorId) {
+          return false;
+        }
+        return true;
+      }),
+    [accessibleVendorIds, purchaseOrderList, selectedVendorId]
+  );
+  const purchaseOrderById = useMemo(
+    () => new Map(purchaseOrderList.map((order) => [order.id, order])),
+    [purchaseOrderList]
+  );
+  const purchaseOrderPrefill = useMemo(
+    () => ({
+      sourceType: "procurement" as const,
+      vendorId: selectedVendorId || undefined,
+      unitPrice: Number(selectedPrice || 0),
+      totalAmount: Number(selectedPrice || 0) * Number(selectedQuantity || 1),
+    }),
+    [selectedPrice, selectedQuantity, selectedVendorId]
+  );
+
+  useEffect(() => {
+    const currentSubcategory = form.getValues("subcategory") || "";
+    if (!currentSubcategory) return;
+    if (!availableSubcategories.includes(currentSubcategory)) {
+      form.setValue("subcategory", "");
+    }
+  }, [availableSubcategories, form]);
+
+  useEffect(() => {
+    if (selectedSource === "procurement") return;
+    if (form.getValues("purchaseOrderId")) {
+      form.setValue("purchaseOrderId", "");
+    }
+  }, [form, selectedSource]);
+
+  const handlePurchaseOrderSubmit = async (data: any) => {
+    const createdOrder = await createPurchaseOrder.mutateAsync(data);
+    setIsPurchaseOrderModalOpen(false);
+    form.setValue("purchaseOrderId", createdOrder.id, { shouldDirty: true, shouldValidate: true });
+    if (createdOrder.vendor_id) {
+      form.setValue("vendorId", createdOrder.vendor_id, { shouldDirty: true, shouldValidate: true });
+    }
+    if (createdOrder.unit_price !== null && createdOrder.unit_price !== undefined) {
+      form.setValue("price", createdOrder.unit_price, { shouldDirty: true, shouldValidate: true });
+    }
+  };
+
+  const handlePurchaseOrderChange = (nextValue: string) => {
+    const purchaseOrderId = nextValue === NONE_VALUE ? "" : nextValue;
+    form.setValue("purchaseOrderId", purchaseOrderId, { shouldDirty: true, shouldValidate: true });
+    const selectedOrder = purchaseOrderId ? purchaseOrderById.get(purchaseOrderId) : null;
+    if (selectedOrder?.vendor_id) {
+      form.setValue("vendorId", selectedOrder.vendor_id, { shouldDirty: true, shouldValidate: true });
+    }
+    if (selectedOrder?.unit_price !== null && selectedOrder?.unit_price !== undefined) {
+      form.setValue("price", selectedOrder.unit_price, { shouldDirty: true, shouldValidate: true });
+    }
+  };
 
   const handleSubmit = async (data: AssetFormData) => {
     if (!validateAttachment()) {
@@ -217,6 +318,7 @@ export function AssetFormModal({ open, onOpenChange, asset, categories, vendors,
     try {
       const payload: AssetSubmitData = {
         ...data,
+        subcategory: data.subcategory || undefined,
         dimensions: {
           length: showDimensions ? (data.dimensionLength ?? null) : null,
           width: showDimensions ? (data.dimensionWidth ?? null) : null,
@@ -237,7 +339,7 @@ export function AssetFormModal({ open, onOpenChange, asset, categories, vendors,
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[500px]">
+      <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
           <DialogTitle>{isEditing ? "Edit Asset" : "Add Asset"}</DialogTitle>
           <DialogDescription>
@@ -277,7 +379,7 @@ export function AssetFormModal({ open, onOpenChange, asset, categories, vendors,
           {showDimensions ? (
             <div className="space-y-2">
               <Label>Dimensions</Label>
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <div className="space-y-2">
                   <Label htmlFor="dimensionLength" className="text-xs text-muted-foreground">Length</Label>
                   <Input id="dimensionLength" type="number" step="0.01" {...form.register("dimensionLength")} placeholder="0" />
@@ -309,10 +411,16 @@ export function AssetFormModal({ open, onOpenChange, asset, categories, vendors,
               </div>
             </div>
           ) : null}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label>Category *</Label>
-              <Select value={form.watch("categoryId") || undefined} onValueChange={(v) => form.setValue("categoryId", v)}>
+              <Select
+                value={form.watch("categoryId") || undefined}
+                onValueChange={(v) => {
+                  form.setValue("categoryId", v);
+                  form.setValue("subcategory", "");
+                }}
+              >
                 <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
                 <SelectContent>
                   {categories.map((c) => {
@@ -327,6 +435,27 @@ export function AssetFormModal({ open, onOpenChange, asset, categories, vendors,
               )}
             </div>
             <div className="space-y-2">
+              <Label>Subcategory</Label>
+              <Select
+                value={form.watch("subcategory") || undefined}
+                onValueChange={(v) => form.setValue("subcategory", v)}
+                disabled={!selectedCategoryId || availableSubcategories.length === 0}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={selectedCategoryId ? "Select subcategory" : "Select category first"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableSubcategories.length === 0 ? (
+                    <div className="p-2 text-sm text-muted-foreground text-center">No subcategories configured</div>
+                  ) : (
+                    availableSubcategories.map((subcategory) => (
+                      <SelectItem key={subcategory} value={subcategory}>{subcategory}</SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
               <Label>Source *</Label>
               <Select
                 value={selectedSource}
@@ -338,6 +467,7 @@ export function AssetFormModal({ open, onOpenChange, asset, categories, vendors,
                     form.setValue("schemeId", "");
                   } else {
                     form.setValue("vendorId", "");
+                    form.setValue("purchaseOrderId", "");
                     form.setValue("price", undefined);
                   }
                 }}
@@ -351,34 +481,72 @@ export function AssetFormModal({ open, onOpenChange, asset, categories, vendors,
             </div>
           </div>
           {selectedSource === "procurement" ? (
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Vendor *</Label>
-                <Select value={form.watch("vendorId") || "none"} onValueChange={(v) => form.setValue("vendorId", v === "none" ? "" : v)}>
-                  <SelectTrigger><SelectValue placeholder="Select vendor" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Select vendor</SelectItem>
-                    {vendors.map((v) => {
-                      const id = getFormEntityId(v);
-                      if (!id) return null;
-                      return <SelectItem key={id} value={id}>{v.name}</SelectItem>;
-                    })}
-                  </SelectContent>
-                </Select>
-                {form.formState.errors.vendorId && (
-                  <p className="text-sm text-destructive">{form.formState.errors.vendorId.message}</p>
-                )}
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Vendor *</Label>
+                  <Select
+                    value={form.watch("vendorId") || "none"}
+                    onValueChange={(v) => {
+                      const vendorId = v === "none" ? "" : v;
+                      form.setValue("vendorId", vendorId, { shouldDirty: true, shouldValidate: true });
+                      const selectedOrder = purchaseOrderById.get(form.getValues("purchaseOrderId") || "");
+                      if (selectedOrder && selectedOrder.vendor_id !== vendorId) {
+                        form.setValue("purchaseOrderId", "", { shouldDirty: true, shouldValidate: true });
+                      }
+                    }}
+                  >
+                    <SelectTrigger><SelectValue placeholder="Select vendor" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Select vendor</SelectItem>
+                      {vendors.map((v) => {
+                        const id = getFormEntityId(v);
+                        if (!id) return null;
+                        return <SelectItem key={id} value={id}>{v.name}</SelectItem>;
+                      })}
+                    </SelectContent>
+                  </Select>
+                  {form.formState.errors.vendorId && (
+                    <p className="text-sm text-destructive">{form.formState.errors.vendorId.message}</p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="price">Unit Price (PKR) *</Label>
+                  <Input id="price" type="number" step="0.01" {...form.register("price")} placeholder="0.00" />
+                  {form.formState.errors.price && (
+                    <p className="text-sm text-destructive">{form.formState.errors.price.message}</p>
+                  )}
+                </div>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="price">Unit Price (PKR) *</Label>
-                <Input id="price" type="number" step="0.01" {...form.register("price")} placeholder="0.00" />
-                {form.formState.errors.price && (
-                  <p className="text-sm text-destructive">{form.formState.errors.price.message}</p>
-                )}
+                <div className="flex items-center justify-between gap-3">
+                  <Label>Purchase Order</Label>
+                  <Button type="button" variant="outline" size="sm" onClick={() => setIsPurchaseOrderModalOpen(true)}>
+                    New Purchase Order
+                  </Button>
+                </div>
+                <Select
+                  value={form.watch("purchaseOrderId") || NONE_VALUE}
+                  onValueChange={handlePurchaseOrderChange}
+                >
+                  <SelectTrigger><SelectValue placeholder="Link a procurement purchase order" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NONE_VALUE}>No purchase order</SelectItem>
+                    {visiblePurchaseOrders.map((order: PurchaseOrder) => (
+                      <SelectItem key={order.id} value={order.id}>
+                        {order.order_number}
+                        {order.source_name ? ` - ${order.source_name}` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Linking a purchase order keeps this asset tied to its procurement record and syncs the vendor.
+                </p>
               </div>
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label>Project *</Label>
                 <Select
@@ -446,7 +614,7 @@ export function AssetFormModal({ open, onOpenChange, asset, categories, vendors,
             )}
             {attachmentError && <p className="text-sm text-destructive">{attachmentError}</p>}
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="quantity">Quantity *</Label>
               <Input id="quantity" type="number" {...form.register("quantity")} placeholder="1" />
@@ -473,6 +641,17 @@ export function AssetFormModal({ open, onOpenChange, asset, categories, vendors,
           />
         </form>
       </DialogContent>
+      <PurchaseOrderFormModal
+        open={isPurchaseOrderModalOpen}
+        onOpenChange={setIsPurchaseOrderModalOpen}
+        vendors={vendors}
+        projects={projects}
+        schemes={schemes}
+        sourceTypeLocked="procurement"
+        prefill={purchaseOrderPrefill}
+        onSubmit={handlePurchaseOrderSubmit}
+      />
     </Dialog>
   );
 }
+

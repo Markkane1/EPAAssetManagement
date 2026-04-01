@@ -89,8 +89,14 @@ async function main() {
   await login(managerAgent, 'manager@example.com', 'Passw0rd!');
   await login(superAgent, 'super-admin@example.com', 'Passw0rd!');
 
+  const functionalUpdate = await managerAgent.put(`/api/asset-items/${item.id}`).send({
+    functionalStatus: 'Needs Repair',
+  });
+  assert.equal(functionalUpdate.status, 200, `Functional status update failed: ${functionalUpdate.status}`);
+  assert.equal(functionalUpdate.body.functional_status, 'Needs Repair');
+  assert.equal(functionalUpdate.body.item_status, 'Maintenance');
+
   const allowedUpdate = await managerAgent.put(`/api/asset-items/${item.id}`).send({
-    itemStatus: 'Maintenance',
     condition: 'Poor',
     notes: 'Needs service',
   });
@@ -121,11 +127,20 @@ async function main() {
   });
   assert.equal(forbiddenProcurement.status, 403);
 
+  const invalidStateCombination = await managerAgent.put(`/api/asset-items/${item.id}`).send({
+    itemStatus: 'Assigned',
+    functionalStatus: 'Non-Repairable',
+  });
+  assert.equal(invalidStateCombination.status, 400);
+
   const managerCreate = await managerAgent.post('/api/asset-items').send({
     assetId: String(assetA._id),
     locationId: String(officeA._id),
+    functionalStatus: 'Non-Repairable',
   });
   assert.equal(managerCreate.status, 201);
+  assert.equal(managerCreate.body.item_status, 'Retired');
+  assert.equal(managerCreate.body.functional_status, 'Non-Repairable');
 
   const managerRetire = await managerAgent.delete(`/api/asset-items/${item.id}`).send();
   assert.equal(managerRetire.status, 403);

@@ -9,8 +9,17 @@ export function AssetsByCategory() {
 
   // Calculate asset count per category
   const categoryStats = categories.map(category => {
-    const assetCount = assets.filter(a => a.category_id === category.id).length;
-    return { ...category, assetCount };
+    const categoryAssets = assets.filter(a => a.category_id === category.id);
+    const subcategoryStats = Array.from(
+      categoryAssets.reduce((map, asset) => {
+        const key = asset.subcategory || '';
+        if (!key) return map;
+        map.set(key, (map.get(key) || 0) + 1);
+        return map;
+      }, new Map<string, number>())
+    ).sort((left, right) => right[1] - left[1]);
+
+    return { ...category, assetCount: categoryAssets.length, subcategoryStats };
   });
 
   const totalAssets = categoryStats.reduce((sum, cat) => sum + cat.assetCount, 0);
@@ -51,6 +60,11 @@ export function AssetsByCategory() {
                     {category.assetCount} ({percentage}%)
                   </span>
                 </div>
+                {category.subcategoryStats.length > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    {category.subcategoryStats.map(([name, count]) => `${name}: ${count}`).join(" | ")}
+                  </p>
+                )}
                 <div className="h-2 bg-muted rounded-full overflow-hidden">
                   <div 
                     className={`h-full ${colors[index % colors.length]} transition-all duration-500`}

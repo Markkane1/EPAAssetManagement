@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { MainLayout } from '@/components/layout/MainLayout';
-import { PageHeader } from '@/components/shared/PageHeader';
 import { DataTable } from '@/components/shared/DataTable';
 import { Button } from '@/components/ui/button';
 import {
@@ -21,6 +20,7 @@ import {
 import type { ConsumableUnit } from '@/types';
 import { ConsumableUnitFormModal } from '@/components/forms/ConsumableUnitFormModal';
 import { useAuth } from '@/contexts/AuthContext';
+import { CollectionWorkspace } from '@/components/shared/CollectionWorkspace';
 
 export default function ConsumableUnits() {
   const { role, isOrgAdmin } = useAuth();
@@ -33,6 +33,9 @@ export default function ConsumableUnits() {
   const [editing, setEditing] = useState<ConsumableUnit | null>(null);
 
   const canManage = isOrgAdmin || role === 'caretaker';
+  const unitList = units || [];
+  const activeUnitCount = unitList.filter((unit) => unit.is_active !== false).length;
+  const unitGroupCount = new Set(unitList.map((unit) => unit.group).filter(Boolean)).size;
 
   const handleAdd = () => {
     setEditing(null);
@@ -113,18 +116,34 @@ export default function ConsumableUnits() {
 
   return (
     <MainLayout title="Units" description="Manage unit definitions">
-      <PageHeader
+      <CollectionWorkspace
         title="Units"
         description="Create and manage unit definitions"
         action={canManage ? { label: 'Add Unit', onClick: handleAdd } : undefined}
-      />
-
-      <DataTable
-        columns={columns}
-        data={(units || []) as any}
-        searchPlaceholder="Search units..."
-        actions={canManage ? actions : undefined}
-      />
+        eyebrow="Consumables workspace"
+        meta={
+          <>
+            <span>{unitList.length} unit definitions</span>
+            <span className="hidden h-1 w-1 rounded-full bg-border sm:inline-block" />
+            <span>Reusable conversions for receive, consume, transfer, and adjust flows</span>
+          </>
+        }
+        metrics={[
+          { label: 'Units', value: unitList.length, helper: 'Total unit definitions loaded', icon: MoreHorizontal, tone: 'primary' },
+          { label: 'Active', value: activeUnitCount, helper: 'Units currently available in forms', icon: Pencil, tone: 'success' },
+          { label: 'Groups', value: unitGroupCount, helper: 'Distinct measurement groups represented', icon: Trash2 },
+          { label: 'Manage access', value: canManage ? 'Enabled' : 'Read only', helper: 'Whether this role can change unit definitions', icon: Loader2, tone: 'warning' },
+        ]}
+        panelTitle="Unit library"
+        panelDescription="Keep unit definitions, conversion groups, and active usage aligned with the same workspace shell used across consumable administration."
+      >
+        <DataTable
+          columns={columns}
+          data={unitList as any}
+          searchPlaceholder="Search units..."
+          actions={canManage ? actions : undefined}
+        />
+      </CollectionWorkspace>
 
       {canManage && (
         <ConsumableUnitFormModal

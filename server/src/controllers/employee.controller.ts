@@ -8,7 +8,13 @@ import { EmployeeModel } from '../models/employee.model';
 import { OfficeModel } from '../models/office.model';
 import { OfficeSubLocationModel } from '../models/officeSubLocation.model';
 import { AuthRequest } from '../middleware/auth';
-import { hasRoleCapability, normalizeRoles, resolveActiveRole } from '../utils/roles';
+import {
+  OFFICE_ADMIN_ROLE_VALUES,
+  hasRoleCapability,
+  isOfficeAdminRole,
+  normalizeRoles,
+  resolveActiveRole,
+} from '../utils/roles';
 import { getRequestContext } from '../utils/scope';
 import { logAudit } from '../modules/records/services/audit.service';
 import { createBulkNotifications, resolveNotificationRecipientsByOffice } from '../services/notification.service';
@@ -209,7 +215,7 @@ export const employeeController = {
       if (!authUser) {
         return res.status(401).json({ message: 'Unauthorized' });
       }
-      const canManage = authUser.role === 'org_admin' || authUser.role === 'office_head';
+      const canManage = authUser.role === 'org_admin' || isOfficeAdminRole(authUser.role);
       if (!canManage) {
         return res.status(403).json({ message: 'Access denied' });
       }
@@ -299,7 +305,7 @@ export const employeeController = {
       if (!user) {
         return res.status(401).json({ message: 'Unauthorized' });
       }
-      const canManage = user.role === 'org_admin' || user.role === 'office_head';
+      const canManage = user.role === 'org_admin' || isOfficeAdminRole(user.role);
       if (!canManage) {
         return res.status(403).json({ message: 'Access denied' });
       }
@@ -371,7 +377,7 @@ export const employeeController = {
       if (!user) {
         return res.status(401).json({ message: 'Unauthorized' });
       }
-      const canManage = user.role === 'org_admin' || user.role === 'office_head';
+      const canManage = user.role === 'org_admin' || isOfficeAdminRole(user.role);
       if (!canManage) {
         return res.status(403).json({ message: 'Access denied' });
       }
@@ -472,7 +478,7 @@ export const employeeController = {
       const recipients = await resolveNotificationRecipientsByOffice({
         officeIds,
         includeOrgAdmins: true,
-        includeRoles: ['office_head', 'caretaker'],
+        includeRoles: [...OFFICE_ADMIN_ROLE_VALUES, 'caretaker'],
         includeUserIds: employee.user_id ? [String(employee.user_id)] : [],
         excludeUserIds: [user.userId],
       });

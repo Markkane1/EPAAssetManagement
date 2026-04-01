@@ -4,6 +4,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ApiError } from "../../client/src/lib/api";
 
 const routerFuture = { v7_startTransition: true, v7_relativeSplatPath: true } as const;
 
@@ -157,6 +158,23 @@ describe("Login page", () => {
 
     expect(await screen.findByText("Invalid credentials (2 attempts remaining)")).toBeInTheDocument();
     expect(loginFailedMock).toHaveBeenCalled();
+    expect(navigateMock).not.toHaveBeenCalled();
+  });
+
+  it("should not burn a login attempt when the API is unreachable", async () => {
+    loginMock.mockRejectedValue(
+      new ApiError("Unable to reach the API server (/api). Check the API URL and server availability.", 0)
+    );
+
+    renderLogin();
+
+    await userEvent.click(screen.getByRole("button", { name: "Verify captcha" }));
+    await userEvent.type(screen.getByLabelText("Email"), "admin@example.com");
+    await userEvent.type(screen.getByLabelText("Password"), "Admin123!");
+    await userEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+    expect(await screen.findByText(/Unable to reach the API server/i)).toBeInTheDocument();
+    expect(recordFailedAttemptMock).not.toHaveBeenCalled();
     expect(navigateMock).not.toHaveBeenCalled();
   });
 

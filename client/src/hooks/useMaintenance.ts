@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { maintenanceService, MaintenanceCreateDto, MaintenanceUpdateDto } from '@/services/maintenanceService';
 import { toast } from 'sonner';
+import { refreshActiveQueries } from '@/lib/queryRefresh';
 
 
 export const useMaintenance = () => {
@@ -42,8 +43,8 @@ export const useCreateMaintenance = () => {
   
   return useMutation({
     mutationFn: (data: MaintenanceCreateDto) => maintenanceService.create(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['maintenance'] });
+    onSuccess: async () => {
+      await refreshActiveQueries(queryClient, [['maintenance']]);
       toast.success('Maintenance record created successfully');
     },
     onError: (error: Error) => {
@@ -58,8 +59,8 @@ export const useUpdateMaintenance = () => {
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: MaintenanceUpdateDto }) =>
       maintenanceService.update(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['maintenance'] });
+    onSuccess: async () => {
+      await refreshActiveQueries(queryClient, [['maintenance']]);
       toast.success('Maintenance record updated successfully');
     },
     onError: (error: Error) => {
@@ -74,8 +75,8 @@ export const useCompleteMaintenance = () => {
   return useMutation({
     mutationFn: ({ id, completedDate }: { id: string; completedDate: string; notes?: string }) =>
       maintenanceService.complete(id, completedDate),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['maintenance'] });
+    onSuccess: async () => {
+      await refreshActiveQueries(queryClient, [['maintenance']]);
       toast.success('Maintenance completed successfully');
     },
     onError: (error: Error) => {
@@ -89,8 +90,8 @@ export const useDeleteMaintenance = () => {
   
   return useMutation({
     mutationFn: (id: string) => maintenanceService.delete(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['maintenance'] });
+    onSuccess: async () => {
+      await refreshActiveQueries(queryClient, [['maintenance']]);
       toast.success('Maintenance record deleted successfully');
     },
     onError: (error: Error) => {

@@ -5,134 +5,32 @@ import { OfficeModel } from '../models/office.model';
 import type { AuthRequest } from '../middleware/auth';
 import { createHttpError } from '../utils/httpError';
 import {
-  getWorkflowConfigSnapshot,
+  AUTHORIZATION_PAGE_DEFINITIONS,
+  AUTHORIZATION_PAGE_KEY_SET,
+  AUTHORIZATION_PERMISSION_ACTIONS,
+  AUTHORIZATION_ROLE_ID_SET,
+  CENTRAL_CARETAKER_ONLY_PAGE_KEYS,
+  EMPLOYEE_RESTRICTED_PAGE_KEYS,
+  OFFICE_HEAD_RESTRICTED_PAGE_KEYS,
+  buildDefaultAuthorizationPermissionsForRole,
+  createEmptyAuthorizationPermissionMap,
+} from '../config/authorizationCatalog';
+import {
   invalidateWorkflowConfigCache,
 } from '../services/workflowConfig.service';
+import {
+  getAuthorizationDefinitionSnapshot,
+  getAuthorizationRuntimeSnapshot,
+} from '../services/authorizationPolicy.service';
 import { invalidateNotificationSettingsCache } from '../services/notification.service';
 
 const STORAGE_LIMIT_BYTES = Number(process.env.STORAGE_LIMIT_GB || 10) * 1024 * 1024 * 1024;
 const APP_VERSION = process.env.APP_VERSION || '1.0.0';
 const MAX_PERMISSION_ROLES = 50;
 
-const PERMISSION_ACTIONS = ['view', 'create', 'edit', 'delete'] as const;
-const PERMISSION_ACTION_SET = new Set<string>(PERMISSION_ACTIONS);
-const PERMISSION_ROLE_SET = new Set([
-  'org_admin',
-  'office_head',
-  'caretaker',
-  'employee',
-  'storekeeper',
-  'inventory_controller',
-  'procurement_officer',
-  'compliance_auditor',
-]);
-const PERMISSION_PAGE_KEYS = [
-  'dashboard',
-  'profile',
-  'inventory',
-  'requisitions',
-  'requisitions-new',
-  'returns',
-  'returns-new',
-  'returns-detail',
-  'assets',
-  'asset-items',
-  'consumables',
-  'office-assets',
-  'office-asset-items',
-  'office-consumables',
-  'assignments',
-  'transfers',
-  'maintenance',
-  'purchase-orders',
-  'employees',
-  'offices',
-  'rooms-sections',
-  'categories',
-  'vendors',
-  'projects',
-  'schemes',
-  'reports',
-  'compliance',
-  'approval-matrix',
-  'settings',
-  'audit-logs',
-  'user-permissions',
-  'user-management',
-  'user-activity',
-] as const;
-const PERMISSION_PAGE_SET = new Set<string>(PERMISSION_PAGE_KEYS);
-const EMPLOYEE_RESTRICTED_PAGE_KEYS = [
-  'assets',
-  'asset-items',
-  'office-assets',
-  'office-asset-items',
-  'transfers',
-  'employees',
-  'offices',
-  'rooms-sections',
-  'categories',
-  'vendors',
-  'projects',
-  'schemes',
-  'purchase-orders',
-  'settings',
-] as const;
-const OFFICE_HEAD_RESTRICTED_PAGE_KEYS = [
-  'categories',
-  'projects',
-  'schemes',
-] as const;
-const CENTRAL_CARETAKER_ONLY_PAGE_KEYS = [
-  'categories',
-  'projects',
-  'schemes',
-] as const;
-const DEFAULT_ALLOWED_ROLES_BY_PAGE: Record<string, string[]> = {
-  dashboard: ['org_admin', 'office_head', 'caretaker', 'employee', 'procurement_officer', 'compliance_auditor'],
-  inventory: ['org_admin', 'office_head', 'caretaker', 'employee', 'procurement_officer', 'compliance_auditor'],
-  assets: ['org_admin', 'office_head', 'caretaker'],
-  'asset-items': ['org_admin', 'office_head', 'caretaker'],
-  consumables: ['org_admin', 'caretaker', 'storekeeper', 'inventory_controller'],
-  'office-assets': [],
-  'office-asset-items': [],
-  'office-consumables': ['office_head'],
-  employees: ['org_admin', 'office_head', 'caretaker'],
-  assignments: ['org_admin', 'office_head', 'caretaker', 'employee'],
-  transfers: ['org_admin', 'office_head', 'caretaker'],
-  maintenance: ['org_admin', 'office_head', 'caretaker', 'employee', 'compliance_auditor'],
-  'purchase-orders': ['org_admin', 'office_head', 'caretaker', 'procurement_officer'],
-  offices: ['org_admin'],
-  'rooms-sections': ['org_admin', 'office_head', 'caretaker'],
-  categories: ['org_admin', 'caretaker', 'storekeeper', 'inventory_controller'],
-  vendors: ['org_admin', 'office_head', 'caretaker', 'procurement_officer'],
-  projects: ['org_admin', 'caretaker', 'procurement_officer'],
-  schemes: ['org_admin', 'caretaker', 'procurement_officer'],
-  reports: ['org_admin', 'office_head', 'caretaker', 'employee', 'procurement_officer', 'compliance_auditor'],
-  compliance: ['org_admin', 'office_head', 'caretaker', 'employee', 'compliance_auditor'],
-  'approval-matrix': [
-    'org_admin',
-    'office_head',
-    'caretaker',
-    'storekeeper',
-    'inventory_controller',
-    'procurement_officer',
-    'compliance_auditor',
-  ],
-  requisitions: ['org_admin', 'office_head', 'caretaker', 'employee', 'inventory_controller'],
-  'requisitions-new': ['employee'],
-  returns: ['org_admin', 'office_head', 'caretaker', 'employee', 'inventory_controller'],
-  'returns-new': ['employee'],
-  'returns-detail': ['org_admin', 'office_head', 'caretaker', 'employee', 'inventory_controller'],
-  settings: ['org_admin', 'office_head'],
-  'audit-logs': ['org_admin', 'office_head', 'caretaker', 'employee', 'compliance_auditor'],
-  'user-permissions': ['org_admin'],
-  'user-management': ['org_admin'],
-  'user-activity': ['org_admin', 'compliance_auditor'],
-  profile: ['org_admin', 'office_head', 'caretaker', 'employee', 'procurement_officer', 'compliance_auditor'],
-};
+const PERMISSION_ACTION_SET = new Set<string>(AUTHORIZATION_PERMISSION_ACTIONS);
 
-type PermissionAction = (typeof PERMISSION_ACTIONS)[number];
+type PermissionAction = (typeof AUTHORIZATION_PERMISSION_ACTIONS)[number];
 
 type StoredRolePermission = {
   id: string;
@@ -155,14 +53,16 @@ async function serializeSettings(settings: any, options?: { forceRefresh?: boole
     settings && typeof settings.toObject === 'function'
       ? settings.toObject()
       : settings;
-  const workflowConfig = await getWorkflowConfigSnapshot({
+  const authorization = await getAuthorizationRuntimeSnapshot({
     forceRefresh: options?.forceRefresh,
   });
   return {
     ...plain,
-    access_policies: workflowConfig.accessPolicies,
-    approval_matrix: workflowConfig.approvalMatrix,
-    scheduler: workflowConfig.scheduler,
+    access_policies: authorization.workflow.accessPolicies,
+    approval_matrix: authorization.workflow.approvalMatrix,
+    scheduler: authorization.workflow.scheduler,
+    authorization_catalog: authorization.catalog,
+    authorization_policy: authorization.policy,
   };
 }
 
@@ -185,11 +85,7 @@ function asTrimmedString(value: unknown, field: string, maxLength: number) {
 }
 
 function buildEmptyPermissionMap() {
-  const map: Record<string, PermissionAction[]> = {};
-  PERMISSION_PAGE_KEYS.forEach((key) => {
-    map[key] = [];
-  });
-  return map;
+  return createEmptyAuthorizationPermissionMap() as Record<string, PermissionAction[]>;
 }
 
 function sanitizePermissionActions(raw: unknown) {
@@ -206,7 +102,7 @@ function sanitizePermissions(raw: unknown) {
     return sanitized;
   }
   for (const [pageKey, actions] of Object.entries(raw as Record<string, unknown>)) {
-    if (!PERMISSION_PAGE_SET.has(pageKey)) continue;
+    if (!AUTHORIZATION_PAGE_KEY_SET.has(pageKey)) continue;
     sanitized[pageKey] = sanitizePermissionActions(actions);
   }
   return sanitized;
@@ -216,7 +112,7 @@ function sanitizeSourceRoles(raw: unknown) {
   if (!Array.isArray(raw)) return [];
   const normalized = raw
     .map((entry) => String(entry || '').trim())
-    .filter((entry) => PERMISSION_ROLE_SET.has(entry));
+    .filter((entry) => AUTHORIZATION_ROLE_ID_SET.has(entry));
   return Array.from(new Set(normalized));
 }
 
@@ -265,14 +161,9 @@ function hasPageView(actions: PermissionAction[] | undefined) {
 }
 
 function buildDefaultRolePermissions(role: string) {
-  const defaultPermissions = buildEmptyPermissionMap();
-  for (const key of PERMISSION_PAGE_KEYS) {
-    const allowedRoles = DEFAULT_ALLOWED_ROLES_BY_PAGE[key] || [];
-    if (allowedRoles.includes(role)) {
-      defaultPermissions[key] = ['view'];
-    }
-  }
-  return syncLegacyAssetPagePermissions(defaultPermissions);
+  return syncLegacyAssetPagePermissions(
+    buildDefaultAuthorizationPermissionsForRole(role) as Record<string, PermissionAction[]>
+  );
 }
 
 function findRolePermissionEntry(roles: StoredRolePermission[], role: string) {
@@ -311,7 +202,7 @@ function applyFixedRoleRestrictions(
     });
     return permissions;
   }
-  if (normalizedRole === 'office_head') {
+  if (normalizedRole === 'office_head' || normalizedRole === 'head_office_admin') {
     OFFICE_HEAD_RESTRICTED_PAGE_KEYS.forEach((pageKey) => {
       permissions[pageKey] = [];
     });
@@ -335,7 +226,7 @@ function buildEffectiveRolePermissions(settings: any, role: string) {
     return buildEmptyPermissionMap();
   }
 
-  const isCoreRole = PERMISSION_ROLE_SET.has(normalizedRole);
+  const isCoreRole = AUTHORIZATION_ROLE_ID_SET.has(normalizedRole);
   const effectivePermissions = isCoreRole
     ? buildDefaultRolePermissions(normalizedRole)
     : buildEmptyPermissionMap();
@@ -349,7 +240,7 @@ function buildEffectiveRolePermissions(settings: any, role: string) {
     );
   }
 
-  for (const key of PERMISSION_PAGE_KEYS) {
+  for (const { id: key } of AUTHORIZATION_PAGE_DEFINITIONS) {
     effectivePermissions[key] = sanitizePermissionActions(matchedRole.permissions[key]);
   }
   return applyFixedRoleRestrictions(
@@ -481,6 +372,7 @@ export const settingsController = {
       }
       const settings = await getOrCreateSettings();
       const effectivePermissions = buildEffectiveRolePermissions(settings, role);
+      const authorization = getAuthorizationDefinitionSnapshot();
       if (role === 'caretaker') {
         const locationId = String(req.user?.locationId || '').trim();
         if (!locationId) {
@@ -493,7 +385,7 @@ export const settingsController = {
           }
         }
       }
-      const allowedPages = PERMISSION_PAGE_KEYS.filter((page) =>
+      const allowedPages = AUTHORIZATION_PAGE_DEFINITIONS.map((page) => page.id).filter((page) =>
         hasPageView(effectivePermissions[page])
       );
       const storedMetadata = readStoredRolePermissions(settings);
@@ -501,6 +393,8 @@ export const settingsController = {
         role,
         permissions: effectivePermissions,
         allowed_pages: allowedPages,
+        catalog: authorization.catalog,
+        authorization_policy: authorization.policy,
         updated_at: storedMetadata.updated_at,
         updated_by_user_id: storedMetadata.updated_by_user_id,
       });
@@ -511,7 +405,12 @@ export const settingsController = {
   getRolePermissions: async (_req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const settings = await getOrCreateSettings();
-      res.json(readStoredRolePermissions(settings));
+      const authorization = getAuthorizationDefinitionSnapshot();
+      res.json({
+        ...readStoredRolePermissions(settings),
+        catalog: authorization.catalog,
+        authorization_policy: authorization.policy,
+      });
     } catch (error) {
       next(error);
     }
@@ -544,7 +443,12 @@ export const settingsController = {
       };
       await settings.save();
       invalidateWorkflowConfigCache();
-      res.json(readStoredRolePermissions(settings));
+      const authorization = getAuthorizationDefinitionSnapshot();
+      res.json({
+        ...readStoredRolePermissions(settings),
+        catalog: authorization.catalog,
+        authorization_policy: authorization.policy,
+      });
     } catch (error) {
       next(error);
     }

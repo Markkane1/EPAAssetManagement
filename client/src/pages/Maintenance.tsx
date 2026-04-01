@@ -175,7 +175,7 @@ export default function Maintenance() {
       key: "description",
       label: "Description",
       render: (value: string) => (
-        <span className="text-sm max-w-[200px] truncate block">{value}</span>
+        <span className="block max-w-[18rem] break-words text-sm leading-5 [overflow-wrap:anywhere]">{value}</span>
       ),
     },
     {

@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 import { API_CONFIG } from '@/config/api.config';
 import { returnRequestService } from '@/services/returnRequestService';
 import type { ReturnRequestListParams } from '@/services/returnRequestService';
+import { refreshActiveQueries } from '@/lib/queryRefresh';
 
 const { queryKeys, query } = API_CONFIG;
 const { heavyList, detail } = query.profiles;
@@ -47,8 +48,12 @@ export const useReceiveReturnRequest = (id: string) => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: () => returnRequestService.receive(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.returnRequests });
+    onSuccess: async () => {
+      await refreshActiveQueries(queryClient, [
+        queryKeys.returnRequests,
+        queryKeys.assignments,
+        queryKeys.assetItems,
+      ]);
       toast.success('Return request received.');
     },
     onError: (error: Error) => {
@@ -61,8 +66,8 @@ export const useUploadSignedReturnRequest = (id: string) => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (formData: FormData) => returnRequestService.uploadSignedReturn(id, formData),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.returnRequests });
+    onSuccess: async () => {
+      await refreshActiveQueries(queryClient, [queryKeys.returnRequests]);
       toast.success('Signed return receipt uploaded.');
     },
     onError: (error: Error) => {
@@ -75,8 +80,8 @@ export const useCreateReturnRequest = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: returnRequestService.create,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.returnRequests });
+    onSuccess: async () => {
+      await refreshActiveQueries(queryClient, [queryKeys.returnRequests]);
       toast.success('Return request submitted.');
     },
     onError: (error: Error) => {

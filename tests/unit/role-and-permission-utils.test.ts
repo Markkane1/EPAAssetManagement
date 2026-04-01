@@ -117,15 +117,13 @@ describe("stored role permissions helpers", () => {
 
     expect(entry).toEqual({
       id: "office_head",
-      sourceRoles: ["directorate_head", "office_head"],
+      sourceRoles: ["office_head"],
       permissions: {
         dashboard: ["view", "edit"],
         reports: ["create"],
       },
     });
-    expect(resolveStoredRolePageActions(context, "directorate_head", "reports")).toEqual([
-      "create",
-    ]);
+    expect(resolveStoredRolePageActions(context, "directorate_head", "reports")).toEqual([]);
   });
 
   it("should return empty permissions when settings are missing or malformed", async () => {

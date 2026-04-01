@@ -175,7 +175,7 @@ describe("protected route authentication coverage", () => {
   it("should expose the public health and OpenAPI routes without authentication", async () => {
     const health = await request(ctx.app).get("/health");
     expect(health.status).toBe(200);
-    expect(health.body).toEqual({ status: "ok" });
+    expect(health.body).toEqual({ status: "ok", db: "connected" });
 
     const json = await request(ctx.app).get("/api/openapi.json");
     expect(json.status).toBe(200);

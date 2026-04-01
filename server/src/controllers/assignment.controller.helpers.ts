@@ -20,6 +20,7 @@ import { getAssetItemOfficeId, officeAssetItemFilter } from '../utils/assetHolde
 import { createBulkNotifications } from '../services/notification.service';
 import { generateHandoverSlip, generateReturnSlip } from '../services/assignmentSlip.service';
 import { readParam, clampInt, asNonEmptyString, asNullableString } from '../utils/requestParsing';
+import { OFFICE_ADMIN_ROLE_VALUES } from '../utils/roles';
 
 const OPEN_ASSIGNMENT_STATUSES = ['DRAFT', 'ISSUED', 'RETURN_REQUESTED'] as const;
 const RETURN_SLIP_ALLOWED_STATUSES = new Set(['ISSUED', 'RETURN_REQUESTED']);
@@ -159,7 +160,7 @@ async function resolveNotificationRecipients(officeId: string, assignment: { ass
   const managers = await UserModel.find(
     {
       location_id: officeId,
-      role: { $in: ['office_head', 'caretaker'] },
+      role: { $in: [...OFFICE_ADMIN_ROLE_VALUES, 'caretaker'] },
       is_active: true,
     },
     { _id: 1 }

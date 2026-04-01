@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const usePagedProjectsMock = vi.fn();
+const useProjectsMock = vi.fn();
 const useProjectMock = vi.fn();
 const useCreateProjectMock = vi.fn();
 const useUpdateProjectMock = vi.fn();
@@ -54,6 +55,7 @@ vi.mock("@/hooks/useViewMode", () => ({
 }));
 
 vi.mock("@/hooks/useProjects", () => ({
+  useProjects: () => useProjectsMock(),
   usePagedProjects: () => usePagedProjectsMock(),
   useProject: (id: string) => useProjectMock(id),
   useCreateProject: () => useCreateProjectMock(),
@@ -105,6 +107,23 @@ describe("Projects page", () => {
         page: 1,
         limit: 60,
       },
+      isLoading: false,
+    });
+    useProjectsMock.mockReturnValue({
+      data: [
+        {
+          id: "project-1",
+          name: "Hydrology Upgrade",
+          code: "PRJ-001",
+          description: "Improve lab instrumentation",
+          start_date: "2026-01-01T00:00:00.000Z",
+          end_date: "2026-12-31T00:00:00.000Z",
+          budget: 250000,
+          is_active: true,
+          created_at: "2026-01-01T00:00:00.000Z",
+          updated_at: "2026-01-02T00:00:00.000Z",
+        },
+      ],
       isLoading: false,
     });
     useProjectMock.mockImplementation((id: string) =>

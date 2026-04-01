@@ -109,12 +109,18 @@ describe("client hooks and entry batch", () => {
     const assetHooks = await import("../../client/src/hooks/useAssets");
     const assignmentHooks = await import("../../client/src/hooks/useAssignments");
 
-    expect(assetHooks.useAssets().queryKey).toEqual(["assets", "list", ""]);
+    expect(assetHooks.useAssets().queryKey).toEqual(["assets", "list", "", "ALL_CATEGORY", "ALL_SUBCATEGORY"]);
     expect(assetHooks.useAsset("asset-1").queryKey).toEqual(["assets", "detail", "asset-1"]);
     expect(assetHooks.useAssetsByCategory("category-1").queryKey).toEqual(["assets", "byCategory", "category-1"]);
     expect(assetHooks.useAssetsByVendor("vendor-1").queryKey).toEqual(["assets", "byVendor", "vendor-1"]);
 
-    expect(assignmentHooks.useAssignments().queryKey).toEqual(["assignments"]);
+    expect(assignmentHooks.useAssignments().queryKey).toEqual([
+      "assignments",
+      "list",
+      "",
+      "ALL_PAGES",
+      "ALL_LIMITS",
+    ]);
     expect(assignmentHooks.useAssignment("assignment-1").queryKey).toEqual(["assignments", "assignment-1"]);
     expect(assignmentHooks.useAssignmentsByEmployee("employee-1").queryKey).toEqual(["assignments", "byEmployee", "employee-1"]);
     expect(assignmentHooks.useAssignmentsByAssetItem("asset-item-1").queryKey).toEqual(["assignments", "byAssetItem", "asset-item-1"]);

@@ -169,4 +169,39 @@ describe("DataTable", () => {
 
     expect(screen.getByText("No results found.")).toBeInTheDocument();
   });
+
+  it("should update the internal page size and expose the 100 per page option", async () => {
+    const user = userEvent.setup();
+
+    render(<DataTable columns={columns} data={rows} />);
+
+    const pageSizeSelect = screen.getByRole("combobox", { name: /rows per page/i });
+    expect(within(pageSizeSelect).getByRole("option", { name: "100 per page" })).toBeInTheDocument();
+
+    await user.selectOptions(pageSizeSelect, "20");
+
+    expect(screen.getByText("Showing 1 to 12 of 12 results")).toBeInTheDocument();
+    expect(screen.getByText("Page 1 of 1")).toBeInTheDocument();
+  });
+
+  it("should call the external page size change handler when pagination is server-controlled", async () => {
+    const user = userEvent.setup();
+    const onPageSizeChange = vi.fn();
+
+    render(
+      <DataTable
+        columns={columns}
+        data={rows.slice(0, 10)}
+        pagination={false}
+        pageSize={20}
+        pageSizeOptions={[10, 20, 50, 100]}
+        onPageSizeChange={onPageSizeChange}
+      />
+    );
+
+    const pageSizeSelect = screen.getByRole("combobox", { name: /rows per page/i });
+    await user.selectOptions(pageSizeSelect, "100");
+
+    expect(onPageSizeChange).toHaveBeenCalledWith(100);
+  });
 });

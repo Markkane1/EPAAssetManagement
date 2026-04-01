@@ -1,6 +1,7 @@
 import api from '@/lib/api';
 import { Project } from '@/types';
 import { ListQuery, PagedListResponse, toListQueryString } from '@/services/pagination';
+import { fetchAllPages } from '@/services/fetchAllPages';
 
 const LIST_LIMIT = 1000;
 
@@ -41,14 +42,24 @@ function buildProjectQuery(query: ProjectListQuery = {}, meta = false) {
 }
 
 export const projectService = {
-  getAll: (query: ProjectListQuery = {}) => api.get<Project[]>(`/projects${buildProjectQuery(query)}`),
+  getAll: (query: ProjectListQuery = {}) =>
+    fetchAllPages(
+      query,
+      (pagedQuery) => api.get<PagedListResponse<Project>>(`/projects${buildProjectQuery(pagedQuery, true)}`),
+      { pageSize: LIST_LIMIT }
+    ),
 
   getPaged: (query: ProjectListQuery = {}) =>
     api.get<PagedListResponse<Project>>(`/projects${buildProjectQuery(query, true)}`),
   
   getById: (id: string) => api.get<Project>(`/projects/${id}`),
   
-  getActive: (query: ProjectListQuery = {}) => api.get<Project[]>(`/projects/active${buildProjectQuery(query)}`),
+  getActive: (query: ProjectListQuery = {}) =>
+    fetchAllPages(
+      query,
+      (pagedQuery) => api.get<PagedListResponse<Project>>(`/projects/active${buildProjectQuery(pagedQuery, true)}`),
+      { pageSize: LIST_LIMIT }
+    ),
 
   getPagedActive: (query: ProjectListQuery = {}) =>
     api.get<PagedListResponse<Project>>(`/projects/active${buildProjectQuery(query, true)}`),

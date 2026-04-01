@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import api, { API_BASE_URL, ApiError } from "../../client/src/lib/api";
+import api, { API_BASE_URL, ApiError, resolveApiBaseUrl } from "../../client/src/lib/api";
 
 describe("client API helper", () => {
   const fetchMock = vi.fn();
@@ -31,7 +31,6 @@ describe("client API helper", () => {
 
     expect(fetchMock).toHaveBeenCalledWith(`${API_BASE_URL}/assets/asset-1`, {
       method: "GET",
-      cache: "no-store",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
     });
@@ -100,5 +99,30 @@ describe("client API helper", () => {
       status: 503,
       message: "Service unavailable",
     });
+  });
+
+  it("should wrap fetch-level network failures in an ApiError with connectivity guidance", async () => {
+    fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
+
+    await expect(api.post("/auth/login", { email: "admin@example.com" })).rejects.toMatchObject<ApiError>({
+      name: "ApiError",
+      status: 0,
+      message: expect.stringMatching(/Unable to reach the API server/i),
+    });
+  });
+});
+
+describe("client API base URL resolution", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("should ignore a localhost API base URL when the page is served from a non-localhost host", async () => {
+    expect(
+      resolveApiBaseUrl(
+        { protocol: "https:", hostname: "ams.example.com" },
+        "http://localhost:5000/api"
+      )
+    ).toBe("/api");
   });
 });

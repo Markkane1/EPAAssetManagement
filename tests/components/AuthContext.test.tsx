@@ -124,7 +124,9 @@ describe("AuthProvider", () => {
     renderProvider();
 
     await waitFor(() => {
-      expect(screen.getByTestId("auth-state")).toHaveTextContent("guest");
+      expect(screen.getByTestId("auth-state")).toHaveTextContent(
+        "cached@example.com|employee|employee|none"
+      );
     });
     expect(localStorage.getItem("user")).toContain("cached@example.com");
   });

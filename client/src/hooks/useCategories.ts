@@ -8,6 +8,12 @@ import type {
 } from '@/services/categoryService';
 import { toast } from 'sonner';
 import { API_CONFIG } from '@/config/api.config';
+import type { Category } from '@/types';
+import {
+  refreshActiveQueries,
+  removeEntityFromQueryCaches,
+  syncEntityInQueryCaches,
+} from '@/lib/queryRefresh';
 
 const { queryKeys, messages, query } = API_CONFIG;
 const { heavyList, detail } = query.profiles;
@@ -32,6 +38,59 @@ const categoryKeys = {
   detail: (id: string) => [...queryKeys.categories, 'detail', id] as const,
   counts: (ids: string[]) => [...queryKeys.categories, 'counts', ...ids] as const,
 };
+
+function matchesCategorySearch(category: Category, rawSearch: unknown) {
+  const search = String(rawSearch || '').trim().toLowerCase();
+  if (!search) return true;
+  const haystack = [
+    category.name,
+    category.description,
+    ...(category.subcategories || []),
+  ]
+    .map((value) => String(value || '').toLowerCase())
+    .join(' ');
+  return haystack.includes(search);
+}
+
+function sortCategories(items: Category[]) {
+  return [...items].sort((left, right) => {
+    const leftTime = new Date(left.created_at || 0).getTime();
+    const rightTime = new Date(right.created_at || 0).getTime();
+    if (leftTime !== rightTime) return rightTime - leftTime;
+    return String(left.name || '').localeCompare(String(right.name || ''));
+  });
+}
+
+function syncCategoryCaches(queryClient: ReturnType<typeof useQueryClient>, category: Category) {
+  syncEntityInQueryCaches(queryClient, {
+    queryKey: [...queryKeys.categories, 'list'],
+    entity: category,
+    matchesQuery: (queryKey, entity) => {
+      const scope = String(queryKey[2] || 'ALL_SCOPE');
+      const assetType = String(queryKey[3] || 'ALL_TYPE');
+      const matchesScope = scope === 'ALL_SCOPE' || String(entity.scope || '') === scope;
+      const matchesAssetType = assetType === 'ALL_TYPE' || String(entity.asset_type || '') === assetType;
+      return matchesScope && matchesAssetType && matchesCategorySearch(entity, queryKey[4]);
+    },
+    sortItems: sortCategories,
+  });
+  syncEntityInQueryCaches(queryClient, {
+    queryKey: [...queryKeys.categories, 'paged'],
+    entity: category,
+    matchesQuery: (queryKey, entity) => {
+      const scope = String(queryKey[4] || 'ALL_SCOPE');
+      const assetType = String(queryKey[5] || 'ALL_TYPE');
+      const matchesScope = scope === 'ALL_SCOPE' || String(entity.scope || '') === scope;
+      const matchesAssetType = assetType === 'ALL_TYPE' || String(entity.asset_type || '') === assetType;
+      return matchesScope && matchesAssetType && matchesCategorySearch(entity, queryKey[6]);
+    },
+    getPageInfo: (queryKey) => ({
+      page: Number(queryKey[2] || 1),
+      limit: queryKey[3] === null ? null : Number(queryKey[3] || 0) || null,
+    }),
+    sortItems: sortCategories,
+  });
+}
 
 export const useCategories = (params?: CategoryListParams) => {
   return useQuery({
@@ -76,13 +135,16 @@ export const useCreateCategory = () => {
   
   return useMutation({
     mutationFn: (data: CategoryCreateDto) => categoryService.create(data),
-    onSuccess: (category) => {
+    onSuccess: async (category) => {
       if (category?.id) {
         queryClient.setQueryData(categoryKeys.detail(category.id), category);
+        syncCategoryCaches(queryClient, category);
       }
-      queryClient.invalidateQueries({ queryKey: [...queryKeys.categories, 'list'] });
-      queryClient.invalidateQueries({ queryKey: [...queryKeys.categories, 'paged'] });
-      queryClient.invalidateQueries({ queryKey: [...queryKeys.categories, 'counts'] });
+      await refreshActiveQueries(queryClient, [
+        [...queryKeys.categories, 'list'],
+        [...queryKeys.categories, 'paged'],
+        [...queryKeys.categories, 'counts'],
+      ]);
       toast.success(messages.categoryCreated);
     },
     onError: (error: Error) => {
@@ -97,11 +159,14 @@ export const useUpdateCategory = () => {
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: CategoryUpdateDto }) =>
       categoryService.update(id, data),
-    onSuccess: (category, variables) => {
+    onSuccess: async (category, variables) => {
       queryClient.setQueryData(categoryKeys.detail(variables.id), category);
-      queryClient.invalidateQueries({ queryKey: [...queryKeys.categories, 'list'] });
-      queryClient.invalidateQueries({ queryKey: [...queryKeys.categories, 'paged'] });
-      queryClient.invalidateQueries({ queryKey: [...queryKeys.categories, 'counts'] });
+      syncCategoryCaches(queryClient, category);
+      await refreshActiveQueries(queryClient, [
+        [...queryKeys.categories, 'list'],
+        [...queryKeys.categories, 'paged'],
+        [...queryKeys.categories, 'counts'],
+      ]);
       toast.success(messages.categoryUpdated);
     },
     onError: (error: Error) => {
@@ -115,11 +180,15 @@ export const useDeleteCategory = () => {
   
   return useMutation({
     mutationFn: (id: string) => categoryService.delete(id),
-    onSuccess: (_data, id) => {
+    onSuccess: async (_data, id) => {
       queryClient.removeQueries({ queryKey: categoryKeys.detail(id), exact: true });
-      queryClient.invalidateQueries({ queryKey: [...queryKeys.categories, 'list'] });
-      queryClient.invalidateQueries({ queryKey: [...queryKeys.categories, 'paged'] });
-      queryClient.invalidateQueries({ queryKey: [...queryKeys.categories, 'counts'] });
+      removeEntityFromQueryCaches(queryClient, [...queryKeys.categories, 'list'], id);
+      removeEntityFromQueryCaches(queryClient, [...queryKeys.categories, 'paged'], id);
+      await refreshActiveQueries(queryClient, [
+        [...queryKeys.categories, 'list'],
+        [...queryKeys.categories, 'paged'],
+        [...queryKeys.categories, 'counts'],
+      ]);
       toast.success(messages.categoryDeleted);
     },
     onError: (error: Error) => {

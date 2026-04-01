@@ -22,6 +22,8 @@ const AssetSchema = new Schema<any>(
     specification: { type: String, default: null },
     // Category reference for reporting and grouping
     category_id: { type: Schema.Types.ObjectId, ref: 'Category', default: null },
+    // Subcategory label selected from the chosen category
+    subcategory: { type: String, default: null, trim: true },
     // Vendor reference for procurement traceability
     vendor_id: { type: Schema.Types.ObjectId, ref: 'Vendor', default: null },
     // Purchase order reference for procurement traceability
@@ -58,11 +60,12 @@ const AssetSchema = new Schema<any>(
 );
 
 AssetSchema.pre('validate', function (next) {
-  this.search_terms = buildSearchTerms([this.name, this.description, this.specification]);
+  this.search_terms = buildSearchTerms([this.name, this.description, this.specification, this.subcategory]);
   next();
 });
 
 AssetSchema.index({ category_id: 1, is_active: 1 });
+AssetSchema.index({ category_id: 1, subcategory: 1, is_active: 1 });
 AssetSchema.index({ vendor_id: 1, is_active: 1 });
 AssetSchema.index({ created_at: -1 });
 AssetSchema.index({ is_active: 1, name: 1 });

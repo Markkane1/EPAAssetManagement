@@ -29,6 +29,7 @@ import { useConsumableMode } from '@/hooks/useConsumableMode';
 import { filterItemsByMode, filterLocationsByMode } from '@/lib/consumableMode';
 import { ConsumableModeToggle } from '@/components/consumables/ConsumableModeToggle';
 import { SearchableSelect } from '@/components/shared/SearchableSelect';
+import { MetricCard, WorkflowPanel } from '@/components/shared/workflow';
 
 const adjustSchema = z.object({
   locationId: z.string().min(1, 'Location is required'),
@@ -167,6 +168,8 @@ export default function ConsumableAdjustments() {
   }, [systemQtyBase, selectedItem, selectedUom, unitList]);
 
   const variance = selectedActualQty - systemQtyInSelectedUom;
+  const locationCount = filteredLocations.length;
+  const itemCount = filteredItems.length;
 
   const handleSubmit = async (data: AdjustFormData) => {
     if (requiresContainer && !data.containerId) {
@@ -198,13 +201,27 @@ export default function ConsumableAdjustments() {
       <PageHeader
         title="Adjustments"
         description="Cycle count and variance adjustments"
+        eyebrow="Consumables workspace"
+        meta={
+          <>
+            <span>{locationCount} locations available for adjustment</span>
+            <span className="hidden h-1 w-1 rounded-full bg-border sm:inline-block" />
+            <span>{itemCount} consumable items in the selected mode</span>
+          </>
+        }
         extra={<ConsumableModeToggle mode={mode} onChange={setMode} />}
       />
 
-      <Card>
-        <CardContent className="pt-6">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <MetricCard label="Adjustment locations" value={locationCount} helper="Locations included in this mode" icon={Loader2} tone="primary" />
+        <MetricCard label="Item options" value={itemCount} helper="Consumable records available for counting" icon={Loader2} tone="success" />
+        <MetricCard label="Tracked containers" value={containersForItem.length} helper="Containers available for the selected item" icon={Loader2} />
+        <MetricCard label="Variance" value={Number.isFinite(variance) ? variance : 0} helper={selectedUom || "Base unit"} icon={Loader2} tone="warning" />
+      </div>
+
+      <WorkflowPanel title="Cycle-count adjustment" description="Record actual counted stock, compare it against the system quantity, and post the variance through one consistent operational panel.">
           <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label>Location *</Label>
                 <SearchableSelect
@@ -271,7 +288,7 @@ export default function ConsumableAdjustments() {
             </div>
 
             {requiresContainer && (
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label>Container *</Label>
                   <Select
@@ -324,7 +341,7 @@ export default function ConsumableAdjustments() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="reference">Reference</Label>
                 <Input id="reference" {...form.register('reference')} />
@@ -342,9 +359,9 @@ export default function ConsumableAdjustments() {
               </Button>
             </div>
           </form>
-        </CardContent>
-      </Card>
+      </WorkflowPanel>
     </MainLayout>
   );
 }
+
 

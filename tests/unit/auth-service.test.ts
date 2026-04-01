@@ -45,6 +45,7 @@ describe("authService", () => {
       role: "office_head",
       activeRole: "procurement_officer",
       roles: ["employee", "procurement_officer", "office_head"],
+      locationId: null,
     });
     expect(JSON.parse(localStorage.getItem("user") || "null")).toEqual(result.user);
   });

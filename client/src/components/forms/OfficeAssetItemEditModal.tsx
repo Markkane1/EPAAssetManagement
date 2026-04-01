@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -24,6 +24,17 @@ import {
 import { Loader2 } from "lucide-react";
 import { Asset, AssetItem, Location } from "@/types";
 import { useAuth } from "@/contexts/AuthContext";
+import { useAssetOptions } from "@/components/forms/useFormSearchLookups";
+import {
+    assetItemConditionOptions,
+    assetItemFunctionalStatusOptions,
+    assetItemPrimaryStatusOptions,
+    getAllowedAssetStates,
+    getDefaultAssetState,
+    getFunctionalStatusHelperText,
+    isLegacyAssetState,
+    isSystemManagedAssetState,
+} from "@/lib/assetItemStatusRules";
 
 const assetItemEditSchema = z.object({
     assetId: z.string().min(1, "Asset is required"),
@@ -56,10 +67,6 @@ interface OfficeAssetItemEditModalProps {
     }) => Promise<void>;
 }
 
-const statusOptions = ["Available", "Assigned", "Maintenance", "Damaged", "Retired", "Transferred"];
-const conditionOptions = ["New", "Good", "Fair", "Poor", "Damaged"];
-const functionalOptions = ["Functional", "Need Repairs", "Dead"];
-
 export function OfficeAssetItemEditModal({
     open,
     onOpenChange,
@@ -84,6 +91,20 @@ export function OfficeAssetItemEditModal({
             notes: "",
         },
     });
+    const functionalStatus = form.watch("functionalStatus");
+    const itemStatus = form.watch("itemStatus");
+    const assetOptions = useAssetOptions(assets);
+    const statusOptions = useMemo(() => {
+        const currentStatus = assetItem?.item_status;
+        if (!currentStatus) return assetItemPrimaryStatusOptions;
+        if (!isSystemManagedAssetState(currentStatus) && !isLegacyAssetState(currentStatus)) {
+            return assetItemPrimaryStatusOptions;
+        }
+        if (assetItemPrimaryStatusOptions.includes(currentStatus as (typeof assetItemPrimaryStatusOptions)[number])) {
+            return assetItemPrimaryStatusOptions;
+        }
+        return [...assetItemPrimaryStatusOptions, currentStatus as (typeof assetItemPrimaryStatusOptions)[number]];
+    }, [assetItem?.item_status]);
 
     useEffect(() => {
         if (open && assetItem) {
@@ -99,6 +120,14 @@ export function OfficeAssetItemEditModal({
             });
         }
     }, [open, assetItem, form, user?.locationId]);
+
+    useEffect(() => {
+        if (isSystemManagedAssetState(itemStatus) || isLegacyAssetState(itemStatus)) return;
+        const allowedStates = getAllowedAssetStates(functionalStatus);
+        if (!allowedStates.includes(itemStatus as (typeof allowedStates)[number])) {
+            form.setValue("itemStatus", getDefaultAssetState(functionalStatus), { shouldDirty: true });
+        }
+    }, [functionalStatus, itemStatus, form]);
 
     const handleSubmit = async (data: AssetItemEditFormData) => {
         setIsSubmitting(true);
@@ -141,14 +170,16 @@ export function OfficeAssetItemEditModal({
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <div className="space-y-2">
                             <Label>Asset *</Label>
                             <Select value={form.watch("assetId")} onValueChange={(v) => form.setValue("assetId", v)}>
                                 <SelectTrigger><SelectValue placeholder="Select asset" /></SelectTrigger>
                                 <SelectContent>
-                                    {assets.map((asset) => (
-                                        <SelectItem key={asset.id} value={asset.id}>{asset.name}</SelectItem>
+                                    {assetOptions.map((asset) => (
+                                        <SelectItem key={asset.value} value={asset.value}>
+                                            {asset.secondaryText ? `${asset.primaryText} - ${asset.secondaryText}` : asset.primaryText}
+                                        </SelectItem>
                                     ))}
                                 </SelectContent>
                             </Select>
@@ -167,7 +198,7 @@ export function OfficeAssetItemEditModal({
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <div className="space-y-2">
                             <Label htmlFor="serialNumber">Serial Number</Label>
                             <Input id="serialNumber" {...form.register("serialNumber")} placeholder="e.g., SN123456789" />
@@ -180,7 +211,7 @@ export function OfficeAssetItemEditModal({
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div className="space-y-2">
-                            <Label>Status</Label>
+                            <Label>Asset State</Label>
                             <Select value={form.watch("itemStatus")} onValueChange={(v) => form.setValue("itemStatus", v)}>
                                 <SelectTrigger><SelectValue /></SelectTrigger>
                                 <SelectContent>
@@ -189,13 +220,14 @@ export function OfficeAssetItemEditModal({
                                     ))}
                                 </SelectContent>
                             </Select>
+                            <p className="text-xs text-muted-foreground">Transfer-only states remain system-managed.</p>
                         </div>
                         <div className="space-y-2">
                             <Label>Condition</Label>
                             <Select value={form.watch("itemCondition")} onValueChange={(v) => form.setValue("itemCondition", v)}>
                                 <SelectTrigger><SelectValue /></SelectTrigger>
                                 <SelectContent>
-                                    {conditionOptions.map((condition) => (
+                                    {assetItemConditionOptions.map((condition) => (
                                         <SelectItem key={condition} value={condition}>{condition}</SelectItem>
                                     ))}
                                 </SelectContent>
@@ -206,11 +238,12 @@ export function OfficeAssetItemEditModal({
                             <Select value={form.watch("functionalStatus")} onValueChange={(v) => form.setValue("functionalStatus", v)}>
                                 <SelectTrigger><SelectValue /></SelectTrigger>
                                 <SelectContent>
-                                    {functionalOptions.map((status) => (
+                                    {assetItemFunctionalStatusOptions.map((status) => (
                                         <SelectItem key={status} value={status}>{status}</SelectItem>
                                     ))}
                                 </SelectContent>
                             </Select>
+                            <p className="text-xs text-muted-foreground">{getFunctionalStatusHelperText(functionalStatus)}</p>
                         </div>
                     </div>
 
@@ -233,3 +266,4 @@ export function OfficeAssetItemEditModal({
         </Dialog>
     );
 }
+

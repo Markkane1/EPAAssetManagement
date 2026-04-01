@@ -1,8 +1,7 @@
 import { useMemo, useState } from "react";
+import { z } from "zod";
 import { MainLayout } from "@/components/layout/MainLayout";
-import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTable } from "@/components/shared/DataTable";
-import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
@@ -31,8 +30,13 @@ import {
 import type { OfficeSubLocation } from "@/services/officeSubLocationService";
 import { Loader2, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import { SearchableSelect } from "@/components/shared/SearchableSelect";
+import { CollectionWorkspace } from "@/components/shared/CollectionWorkspace";
 
 const ALL_VALUE = "__all__";
+const roomSectionSchema = z.object({
+  officeId: z.string().trim().min(1, "Office is required."),
+  name: z.string().trim().min(1, "Section/room name is required.").max(120, "Section/room name must be 120 characters or fewer."),
+});
 
 export default function RoomsSections() {
   const { isOrgAdmin, locationId } = useAuth();
@@ -75,6 +79,8 @@ export default function RoomsSections() {
       })),
     [sections, officeMap]
   );
+  const activeRowCount = rows.filter((row) => row.is_active !== false).length;
+  const officeCoverage = new Set(rows.map((row) => row.office_id).filter(Boolean)).size;
 
   const columns = [
     { key: "name", label: "Section / Room" },
@@ -115,11 +121,15 @@ export default function RoomsSections() {
   };
 
   const handleSave = async () => {
-    const normalizedName = sectionName.trim();
-    if (!normalizedName) {
-      setFormError("Section/room name is required.");
+    const validation = roomSectionSchema.safeParse({
+      officeId: isOrgAdmin ? formOfficeId : locationId || "",
+      name: sectionName,
+    });
+    if (!validation.success) {
+      setFormError(validation.error.issues[0]?.message || "Review the section details.");
       return;
     }
+    const normalizedName = validation.data.name;
 
     try {
       if (editingSection) {
@@ -128,12 +138,8 @@ export default function RoomsSections() {
           data: { name: normalizedName },
         });
       } else if (isOrgAdmin) {
-        if (!formOfficeId) {
-          setFormError("Office is required.");
-          return;
-        }
         await createSection.mutateAsync({
-          office_id: formOfficeId,
+          office_id: validation.data.officeId,
           name: normalizedName,
         });
       } else {
@@ -158,7 +164,7 @@ export default function RoomsSections() {
 
   return (
     <MainLayout title="Rooms & Sections" description="Manage office-specific rooms and sections">
-      <PageHeader
+      <CollectionWorkspace
         title="Rooms & Sections"
         description={
           isOrgAdmin
@@ -166,60 +172,71 @@ export default function RoomsSections() {
             : "Manage rooms/sections for your assigned office."
         }
         action={{ label: "Add Section", onClick: openCreateModal }}
-      />
-
-      <Card className="mt-6">
-        <CardContent className="pt-6">
-          <div className="space-y-4">
-            {isOrgAdmin && (
-              <div className="max-w-sm space-y-2">
-                <Label>Office Filter</Label>
-                <SearchableSelect
-                  value={selectedOfficeId}
-                  onValueChange={setSelectedOfficeId}
-                  placeholder="All offices"
-                  searchPlaceholder="Search offices..."
-                  emptyText="No offices found."
-                  options={[
-                    { value: ALL_VALUE, label: "All offices" },
-                    ...locations.map((office) => ({ value: office.id, label: office.name })),
-                  ]}
-                />
-              </div>
-            )}
-
-            {isLoading ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="h-7 w-7 animate-spin text-muted-foreground" />
-              </div>
-            ) : (
-              <DataTable
-                columns={columns}
-                data={rows}
-                searchPlaceholder="Search sections..."
-                useGlobalPageSearch={false}
-                actions={(row) => (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-8 w-8">
-                        <MoreHorizontal className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => openEditModal(row)}>
-                        <Pencil className="h-4 w-4 mr-2" /> Edit
-                      </DropdownMenuItem>
-                      <DropdownMenuItem className="text-destructive" onClick={() => handleDelete(row)}>
-                        <Trash2 className="h-4 w-4 mr-2" /> Delete
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                )}
+        eyebrow="Sub-location workspace"
+        meta={
+          <>
+            <span>{rows.length} rooms and sections in scope</span>
+            <span className="hidden h-1 w-1 rounded-full bg-border sm:inline-block" />
+            <span>{isOrgAdmin ? "Cross-office room management" : "Assigned-office room management"}</span>
+          </>
+        }
+        metrics={[
+          { label: "Visible sections", value: rows.length, helper: "Rows matching the current office scope", icon: MoreHorizontal, tone: "primary" },
+          { label: "Active", value: activeRowCount, helper: "Currently active rooms and sections", icon: Pencil, tone: "success" },
+          { label: "Office coverage", value: officeCoverage, helper: "Distinct offices represented in this list", icon: Trash2, tone: "warning" },
+          { label: "Office options", value: scopedOfficeOptions.length, helper: "Selectable offices in this workspace", icon: Loader2 },
+        ]}
+        filterBar={
+          isOrgAdmin ? (
+            <div className="max-w-sm space-y-2">
+              <Label>Office Filter</Label>
+              <SearchableSelect
+                value={selectedOfficeId}
+                onValueChange={setSelectedOfficeId}
+                placeholder="All offices"
+                searchPlaceholder="Search offices..."
+                emptyText="No offices found."
+                options={[
+                  { value: ALL_VALUE, label: "All offices" },
+                  ...locations.map((office) => ({ value: office.id, label: office.name })),
+                ]}
               />
-            )}
+            </div>
+          ) : null
+        }
+        panelTitle="Rooms and sections"
+        panelDescription="Manage section and room records with the same worklist shell used across the administrative catalog pages."
+      >
+        {isLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="h-7 w-7 animate-spin text-muted-foreground" />
           </div>
-        </CardContent>
-      </Card>
+        ) : (
+          <DataTable
+            columns={columns}
+            data={rows}
+            searchPlaceholder="Search sections..."
+            useGlobalPageSearch={false}
+            actions={(row) => (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-8 w-8">
+                    <MoreHorizontal className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => openEditModal(row)}>
+                    <Pencil className="h-4 w-4 mr-2" /> Edit
+                  </DropdownMenuItem>
+                  <DropdownMenuItem className="text-destructive" onClick={() => handleDelete(row)}>
+                    <Trash2 className="h-4 w-4 mr-2" /> Delete
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          />
+        )}
+      </CollectionWorkspace>
 
       <Dialog open={formOpen} onOpenChange={setFormOpen}>
         <DialogContent className="sm:max-w-[520px]">

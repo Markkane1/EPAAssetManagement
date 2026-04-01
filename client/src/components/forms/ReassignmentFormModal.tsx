@@ -22,6 +22,7 @@ import { ArrowRight } from "lucide-react";
 import { AssetItem, Employee, Asset, Assignment } from "@/types";
 import { getOfficeHolderId } from "@/lib/assetItemHolder";
 import { FormDialogActions } from "@/components/forms/FormDialogActions";
+import { isAssetItemAssignable } from "@/lib/assetItemStatusRules";
 
 const reassignSchema = z.object({
   assignmentId: z.string().min(1, "Assignment is required"),
@@ -80,8 +81,11 @@ export function ReassignmentFormModal({
     return e.location_id === officeId && e.id !== currentEmployee?.id;
   });
 
-  // Filter only active assignments
-  const activeAssignments = assignments.filter(a => a.is_active);
+  const reassignableAssignments = assignments.filter((assignment) => {
+    if (String(assignment.status || "") !== "RETURNED") return false;
+    const item = assetItems.find((entry) => entry.id === assignment.asset_item_id);
+    return item ? isAssetItemAssignable(item) : false;
+  });
 
   useEffect(() => {
     if (open) {
@@ -121,7 +125,7 @@ export function ReassignmentFormModal({
         <DialogHeader>
           <DialogTitle>Reassign Asset</DialogTitle>
           <DialogDescription>
-            Transfer an assigned asset from one employee to another at the same location.
+            Reissue a returned, assignable asset to another employee at the same location.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
@@ -134,14 +138,14 @@ export function ReassignmentFormModal({
                 form.setValue("newEmployeeId", ""); // Reset new employee when assignment changes
               }}
             >
-              <SelectTrigger><SelectValue placeholder="Select an active assignment" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder="Select a returned assignment" /></SelectTrigger>
               <SelectContent>
-                {activeAssignments.length === 0 ? (
+                {reassignableAssignments.length === 0 ? (
                   <div className="p-2 text-sm text-muted-foreground text-center">
-                    No active assignments
+                    No returned assignable assets available
                   </div>
                 ) : (
-                  activeAssignments.map((a) => (
+                  reassignableAssignments.map((a) => (
                     <SelectItem key={a.id} value={a.id}>
                       {getAssetLabel(a)}
                     </SelectItem>

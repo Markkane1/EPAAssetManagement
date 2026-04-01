@@ -72,6 +72,7 @@ type PurchaseOrderFormData = z.infer<typeof purchaseOrderSchema>;
 type PurchaseOrderSubmitData = PurchaseOrderFormData & {
   attachmentFile?: File | null;
 };
+type PurchaseOrderFormPrefill = Partial<PurchaseOrderFormData>;
 
 interface PurchaseOrderFormModalProps {
   open: boolean;
@@ -80,7 +81,31 @@ interface PurchaseOrderFormModalProps {
   vendors: Vendor[];
   projects: Project[];
   schemes: Scheme[];
+  sourceTypeLocked?: "procurement" | "project";
+  prefill?: PurchaseOrderFormPrefill;
   onSubmit: (data: PurchaseOrderSubmitData) => Promise<void>;
+}
+
+function buildCreateDefaults(
+  prefill?: PurchaseOrderFormPrefill,
+  sourceTypeLocked?: "procurement" | "project"
+): PurchaseOrderFormData {
+  const sourceType = sourceTypeLocked || prefill?.sourceType || "procurement";
+  return {
+    sourceType,
+    sourceName: prefill?.sourceName || "",
+    vendorId: sourceType === "procurement" ? (prefill?.vendorId || "") : "",
+    projectId: sourceType === "project" ? (prefill?.projectId || "") : "",
+    schemeId: sourceType === "project" ? (prefill?.schemeId || "") : "",
+    orderDate: prefill?.orderDate || new Date().toISOString().split("T")[0],
+    expectedDeliveryDate: prefill?.expectedDeliveryDate || "",
+    unitPrice: prefill?.unitPrice ?? 0,
+    totalAmount: prefill?.totalAmount ?? 0,
+    taxPercentage: prefill?.taxPercentage ?? 0,
+    taxAmount: prefill?.taxAmount ?? 0,
+    status: PurchaseOrderStatus.Draft,
+    notes: prefill?.notes || "",
+  };
 }
 
 export function PurchaseOrderFormModal({
@@ -90,6 +115,8 @@ export function PurchaseOrderFormModal({
   vendors,
   projects,
   schemes,
+  sourceTypeLocked,
+  prefill,
   onSubmit,
 }: PurchaseOrderFormModalProps) {
   const NONE_VALUE = "__none__";
@@ -105,21 +132,7 @@ export function PurchaseOrderFormModal({
 
   const form = useForm<PurchaseOrderFormData>({
     resolver: zodResolver(purchaseOrderSchema),
-    defaultValues: {
-      sourceType: "procurement",
-      sourceName: "",
-      vendorId: "",
-      projectId: "",
-      schemeId: "",
-      orderDate: new Date().toISOString().split("T")[0],
-      expectedDeliveryDate: "",
-      unitPrice: 0,
-      totalAmount: 0,
-      taxPercentage: 0,
-      taxAmount: 0,
-      status: PurchaseOrderStatus.Draft,
-      notes: "",
-    },
+    defaultValues: buildCreateDefaults(prefill, sourceTypeLocked),
   });
 
   const resetValues = useMemo(() => {
@@ -143,30 +156,19 @@ export function PurchaseOrderFormModal({
       };
     }
 
-    return {
-      sourceType: "procurement" as const,
-      sourceName: "",
-      vendorId: "",
-      projectId: "",
-      schemeId: "",
-      orderDate: new Date().toISOString().split("T")[0],
-      expectedDeliveryDate: "",
-      unitPrice: 0,
-      totalAmount: 0,
-      taxPercentage: 0,
-      taxAmount: 0,
-      status: PurchaseOrderStatus.Draft,
-      notes: "",
-    };
-  }, [purchaseOrder]);
+    return buildCreateDefaults(prefill, sourceTypeLocked);
+  }, [prefill, purchaseOrder, sourceTypeLocked]);
   useDialogFormReset({ open, form, values: resetValues });
 
   useEffect(() => {
     if (!open) return;
     resetAttachment();
-  }, [open, purchaseOrder, resetAttachment]);
+    if (!purchaseOrder && sourceTypeLocked) {
+      form.setValue("sourceType", sourceTypeLocked);
+    }
+  }, [form, open, purchaseOrder, resetAttachment, sourceTypeLocked]);
 
-  const selectedSourceType = form.watch("sourceType");
+  const selectedSourceType = sourceTypeLocked || form.watch("sourceType");
   const selectedProjectId = form.watch("projectId");
   const selectedTotalAmount = form.watch("totalAmount");
   const selectedTaxPercentage = form.watch("taxPercentage");
@@ -202,7 +204,7 @@ export function PurchaseOrderFormModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[640px]">
+      <DialogContent className="sm:max-w-[640px]">
         <DialogHeader>
           <DialogTitle>{isEditing ? "Edit Purchase Order" : "New Purchase Order"}</DialogTitle>
           <DialogDescription>
@@ -210,28 +212,34 @@ export function PurchaseOrderFormModal({
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label>Source *</Label>
-              <Select
-                value={selectedSourceType}
-                onValueChange={(value) => {
-                  const source = value as "procurement" | "project";
-                  form.setValue("sourceType", source);
-                  if (source === "procurement") {
-                    form.setValue("projectId", "");
-                    form.setValue("schemeId", "");
-                  } else {
-                    form.setValue("vendorId", "");
-                  }
-                }}
-              >
-                <SelectTrigger><SelectValue placeholder="Select source" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="procurement">Procurement</SelectItem>
-                  <SelectItem value="project">Project</SelectItem>
-                </SelectContent>
-              </Select>
+              {sourceTypeLocked ? (
+                <div className="rounded-md border bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
+                  {sourceTypeLocked === "procurement" ? "Procurement Only" : "Project Only"}
+                </div>
+              ) : (
+                <Select
+                  value={selectedSourceType}
+                  onValueChange={(value) => {
+                    const source = value as "procurement" | "project";
+                    form.setValue("sourceType", source);
+                    if (source === "procurement") {
+                      form.setValue("projectId", "");
+                      form.setValue("schemeId", "");
+                    } else {
+                      form.setValue("vendorId", "");
+                    }
+                  }}
+                >
+                  <SelectTrigger><SelectValue placeholder="Select source" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="procurement">Procurement</SelectItem>
+                    <SelectItem value="project">Project</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="sourceName">Name of Procurement / Project *</Label>
@@ -242,7 +250,7 @@ export function PurchaseOrderFormModal({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {selectedSourceType === "procurement" ? (
               <>
                 <div className="space-y-2">
@@ -355,7 +363,7 @@ export function PurchaseOrderFormModal({
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="orderDate">Order Date *</Label>
               <Input id="orderDate" type="date" {...form.register("orderDate")} />
@@ -369,7 +377,7 @@ export function PurchaseOrderFormModal({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="unitPrice">Unit Price (PKR) *</Label>
               <Input id="unitPrice" type="number" step="0.01" {...form.register("unitPrice")} />
@@ -386,7 +394,7 @@ export function PurchaseOrderFormModal({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="taxPercentage">Tax Percentage (%) *</Label>
               <Input id="taxPercentage" type="number" step="0.01" {...form.register("taxPercentage")} />
@@ -437,3 +445,4 @@ export function PurchaseOrderFormModal({
     </Dialog>
   );
 }
+

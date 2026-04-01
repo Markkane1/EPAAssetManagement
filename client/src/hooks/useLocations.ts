@@ -3,6 +3,7 @@ import { locationService } from '@/services/locationService';
 import type { LocationCreateDto, LocationUpdateDto } from '@/services/locationService';
 import { toast } from 'sonner';
 import { API_CONFIG } from '@/config/api.config';
+import { refreshActiveQueries } from '@/lib/queryRefresh';
 
 const { queryKeys, messages, query } = API_CONFIG;
 const { referenceData, detail } = query.profiles;
@@ -37,8 +38,8 @@ export const useCreateLocation = () => {
   
   return useMutation({
     mutationFn: (data: LocationCreateDto) => locationService.create(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.locations });
+    onSuccess: async () => {
+      await refreshActiveQueries(queryClient, [queryKeys.locations]);
       toast.success(messages.locationCreated);
     },
     onError: (error: Error) => {
@@ -53,8 +54,8 @@ export const useUpdateLocation = () => {
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: LocationUpdateDto }) =>
       locationService.update(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.locations });
+    onSuccess: async () => {
+      await refreshActiveQueries(queryClient, [queryKeys.locations]);
       toast.success(messages.locationUpdated);
     },
     onError: (error: Error) => {
@@ -68,8 +69,8 @@ export const useDeleteLocation = () => {
   
   return useMutation({
     mutationFn: (id: string) => locationService.delete(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.locations });
+    onSuccess: async () => {
+      await refreshActiveQueries(queryClient, [queryKeys.locations]);
       toast.success(messages.locationDeleted);
     },
     onError: (error: Error) => {

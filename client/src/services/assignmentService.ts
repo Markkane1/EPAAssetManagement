@@ -1,6 +1,7 @@
 import api from '@/lib/api';
 import { Assignment } from '@/types';
 import { ListQuery, PagedListResponse, toListQueryString } from '@/services/pagination';
+import { fetchAllPages } from '@/services/fetchAllPages';
 
 export interface AssignmentCreateDto {
   assetItemId: string;
@@ -32,7 +33,14 @@ export interface AssignmentListItem extends Assignment {
 
 export const assignmentService = {
   getAll: (query: AssignmentListQuery = {}) =>
-    api.get<Assignment[]>(`/assignments${toListQueryString({ limit: LIST_LIMIT, ...query })}`),
+    fetchAllPages(
+      query,
+      (pagedQuery) =>
+        api.get<PagedListResponse<AssignmentListItem>>(
+          `/assignments${toListQueryString({ limit: LIST_LIMIT, ...pagedQuery, meta: true, details: true })}`
+        ),
+      { pageSize: LIST_LIMIT }
+    ),
 
   getPaged: (query: AssignmentListQuery = {}) =>
     api.get<PagedListResponse<AssignmentListItem>>(

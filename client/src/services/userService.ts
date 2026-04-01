@@ -1,5 +1,6 @@
 import api from '@/lib/api';
 import type { AppRole } from '@/services/authService';
+import { fetchAllPages } from '@/services/fetchAllPages';
 
 export interface UserWithDetails {
   id: string;
@@ -41,14 +42,8 @@ export interface PagedUsersResponse {
 }
 
 export const userService = {
-  getAll: (query: UserListQuery = {}) => {
-    const params = new URLSearchParams();
-    if (query.page) params.set('page', String(query.page));
-    if (query.limit) params.set('limit', String(query.limit));
-    if (query.search && query.search.trim().length > 0) params.set('search', query.search.trim());
-    const suffix = params.toString() ? `?${params.toString()}` : '';
-    return api.get<UserWithDetails[]>(`/users${suffix}`);
-  },
+  getAll: (query: UserListQuery = {}) =>
+    fetchAllPages(query, (pagedQuery) => userService.getPaged(pagedQuery), { pageSize: 500 }),
   getPaged: (query: UserListQuery = {}) => {
     const params = new URLSearchParams();
     params.set('meta', '1');

@@ -1,6 +1,5 @@
 import { Response, NextFunction } from 'express';
 import { ConsumableItemModel } from '../models/consumableItem.model';
-import { CategoryModel } from '../../../models/category.model';
 import { mapFields, pickDefined } from '../../../utils/mapFields';
 import type { AuthRequest } from '../../../middleware/auth';
 import { createHttpError } from '../utils/httpError';
@@ -13,10 +12,15 @@ import {
   resolveScopeLabOnlyRestrictions,
 } from '../utils/accessScope';
 import { resolveConsumableCategoryScopeByCategoryId } from '../utils/labScope';
+import { getRequestContext } from '../../../utils/scope';
+import { logAudit } from '../../records/services/audit.service';
+import { ensureCategorySelection } from '../../../utils/categoryHierarchy';
+import { parseOptionalSubcategory } from '../../../utils/categorySubcategories';
 
 const fieldMap = {
   casNumber: 'cas_number',
   categoryId: 'category_id',
+  subcategory: 'subcategory',
   baseUom: 'base_uom',
   isHazardous: 'is_hazardous',
   isControlled: 'is_controlled',
@@ -48,6 +52,7 @@ function buildPayload(body: Record<string, unknown>) {
   });
   if (body.name !== undefined) payload.name = body.name;
   if (payload.category_id === '') payload.category_id = null;
+  if (body.subcategory !== undefined) payload.subcategory = parseOptionalSubcategory(body.subcategory);
 
   if (payload.is_controlled === true && payload.requires_container_tracking === undefined) {
     payload.requires_container_tracking = true;
@@ -56,16 +61,9 @@ function buildPayload(body: Record<string, unknown>) {
   return pickDefined(payload);
 }
 
-async function ensureConsumableCategoryType(categoryId: unknown) {
-  if (!categoryId) return;
-  const category = await CategoryModel.findById(categoryId, { asset_type: 1 }).lean();
-  if (!category) {
-    throw createHttpError(400, 'Selected category does not exist');
-  }
-  const categoryAssetType = String((category as Record<string, unknown>).asset_type || 'ASSET').toUpperCase();
-  if (categoryAssetType !== 'CONSUMABLE') {
-    throw createHttpError(400, 'Selected category is not valid for consumables');
-  }
+async function ensureConsumableCategorySelection(categoryId: unknown, subcategory: unknown) {
+  const { normalizedSubcategory } = await ensureCategorySelection(categoryId, subcategory, 'CONSUMABLE');
+  return normalizedSubcategory;
 }
 
 async function syncChemicalFlagWithCategoryScope(payload: Record<string, unknown>, fallbackCategoryId?: unknown) {
@@ -122,7 +120,7 @@ export const consumableItemController = {
     try {
       const scope = await resolveConsumableRequestScope(req);
       const payload = buildPayload(req.body);
-      await ensureConsumableCategoryType(payload.category_id);
+      payload.subcategory = await ensureConsumableCategorySelection(payload.category_id, payload.subcategory);
       await ensureScopeCategoryAccess(scope, payload.category_id);
       if (payload.base_uom) {
         const lookup = await getUnitLookup({ activeOnly: true });
@@ -135,6 +133,12 @@ export const consumableItemController = {
         payload.created_by = req.user.userId;
       }
       const item = await ConsumableItemModel.create(payload);
+      try {
+        const ctx = await getRequestContext(req);
+        if (ctx.locationId) {
+          await logAudit({ ctx, action: 'CONSUMABLE_ITEM_CREATED', entityType: 'ConsumableItem', entityId: String(item._id), officeId: ctx.locationId });
+        }
+      } catch { /* audit failures must not surface */ }
       res.status(201).json(item);
     } catch (error) {
       next(error);
@@ -149,8 +153,13 @@ export const consumableItemController = {
 
       const payload = buildPayload(req.body);
       if (payload.category_id !== undefined) {
-        await ensureConsumableCategoryType(payload.category_id);
         await ensureScopeCategoryAccess(scope, payload.category_id);
+      }
+      if (payload.category_id !== undefined || payload.subcategory !== undefined) {
+        payload.subcategory = await ensureConsumableCategorySelection(
+          payload.category_id !== undefined ? payload.category_id : existing.category_id,
+          payload.subcategory !== undefined ? payload.subcategory : existing.subcategory
+        );
       }
       if (payload.base_uom) {
         const lookup = await getUnitLookup({ activeOnly: true });
@@ -159,6 +168,12 @@ export const consumableItemController = {
       await syncChemicalFlagWithCategoryScope(payload, existing.category_id);
       const item = await ConsumableItemModel.findByIdAndUpdate(req.params.id, payload, { new: true });
       if (!item) return res.status(404).json({ message: 'Not found' });
+      try {
+        const ctx = await getRequestContext(req);
+        if (ctx.locationId) {
+          await logAudit({ ctx, action: 'CONSUMABLE_ITEM_UPDATED', entityType: 'ConsumableItem', entityId: String(req.params.id), officeId: ctx.locationId });
+        }
+      } catch { /* audit failures must not surface */ }
       return res.json(item);
     } catch (error) {
       next(error);
@@ -171,6 +186,12 @@ export const consumableItemController = {
       if (!existing) return res.status(404).json({ message: 'Not found' });
       await ensureScopeItemAccess(scope, { category_id: (existing as any).category_id });
       await ConsumableItemModel.findByIdAndDelete(req.params.id);
+      try {
+        const ctx = await getRequestContext(req);
+        if (ctx.locationId) {
+          await logAudit({ ctx, action: 'CONSUMABLE_ITEM_DELETED', entityType: 'ConsumableItem', entityId: String(req.params.id), officeId: ctx.locationId });
+        }
+      } catch { /* audit failures must not surface */ }
       return res.status(204).send();
     } catch (error) {
       next(error);

@@ -18,6 +18,7 @@ import { SearchableSelect } from "@/components/shared/SearchableSelect";
 import { FormDialogActions } from "@/components/forms/FormDialogActions";
 
 const OFFICE_TYPE_OPTIONS: Array<{ value: OfficeType; label: string }> = [
+  { value: "HEAD_OFFICE", label: "Head Office" },
   { value: "DIRECTORATE", label: "Directorate" },
   { value: "DISTRICT_OFFICE", label: "District Office" },
   { value: "DISTRICT_LAB", label: "District Lab" },
@@ -41,7 +42,7 @@ function normalizePhoneForSubmit(value?: string) {
 }
 
 function coerceOfficeType(value?: string | null): OfficeType {
-  if (value === "DIRECTORATE" || value === "DISTRICT_OFFICE" || value === "DISTRICT_LAB") {
+  if (value === "HEAD_OFFICE" || value === "DIRECTORATE" || value === "DISTRICT_OFFICE" || value === "DISTRICT_LAB") {
     return value;
   }
   return "DISTRICT_OFFICE";
@@ -59,7 +60,7 @@ const officeSchema = z.object({
       const normalized = normalizePhoneForValidation(String(value || "").trim());
       return !normalized || PAKISTAN_PHONE_REGEX.test(normalized);
     }, "Use Pakistani format, e.g. 03001234567 or +923001234567"),
-  type: z.enum(["DIRECTORATE", "DISTRICT_OFFICE", "DISTRICT_LAB"]),
+  type: z.enum(["HEAD_OFFICE", "DIRECTORATE", "DISTRICT_OFFICE", "DISTRICT_LAB"]),
   capabilities: z
     .object({
       moveables: z.boolean().optional(),
@@ -76,6 +77,7 @@ interface OfficeFormModalProps {
   office?: Office | null;
   divisions?: Division[];
   districts?: District[];
+  defaultType?: OfficeType;
   onSubmit: (data: OfficeFormData) => Promise<void> | void;
 }
 
@@ -85,6 +87,7 @@ export function OfficeFormModal({
   office,
   divisions = [],
   districts = [],
+  defaultType = "DISTRICT_OFFICE",
   onSubmit,
 }: OfficeFormModalProps) {
   const isEditing = !!office;
@@ -96,11 +99,13 @@ export function OfficeFormModal({
       district: office?.district || "",
       address: office?.address || "",
       contactNumber: office?.contact_number || "",
-      type: coerceOfficeType(office?.type),
+      type: office ? coerceOfficeType(office?.type) : defaultType,
       capabilities: {
         moveables: office?.capabilities?.moveables ?? true,
         consumables: office?.capabilities?.consumables ?? true,
-        chemicals: office?.capabilities?.chemicals ?? (coerceOfficeType(office?.type) === "DISTRICT_LAB"),
+        chemicals:
+          office?.capabilities?.chemicals ??
+          ((office ? coerceOfficeType(office?.type) : defaultType) === "DISTRICT_LAB"),
       },
     },
   });
@@ -128,15 +133,15 @@ export function OfficeFormModal({
         district: "",
         address: "",
         contactNumber: "",
-        type: "DISTRICT_OFFICE",
+        type: defaultType,
         capabilities: {
           moveables: true,
           consumables: true,
-          chemicals: false,
+          chemicals: defaultType === "DISTRICT_LAB",
         },
       });
     }
-  }, [open, office, form]);
+  }, [open, office, form, defaultType]);
 
   const handleSubmit = async (data: OfficeFormData) => {
     await onSubmit({
@@ -202,7 +207,7 @@ export function OfficeFormModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[520px] max-h-[85vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-[520px]">
         <DialogHeader>
           <DialogTitle>{isEditing ? "Edit Office" : "Add Office"}</DialogTitle>
           <DialogDescription>
@@ -329,6 +334,11 @@ export function OfficeFormModal({
             {selectedType === "DIRECTORATE" && (
               <p className="text-xs text-muted-foreground">
                 Directorates are automatically linked to the single active Head Office.
+              </p>
+            )}
+            {selectedType === "HEAD_OFFICE" && (
+              <p className="text-xs text-muted-foreground">
+                Only one active Head Office is allowed in the system.
               </p>
             )}
             <div className="grid grid-cols-3 gap-4">

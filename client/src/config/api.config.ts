@@ -160,6 +160,7 @@ export const API_CONFIG = {
     directorates: ['directorates'] as const,
     divisions: ['divisions'] as const,
     districts: ['districts'] as const,
+    stores: ['stores'] as const,
     employees: ['employees'] as const,
     users: ['users'] as const,
     vendors: ['vendors'] as const,

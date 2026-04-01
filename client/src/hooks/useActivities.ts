@@ -22,6 +22,20 @@ export const usePagedActivities = (queryInput: ActivityListQuery = {}, enabled =
     enabled,
   });
 
+export const useActivities = (queryInput: ActivityListQuery = {}, enabled = true) =>
+  useQuery({
+    queryKey: [
+      'activities',
+      'list',
+      queryInput.search?.trim() || '',
+      queryInput.activityType?.trim() || 'all',
+    ],
+    queryFn: () => activityService.getAllActivities(queryInput),
+    staleTime: heavyList.staleTime,
+    refetchOnWindowFocus: heavyList.refetchOnWindowFocus,
+    enabled,
+  });
+
 export const useRecentActivities = (limit = 50, enabled = true) =>
   useQuery({
     queryKey: ['activities', 'recent', limit],

@@ -1,241 +1,32 @@
 import { Types } from 'mongoose';
 import { SystemSettingsModel } from '../models/systemSettings.model';
+import {
+  DEFAULT_ACCESS_POLICY_RULES,
+  DEFAULT_APPROVAL_MATRIX_RULES,
+  DEFAULT_LAB_SCOPE_POLICY,
+  DEFAULT_SCHEDULER_CONFIG,
+  type AccessPolicyConfig,
+  type AccessPolicyRule,
+  type AccessPolicyScope,
+  type ApprovalMatrixConfig,
+  type ApprovalMatrixRule,
+  type ApprovalScope,
+  type LabScopePolicy,
+  type SchedulerConfig,
+  type WorkflowConfigSnapshot,
+} from '../config/authorizationPolicy';
+import { normalizeRoles as normalizeKnownRoles } from '../utils/roles';
 
-export type AccessPolicyScope = 'none' | 'same_office' | 'self';
-export type ApprovalScope = 'same_office' | 'org_wide';
-
-export type AccessPolicyRule = {
-  allowed_roles: string[];
-  denied_roles: string[];
-  allow_org_admin: boolean;
-  require_assigned_office: boolean;
-  scope: AccessPolicyScope;
-};
-
-export type LabScopePolicy = {
-  lab_only_allowed_office_types: string[];
-  lab_only_allowed_user_office_types: string[];
-  chemical_allowed_office_types: string[];
-};
-
-export type AccessPolicyConfig = {
-  rules: Record<string, AccessPolicyRule>;
-  lab_scope: LabScopePolicy;
-  updated_at: string | null;
-  updated_by_user_id: string | null;
-};
-
-export type ApprovalMatrixRule = {
-  id: string;
-  enabled: boolean;
-  transaction_type: string;
-  min_amount: number;
-  risk_tags: string[];
-  required_approvals: number;
-  approver_roles: string[];
-  scope: ApprovalScope;
-  disallow_maker: boolean;
-};
-
-export type ApprovalMatrixConfig = {
-  rules: ApprovalMatrixRule[];
-  updated_at: string | null;
-  updated_by_user_id: string | null;
-};
-
-export type SchedulerConfig = {
-  enabled: boolean;
-  maintenance_interval_minutes: number;
-  threshold_interval_minutes: number;
-  startup_delay_seconds: number;
-  updated_at: string | null;
-  updated_by_user_id: string | null;
-};
-
-export type WorkflowConfigSnapshot = {
-  accessPolicies: AccessPolicyConfig;
-  approvalMatrix: ApprovalMatrixConfig;
-  scheduler: SchedulerConfig;
-};
-
-const DEFAULT_ACCESS_POLICY_RULES: Record<string, AccessPolicyRule> = {
-  'maintenance.create': {
-    allowed_roles: ['office_head', 'caretaker', 'storekeeper', 'inventory_controller', 'employee'],
-    denied_roles: [],
-    allow_org_admin: true,
-    require_assigned_office: false,
-    scope: 'none',
-  },
-  'maintenance.manage': {
-    allowed_roles: ['office_head', 'caretaker', 'storekeeper', 'inventory_controller'],
-    denied_roles: [],
-    allow_org_admin: true,
-    require_assigned_office: false,
-    scope: 'none',
-  },
-  'transfer.create': {
-    allowed_roles: ['office_head', 'caretaker', 'storekeeper', 'inventory_controller'],
-    denied_roles: [],
-    allow_org_admin: true,
-    require_assigned_office: false,
-    scope: 'none',
-  },
-  'transfer.approve': {
-    allowed_roles: ['office_head'],
-    denied_roles: [],
-    allow_org_admin: true,
-    require_assigned_office: true,
-    scope: 'same_office',
-  },
-  'transfer.operate_source': {
-    allowed_roles: ['office_head', 'caretaker', 'storekeeper', 'inventory_controller'],
-    denied_roles: [],
-    allow_org_admin: true,
-    require_assigned_office: true,
-    scope: 'same_office',
-  },
-  'transfer.operate_destination': {
-    allowed_roles: ['office_head', 'caretaker', 'storekeeper', 'inventory_controller'],
-    denied_roles: [],
-    allow_org_admin: true,
-    require_assigned_office: true,
-    scope: 'same_office',
-  },
-  'transfer.central_store_receive': {
-    allowed_roles: [],
-    denied_roles: [],
-    allow_org_admin: true,
-    require_assigned_office: false,
-    scope: 'none',
-  },
-  'transfer.central_store_dispatch': {
-    allowed_roles: [],
-    denied_roles: [],
-    allow_org_admin: true,
-    require_assigned_office: false,
-    scope: 'none',
-  },
-  'transfer.retire': {
-    allowed_roles: [],
-    denied_roles: [],
-    allow_org_admin: true,
-    require_assigned_office: false,
-    scope: 'none',
-  },
-  'consumables.issue.from_office': {
-    allowed_roles: ['office_head', 'caretaker'],
-    denied_roles: ['employee'],
-    allow_org_admin: true,
-    require_assigned_office: true,
-    scope: 'same_office',
-  },
-  'consumables.issue.from_store': {
-    allowed_roles: [],
-    denied_roles: [],
-    allow_org_admin: true,
-    require_assigned_office: false,
-    scope: 'none',
-  },
-  'consumables.consume.source_office': {
-    allowed_roles: ['office_head', 'caretaker'],
-    denied_roles: ['employee'],
-    allow_org_admin: true,
-    require_assigned_office: true,
-    scope: 'same_office',
-  },
-  'consumables.consume.source_user': {
-    allowed_roles: ['office_head', 'caretaker'],
-    denied_roles: ['employee'],
-    allow_org_admin: true,
-    require_assigned_office: true,
-    scope: 'same_office',
-  },
-  'consumables.consume.self_user': {
-    allowed_roles: ['employee'],
-    denied_roles: [],
-    allow_org_admin: true,
-    require_assigned_office: false,
-    scope: 'self',
-  },
-  'consumables.return.user_to_office.manage': {
-    allowed_roles: ['office_head', 'caretaker'],
-    denied_roles: ['employee'],
-    allow_org_admin: true,
-    require_assigned_office: true,
-    scope: 'same_office',
-  },
-  'consumables.return.user_to_office.self': {
-    allowed_roles: ['employee'],
-    denied_roles: [],
-    allow_org_admin: true,
-    require_assigned_office: true,
-    scope: 'self',
-  },
-  'consumables.return.office_to_store_lot': {
-    allowed_roles: ['office_head', 'caretaker'],
-    denied_roles: ['employee'],
-    allow_org_admin: true,
-    require_assigned_office: true,
-    scope: 'same_office',
-  },
-  'consumables.dispose': {
-    allowed_roles: ['office_head', 'caretaker'],
-    denied_roles: ['employee'],
-    allow_org_admin: true,
-    require_assigned_office: true,
-    scope: 'none',
-  },
-};
-
-const DEFAULT_LAB_SCOPE_POLICY: LabScopePolicy = {
-  lab_only_allowed_office_types: ['DISTRICT_LAB'],
-  lab_only_allowed_user_office_types: ['DISTRICT_LAB'],
-  chemical_allowed_office_types: ['DISTRICT_LAB', 'HEAD_OFFICE'],
-};
-
-const DEFAULT_APPROVAL_MATRIX_RULES: ApprovalMatrixRule[] = [
-  {
-    id: 'high_value_transfer',
-    enabled: true,
-    transaction_type: 'TRANSFER_APPROVAL',
-    min_amount: 100000,
-    risk_tags: [],
-    required_approvals: 2,
-    approver_roles: ['office_head', 'org_admin'],
-    scope: 'same_office',
-    disallow_maker: true,
-  },
-  {
-    id: 'lab_or_chemical_issue',
-    enabled: true,
-    transaction_type: 'CONSUMABLE_ISSUE',
-    min_amount: 0,
-    risk_tags: ['LAB_ONLY'],
-    required_approvals: 2,
-    approver_roles: ['office_head', 'compliance_auditor'],
-    scope: 'same_office',
-    disallow_maker: true,
-  },
-  {
-    id: 'large_disposal',
-    enabled: true,
-    transaction_type: 'CONSUMABLE_DISPOSAL',
-    min_amount: 100,
-    risk_tags: [],
-    required_approvals: 2,
-    approver_roles: ['office_head', 'compliance_auditor'],
-    scope: 'same_office',
-    disallow_maker: true,
-  },
-];
-
-const DEFAULT_SCHEDULER_CONFIG: SchedulerConfig = {
-  enabled: true,
-  maintenance_interval_minutes: 15,
-  threshold_interval_minutes: 30,
-  startup_delay_seconds: 15,
-  updated_at: null,
-  updated_by_user_id: null,
+export type {
+  AccessPolicyConfig,
+  AccessPolicyRule,
+  AccessPolicyScope,
+  ApprovalMatrixConfig,
+  ApprovalMatrixRule,
+  ApprovalScope,
+  LabScopePolicy,
+  SchedulerConfig,
+  WorkflowConfigSnapshot,
 };
 
 const CONFIG_CACHE_TTL_MS = 30_000;
@@ -251,11 +42,31 @@ function asBoolean(value: unknown, fallback: boolean) {
   return typeof value === 'boolean' ? value : fallback;
 }
 
+function cloneAccessPolicyRule(rule: AccessPolicyRule): AccessPolicyRule {
+  return {
+    allowed_roles: [...rule.allowed_roles],
+    denied_roles: [...rule.denied_roles],
+    allow_org_admin: rule.allow_org_admin,
+    require_assigned_office: rule.require_assigned_office,
+    scope: rule.scope,
+  };
+}
+
+function cloneApprovalRule(rule: ApprovalMatrixRule): ApprovalMatrixRule {
+  return {
+    ...rule,
+    risk_tags: [...rule.risk_tags],
+    approver_roles: [...rule.approver_roles],
+  };
+}
+
 function normalizeRoleList(value: unknown, fallback: string[] = []) {
-  if (!Array.isArray(value)) return [...fallback];
-  const normalized = value
-    .map((entry) => String(entry || '').trim().toLowerCase())
-    .filter(Boolean);
+  const normalized = normalizeKnownRoles(Array.isArray(value) ? value : fallback, null, { allowEmpty: true })
+    .flatMap((role) =>
+      role === 'office_head' || role === 'head_office_admin'
+        ? ['office_head', 'head_office_admin']
+        : [role]
+    );
   return Array.from(new Set(normalized));
 }
 
@@ -293,7 +104,7 @@ function normalizeApprovalScope(value: unknown, fallback: ApprovalScope): Approv
 
 function sanitizeAccessPolicyRule(raw: unknown, fallback: AccessPolicyRule): AccessPolicyRule {
   if (!raw || typeof raw !== 'object') {
-    return { ...fallback };
+    return cloneAccessPolicyRule(fallback);
   }
   const row = raw as Record<string, unknown>;
   return {
@@ -345,7 +156,7 @@ function sanitizeAccessPolicies(raw: unknown): AccessPolicyConfig {
 }
 
 function sanitizeApprovalRule(raw: unknown, fallback?: ApprovalMatrixRule): ApprovalMatrixRule | null {
-  if (!raw || typeof raw !== 'object') return fallback ? { ...fallback } : null;
+  if (!raw || typeof raw !== 'object') return fallback ? cloneApprovalRule(fallback) : null;
   const row = raw as Record<string, unknown>;
 
   const id = String(row.id || fallback?.id || '').trim();
@@ -374,7 +185,7 @@ function sanitizeApprovalMatrix(raw: unknown): ApprovalMatrixConfig {
     .filter((entry): entry is ApprovalMatrixRule => Boolean(entry));
 
   if (rules.length === 0) {
-    rules = DEFAULT_APPROVAL_MATRIX_RULES.map((rule) => ({ ...rule }));
+    rules = DEFAULT_APPROVAL_MATRIX_RULES.map((rule) => cloneApprovalRule(rule));
   }
 
   const updatedBy = String(row.updated_by_user_id || '').trim();

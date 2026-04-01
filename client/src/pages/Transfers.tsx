@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { MainLayout } from "@/components/layout/MainLayout";
-import { PageHeader } from "@/components/shared/PageHeader";
+import { CollectionWorkspace } from "@/components/shared/CollectionWorkspace";
 import { DataTable } from "@/components/shared/DataTable";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -30,7 +30,8 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { SearchableSelect } from "@/components/shared/SearchableSelect";
-import { MetricCard, TimelineList, WorkflowPanel } from "@/components/shared/workflow";
+import { TimelineList, WorkflowPanel } from "@/components/shared/workflow";
+import { isOfficeAdminRole } from "@/services/authService";
 
 type TransferRow = Transfer & {
   lineCount: number;
@@ -105,7 +106,7 @@ export default function Transfers() {
     [assetItems]
   );
 
-  const canManage = isOrgAdmin || role === "office_head" || role === "caretaker";
+  const canManage = isOrgAdmin || isOfficeAdminRole(role) || role === "caretaker";
   const formErrors = {
     fromOfficeId: !fromOfficeId ? "Select a source holder." : "",
     toOfficeId: !toOfficeId ? "Select a destination office." : fromOfficeId === toOfficeId ? "Destination must be different from source." : "",
@@ -451,7 +452,7 @@ export default function Transfers() {
 
   return (
     <MainLayout title="Transfers" description="Mediated asset transfers via system store">
-      <PageHeader
+      <CollectionWorkspace
         title="Transfers"
         description="Create transfer requests with multiple lines and track the store-mediated workflow"
         eyebrow="Workflow"
@@ -462,14 +463,15 @@ export default function Transfers() {
             <span>{canManage ? "Editable workflow" : "Read-only access"}</span>
           </>
         }
-      />
-
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="All transfers" value={tableRows.length} helper="Records across the workflow" icon={FileText} tone="primary" />
-        <MetricCard label="Requested" value={requestedCount} helper="Awaiting approval or next step" icon={Upload} tone="warning" />
-        <MetricCard label="In transit" value={inTransitCount} helper="Dispatched between locations" icon={ChevronsUpDown} tone="default" />
-        <MetricCard label="Completed" value={completedCount} helper="Received at destination" icon={Check} tone="success" />
-      </div>
+        metrics={[
+          { label: "All transfers", value: tableRows.length, helper: "Records across the workflow", icon: FileText, tone: "primary" },
+          { label: "Requested", value: requestedCount, helper: "Awaiting approval or next step", icon: Upload, tone: "warning" },
+          { label: "In transit", value: inTransitCount, helper: "Dispatched between locations", icon: ChevronsUpDown, tone: "default" },
+          { label: "Completed", value: completedCount, helper: "Received at destination", icon: Check, tone: "success" },
+        ]}
+        panelTitle="Transfer workspace"
+        panelDescription="Create requests, work through the transfer queue, and keep the store-mediated transfer workflow in a single dashboard-aligned shell."
+      >
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="space-y-6">
@@ -534,14 +536,14 @@ export default function Transfers() {
                       role="combobox"
                       className="w-full justify-between font-normal"
                     >
-                      <span className="truncate text-left">
+                      <span className="min-w-0 flex-1 break-words text-left leading-5 [overflow-wrap:anywhere]">
                         Search and select asset items...
                         {selectedAssetItemIds.length > 0 ? ` (${selectedAssetItemIds.length} selected)` : ""}
                       </span>
                       <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                  <PopoverContent className="p-0" align="start">
                     <Command>
                       <CommandInput
                         placeholder="Search by tag, serial, or asset name..."
@@ -569,8 +571,8 @@ export default function Transfers() {
                               }}
                             >
                               <div className="min-w-0">
-                                <p className="truncate text-sm font-medium">{itemLabel}</p>
-                                <p className="truncate text-xs text-muted-foreground">{assetName}</p>
+                                <p className="break-words text-sm font-medium leading-5 [overflow-wrap:anywhere]">{itemLabel}</p>
+                                <p className="break-words text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]">{assetName}</p>
                               </div>
                               <Check className={`ml-auto h-4 w-4 ${isSelected ? "opacity-100" : "opacity-0"}`} />
                             </CommandItem>
@@ -594,8 +596,8 @@ export default function Transfers() {
                           className="flex items-center justify-between rounded-sm px-2 py-1.5 text-sm"
                         >
                           <div className="min-w-0">
-                            <p className="truncate font-medium">{item.label}</p>
-                            <p className="truncate text-xs text-muted-foreground">{item.assetName}</p>
+                            <p className="break-words font-medium leading-5 [overflow-wrap:anywhere]">{item.label}</p>
+                            <p className="break-words text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]">{item.assetName}</p>
                           </div>
                           <Button
                             type="button"
@@ -681,6 +683,7 @@ export default function Transfers() {
           </WorkflowPanel>
         </div>
       </div>
+      </CollectionWorkspace>
 
       <RecordDetailModal
         open={recordModal.open}
@@ -691,3 +694,4 @@ export default function Transfers() {
     </MainLayout>
   );
 }
+

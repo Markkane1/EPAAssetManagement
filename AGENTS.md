@@ -22,7 +22,7 @@ Rules for all Codex and AI agent sessions on this project.
 <!-- gitnexus:start -->
 # GitNexus MCP
 
-This project is indexed by GitNexus as **AMS With Backend** (3018 symbols, 10573 relationships, 220 execution flows).
+This project is indexed by GitNexus as **AMS With Backend** (3320 symbols, 11486 relationships, 243 execution flows).
 
 ## Always Start Here
 

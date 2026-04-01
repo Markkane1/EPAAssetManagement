@@ -6,7 +6,23 @@ import { login } from "./helpers";
 const adminRoutes = [
   "/",
   "/assets",
+  "/office/assets",
   "/asset-items",
+  "/office/asset-items",
+  "/consumables",
+  "/consumables/receive",
+  "/office/consumables/receive",
+  "/consumables/containers",
+  "/consumables/units",
+  "/consumables/inventory",
+  "/consumables/transfers",
+  "/consumables/assignments",
+  "/consumables/consume",
+  "/consumables/adjustments",
+  "/consumables/disposal",
+  "/consumables/returns",
+  "/consumables/ledger",
+  "/consumables/expiry",
   "/employees",
   "/assignments",
   "/transfers",
@@ -19,9 +35,19 @@ const adminRoutes = [
   "/projects",
   "/schemes",
   "/reports",
+  "/reports/asset-summary",
+  "/reports/asset-items-inventory",
+  "/reports/assignment-summary",
+  "/reports/status-distribution",
+  "/reports/maintenance-report",
+  "/reports/location-inventory",
+  "/reports/financial-summary",
+  "/reports/employee-assets",
   "/compliance",
   "/requisitions",
+  "/requisitions/new",
   "/returns",
+  "/returns/new",
   "/settings",
   "/settings/notifications",
   "/settings/delegations",
@@ -37,7 +63,9 @@ const employeeRoutes = [
   "/",
   "/my-assets",
   "/requisitions",
+  "/requisitions/new",
   "/returns",
+  "/returns/new",
   "/profile",
 ];
 
@@ -49,15 +77,28 @@ test.afterAll(async () => {
   await closeSeedConnection();
 });
 
+async function expectPageReady(page: Parameters<typeof test>[0]["page"]) {
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const body = document.body;
+        if (!body) return "missing";
+        const style = window.getComputedStyle(body);
+        return `${style.visibility}:${body.childElementCount}`;
+      })
+    )
+    .toMatch(/^visible:\d+$/);
+}
+
 test.describe("Page smoke coverage", () => {
   test("should let an admin open every major top-level page without falling back to login", async ({ page }) => {
     await login(page, "admin@test.com", "AdminPass123!");
     await expect(page).toHaveURL("/");
 
     for (const path of adminRoutes) {
-      await page.goto(path, { waitUntil: "commit" });
+      await page.goto(path, { waitUntil: "domcontentloaded" });
       await expect(page).not.toHaveURL(/\/login$/);
-      await expect(page.locator("body")).toBeVisible();
+      await expectPageReady(page);
     }
   });
 
@@ -66,18 +107,28 @@ test.describe("Page smoke coverage", () => {
     await expect(page).toHaveURL("/");
 
     for (const path of employeeRoutes) {
-      await page.goto(path, { waitUntil: "commit" });
+      await page.goto(path, { waitUntil: "domcontentloaded" });
       await expect(page).not.toHaveURL(/\/login$/);
-      await expect(page.locator("body")).toBeVisible();
+      await expectPageReady(page);
     }
 
-    await page.goto("/assignments", { waitUntil: "commit" });
+    await page.goto("/assignments", { waitUntil: "domcontentloaded" });
     await expect(page).toHaveURL(/\/my-assets$/);
   });
 
   test("should redirect back to login when the browser session is cleared after login", async ({ page, context }) => {
     await login(page, "admin@test.com", "AdminPass123!");
-    await expect(page).toHaveURL("/");
+    await expect
+      .poll(() => page.evaluate(() => window.localStorage.getItem("user")))
+      .not.toBeNull();
+    await expect
+      .poll(async () => {
+        const cookies = await context.cookies();
+        return cookies.some((cookie) => cookie.name === "auth_token");
+      })
+      .toBe(true);
+    await page.goto("/assets", { waitUntil: "domcontentloaded" });
+    await expect(page).not.toHaveURL(/\/login$/);
 
     await context.clearCookies();
     await page.evaluate(() => {
@@ -85,7 +136,7 @@ test.describe("Page smoke coverage", () => {
       window.sessionStorage.clear();
     });
 
-    await page.goto("/assets", { waitUntil: "commit" });
+    await page.goto("/assets", { waitUntil: "domcontentloaded" });
     await expect(page).toHaveURL(/\/login$/);
   });
 });

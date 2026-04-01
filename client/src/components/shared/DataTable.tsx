@@ -49,6 +49,12 @@ interface DataTableProps<T> {
   columns: Column<T>[];
   data: T[];
   pagination?: boolean;
+  externalPage?: number;
+  pageSize?: number;
+  pageSizeOptions?: number[];
+  onExternalPageChange?: (page: number) => void;
+  onPageSizeChange?: (pageSize: number) => void;
+  showPageSizeSelector?: boolean;
   searchable?: boolean;
   filterable?: boolean;
   exportable?: boolean;
@@ -66,6 +72,14 @@ interface DataTableProps<T> {
     description: string;
     action?: React.ReactNode;
   };
+  onDisplayStateChange?: (state: {
+    currentPage: number;
+    pageSize: number;
+    filteredCount: number;
+    totalPages: number;
+    rangeStart: number;
+    rangeEnd: number;
+  }) => void;
 }
 
 type FilterOperator = "contains" | "equals" | "date_from" | "date_to";
@@ -192,6 +206,12 @@ export function DataTable<T extends { id?: string; _id?: string }>({
   columns,
   data,
   pagination = true,
+  externalPage,
+  pageSize: controlledPageSize,
+  pageSizeOptions = [10, 20, 50, 100],
+  onExternalPageChange,
+  onPageSizeChange,
+  showPageSizeSelector,
   searchable = true,
   filterable = true,
   exportable = true,
@@ -205,6 +225,7 @@ export function DataTable<T extends { id?: string; _id?: string }>({
   virtualViewportHeight = 560,
   toolbarContent,
   emptyState,
+  onDisplayStateChange,
 }: DataTableProps<T>) {
   const isMobile = useIsMobile();
   const [search, setSearch] = useState("");
@@ -213,13 +234,22 @@ export function DataTable<T extends { id?: string; _id?: string }>({
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [virtualScrollTop, setVirtualScrollTop] = useState(0);
-  const useVirtualizedTable = virtualized && !isMobile;
+  // Nested table scroll caused the "more than 20 rows" regression across server-backed pages.
+  // Keep the prop API compatible, but render tables at natural document height repo-wide.
+  const virtualizationEnabled = false;
+  const useVirtualizedTable = virtualizationEnabled ? virtualized && !isMobile : false;
   const availableFilterColumns = useMemo(
     () => columns.filter((column) => Boolean(column.key)),
     [columns]
   );
 
   const effectiveSearch = useGlobalPageSearch && pageSearch ? pageSearch.term : search;
+  const resolvedPageSize = controlledPageSize ?? pageSize;
+  const usesExternalPagination = externalPage !== undefined;
+  const currentPage = usesExternalPagination ? externalPage : page;
+  const canSelectPageSize =
+    (showPageSizeSelector ?? (pagination || typeof onPageSizeChange === "function")) &&
+    pageSizeOptions.length > 0;
   const activeFilters = useMemo(
     () =>
       filters.filter(
@@ -236,12 +266,21 @@ export function DataTable<T extends { id?: string; _id?: string }>({
   );
 
   useEffect(() => {
+    if (usesExternalPagination) {
+      onExternalPageChange?.(1);
+      return;
+    }
     setPage(1);
-  }, [effectiveSearch, activeFilterSignature]);
+  }, [effectiveSearch, activeFilterSignature, onExternalPageChange, usesExternalPagination]);
+
+  useEffect(() => {
+    if (controlledPageSize === undefined) return;
+    setPageSize(controlledPageSize);
+  }, [controlledPageSize]);
 
   useEffect(() => {
     setVirtualScrollTop(0);
-  }, [page, pageSize, effectiveSearch, data.length, useVirtualizedTable, activeFilterSignature]);
+  }, [currentPage, resolvedPageSize, effectiveSearch, data.length, useVirtualizedTable, activeFilterSignature]);
 
   const normalizedSearch = effectiveSearch.trim().toLowerCase();
   const searchBlobByRow = useMemo(
@@ -314,17 +353,24 @@ export function DataTable<T extends { id?: string; _id?: string }>({
     return `${sanitizeFileName(exportFileName)}-${date}`;
   }, [exportFileName]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredData.length / pageSize));
+  const totalPages = Math.max(1, Math.ceil(filteredData.length / resolvedPageSize));
 
   useEffect(() => {
-    if (page > totalPages) {
+    if (currentPage > totalPages) {
+      if (usesExternalPagination) {
+        onExternalPageChange?.(totalPages);
+        return;
+      }
       setPage(totalPages);
     }
-  }, [page, totalPages]);
+  }, [currentPage, onExternalPageChange, totalPages, usesExternalPagination]);
 
   const paginatedData = useMemo(
-    () => (pagination ? filteredData.slice((page - 1) * pageSize, page * pageSize) : filteredData),
-    [filteredData, page, pageSize, pagination]
+    () =>
+      pagination || usesExternalPagination
+        ? filteredData.slice((currentPage - 1) * resolvedPageSize, currentPage * resolvedPageSize)
+        : filteredData,
+    [filteredData, currentPage, resolvedPageSize, pagination, usesExternalPagination]
   );
   const virtualOverscan = 6;
   const virtualWindow = useMemo(() => {
@@ -346,6 +392,20 @@ export function DataTable<T extends { id?: string; _id?: string }>({
       bottomSpacerHeight: Math.max(0, (totalRows - endIndex) * virtualRowHeight),
     };
   }, [paginatedData, useVirtualizedTable, virtualScrollTop, virtualRowHeight, virtualViewportHeight]);
+
+  const handlePageSizeChange = (value: string) => {
+    const nextPageSize = Number(value);
+    if (!Number.isFinite(nextPageSize) || nextPageSize <= 0) return;
+    if (controlledPageSize === undefined) {
+      setPageSize(nextPageSize);
+    }
+    onPageSizeChange?.(nextPageSize);
+    if (usesExternalPagination) {
+      onExternalPageChange?.(1);
+      return;
+    }
+    setPage(1);
+  };
 
   const getRowKey = (row: T, index: number) => {
     const candidate = row.id ?? row._id;
@@ -405,23 +465,34 @@ export function DataTable<T extends { id?: string; _id?: string }>({
     toast.success(`Exported ${exportRows.length} rows as CSV`);
   };
 
-  const rangeStart = pagination
+  const rangeStart = pagination || usesExternalPagination
     ? filteredData.length === 0
       ? 0
-      : (page - 1) * pageSize + 1
+      : (currentPage - 1) * resolvedPageSize + 1
     : filteredData.length === 0
       ? 0
       : 1;
-  const rangeEnd = pagination
+  const rangeEnd = pagination || usesExternalPagination
     ? filteredData.length === 0
       ? 0
-      : Math.min(page * pageSize, filteredData.length)
+      : Math.min(currentPage * resolvedPageSize, filteredData.length)
     : filteredData.length;
 
   const emptyStateContent = emptyState || {
     title: "No results found.",
     description: "Try adjusting the current search term or filters to broaden the result set.",
   };
+
+  useEffect(() => {
+    onDisplayStateChange?.({
+      currentPage,
+      pageSize: resolvedPageSize,
+      filteredCount: filteredData.length,
+      totalPages,
+      rangeStart,
+      rangeEnd,
+    });
+  }, [currentPage, filteredData.length, onDisplayStateChange, rangeEnd, rangeStart, resolvedPageSize, totalPages]);
 
   return (
     <div className="space-y-4">
@@ -473,22 +544,20 @@ export function DataTable<T extends { id?: string; _id?: string }>({
                 </DropdownMenuContent>
               </DropdownMenu>
             )}
-            <Select
-              value={String(pageSize)}
-              onValueChange={(value) => {
-                setPageSize(Number(value));
-                setPage(1);
-              }}
-            >
-              <SelectTrigger className="w-full sm:w-[140px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="10">10 per page</SelectItem>
-                <SelectItem value="20">20 per page</SelectItem>
-                <SelectItem value="50">50 per page</SelectItem>
-              </SelectContent>
-            </Select>
+            {canSelectPageSize && (
+              <Select value={String(resolvedPageSize)} onValueChange={handlePageSizeChange}>
+                <SelectTrigger className="w-full sm:w-[140px]" aria-label="Rows per page">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {pageSizeOptions.map((option) => (
+                    <SelectItem key={option} value={String(option)}>
+                      {option} per page
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
           </div>
         </div>
       </div>
@@ -507,7 +576,7 @@ export function DataTable<T extends { id?: string; _id?: string }>({
           {filters.map((filter) => (
             <div
               key={filter.id}
-              className="flex flex-col gap-2 rounded-[1.25rem] border border-border/70 bg-card/92 p-3 sm:flex-row sm:items-center"
+              className="flex flex-col gap-2 rounded-[1.25rem] border border-border/70 bg-white p-3 sm:flex-row sm:items-center"
             >
               <Select
                 value={filter.columnKey}
@@ -586,7 +655,7 @@ export function DataTable<T extends { id?: string; _id?: string }>({
               <div
                 key={getRowKey(row, index)}
                 className={cn(
-                  "rounded-[1.5rem] border border-border/70 bg-card/95 p-4 shadow-[0_18px_48px_-40px_rgba(15,23,42,0.42)]",
+                  "rounded-[1.5rem] border border-border/70 bg-white p-4 shadow-[0_18px_48px_-40px_rgba(26,28,24,0.14)]",
                   onRowClick && "cursor-pointer transition-colors hover:bg-muted/20"
                 )}
                 onClick={() => onRowClick?.(row)}
@@ -689,7 +758,7 @@ export function DataTable<T extends { id?: string; _id?: string }>({
         </div>
       )}
 
-      {pagination && (
+      {pagination && !usesExternalPagination && (
         <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
           <p className="text-sm text-muted-foreground">
             Showing {rangeStart} to {rangeEnd} of {filteredData.length} results
@@ -698,19 +767,19 @@ export function DataTable<T extends { id?: string; _id?: string }>({
             <Button
               variant="outline"
               size="icon"
-              onClick={() => setPage(page - 1)}
-              disabled={page === 1}
+              onClick={() => setPage(currentPage - 1)}
+              disabled={currentPage === 1}
             >
               <ChevronLeft className="h-4 w-4" />
             </Button>
             <span className="text-sm font-medium">
-              Page {page} of {totalPages || 1}
+              Page {currentPage} of {totalPages || 1}
             </span>
             <Button
               variant="outline"
               size="icon"
-              onClick={() => setPage(page + 1)}
-              disabled={page >= totalPages || filteredData.length === 0}
+              onClick={() => setPage(currentPage + 1)}
+              disabled={currentPage >= totalPages || filteredData.length === 0}
             >
               <ChevronRight className="h-4 w-4" />
             </Button>

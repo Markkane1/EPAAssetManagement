@@ -12,6 +12,8 @@ import { createHttpError } from '../utils/httpError';
 import { assertUploadedFileIntegrity } from '../utils/uploadValidation';
 import { getRequestContext } from '../utils/scope';
 import { createBulkNotifications, resolveNotificationRecipientsByOffice } from '../services/notification.service';
+import { logAudit } from '../modules/records/services/audit.service';
+import { isOfficeAdminRole } from '../utils/roles';
 
 type RequestWithFile = Request & {
   file?: Express.Multer.File;
@@ -242,7 +244,7 @@ async function dispatchPurchaseOrderNotifications(input: {
 
 async function assertProcurementScope(ctx: { role: string; isOrgAdmin: boolean; locationId: string | null }) {
   if (ctx.isOrgAdmin) return;
-  if (ctx.role !== 'office_head' && ctx.role !== 'procurement_officer') return;
+  if (!isOfficeAdminRole(ctx.role) && ctx.role !== 'procurement_officer') return;
   if (!ctx.locationId || !isObjectId(ctx.locationId)) {
     throw createHttpError(403, 'Procurement role requires an assigned office');
   }
@@ -354,6 +356,9 @@ export const purchaseOrderController = {
         message: `Purchase order ${String(order.order_number || order.id)} was created.`,
         excludeUserIds: [ctx.userId],
       });
+      if (officeId) {
+        try { await logAudit({ ctx, action: 'PURCHASE_ORDER_CREATED', entityType: 'PurchaseOrder', entityId: String(order._id), officeId }); } catch { /* audit failures must not surface */ }
+      }
       res.status(201).json(order);
     } catch (error) {
       await cleanupUpload(uploadedFile);
@@ -392,16 +397,20 @@ export const purchaseOrderController = {
         return res.status(404).json({ message: 'Not found' });
       }
       const nextStatus = String(order.status || '');
+      const updateOfficeId = await resolvePurchaseOrderOfficeId(order, ctx.locationId);
       if (previousStatus !== nextStatus) {
-        const officeId = await resolvePurchaseOrderOfficeId(order, ctx.locationId);
         await dispatchPurchaseOrderNotifications({
-          officeId,
+          officeId: updateOfficeId,
           purchaseOrderId: order.id,
           type: 'PURCHASE_ORDER_STATUS_CHANGED',
           title: 'Purchase Order Status Updated',
           message: `Purchase order ${String(order.order_number || order.id)} changed from ${previousStatus || 'Unknown'} to ${nextStatus || 'Unknown'}.`,
           excludeUserIds: [ctx.userId],
         });
+      }
+      if (updateOfficeId) {
+        const diff = previousStatus !== nextStatus ? { status: { from: previousStatus, to: nextStatus } } : null;
+        try { await logAudit({ ctx, action: 'PURCHASE_ORDER_UPDATED', entityType: 'PurchaseOrder', entityId: String(req.params.id), officeId: updateOfficeId, diff }); } catch { /* audit failures must not surface */ }
       }
       return res.json(order);
     } catch (error) {
@@ -415,15 +424,18 @@ export const purchaseOrderController = {
       await assertProcurementScope(ctx);
       const order = await PurchaseOrderModel.findByIdAndDelete(req.params.id);
       if (!order) return res.status(404).json({ message: 'Not found' });
-      const officeId = await resolvePurchaseOrderOfficeId(order, ctx.locationId);
+      const removeOfficeId = await resolvePurchaseOrderOfficeId(order, ctx.locationId);
       await dispatchPurchaseOrderNotifications({
-        officeId,
+        officeId: removeOfficeId,
         purchaseOrderId: order.id,
         type: 'PURCHASE_ORDER_REMOVED',
         title: 'Purchase Order Removed',
         message: `Purchase order ${String(order.order_number || order.id)} was removed.`,
         excludeUserIds: [ctx.userId],
       });
+      if (removeOfficeId) {
+        try { await logAudit({ ctx, action: 'PURCHASE_ORDER_DELETED', entityType: 'PurchaseOrder', entityId: String(order._id), officeId: removeOfficeId }); } catch { /* audit failures must not surface */ }
+      }
       return res.status(204).send();
     } catch (error) {
       next(error);

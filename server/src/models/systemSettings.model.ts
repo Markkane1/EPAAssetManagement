@@ -18,6 +18,8 @@ const NotificationSchema = new Schema<any>(
     maintenance_reminders: { type: Boolean, default: true },
     assignment_notifications: { type: Boolean, default: true },
     warranty_expiry_alerts: { type: Boolean, default: false },
+    consumable_notifications: { type: Boolean, default: true },
+    purchase_order_notifications: { type: Boolean, default: true },
   },
   { _id: false }
 );

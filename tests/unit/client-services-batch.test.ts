@@ -87,10 +87,11 @@ describe("client services batch", () => {
     await notificationService.action("note-1", { action: "APPROVE", decisionNotes: "ok" });
     expect(apiMock.post).toHaveBeenCalledWith("/notifications/note-1/action", { action: "APPROVE", decisionNotes: "ok" });
 
+    apiMock.get.mockClear();
     await userService.getAll({ page: 2, limit: 20, search: "  admin  " });
-    expect(apiMock.get).toHaveBeenCalledWith("/users?page=2&limit=20&search=admin");
+    expect(apiMock.get).toHaveBeenCalledWith("/users?meta=1&page=1&limit=500&search=admin");
     await userService.getPaged({ page: 1, limit: 50, search: " ava " });
-    expect(apiMock.get).toHaveBeenCalledWith("/users?meta=1&page=1&limit=50&search=ava");
+    expect(apiMock.get).toHaveBeenLastCalledWith("/users?meta=1&page=1&limit=50&search=ava");
     await userService.create({ email: "user@test.com", password: "Secret123!" });
     expect(apiMock.post).toHaveBeenCalledWith("/users", { email: "user@test.com", password: "Secret123!" });
     await userService.updateRole("user-1", { role: "employee", roles: ["employee"], activeRole: "employee" });

@@ -4,22 +4,39 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import epaLogo from "@/assets/epa-logo.jpg";
 import { toast } from "sonner";
 import api from "@/lib/api";
+import { emailSchema } from "@/lib/securityUtils";
+
+const forgotPasswordSchema = emailSchema.transform((value) => value.trim().toLowerCase());
 
 export default function ForgotPassword() {
   const [email, setEmail] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
+    setError("");
+
+    const validation = forgotPasswordSchema.safeParse(email);
+    if (!validation.success) {
+      setError(validation.error.issues[0]?.message || "Enter a valid email address");
+      return;
+    }
+
+    setIsSubmitting(true);
     try {
-      await api.post("/auth/forgot-password", { email });
+      await api.post("/auth/forgot-password", { email: validation.data });
       setSubmitted(true);
       toast.success("Password request submitted");
     } catch (error: any) {
       toast.error(error?.message || "Unable to submit request");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -42,6 +59,11 @@ export default function ForgotPassword() {
 
           <form onSubmit={handleSubmit}>
             <CardContent className="space-y-4">
+              {error && (
+                <Alert variant="destructive">
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              )}
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
                 <Input
@@ -49,12 +71,17 @@ export default function ForgotPassword() {
                   type="email"
                   placeholder="name@EPAPunjab.gov.pk"
                   value={email}
-                  onChange={(event) => setEmail(event.target.value)}
+                  onChange={(event) => {
+                    setEmail(event.target.value);
+                    if (error) setError("");
+                  }}
                   required
-                  disabled={submitted}
-                  className="h-11"
+                  disabled={submitted || isSubmitting}
+                  className={`h-11 ${error ? "border-destructive" : ""}`}
+                  aria-invalid={error ? "true" : "false"}
                   autoComplete="email"
                 />
+                {error && <p className="text-xs text-destructive">{error}</p>}
               </div>
               {submitted && (
                 <p className="text-sm text-muted-foreground">
@@ -64,7 +91,7 @@ export default function ForgotPassword() {
             </CardContent>
 
             <CardFooter className="flex flex-col gap-3">
-              <Button type="submit" className="w-full h-11" disabled={submitted}>
+              <Button type="submit" className="w-full h-11" disabled={submitted || isSubmitting}>
                 Request Reset
               </Button>
               <Link to="/login" className="text-sm text-primary hover:underline">

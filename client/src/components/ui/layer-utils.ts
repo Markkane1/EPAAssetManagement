@@ -118,9 +118,23 @@ export function useAnchoredPosition({
   sideOffset?: number;
 }) {
   const [style, setStyle] = React.useState<React.CSSProperties>({});
+  const hiddenStyle = React.useMemo<React.CSSProperties>(
+    () => ({
+      position: "fixed",
+      top: 0,
+      left: 0,
+      visibility: "hidden",
+      pointerEvents: "none",
+      zIndex: 50,
+    }),
+    []
+  );
 
   React.useLayoutEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setStyle({});
+      return;
+    }
 
     const updatePosition = () => {
       const trigger = triggerRef.current;
@@ -152,14 +166,18 @@ export function useAnchoredPosition({
       );
 
       setStyle({
-        position: "fixed",
+        ...hiddenStyle,
         top,
         left,
-        zIndex: 50,
+        minWidth: `${Math.min(rect.width, window.innerWidth - viewportPadding * 2)}px`,
+        visibility: "visible",
+        pointerEvents: undefined,
+        ["--popover-trigger-width" as string]: `${rect.width}px`,
         ["--radix-popover-trigger-width" as string]: `${rect.width}px`,
       });
     };
 
+    setStyle(hiddenStyle);
     updatePosition();
     window.addEventListener("resize", updatePosition);
     window.addEventListener("scroll", updatePosition, true);
@@ -168,7 +186,7 @@ export function useAnchoredPosition({
       window.removeEventListener("resize", updatePosition);
       window.removeEventListener("scroll", updatePosition, true);
     };
-  }, [align, contentRef, open, side, sideOffset, triggerRef]);
+  }, [align, contentRef, hiddenStyle, open, side, sideOffset, triggerRef]);
 
-  return style;
+  return open ? { ...hiddenStyle, ...style } : style;
 }

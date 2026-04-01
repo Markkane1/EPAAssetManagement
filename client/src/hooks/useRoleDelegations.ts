@@ -4,6 +4,7 @@ import {
   roleDelegationService,
   type CreateRoleDelegationDto,
 } from "@/services/roleDelegationService";
+import { refreshActiveQueries } from "@/lib/queryRefresh";
 
 const QUERY_KEY = ["role-delegations"] as const;
 
@@ -18,8 +19,8 @@ export const useCreateRoleDelegation = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: CreateRoleDelegationDto) => roleDelegationService.create(payload),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+    onSuccess: async () => {
+      await refreshActiveQueries(queryClient, [QUERY_KEY]);
       toast.success("Delegation created");
     },
     onError: (error: Error) => {
@@ -32,8 +33,8 @@ export const useRevokeRoleDelegation = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => roleDelegationService.revoke(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+    onSuccess: async () => {
+      await refreshActiveQueries(queryClient, [QUERY_KEY]);
       toast.success("Delegation revoked");
     },
     onError: (error: Error) => {

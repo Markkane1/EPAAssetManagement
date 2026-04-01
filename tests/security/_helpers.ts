@@ -16,6 +16,7 @@ export interface LoginSession {
 
 export interface SeededContext {
   mongo: MongoMemoryReplSet;
+  mongoDbPath: string;
   app: ReturnType<(typeof import('../../server/src/app'))['createApp']>;
   models: {
     UserModel: typeof import('../../server/src/models/user.model').UserModel;
@@ -121,7 +122,10 @@ export function buildAuthPayload(user: { id: string; email: string; role?: strin
 
 export async function bootstrapSecurityApp() {
   const binaryConfig = resolveMongoBinaryConfig();
-  const mongoDbPath = path.join(securityMongoRoot, `repl-${process.pid}`);
+  const mongoDbPath = path.join(
+    securityMongoRoot,
+    `repl-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`
+  );
   fs.mkdirSync(mongoDbPath, { recursive: true });
   if (!('systemBinary' in binaryConfig)) {
     fs.mkdirSync(mongoCacheDir, { recursive: true });
@@ -161,6 +165,7 @@ export async function bootstrapSecurityApp() {
 
   return {
     mongo,
+    mongoDbPath,
     app,
     models: { UserModel, OfficeModel, EmployeeModel, DocumentModel, VendorModel, AssetModel, AssetItemModel, AssignmentModel, MaintenanceRecordModel },
   };
@@ -262,10 +267,18 @@ export async function seedSecurityData(): Promise<SeededContext> {
   };
 }
 
-export async function cleanupSecurityContext(ctx: { mongo: MongoMemoryReplSet }) {
-  await mongoose.disconnect();
-  await ctx.mongo.stop();
-  fs.rmSync(securityMongoRoot, { recursive: true, force: true });
+export async function cleanupSecurityContext(ctx?: { mongo?: MongoMemoryReplSet; mongoDbPath?: string | null }) {
+  await mongoose.disconnect().catch(() => undefined);
+  if (ctx?.mongo) {
+    await ctx.mongo.stop().catch(() => undefined);
+  }
+  if (ctx?.mongoDbPath) {
+    try {
+      fs.rmSync(ctx.mongoDbPath, { recursive: true, force: true });
+    } catch {
+      // Windows can briefly retain WiredTiger handles after shutdown.
+    }
+  }
 }
 
 function normalizePath(prefix: string, routePath: string) {

@@ -125,7 +125,7 @@ export function ConsumableUnitFormModal({
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="code">Code *</Label>
               <Input id="code" {...form.register('code')} placeholder="e.g., g, mL" />
@@ -142,7 +142,7 @@ export function ConsumableUnitFormModal({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label>Group *</Label>
               <Select value={form.watch('group')} onValueChange={(v) => form.setValue('group', v as 'mass' | 'volume' | 'count')}>
@@ -187,3 +187,4 @@ export function ConsumableUnitFormModal({
     </Dialog>
   );
 }
+

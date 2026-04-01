@@ -5,6 +5,7 @@ import {
   approvalMatrixService,
   type ApprovalMatrixDecision,
 } from "@/services/approvalMatrixService";
+import { refreshActiveQueries } from "@/lib/queryRefresh";
 
 const { queryKeys, query } = API_CONFIG;
 const { live } = query.profiles;
@@ -24,9 +25,11 @@ export const useDecideApprovalMatrixRequest = () => {
   return useMutation({
     mutationFn: ({ id, decision, notes }: { id: string; decision: ApprovalMatrixDecision; notes?: string }) =>
       approvalMatrixService.decide(id, { decision, notes }),
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: [...queryKeys.approvalMatrix] });
-      queryClient.invalidateQueries({ queryKey: [...queryKeys.notifications] });
+    onSuccess: async (_, variables) => {
+      await refreshActiveQueries(queryClient, [
+        [...queryKeys.approvalMatrix],
+        [...queryKeys.notifications],
+      ]);
       toast.success(
         variables.decision === "APPROVED"
           ? "Approval request approved."

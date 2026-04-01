@@ -88,6 +88,26 @@ export const loginSchema = z.object({
 
 export type LoginFormData = z.infer<typeof loginSchema>;
 
+export const emailSchema = z
+  .string()
+  .trim()
+  .min(1, 'Email is required')
+  .email('Please enter a valid email address')
+  .max(255, 'Email must be less than 255 characters');
+
+export const STRONG_PASSWORD_MIN_LENGTH = 12;
+export const STRONG_PASSWORD_MESSAGE =
+  'Password must be at least 12 characters and include uppercase, lowercase, number, and symbol';
+
+export const strongPasswordSchema = z
+  .string()
+  .min(1, 'Password is required')
+  .refine((value) => value.length >= STRONG_PASSWORD_MIN_LENGTH, STRONG_PASSWORD_MESSAGE)
+  .refine((value) => /[a-z]/.test(value), STRONG_PASSWORD_MESSAGE)
+  .refine((value) => /[A-Z]/.test(value), STRONG_PASSWORD_MESSAGE)
+  .refine((value) => /\d/.test(value), STRONG_PASSWORD_MESSAGE)
+  .refine((value) => /[^A-Za-z\d]/.test(value), STRONG_PASSWORD_MESSAGE);
+
 // Password strength checker
 export const checkPasswordStrength = (password: string): {
   score: number;
@@ -104,7 +124,7 @@ export const checkPasswordStrength = (password: string): {
   if (/[^a-zA-Z0-9]/.test(password)) score++;
   
   if (score <= 2) return { score, label: 'Weak', color: 'bg-destructive' };
-  if (score <= 4) return { score, label: 'Fair', color: 'bg-yellow-500' };
+  if (score <= 4) return { score, label: 'Fair', color: 'bg-[hsl(var(--warning))]' };
   return { score, label: 'Strong', color: 'bg-primary' };
 };
 

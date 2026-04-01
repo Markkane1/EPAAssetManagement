@@ -47,6 +47,8 @@ export function Header({
     switch (normalized) {
       case "org_admin":
         return "Administrator";
+      case "head_office_admin":
+        return "Head Office Admin";
       case "office_head":
         return "Office Head";
       case "caretaker":
@@ -106,7 +108,7 @@ export function Header({
 
   return (
     <header className="sticky top-0 z-20 px-3 pt-3 sm:px-5 sm:pt-4 lg:px-8">
-      <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-4 rounded-[1.75rem] border border-border/70 bg-card/88 px-4 py-4 shadow-[0_18px_60px_-40px_rgba(15,23,42,0.42)] backdrop-blur sm:px-5">
+      <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-4 rounded-[1.75rem] border border-border/70 bg-card/88 px-4 py-4 shadow-[0_18px_60px_-40px_rgba(26,28,24,0.14)] backdrop-blur sm:px-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="flex min-w-0 items-start gap-3">
             {onMenuClick && (
@@ -130,7 +132,7 @@ export function Header({
                 </div>
               </div>
               <div className="min-w-0">
-                <div className="truncate text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
+                <div className="text-xl font-semibold tracking-tight text-foreground break-words sm:text-2xl">
                   {title}
                 </div>
                 {description && (
@@ -156,7 +158,7 @@ export function Header({
             <div className="flex items-center justify-between gap-2">
               <div className="hidden min-w-0 items-center gap-3 rounded-2xl border border-border/70 bg-background/70 px-3 py-2 lg:flex">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-foreground">{user?.email || "User"}</p>
+                  <p className="max-w-[18rem] break-all text-sm font-medium leading-5 text-foreground">{user?.email || "User"}</p>
                   <p className="text-xs text-muted-foreground">Role: {roleLabel}</p>
                 </div>
               </div>

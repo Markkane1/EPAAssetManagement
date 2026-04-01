@@ -1,6 +1,5 @@
 import { useDeferredValue, useEffect, useState } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
-import { PageHeader } from "@/components/shared/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,7 +18,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
-  usePagedProjects,
+  useProjects,
   useProject,
   useCreateProject,
   useUpdateProject,
@@ -31,9 +30,9 @@ import { usePageSearch } from "@/contexts/PageSearchContext";
 import { ViewModeToggle } from "@/components/shared/ViewModeToggle";
 import { useViewMode } from "@/hooks/useViewMode";
 import { DataTable } from "@/components/shared/DataTable";
+import { CollectionWorkspace } from "@/components/shared/CollectionWorkspace";
 
 export default function Projects() {
-  const PAGE_SIZE = 60;
   const createProject = useCreateProject();
   const updateProject = useUpdateProject();
   const deleteProject = useDeleteProject();
@@ -42,26 +41,48 @@ export default function Projects() {
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [viewingProjectId, setViewingProjectId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const { mode: viewMode, setMode: setViewMode } = useViewMode("projects");
   const pageSearch = usePageSearch();
   const searchTerm = useDeferredValue((pageSearch?.term || "").trim());
-  const { data: projectsResponse, isLoading } = usePagedProjects({
-    page,
-    limit: PAGE_SIZE,
-    search: searchTerm || undefined,
-  });
+  const [tableDisplay, setTableDisplay] = useState<{
+    filteredCount: number;
+    totalPages: number;
+    rangeStart: number;
+    rangeEnd: number;
+  } | null>(null);
+  const { data: allProjects = [] } = useProjects();
+  const { data: projectsResponse, isLoading } = useProjects({ search: searchTerm || undefined });
   const {
     data: viewingProject,
     isLoading: isViewingProject,
     isError: isViewingProjectError,
   } = useProject(viewingProjectId || "");
-  const visibleProjects = projectsResponse?.items || [];
-  const totalProjects = projectsResponse?.total || visibleProjects.length;
-  const totalPages = Math.max(1, Math.ceil(totalProjects / PAGE_SIZE));
+  const visibleProjects = projectsResponse || [];
+  const pagedProjects = visibleProjects.slice((page - 1) * pageSize, page * pageSize);
+  const totalProjects = visibleProjects.length;
+  const totalPages = Math.max(1, Math.ceil(totalProjects / pageSize));
+  const displayCount = tableDisplay?.filteredCount ?? totalProjects;
+  const displayTotalPages = tableDisplay?.totalPages ?? totalPages;
+  const displayRangeStart = viewMode === "list"
+    ? (tableDisplay?.rangeStart ?? (displayCount === 0 ? 0 : (page - 1) * pageSize + 1))
+    : totalProjects === 0 ? 0 : (page - 1) * pageSize + 1;
+  const displayRangeEnd = viewMode === "list"
+    ? (tableDisplay?.rangeEnd ?? Math.min(page * pageSize, displayCount))
+    : Math.min(page * pageSize, totalProjects);
+  const activeProjectCount = visibleProjects.filter((project) => project.is_active).length;
+  const codedProjectCount = visibleProjects.filter((project) => Boolean(project.code)).length;
+  const datedProjectCount = visibleProjects.filter((project) => Boolean(project.start_date)).length;
 
   useEffect(() => {
     setPage(1);
   }, [searchTerm]);
+
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
 
   const handleAddProject = () => {
     setEditingProject(null);
@@ -82,6 +103,7 @@ export default function Projects() {
       await updateProject.mutateAsync({ id: editingProject.id, data });
     } else {
       await createProject.mutateAsync(data);
+      setPage(1);
     }
   };
 
@@ -152,104 +174,126 @@ export default function Projects() {
 
   return (
     <MainLayout title="Projects" description="Manage organizational projects">
-      <PageHeader
+      <CollectionWorkspace
         title="Projects"
         description="View and manage projects with associated assets"
+        eyebrow="Portfolio workspace"
+        meta={
+          <>
+            <span>{totalProjects} projects in scope</span>
+            <span className="hidden h-1 w-1 rounded-full bg-border sm:inline-block" />
+            <span>{viewMode === "list" ? "Operational list view" : "Portfolio grid view"}</span>
+          </>
+        }
         action={{ label: "Add Project", onClick: handleAddProject }}
         extra={<ViewModeToggle mode={viewMode} onModeChange={setViewMode} />}
-      />
-
-      {viewMode === "list" ? (
-        <DataTable
-          columns={columns}
-          data={visibleProjects}
-          pagination={false}
-          searchable={false}
-          useGlobalPageSearch={false}
-          actions={actions}
-        />
-      ) : (
-        <>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {visibleProjects.map((project) => (
-              <Card key={project.id} className="group hover:shadow-md transition-all animate-fade-in">
-                <CardContent className="p-6">
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="h-12 w-12 rounded-lg bg-info/10 flex items-center justify-center">
-                      <FolderKanban className="h-6 w-6 text-info" />
+        metrics={[
+          { label: "Visible projects", value: totalProjects, helper: "Portfolio records in this view", icon: FolderKanban, tone: "primary" },
+          { label: "Active", value: activeProjectCount, helper: "Currently open and active projects", icon: Eye, tone: "success" },
+          { label: "With codes", value: codedProjectCount, helper: "Projects with an assigned internal code", icon: Pencil },
+          { label: "Scheduled", value: datedProjectCount, helper: "Projects with a recorded start date", icon: Calendar, tone: "warning" },
+        ]}
+        panelTitle="Project portfolio"
+        panelDescription="Switch between list and portfolio views while keeping the same workspace shell and record actions."
+      >
+        {viewMode === "list" ? (
+          <DataTable
+            columns={columns}
+            data={visibleProjects}
+            pagination={false}
+            externalPage={page}
+            pageSize={pageSize}
+            searchable={false}
+            useGlobalPageSearch={false}
+            actions={actions}
+            pageSizeOptions={[10, 20, 50, 100]}
+            onExternalPageChange={setPage}
+            onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
+            onDisplayStateChange={setTableDisplay}
+          />
+        ) : (
+          <>
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+              {pagedProjects.map((project) => (
+                <Card key={project.id} className="group hover:shadow-md transition-all animate-fade-in">
+                  <CardContent className="p-6">
+                    <div className="mb-4 flex items-start justify-between">
+                      <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-info/10">
+                        <FolderKanban className="h-6 w-6 text-info" />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge variant={project.is_active ? "default" : "secondary"} className={project.is_active ? "bg-success" : ""}>
+                          {project.is_active ? "Active" : "Inactive"}
+                        </Badge>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 transition-opacity group-hover:opacity-100">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => handleView(project.id)}>
+                              <Eye className="h-4 w-4 mr-2" /> View Details
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleEdit(project)}>
+                              <Pencil className="h-4 w-4 mr-2" /> Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuItem className="text-destructive" onClick={() => handleDelete(project.id)}>
+                              <Trash2 className="h-4 w-4 mr-2" /> Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Badge variant={project.is_active ? "default" : "secondary"} className={project.is_active ? "bg-success" : ""}>
-                        {project.is_active ? "Active" : "Inactive"}
-                      </Badge>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => handleView(project.id)}>
-                            <Eye className="h-4 w-4 mr-2" /> View Details
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleEdit(project)}>
-                            <Pencil className="h-4 w-4 mr-2" /> Edit
-                          </DropdownMenuItem>
-                          <DropdownMenuItem className="text-destructive" onClick={() => handleDelete(project.id)}>
-                            <Trash2 className="h-4 w-4 mr-2" /> Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+
+                    <Badge variant="outline" className="mb-2 font-mono text-xs">{project.code}</Badge>
+                    <h3 className="mb-1 text-lg font-semibold">{project.name}</h3>
+                    <p className="mb-4 text-sm text-muted-foreground line-clamp-2">{project.description}</p>
+
+                    <div className="flex items-center gap-2 border-t pt-4 text-sm text-muted-foreground">
+                      <Calendar className="h-4 w-4" />
+                      <span>Started {project.start_date ? new Date(project.start_date).toLocaleDateString() : "N/A"}</span>
                     </div>
-                  </div>
-
-                  <Badge variant="outline" className="font-mono text-xs mb-2">{project.code}</Badge>
-                  <h3 className="font-semibold text-lg mb-1">{project.name}</h3>
-                  <p className="text-sm text-muted-foreground mb-4 line-clamp-2">{project.description}</p>
-
-                  <div className="flex items-center gap-2 pt-4 border-t text-sm text-muted-foreground">
-                    <Calendar className="h-4 w-4" />
-                    <span>Started {project.start_date ? new Date(project.start_date).toLocaleDateString() : "N/A"}</span>
-                  </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+            {pagedProjects.length === 0 && (
+              <Card>
+                <CardContent className="py-8 text-sm text-muted-foreground">
+                  No projects found.
                 </CardContent>
               </Card>
-            ))}
+            )}
+          </>
+        )}
+        <div className="mt-4 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
+          <p className="text-sm text-muted-foreground">
+            Showing {displayRangeStart} to {displayRangeEnd} of {viewMode === "list" ? displayCount : totalProjects} projects
+          </p>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page === 1}>
+              Previous
+            </Button>
+            <span className="text-sm font-medium">
+              Page {page} of {viewMode === "list" ? displayTotalPages : totalPages}
+            </span>
+            <Button
+              variant="outline"
+              onClick={() => setPage((current) => Math.min(viewMode === "list" ? displayTotalPages : totalPages, current + 1))}
+              disabled={page >= (viewMode === "list" ? displayTotalPages : totalPages)}
+            >
+              Next
+            </Button>
           </div>
-          {visibleProjects.length === 0 && (
-            <Card>
-              <CardContent className="py-8 text-sm text-muted-foreground">
-                No projects found.
-              </CardContent>
-            </Card>
-          )}
-        </>
-      )}
-      <div className="mt-4 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
-        <p className="text-sm text-muted-foreground">
-          Showing {visibleProjects.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1} to{" "}
-          {Math.min(page * PAGE_SIZE, totalProjects)} of {totalProjects} projects
-        </p>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page === 1}>
-            Previous
-          </Button>
-          <span className="text-sm font-medium">
-            Page {page} of {totalPages}
-          </span>
-          <Button
-            variant="outline"
-            onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
-            disabled={page >= totalPages}
-          >
-            Next
-          </Button>
         </div>
-      </div>
+      </CollectionWorkspace>
 
       <ProjectFormModal
         open={isModalOpen}
         onOpenChange={setIsModalOpen}
         project={editingProject}
+        existingProjects={allProjects}
         onSubmit={handleSubmit}
       />
 

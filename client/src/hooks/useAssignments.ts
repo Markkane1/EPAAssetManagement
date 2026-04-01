@@ -7,6 +7,7 @@ import {
 } from '@/services/assignmentService';
 import { toast } from 'sonner';
 import { API_CONFIG } from '@/config/api.config';
+import { refreshActiveQueries } from '@/lib/queryRefresh';
 
 const { queryKeys, query } = API_CONFIG;
 const { heavyList, detail } = query.profiles;
@@ -15,11 +16,26 @@ type QueryToggleOptions = {
   enabled?: boolean;
 };
 
-export const useAssignments = (options: QueryToggleOptions = {}) => {
-  const { enabled = true } = options;
+function isQueryToggleOptions(value: AssignmentListQuery | QueryToggleOptions) {
+  return Boolean(value && typeof value === 'object' && 'enabled' in value && !('page' in value) && !('search' in value));
+}
+
+export const useAssignments = (
+  queryOrOptions: AssignmentListQuery | QueryToggleOptions = {},
+  options: QueryToggleOptions = {}
+) => {
+  const queryParams = isQueryToggleOptions(queryOrOptions) ? {} : queryOrOptions;
+  const resolvedOptions = isQueryToggleOptions(queryOrOptions) ? queryOrOptions : options;
+  const { enabled = true } = resolvedOptions;
   return useQuery({
-    queryKey: queryKeys.assignments,
-    queryFn: assignmentService.getAll,
+    queryKey: [
+      ...queryKeys.assignments,
+      'list',
+      queryParams.search?.trim() ?? '',
+      queryParams.page ?? 'ALL_PAGES',
+      queryParams.limit ?? 'ALL_LIMITS',
+    ],
+    queryFn: () => assignmentService.getAll(queryParams),
     staleTime: heavyList.staleTime,
     refetchOnWindowFocus: heavyList.refetchOnWindowFocus,
     enabled,
@@ -72,9 +88,8 @@ export const useCreateAssignment = () => {
   
   return useMutation({
     mutationFn: (data: AssignmentCreateDto) => assignmentService.create(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.assignments });
-      queryClient.invalidateQueries({ queryKey: queryKeys.assetItems });
+    onSuccess: async () => {
+      await refreshActiveQueries(queryClient, [queryKeys.assignments, queryKeys.assetItems]);
       toast.success('Assignment created successfully');
     },
     onError: (error: Error) => {
@@ -89,8 +104,8 @@ export const useUpdateAssignment = () => {
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: AssignmentUpdateDto }) =>
       assignmentService.update(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.assignments });
+    onSuccess: async () => {
+      await refreshActiveQueries(queryClient, [queryKeys.assignments]);
       toast.success('Assignment updated successfully');
     },
     onError: (error: Error) => {
@@ -104,8 +119,8 @@ export const useRequestReturn = () => {
   
   return useMutation({
     mutationFn: ({ id }: { id: string }) => assignmentService.requestReturn(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.assignments });
+    onSuccess: async () => {
+      await refreshActiveQueries(queryClient, [queryKeys.assignments]);
       toast.success('Return requested successfully');
     },
     onError: (error: Error) => {
@@ -120,21 +135,18 @@ export const useUploadSignedHandoverSlip = (options: { requisitionId?: string; o
   return useMutation({
     mutationFn: ({ id, formData }: { id: string; formData: FormData }) =>
       assignmentService.uploadSignedHandoverSlip(id, formData),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.assignments });
+    onSuccess: async () => {
+      const queryFamilies: Array<readonly unknown[]> = [queryKeys.assignments, queryKeys.assetItems];
       if (options.requisitionId) {
-        queryClient.invalidateQueries({
-          queryKey: [...queryKeys.requisitions, 'detail', options.requisitionId],
-        });
-        queryClient.invalidateQueries({
-          queryKey: [...queryKeys.assignments, 'requisition', options.requisitionId],
-        });
+        queryFamilies.push(
+          [...queryKeys.requisitions, 'detail', options.requisitionId],
+          [...queryKeys.assignments, 'requisition', options.requisitionId]
+        );
       }
       if (options.officeId) {
-        queryClient.invalidateQueries({
-          queryKey: [...queryKeys.assetItems, 'byLocation', options.officeId],
-        });
+        queryFamilies.push([...queryKeys.assetItems, 'byLocation', options.officeId]);
       }
+      await refreshActiveQueries(queryClient, queryFamilies);
       toast.success('Signed handover slip uploaded.');
     },
     onError: (error: Error) => {
@@ -149,21 +161,18 @@ export const useUploadSignedReturnSlip = (options: { requisitionId?: string; off
   return useMutation({
     mutationFn: ({ id, formData }: { id: string; formData: FormData }) =>
       assignmentService.uploadSignedReturnSlip(id, formData),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.assignments });
+    onSuccess: async () => {
+      const queryFamilies: Array<readonly unknown[]> = [queryKeys.assignments, queryKeys.assetItems];
       if (options.requisitionId) {
-        queryClient.invalidateQueries({
-          queryKey: [...queryKeys.requisitions, 'detail', options.requisitionId],
-        });
-        queryClient.invalidateQueries({
-          queryKey: [...queryKeys.assignments, 'requisition', options.requisitionId],
-        });
+        queryFamilies.push(
+          [...queryKeys.requisitions, 'detail', options.requisitionId],
+          [...queryKeys.assignments, 'requisition', options.requisitionId]
+        );
       }
       if (options.officeId) {
-        queryClient.invalidateQueries({
-          queryKey: [...queryKeys.assetItems, 'byLocation', options.officeId],
-        });
+        queryFamilies.push([...queryKeys.assetItems, 'byLocation', options.officeId]);
       }
+      await refreshActiveQueries(queryClient, queryFamilies);
       toast.success('Signed return slip uploaded.');
     },
     onError: (error: Error) => {
@@ -178,8 +187,8 @@ export const useReassignAsset = () => {
   return useMutation({
     mutationFn: ({ id, newEmployeeId, notes }: { id: string; newEmployeeId: string; notes?: string }) =>
       assignmentService.reassign(id, newEmployeeId, notes),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.assignments });
+    onSuccess: async () => {
+      await refreshActiveQueries(queryClient, [queryKeys.assignments]);
       toast.success('Asset reassigned successfully');
     },
     onError: (error: Error) => {
@@ -193,8 +202,8 @@ export const useDeleteAssignment = () => {
   
   return useMutation({
     mutationFn: (id: string) => assignmentService.delete(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.assignments });
+    onSuccess: async () => {
+      await refreshActiveQueries(queryClient, [queryKeys.assignments]);
       toast.success('Assignment deleted successfully');
     },
     onError: (error: Error) => {

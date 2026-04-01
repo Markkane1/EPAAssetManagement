@@ -6,7 +6,23 @@ import { login } from "./helpers";
 const adminRoutes = [
   "/",
   "/assets",
+  "/office/assets",
   "/asset-items",
+  "/office/asset-items",
+  "/consumables",
+  "/consumables/receive",
+  "/office/consumables/receive",
+  "/consumables/containers",
+  "/consumables/units",
+  "/consumables/inventory",
+  "/consumables/transfers",
+  "/consumables/assignments",
+  "/consumables/consume",
+  "/consumables/adjustments",
+  "/consumables/disposal",
+  "/consumables/returns",
+  "/consumables/ledger",
+  "/consumables/expiry",
   "/employees",
   "/assignments",
   "/transfers",
@@ -17,15 +33,25 @@ const adminRoutes = [
   "/vendors",
   "/projects",
   "/reports",
+  "/reports/asset-summary",
+  "/reports/asset-items-inventory",
+  "/reports/assignment-summary",
+  "/reports/status-distribution",
+  "/reports/maintenance-report",
+  "/reports/location-inventory",
+  "/reports/financial-summary",
+  "/reports/employee-assets",
   "/requisitions",
+  "/requisitions/new",
   "/returns",
+  "/returns/new",
   "/settings",
   "/audit-logs",
   "/user-management",
   "/profile",
 ];
 
-const employeeRoutes = ["/", "/my-assets", "/requisitions", "/returns", "/profile"];
+const employeeRoutes = ["/", "/my-assets", "/requisitions", "/requisitions/new", "/returns", "/returns/new", "/profile"];
 
 test.beforeEach(async () => {
   await seedE2E();
@@ -34,6 +60,19 @@ test.beforeEach(async () => {
 test.afterAll(async () => {
   await closeSeedConnection();
 });
+
+async function expectPageReady(page: Parameters<typeof test>[0]["page"]) {
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const body = document.body;
+        if (!body) return "missing";
+        const style = window.getComputedStyle(body);
+        return `${style.visibility}:${body.childElementCount}`;
+      })
+    )
+    .toMatch(/^visible:\d+$/);
+}
 
 function attachConsoleCollectors(page: Parameters<typeof test>[0]["page"], bucket: string[]) {
   page.on("console", (message) => {
@@ -62,9 +101,9 @@ test.describe("console hygiene", () => {
     await expect(page).toHaveURL("/");
 
     for (const path of adminRoutes) {
-      await page.goto(path, { waitUntil: "commit" });
+      await page.goto(path, { waitUntil: "domcontentloaded" });
       await expect(page).not.toHaveURL(/\/login$/);
-      await expect(page.locator("body")).toBeVisible();
+      await expectPageReady(page);
     }
 
     expect(errors).toEqual([]);
@@ -78,9 +117,9 @@ test.describe("console hygiene", () => {
     await expect(page).toHaveURL("/");
 
     for (const path of employeeRoutes) {
-      await page.goto(path, { waitUntil: "commit" });
+      await page.goto(path, { waitUntil: "domcontentloaded" });
       await expect(page).not.toHaveURL(/\/login$/);
-      await expect(page.locator("body")).toBeVisible();
+      await expectPageReady(page);
     }
 
     expect(errors).toEqual([]);

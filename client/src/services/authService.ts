@@ -2,6 +2,7 @@ import api from '@/lib/api';
 
 export type AppRole =
   | 'org_admin'
+  | 'head_office_admin'
   | 'office_head'
   | 'caretaker'
   | 'employee'
@@ -16,6 +17,9 @@ export const normalizeRole = (role?: string | null): AppRole => {
   switch (normalized) {
     case 'org_admin':
       return 'org_admin';
+    case 'head_office_admin':
+    case 'headoffice_admin':
+      return 'head_office_admin';
     case 'office_head':
       return 'office_head';
     case 'caretaker':
@@ -33,6 +37,11 @@ export const normalizeRole = (role?: string | null): AppRole => {
     default:
       return (normalized || 'employee') as AppRole;
   }
+};
+
+export const isOfficeAdminRole = (role?: string | null): boolean => {
+  const normalized = normalizeRole(role);
+  return normalized === 'office_head' || normalized === 'head_office_admin';
 };
 
 const normalizeRoles = (roles: unknown, fallbackRole?: string | null): AppRole[] => {
@@ -79,6 +88,7 @@ export interface AuthResponse {
     role: AppRole;
     activeRole?: AppRole;
     roles?: AppRole[];
+    locationId?: string | null;
   };
 }
 
@@ -90,6 +100,7 @@ export interface User {
   role: AppRole;
   activeRole?: AppRole;
   roles?: AppRole[];
+  locationId?: string | null;
 }
 
 export interface ResetPasswordDto {
@@ -105,6 +116,7 @@ export const authService = {
       role: normalizeRole(response.user.role),
       roles: normalizeRoles(response.user.roles, response.user.role),
       activeRole: resolveActiveRole(response.user.activeRole || response.user.role, normalizeRoles(response.user.roles, response.user.role)),
+      locationId: response.user.locationId || null,
     };
     localStorage.setItem('user', JSON.stringify(normalizedUser));
     return { ...response, user: normalizedUser };
@@ -120,6 +132,7 @@ export const authService = {
       role: normalizeRole(response.user.role),
       roles: normalizeRoles(response.user.roles, response.user.role),
       activeRole: resolveActiveRole(response.user.activeRole || response.user.role, normalizeRoles(response.user.roles, response.user.role)),
+      locationId: response.user.locationId || null,
     };
     return { ...response, user: normalizedUser };
   },
@@ -176,4 +189,3 @@ export const authService = {
 };
 
 export default authService;
-

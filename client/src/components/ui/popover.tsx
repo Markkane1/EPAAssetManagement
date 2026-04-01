@@ -128,7 +128,7 @@ const PopoverContent = React.forwardRef<HTMLDivElement, PopoverContentProps>(
       <div
         ref={mergedRef}
         className={cn(
-          "z-50 w-72 rounded-md border bg-popover p-4 text-popover-foreground shadow-md outline-none",
+          "z-50 w-auto min-w-[min(18rem,calc(100vw-1rem))] max-h-[min(24rem,calc(100vh-1rem))] max-w-[calc(100vw-1rem)] overflow-y-auto overflow-x-hidden rounded-2xl border border-border/80 bg-popover p-3 text-popover-foreground shadow-[0_20px_48px_-28px_rgba(26,28,24,0.18)] outline-none scrollbar-thin sm:p-4",
           className
         )}
         style={style}

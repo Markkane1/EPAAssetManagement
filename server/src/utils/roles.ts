@@ -2,6 +2,7 @@ import { createHttpError } from './httpError';
 
 export const USER_ROLE_VALUES = [
   'org_admin',
+  'head_office_admin',
   'office_head',
   'caretaker',
   'employee',
@@ -13,11 +14,20 @@ export const USER_ROLE_VALUES = [
 
 export type UserRoleValue = (typeof USER_ROLE_VALUES)[number];
 
+export const OFFICE_ADMIN_ROLE_VALUES = ['office_head', 'head_office_admin'] as const;
+export const OFFICE_MANAGER_ROLE_VALUES = [
+  ...OFFICE_ADMIN_ROLE_VALUES,
+  'caretaker',
+  'inventory_controller',
+  'storekeeper',
+] as const;
+
 const ROLE_SET = new Set<string>(USER_ROLE_VALUES);
-const LEGACY_ROLE_ALIAS_MAP: Record<string, UserRoleValue> = {
+export const LEGACY_ROLE_ALIAS_MAP: Record<string, UserRoleValue> = {
   super_admin: 'org_admin',
   admin: 'org_admin',
-  headoffice_admin: 'org_admin',
+  headoffice_admin: 'head_office_admin',
+  head_office_admin: 'head_office_admin',
   auditor: 'org_admin',
   viewer: 'org_admin',
   directorate_head: 'office_head',
@@ -36,6 +46,7 @@ const LEGACY_ROLE_ALIAS_MAP: Record<string, UserRoleValue> = {
 
 const ROLE_CAPABILITY_MAP: Record<UserRoleValue, UserRoleValue[]> = {
   org_admin: ['org_admin'],
+  head_office_admin: ['head_office_admin', 'office_head'],
   office_head: ['office_head'],
   caretaker: ['caretaker'],
   employee: ['employee'],
@@ -45,7 +56,7 @@ const ROLE_CAPABILITY_MAP: Record<UserRoleValue, UserRoleValue[]> = {
   compliance_auditor: ['compliance_auditor'],
 };
 
-const RUNTIME_ROLE_FALLBACK_MAP: Partial<Record<UserRoleValue, UserRoleValue>> = {
+export const RUNTIME_ROLE_FALLBACK_MAP: Partial<Record<UserRoleValue, UserRoleValue>> = {
   storekeeper: 'caretaker',
   inventory_controller: 'caretaker',
 };
@@ -114,6 +125,19 @@ export function resolveActiveRole(inputRole: unknown, availableRoles: string[]) 
 export function resolveRuntimeRole(role: string) {
   const normalized = normalizeRole(role);
   return RUNTIME_ROLE_FALLBACK_MAP[normalized] || normalized;
+}
+
+export function isGlobalAdminRole(role?: string | null) {
+  return normalizeCanonicalRole(role) === 'org_admin';
+}
+
+export function isHeadOfficeAdminRole(role?: string | null) {
+  return normalizeCanonicalRole(role) === 'head_office_admin';
+}
+
+export function isOfficeAdminRole(role?: string | null) {
+  const normalized = normalizeCanonicalRole(role);
+  return normalized === 'office_head' || normalized === 'head_office_admin';
 }
 
 export function expandRoleCapabilities(roles: string[]) {

@@ -453,7 +453,7 @@ export default function Dashboard() {
                   >
                     <div>
                       <p className="font-medium text-sm">{location.name}</p>
-                      <p className="max-w-[220px] truncate text-xs text-muted-foreground">
+                      <p className="max-w-[220px] break-words text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]">
                         {location.address}
                       </p>
                     </div>
@@ -468,7 +468,7 @@ export default function Dashboard() {
                 <div className="flex items-center justify-between rounded-2xl bg-muted/35 p-3 transition-colors hover:bg-muted/55">
                   <div>
                     <p className="font-medium text-sm">Head Office Store</p>
-                    <p className="max-w-[220px] truncate text-xs text-muted-foreground">System Store</p>
+                    <p className="max-w-[220px] break-words text-xs leading-5 text-muted-foreground">System Store</p>
                   </div>
                   <div className="text-right">
                     <p className="font-semibold text-sm">{storeItemCount}</p>

@@ -16,6 +16,9 @@ const statusStyles: Record<string, string> = {
   Damaged: "status-damaged",
   Retired: "status-retired",
   Transferred: "bg-info/10 text-info",
+  Functional: "bg-success/10 text-success",
+  "Needs Repair": "bg-warning/10 text-warning",
+  "Non-Repairable": "bg-destructive/10 text-destructive",
   
   // Assignment Status
   Unassigned: "bg-muted text-muted-foreground",
@@ -60,6 +63,7 @@ export function StatusBadge({ status, className }: StatusBadgeProps) {
   const normalizedStatus = String(status || "").trim();
   return (
     <span
+      title={normalizedStatus || "UNKNOWN"}
       className={cn(
         "status-badge",
         statusStyles[normalizedStatus] || "border-border bg-muted text-muted-foreground",

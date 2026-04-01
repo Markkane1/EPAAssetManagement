@@ -5,6 +5,7 @@ import morgan from 'morgan';
 import cookieParser from 'cookie-parser';
 import compression from 'compression';
 import mongoSanitize from 'express-mongo-sanitize';
+import mongoose from 'mongoose';
 import { clean as cleanXssPayload } from 'xss-clean/lib/xss';
 import { env } from './config/env';
 import routes from './routes';
@@ -212,7 +213,12 @@ export function createApp() {
   });
 
   app.get('/health', (_req, res) => {
-    res.json({ status: 'ok' });
+    // readyState: 0=disconnected, 1=connected, 2=connecting, 3=disconnecting
+    const dbConnected = mongoose.connection.readyState === 1;
+    if (!dbConnected) {
+      return res.status(503).json({ status: 'degraded', db: 'disconnected' });
+    }
+    return res.json({ status: 'ok', db: 'connected' });
   });
 
   app.use('/api', routes);

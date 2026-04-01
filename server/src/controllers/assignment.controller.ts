@@ -21,6 +21,7 @@ import { getAssetItemOfficeId, officeAssetItemFilter } from '../utils/assetHolde
 import { createBulkNotifications } from '../services/notification.service';
 import { generateHandoverSlip, generateReturnSlip } from '../services/assignmentSlip.service';
 import { AssetModel } from '../models/asset.model';
+import { getAssetItemAssignmentBlockReason } from '../utils/assetItemStatusRules';
 
 import {
   OPEN_ASSIGNMENT_STATUSES,
@@ -450,11 +451,9 @@ export const assignmentController = {
       if (assetItemOfficeId !== requisitionOfficeId) {
         throw createHttpError(400, 'Asset item must belong to the requisition office');
       }
-      if (assetItem.assignment_status !== 'Unassigned') {
-        throw createHttpError(400, 'Asset item already assigned');
-      }
-      if (assetItem.is_active === false) {
-        throw createHttpError(400, 'Cannot assign an inactive asset item');
+      const assignmentBlockReason = getAssetItemAssignmentBlockReason(assetItem);
+      if (assignmentBlockReason) {
+        throw createHttpError(400, assignmentBlockReason);
       }
 
       if (requisitionLine.asset_id && String(requisitionLine.asset_id) !== String(assetItem.asset_id)) {
@@ -619,6 +618,15 @@ export const assignmentController = {
 
       if (!assignment?.handover_slip_document_id) {
         throw createHttpError(400, 'Handover slip document is missing');
+      }
+
+      const currentAssetItem = await AssetItemModel.findById(assignment.asset_item_id);
+      if (!currentAssetItem) {
+        throw createHttpError(404, 'Asset item not found');
+      }
+      const assignmentBlockReason = getAssetItemAssignmentBlockReason(currentAssetItem);
+      if (assignmentBlockReason) {
+        throw createHttpError(400, assignmentBlockReason);
       }
 
       const signedVersion = await uploadDocumentVersion(
@@ -936,14 +944,20 @@ export const assignmentController = {
       await ensureAssignmentAssetScope(access, assignment);
 
       const payload = buildPayload(req.body);
-      if (payload.asset_item_id) {
-        const targetItem: any = await AssetItemModel.findById(String(payload.asset_item_id));
+      const shouldRevalidateAssetItem = payload.asset_item_id !== undefined || payload.employee_id !== undefined;
+      if (shouldRevalidateAssetItem) {
+        const targetAssetItemId = String(payload.asset_item_id || assignment.asset_item_id || '');
+        const targetItem: any = await AssetItemModel.findById(targetAssetItemId);
         if (!targetItem) {
           throw createHttpError(404, 'Target asset item not found');
         }
         const targetOfficeId = requireAssetItemOfficeId(targetItem, 'Assigned items must be held by an office');
         if (!access.isOrgAdmin) {
           ensureOfficeScope(access, targetOfficeId);
+        }
+        const assignmentBlockReason = getAssetItemAssignmentBlockReason(targetItem);
+        if (assignmentBlockReason) {
+          throw createHttpError(400, assignmentBlockReason);
         }
       }
 
@@ -974,8 +988,9 @@ export const assignmentController = {
       if (String(assignment.status) !== 'RETURNED') {
         throw createHttpError(400, 'Reassign is allowed only after assignment is RETURNED');
       }
-      if (assetItem.assignment_status !== 'Unassigned') {
-        throw createHttpError(400, 'Asset item must be Unassigned before reassigning');
+      const assignmentBlockReason = getAssetItemAssignmentBlockReason(assetItem);
+      if (assignmentBlockReason) {
+        throw createHttpError(400, assignmentBlockReason);
       }
 
       const employee = await EmployeeModel.findById(newEmployeeId);

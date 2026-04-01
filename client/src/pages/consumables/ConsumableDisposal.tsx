@@ -3,8 +3,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { MainLayout } from '@/components/layout/MainLayout';
-import { PageHeader } from '@/components/shared/PageHeader';
-import { Card, CardContent } from '@/components/ui/card';
+import { CollectionWorkspace } from '@/components/shared/CollectionWorkspace';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -15,7 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Loader2 } from 'lucide-react';
+import { AlertTriangle, Loader2, MapPin, Package, ShieldAlert } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useConsumableItems } from '@/hooks/useConsumableItems';
 import { useOffices } from '@/hooks/useOffices';
@@ -182,16 +181,29 @@ export default function ConsumableDisposal() {
 
   return (
     <MainLayout title="Consumable Disposal" description="Record disposal of consumables">
-      <PageHeader
+      <CollectionWorkspace
         title="Disposal"
         description="Dispose expired or contaminated materials"
+        eyebrow="Consumables workspace"
+        meta={
+          <>
+            <span>{filteredItems.length} consumable items available in this mode</span>
+            <span className="hidden h-1 w-1 rounded-full bg-border sm:inline-block" />
+            <span>{mode === 'chemicals' ? 'Chemical disposal flow' : 'General disposal flow'}</span>
+          </>
+        }
         extra={<ConsumableModeToggle mode={mode} onChange={setMode} />}
-      />
-
-      <Card>
-        <CardContent className="pt-6">
+        metrics={[
+          { label: 'Locations', value: filteredLocations.length, helper: 'Eligible disposal locations in the current mode', icon: MapPin, tone: 'primary' },
+          { label: 'Items', value: filteredItems.length, helper: 'Consumable items available for disposal review', icon: Package, tone: 'success' },
+          { label: 'Reason codes', value: (reasonCodes || []).length, helper: 'Configured disposal reason codes', icon: ShieldAlert },
+          { label: 'Available qty', value: availableQty, helper: selectedItem?.base_uom || 'Base unit', icon: AlertTriangle, tone: 'warning' },
+        ]}
+        panelTitle="Record disposal"
+        panelDescription="Capture disposal activity in the same dashboard-style shell used across the other consumables operations."
+      >
           <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label>Location *</Label>
                 <SearchableSelect
@@ -258,7 +270,7 @@ export default function ConsumableDisposal() {
             </div>
 
             {requiresContainer && (
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <Label>Container *</Label>
@@ -326,9 +338,9 @@ export default function ConsumableDisposal() {
               </Button>
             </div>
           </form>
-        </CardContent>
-      </Card>
+      </CollectionWorkspace>
     </MainLayout>
   );
 }
+
 

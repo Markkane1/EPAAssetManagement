@@ -102,7 +102,7 @@ const rootModelCases: ModelCase[] = [
     model: AssetModel,
     buildValid: () => ({ name: "Microscope" }),
     required: ["name"],
-    defaults: [["quantity", 1], ["currency", "PKR"], ["is_active", true]],
+    defaults: [["subcategory", null], ["quantity", 1], ["currency", "PKR"], ["is_active", true]],
   },
   {
     name: "AssetItemModel",
@@ -129,7 +129,7 @@ const rootModelCases: ModelCase[] = [
     model: CategoryModel,
     buildValid: () => ({ name: "Equipment" }),
     required: ["name"],
-    defaults: [["scope", "GENERAL"], ["asset_type", "ASSET"]],
+    defaults: [["subcategories", []], ["scope", "GENERAL"], ["asset_type", "ASSET"]],
   },
   {
     name: "ConsumableModel",

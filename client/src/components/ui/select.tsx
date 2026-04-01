@@ -128,11 +128,15 @@ type SelectTriggerProps = React.SelectHTMLAttributes<HTMLSelectElement> &
   };
 
 const SelectTrigger = React.forwardRef<HTMLSelectElement, SelectTriggerProps>(
-  ({ className, __options = [], __placeholder, __value = "", __onValueChange, __disabled, onChange, ...props }, ref) => (
+  ({ className, __options = [], __placeholder, __value = "", __onValueChange, __disabled, onChange, ...props }, ref) => {
+    const selectedLabel = __options.find((option) => option.value === __value)?.label;
+
+    return (
     <div className="relative">
       <select
         ref={ref}
         value={__value}
+        title={selectedLabel || __placeholder}
         disabled={__disabled || props.disabled}
         onChange={(event) => {
           onChange?.(event);
@@ -141,7 +145,7 @@ const SelectTrigger = React.forwardRef<HTMLSelectElement, SelectTriggerProps>(
           }
         }}
         className={cn(
-          "flex h-11 w-full appearance-none items-center justify-between rounded-xl border border-input/80 bg-background/90 px-3.5 py-2 pr-10 text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.35)] ring-offset-background transition-[border-color,box-shadow,background-color] placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/30 focus:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50 aria-[invalid=true]:border-destructive/55 aria-[invalid=true]:bg-destructive/[0.04]",
+          "flex min-h-11 w-full appearance-none rounded-xl border border-input/80 bg-white px-3.5 py-2 pr-10 text-sm leading-5 ring-offset-background transition-[border-color,box-shadow,background-color] placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/30 focus:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50 aria-[invalid=true]:border-destructive/55 aria-[invalid=true]:bg-destructive/[0.04]",
           className
         )}
         {...props}
@@ -159,7 +163,8 @@ const SelectTrigger = React.forwardRef<HTMLSelectElement, SelectTriggerProps>(
       </select>
       <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 opacity-50" />
     </div>
-  )
+  );
+}
 );
 SelectTrigger.displayName = "SelectTrigger";
 (SelectTrigger as React.ComponentType<SelectTriggerProps> & { __selectPart?: string }).__selectPart = "Trigger";

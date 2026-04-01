@@ -9,6 +9,7 @@ import { env } from '../config/env';
 import type { AuthRequest } from '../middleware/auth';
 import { ADMIN_ROLES } from '../middleware/authorize';
 import {
+  OFFICE_ADMIN_ROLE_VALUES,
   buildUserRoleMatchFilter,
   hasRoleCapability,
   assertKnownRole,
@@ -357,7 +358,9 @@ export const authController = {
       const requesterDirectorateId = employee?.directorate_id || null;
 
       const adminUsers = await UserModel.find(buildUserRoleMatchFilter(['org_admin']));
-      const locationAdminUsers = await UserModel.find(buildUserRoleMatchFilter(['office_head']));
+      const locationAdminUsers = await UserModel.find(
+        buildUserRoleMatchFilter([...OFFICE_ADMIN_ROLE_VALUES])
+      );
       const globalAdmins = adminUsers.filter((admin) => !admin.location_id);
       const locationAdmins = requesterLocationId
         ? [

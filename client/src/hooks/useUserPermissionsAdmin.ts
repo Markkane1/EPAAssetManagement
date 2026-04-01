@@ -3,7 +3,11 @@ import { toast } from 'sonner';
 import { API_CONFIG } from '@/config/api.config';
 import { userPermissionService } from '@/services/userPermissionService';
 import type { RolePermission } from '@/services/userPermissionService';
-import { setRuntimeRolePermissions } from '@/config/pagePermissions';
+import {
+  setRuntimeAuthorizationCatalog,
+  setRuntimeAuthorizationPolicy,
+  setRuntimeRolePermissions,
+} from '@/config/pagePermissions';
 
 const { queryKeys, query } = API_CONFIG;
 const { referenceData } = query.profiles;
@@ -23,6 +27,8 @@ export const useUpdateRolePermissionsCatalog = () => {
     mutationFn: (payload: { roles: RolePermission[] }) =>
       userPermissionService.updateRolePermissions(payload),
     onSuccess: (response) => {
+      setRuntimeAuthorizationCatalog(response.catalog);
+      setRuntimeAuthorizationPolicy(response.policy || response.authorization_policy || null);
       setRuntimeRolePermissions(response.roles);
       queryClient.setQueryData([...queryKeys.pagePermissions, 'catalog'], response);
       toast.success('Permissions saved successfully');

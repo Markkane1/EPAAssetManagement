@@ -117,7 +117,7 @@ export function ConsumableFormModal({
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label>Category</Label>
               <Select value={form.watch("categoryId") || ""} onValueChange={(v) => form.setValue("categoryId", v)}>
@@ -138,7 +138,7 @@ export function ConsumableFormModal({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="totalQuantity">Total Quantity *</Label>
               <Input id="totalQuantity" type="number" min={0} step="0.01" {...form.register("totalQuantity")} />
@@ -178,3 +178,4 @@ export function ConsumableFormModal({
     </Dialog>
   );
 }
+

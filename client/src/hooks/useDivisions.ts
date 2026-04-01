@@ -3,6 +3,7 @@ import { divisionService } from '@/services/divisionService';
 import type { DivisionCreateDto, DivisionUpdateDto } from '@/services/divisionService';
 import { toast } from 'sonner';
 import { API_CONFIG } from '@/config/api.config';
+import { refreshActiveQueries } from '@/lib/queryRefresh';
 
 const { queryKeys, messages, query } = API_CONFIG;
 
@@ -29,8 +30,8 @@ export const useCreateDivision = () => {
 
   return useMutation({
     mutationFn: (data: DivisionCreateDto) => divisionService.create(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.divisions });
+    onSuccess: async () => {
+      await refreshActiveQueries(queryClient, [queryKeys.divisions]);
       toast.success(messages.divisionCreated);
     },
     onError: (error: Error) => {
@@ -45,8 +46,8 @@ export const useUpdateDivision = () => {
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: DivisionUpdateDto }) =>
       divisionService.update(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.divisions });
+    onSuccess: async () => {
+      await refreshActiveQueries(queryClient, [queryKeys.divisions]);
       toast.success(messages.divisionUpdated);
     },
     onError: (error: Error) => {
@@ -60,8 +61,8 @@ export const useDeleteDivision = () => {
 
   return useMutation({
     mutationFn: (id: string) => divisionService.delete(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.divisions });
+    onSuccess: async () => {
+      await refreshActiveQueries(queryClient, [queryKeys.divisions]);
       toast.success(messages.divisionDeleted);
     },
     onError: (error: Error) => {

@@ -1,6 +1,5 @@
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
-import { PageHeader } from "@/components/shared/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -13,7 +12,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import {
   useCategoryCounts,
-  usePagedCategories,
+  useCategories,
   useCreateCategory,
   useUpdateCategory,
   useDeleteCategory,
@@ -25,11 +24,11 @@ import { ViewModeToggle } from "@/components/shared/ViewModeToggle";
 import { useViewMode } from "@/hooks/useViewMode";
 import { DataTable } from "@/components/shared/DataTable";
 import { useAuth } from "@/contexts/AuthContext";
+import { CollectionWorkspace } from "@/components/shared/CollectionWorkspace";
 
 const EMPTY_CATEGORIES: Category[] = [];
 
 export default function Categories() {
-  const PAGE_SIZE = 60;
   const { isOrgAdmin } = useAuth();
   const createCategory = useCreateCategory();
   const updateCategory = useUpdateCategory();
@@ -38,23 +37,46 @@ export default function Categories() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const { mode: viewMode, setMode: setViewMode } = useViewMode("categories");
   const pageSearch = usePageSearch();
   const searchTerm = useDeferredValue((pageSearch?.term || "").trim());
-  const { data: categoriesResponse, isLoading } = usePagedCategories({
-    page,
-    limit: PAGE_SIZE,
+  const [tableDisplay, setTableDisplay] = useState<{
+    filteredCount: number;
+    totalPages: number;
+    rangeStart: number;
+    rangeEnd: number;
+  } | null>(null);
+  const { data: categoriesResponse, isLoading } = useCategories({
     search: searchTerm || undefined,
   });
-  const visibleCategories = useMemo(() => categoriesResponse?.items ?? EMPTY_CATEGORIES, [categoriesResponse?.items]);
-  const totalCategories = categoriesResponse?.total || visibleCategories.length;
-  const totalPages = Math.max(1, Math.ceil(totalCategories / PAGE_SIZE));
+  const visibleCategories = useMemo(() => categoriesResponse ?? EMPTY_CATEGORIES, [categoriesResponse]);
+  const pagedCategories = useMemo(
+    () => visibleCategories.slice((page - 1) * pageSize, page * pageSize),
+    [page, pageSize, visibleCategories]
+  );
+  const totalCategories = visibleCategories.length;
+  const totalPages = Math.max(1, Math.ceil(totalCategories / pageSize));
+  const displayCount = tableDisplay?.filteredCount ?? totalCategories;
+  const displayTotalPages = tableDisplay?.totalPages ?? totalPages;
+  const displayRangeStart = viewMode === "list"
+    ? (tableDisplay?.rangeStart ?? (displayCount === 0 ? 0 : (page - 1) * pageSize + 1))
+    : totalCategories === 0 ? 0 : (page - 1) * pageSize + 1;
+  const displayRangeEnd = viewMode === "list"
+    ? (tableDisplay?.rangeEnd ?? Math.min(page * pageSize, displayCount))
+    : Math.min(page * pageSize, totalCategories);
   const categoryIds = useMemo(() => visibleCategories.map((category) => category.id), [visibleCategories]);
   const { data: categoryCounts, isLoading: isCountsLoading } = useCategoryCounts(categoryIds);
 
   useEffect(() => {
     setPage(1);
   }, [searchTerm]);
+
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
 
   const assetCountByCategoryId = useMemo(
     () => categoryCounts?.assets || {},
@@ -71,6 +93,12 @@ export default function Categories() {
     }
     return assetCountByCategoryId[category.id] || 0;
   };
+  const consumableCategoryCount = visibleCategories.filter((category) => category.asset_type === "CONSUMABLE").length;
+  const labOnlyCount = visibleCategories.filter((category) => category.scope === "LAB_ONLY").length;
+  const totalVisibleSubcategories = visibleCategories.reduce(
+    (sum, category) => sum + (category.subcategories?.length || 0),
+    0
+  );
 
   const handleAddCategory = () => {
     setEditingCategory(null);
@@ -82,11 +110,18 @@ export default function Categories() {
     setIsModalOpen(true);
   };
 
-  const handleSubmit = async (data: { name: string; description?: string; scope: "GENERAL" | "LAB_ONLY"; assetType: "ASSET" | "CONSUMABLE" }) => {
+  const handleSubmit = async (data: {
+    name: string;
+    description?: string;
+    subcategories?: string[];
+    scope: "GENERAL" | "LAB_ONLY";
+    assetType: "ASSET" | "CONSUMABLE";
+  }) => {
     if (editingCategory) {
       await updateCategory.mutateAsync({ id: editingCategory.id, data });
     } else {
       await createCategory.mutateAsync(data);
+      setPage(1);
     }
   };
 
@@ -106,6 +141,26 @@ export default function Categories() {
           <p className="text-xs text-muted-foreground">{row.description || "No description"}</p>
         </div>
       ),
+    },
+    {
+      key: "subcategories",
+      label: "Subcategories",
+      render: (value: string[] | null | undefined) => {
+        const subcategories = value || [];
+        if (subcategories.length === 0) {
+          return <span className="text-sm text-muted-foreground">No subcategories</span>;
+        }
+        return (
+          <div className="flex flex-wrap gap-1">
+            {subcategories.slice(0, 3).map((subcategory) => (
+              <Badge key={subcategory} variant="secondary">{subcategory}</Badge>
+            ))}
+            {subcategories.length > 3 && (
+              <Badge variant="outline">+{subcategories.length - 3} more</Badge>
+            )}
+          </div>
+        );
+      },
     },
     {
       key: "asset_type",
@@ -173,105 +228,133 @@ export default function Categories() {
 
   return (
     <MainLayout title="Categories" description="Organize categories by module">
-      <PageHeader
+      <CollectionWorkspace
         title="Categories"
         description="View and manage moveable and consumable categories"
+        eyebrow="Classification workspace"
+        meta={
+          <>
+            <span>{totalCategories} visible categories</span>
+            <span className="hidden h-1 w-1 rounded-full bg-border sm:inline-block" />
+            <span>{viewMode === "list" ? "Operational list view" : "Browse category cards"}</span>
+          </>
+        }
         action={{ label: "Add Category", onClick: handleAddCategory }}
         extra={<ViewModeToggle mode={viewMode} onModeChange={setViewMode} />}
-      />
-
-      {viewMode === "list" ? (
-        <DataTable
-          columns={columns}
-          data={visibleCategories}
-          pagination={false}
-          searchable={false}
-          useGlobalPageSearch={false}
-          actions={actions}
-        />
-      ) : (
-        <>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {visibleCategories.map((category) => (
-              <Card key={category.id} className="group hover:shadow-md transition-all animate-fade-in">
-                <CardContent className="p-6">
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="h-12 w-12 rounded-lg bg-accent/10 flex items-center justify-center">
-                      <Package className="h-6 w-6 text-accent-foreground" />
-                    </div>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => handleEdit(category)}>
-                          <Pencil className="h-4 w-4 mr-2" /> Edit
-                        </DropdownMenuItem>
-                        {isOrgAdmin && (
-                          <DropdownMenuItem className="text-destructive" onClick={() => handleDelete(category.id)}>
-                            <Trash2 className="h-4 w-4 mr-2" /> Delete
+        metrics={[
+          { label: "Visible categories", value: totalCategories, helper: "Current category records in scope", icon: Package, tone: "primary" },
+          { label: "Consumable", value: consumableCategoryCount, helper: "Categories tied to consumable stock", icon: MoreHorizontal, tone: "success" },
+          { label: "Lab only", value: labOnlyCount, helper: "Categories limited to lab workflows", icon: Trash2, tone: "warning" },
+          { label: "Subcategories", value: totalVisibleSubcategories, helper: "Nested subcategory definitions in view", icon: Pencil },
+        ]}
+        panelTitle="Category library"
+        panelDescription="Manage the category taxonomy in one worklist, with the same dashboard-aligned shell used across operational modules."
+      >
+        {viewMode === "list" ? (
+          <DataTable
+            columns={columns}
+            data={visibleCategories}
+            pagination={false}
+            externalPage={page}
+            pageSize={pageSize}
+            searchable={false}
+            useGlobalPageSearch={false}
+            actions={actions}
+            pageSizeOptions={[10, 20, 50, 100]}
+            onExternalPageChange={setPage}
+            onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
+            onDisplayStateChange={setTableDisplay}
+          />
+        ) : (
+          <>
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+              {pagedCategories.map((category) => (
+                <Card key={category.id} className="group hover:shadow-md transition-all animate-fade-in">
+                  <CardContent className="p-6">
+                    <div className="mb-4 flex items-start justify-between">
+                      <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-accent/10">
+                        <Package className="h-6 w-6 text-accent-foreground" />
+                      </div>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 transition-opacity group-hover:opacity-100">
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => handleEdit(category)}>
+                            <Pencil className="h-4 w-4 mr-2" /> Edit
                           </DropdownMenuItem>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
+                          {isOrgAdmin && (
+                            <DropdownMenuItem className="text-destructive" onClick={() => handleDelete(category.id)}>
+                              <Trash2 className="h-4 w-4 mr-2" /> Delete
+                            </DropdownMenuItem>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
 
-                  <h3 className="font-semibold text-lg mb-1">{category.name}</h3>
-                  <div className="mb-2 flex gap-2">
-                    <Badge variant={category.asset_type === "CONSUMABLE" ? "default" : "outline"}>
-                      {category.asset_type === "CONSUMABLE" ? "Consumable" : "Moveable"}
-                    </Badge>
-                    <Badge variant={category.scope === "LAB_ONLY" ? "destructive" : "secondary"}>
-                      {category.scope === "LAB_ONLY" ? "Lab Only" : "General"}
-                    </Badge>
-                  </div>
-                  <p className="text-sm text-muted-foreground mb-4">{category.description}</p>
+                    <h3 className="mb-1 text-lg font-semibold">{category.name}</h3>
+                    <div className="mb-2 flex gap-2">
+                      <Badge variant={category.asset_type === "CONSUMABLE" ? "default" : "outline"}>
+                        {category.asset_type === "CONSUMABLE" ? "Consumable" : "Moveable"}
+                      </Badge>
+                      <Badge variant={category.scope === "LAB_ONLY" ? "destructive" : "secondary"}>
+                        {category.scope === "LAB_ONLY" ? "Lab Only" : "General"}
+                      </Badge>
+                    </div>
+                    <p className="mb-4 text-sm text-muted-foreground">{category.description}</p>
+                    {(category.subcategories || []).length > 0 && (
+                      <div className="mb-4 flex flex-wrap gap-2">
+                        {(category.subcategories || []).map((subcategory) => (
+                          <Badge key={subcategory} variant="secondary">{subcategory}</Badge>
+                        ))}
+                      </div>
+                    )}
 
-                  <div className="flex items-center gap-2 pt-4 border-t">
-                    <Package className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-sm">
-                      <span className="font-semibold">{getCategoryItemCount(category)}</span>
-                      <span className="text-muted-foreground ml-1">
-                        {category.asset_type === "CONSUMABLE" ? "consumables" : "assets"}
+                    <div className="flex items-center gap-2 border-t pt-4">
+                      <Package className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-sm">
+                        <span className="font-semibold">{getCategoryItemCount(category)}</span>
+                        <span className="ml-1 text-muted-foreground">
+                          {category.asset_type === "CONSUMABLE" ? "consumables" : "assets"}
+                        </span>
                       </span>
-                    </span>
-                  </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+            {pagedCategories.length === 0 && (
+              <Card>
+                <CardContent className="py-8 text-sm text-muted-foreground">
+                  No categories found.
                 </CardContent>
               </Card>
-            ))}
+            )}
+          </>
+        )}
+        <div className="mt-4 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
+          <p className="text-sm text-muted-foreground">
+            Showing {displayRangeStart} to {displayRangeEnd} of {viewMode === "list" ? displayCount : totalCategories} categories
+          </p>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page === 1}>
+              Previous
+            </Button>
+            <span className="text-sm font-medium">
+              Page {page} of {viewMode === "list" ? displayTotalPages : totalPages}
+            </span>
+            <Button
+              variant="outline"
+              onClick={() => setPage((current) => Math.min(viewMode === "list" ? displayTotalPages : totalPages, current + 1))}
+              disabled={page >= (viewMode === "list" ? displayTotalPages : totalPages)}
+            >
+              Next
+            </Button>
           </div>
-          {visibleCategories.length === 0 && (
-            <Card>
-              <CardContent className="py-8 text-sm text-muted-foreground">
-                No categories found.
-              </CardContent>
-            </Card>
-          )}
-        </>
-      )}
-      <div className="mt-4 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
-        <p className="text-sm text-muted-foreground">
-          Showing {visibleCategories.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1} to{" "}
-          {Math.min(page * PAGE_SIZE, totalCategories)} of {totalCategories} categories
-        </p>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page === 1}>
-            Previous
-          </Button>
-          <span className="text-sm font-medium">
-            Page {page} of {totalPages}
-          </span>
-          <Button
-            variant="outline"
-            onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
-            disabled={page >= totalPages}
-          >
-            Next
-          </Button>
         </div>
-      </div>
+      </CollectionWorkspace>
 
       <CategoryFormModal
         open={isModalOpen}

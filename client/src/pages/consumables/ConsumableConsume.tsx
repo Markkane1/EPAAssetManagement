@@ -3,8 +3,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { MainLayout } from '@/components/layout/MainLayout';
-import { PageHeader } from '@/components/shared/PageHeader';
-import { Card, CardContent } from '@/components/ui/card';
+import { CollectionWorkspace } from '@/components/shared/CollectionWorkspace';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -23,7 +22,7 @@ import {
   CommandItem,
   CommandList,
 } from '@/components/ui/command';
-import { Loader2 } from 'lucide-react';
+import { FlaskConical, Loader2, MapPin, Package, Users } from 'lucide-react';
 import { useConsumableItems } from '@/hooks/useConsumableItems';
 import { useOffices } from '@/hooks/useOffices';
 import { useConsumableLots } from '@/hooks/useConsumableLots';
@@ -413,14 +412,49 @@ export default function ConsumableConsume() {
 
   return (
     <MainLayout title="Consumable Consumption" description="Record lab consumption">
-      <PageHeader
+      <CollectionWorkspace
         title="Consumption"
         description="Record consumable usage"
+        eyebrow="Consumables workspace"
+        meta={
+          <>
+            <span>{filteredItems.length} consumable items available for consumption</span>
+            <span className="hidden h-1 w-1 rounded-full bg-border sm:inline-block" />
+            <span>{mode === 'chemicals' ? 'Chemical consumption flow' : 'General consumption flow'}</span>
+          </>
+        }
         extra={<ConsumableModeToggle mode={mode} onChange={setMode} />}
-      />
-
-      <Card>
-        <CardContent className="pt-6">
+        metrics={[
+          { label: 'Locations', value: filteredLocations.length, helper: 'Eligible offices or labs in the current mode', icon: MapPin, tone: 'primary' },
+          { label: 'Holders', value: holderOptions.length, helper: 'Available office, employee, or section holders', icon: Users, tone: 'success' },
+          { label: 'Items', value: filteredItems.length, helper: 'Consumable items with stock on hand', icon: Package },
+          { label: 'Available qty', value: availableQty, helper: selectedItem?.base_uom || 'Base unit', icon: FlaskConical, tone: 'warning' },
+        ]}
+        panelTitle="Record consumption"
+        panelDescription="Capture consumable usage with the same dashboard-style shell used across the rest of the inventory workspace."
+        secondaryPanel={{
+          title: 'Current selection',
+          description: 'A compact summary of the active holder and item context before you submit the transaction.',
+          content: (
+            <div className="space-y-4 text-sm">
+              <div className="rounded-xl border border-border/70 bg-white p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Location</p>
+                <p className="mt-2 font-medium">{selectedLocation?.name || 'No location selected'}</p>
+              </div>
+              <div className="rounded-xl border border-border/70 bg-white p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Holder</p>
+                <p className="mt-2 font-medium">{selectedHolder?.label || 'No holder selected'}</p>
+              </div>
+              <div className="rounded-xl border border-border/70 bg-white p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Item</p>
+                <p className="mt-2 font-medium">
+                  {selectedItem ? `${selectedItem.name} (${selectedItemAvailableQty} ${selectedItem.base_uom})` : 'No item selected'}
+                </p>
+              </div>
+            </div>
+          ),
+        }}
+      >
           <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
             <div className="grid grid-cols-3 gap-4">
               <div className="space-y-2">
@@ -491,7 +525,7 @@ export default function ConsumableConsume() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label>Item *</Label>
                 <Popover open={itemPickerOpen} onOpenChange={setItemPickerOpen}>
@@ -502,7 +536,7 @@ export default function ConsumableConsume() {
                         : 'Search item by name...'}
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                  <PopoverContent className="p-0" align="start">
                     <Command>
                       <CommandInput placeholder="Type item name..." />
                       <CommandList>
@@ -584,7 +618,7 @@ export default function ConsumableConsume() {
             </div>
 
             {requiresContainer && (
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label>Container *</Label>
                   <Select
@@ -619,7 +653,7 @@ export default function ConsumableConsume() {
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="qty">Quantity *</Label>
                 <Input id="qty" type="number" min={0} step="0.01" {...form.register('qty')} />
@@ -644,8 +678,9 @@ export default function ConsumableConsume() {
               </Button>
             </div>
           </form>
-        </CardContent>
-      </Card>
+      </CollectionWorkspace>
     </MainLayout>
   );
 }
+
+

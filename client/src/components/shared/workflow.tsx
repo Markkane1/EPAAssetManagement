@@ -30,46 +30,73 @@ export function MetricCard({
   tone = "default",
   trend,
 }: MetricCardProps) {
-  const toneClasses: Record<NonNullable<MetricCardProps["tone"]>, string> = {
-    default: "border-border/80 bg-card",
-    primary: "border-primary/20 bg-primary/[0.06]",
-    success: "border-success/25 bg-success/[0.08]",
-    warning: "border-warning/25 bg-warning/[0.08]",
-    danger: "border-destructive/25 bg-destructive/[0.07]",
+  const accentColor: Record<NonNullable<MetricCardProps["tone"]>, string> = {
+    default:  "bg-muted/60 text-muted-foreground",
+    primary:  "bg-[#256d01]/10 text-[#256d01]",
+    success:  "bg-success/10 text-success",
+    warning:  "bg-warning/10 text-warning",
+    danger:   "bg-destructive/10 text-destructive",
   };
 
-  const iconToneClasses: Record<NonNullable<MetricCardProps["tone"]>, string> = {
-    default: "bg-foreground/5 text-foreground/80",
-    primary: "bg-primary/12 text-primary",
-    success: "bg-success/12 text-success",
-    warning: "bg-warning/16 text-warning",
-    danger: "bg-destructive/12 text-destructive",
+  const accentStrip: Record<NonNullable<MetricCardProps["tone"]>, string> = {
+    default: "bg-border/60",
+    primary: "bg-[#256d01]",
+    success: "bg-success",
+    warning: "bg-warning",
+    danger:  "bg-destructive",
   };
 
   return (
-    <Card className={cn("workflow-metric-card", toneClasses[tone])}>
-      <CardContent className="p-5">
-        <div className="flex items-start justify-between gap-4">
-          <div className="space-y-2">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-              {label}
-            </p>
-            <div className="space-y-1">
-              <p className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
-                {typeof value === "number" ? value.toLocaleString() : value}
-              </p>
-              {helper && <p className="text-sm text-muted-foreground">{helper}</p>}
-            </div>
-          </div>
+    <div
+      className={cn(
+        "workflow-metric-card relative h-full overflow-hidden rounded-2xl bg-white",
+        "border border-[rgba(26,28,24,0.09)]",
+        "shadow-[0_4px_32px_rgba(26,28,24,0.05)]",
+        "flex flex-col min-h-[9.4rem]"
+      )}
+    >
+      {/* tone accent strip */}
+      <div className={cn("h-[3px] w-full flex-shrink-0", accentStrip[tone])} />
+
+      <div className="relative flex flex-1 flex-col p-6 pt-5">
+        {/* label + icon row */}
+        <div className="flex items-start justify-between gap-3">
+          <p className="text-[10.5px] font-semibold uppercase leading-[1.2] tracking-[0.2em] text-muted-foreground/75">
+            {label}
+          </p>
           {Icon && (
-            <div className={cn("flex h-11 w-11 items-center justify-center rounded-2xl", iconToneClasses[tone])}>
-              <Icon className="h-5 w-5" />
+            <div
+              className={cn(
+                "flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl",
+                accentColor[tone]
+              )}
+            >
+              <Icon className="h-4 w-4" strokeWidth={1.5} />
             </div>
           )}
         </div>
-        {trend && <div className="mt-4 text-xs font-medium text-muted-foreground">{trend}</div>}
-      </CardContent>
-    </Card>
+
+        {/* value + helper */}
+        <div className="mt-4 flex flex-1 flex-col justify-end space-y-1.5">
+          <p
+            className="font-['Manrope',sans-serif] text-[2.5rem] font-bold leading-none tracking-[-0.03em] text-foreground"
+            style={{ fontFamily: "'Manrope', sans-serif" }}
+          >
+            {typeof value === "number" ? value.toLocaleString() : value}
+          </p>
+          {helper && (
+            <p className="text-[0.8125rem] leading-5 text-muted-foreground/80">
+              {helper}
+            </p>
+          )}
+          {trend && (
+            <div className="pt-1 text-[0.8125rem] font-medium leading-5 text-muted-foreground">
+              {trend}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -218,7 +245,7 @@ export function TimelineList({
             <div className="relative z-10 flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
               <Icon className="h-4 w-4" />
             </div>
-            <div className="min-w-0 flex-1 rounded-2xl border border-border/70 bg-background/80 p-4">
+            <div className="min-w-0 flex-1 rounded-2xl border border-border/70 bg-white p-4">
               <div className="flex flex-wrap items-center gap-2">
                 <p className="font-medium text-foreground">{item.title}</p>
                 {item.badge && <Badge variant="outline" className="rounded-full px-2.5 py-1 text-[11px]">{item.badge}</Badge>}

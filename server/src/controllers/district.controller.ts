@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { createCrudController } from './crudController';
 import { DistrictModel } from '../models/district.model';
 import { DivisionModel } from '../models/division.model';
+import { syncOfficeReferenceData } from '../services/officeReferenceSync.service';
 
 const baseController = createCrudController({
   repository: {
@@ -49,6 +50,7 @@ export const districtController = {
   ...baseController,
   list: async (req: Request, res: Response, next: NextFunction) => {
     try {
+      await syncOfficeReferenceData();
       const { divisionId } = req.query;
       const filter: Record<string, unknown> = {};
       if (divisionId) {
@@ -58,7 +60,7 @@ export const districtController = {
       const page = clampInt((req.query as Record<string, unknown>).page, 1, 1, 100000);
       const skip = (page - 1) * limit;
       const data = await DistrictModel.find(filter)
-        .sort({ created_at: -1 })
+        .sort({ name: 1, created_at: -1 })
         .skip(skip)
         .limit(limit)
         .lean();

@@ -24,6 +24,7 @@ describe("consumable mongoose models", () => {
     it("should require name and base_uom and populate boolean defaults", async () => {
       const doc = new ConsumableItemModel({ name: "Acetone", base_uom: "ml" });
       await expect(doc.validate()).resolves.toBeUndefined();
+      expect(doc.subcategory).toBe(null);
       expect(doc.is_hazardous).toBe(false);
       expect(doc.requires_lot_tracking).toBe(true);
 

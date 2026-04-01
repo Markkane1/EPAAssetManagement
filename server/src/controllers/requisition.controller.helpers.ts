@@ -28,6 +28,7 @@ import { ConsumableInventoryTransactionModel } from '../modules/consumables/mode
 import { generateAndStoreIssuanceReport } from '../services/requisitionIssuanceReport.service';
 import { createBulkNotifications } from '../services/notification.service';
 import { isAssetItemHeldByOffice } from '../utils/assetHolder';
+import { OFFICE_ADMIN_ROLE_VALUES } from '../utils/roles';
 import {
   readParam,
   asNonEmptyString,
@@ -38,8 +39,8 @@ import {
 } from '../utils/requestParsing';
 
 const ALLOWED_SUBMITTER_ROLES = new Set(['employee']);
-const DISTRICT_LAB_VERIFIER_ROLES = new Set(['office_head']);
-const HQ_DIRECTORATE_VERIFIER_ROLES = new Set(['office_head']);
+const DISTRICT_LAB_VERIFIER_ROLES = new Set<string>(OFFICE_ADMIN_ROLE_VALUES);
+const HQ_DIRECTORATE_VERIFIER_ROLES = new Set<string>(OFFICE_ADMIN_ROLE_VALUES);
 const DISTRICT_LAB_FULFILLER_ROLES = new Set(['caretaker']);
 const HQ_DIRECTORATE_FULFILLER_ROLES = new Set(['caretaker']);
 const LINE_TYPES = new Set(['MOVEABLE', 'CONSUMABLE']);
@@ -416,7 +417,7 @@ async function dispatchDraftAssignmentNotifications(input: {
   const managers = await UserModel.find(
     {
       location_id: input.officeId,
-      role: { $in: ['office_head', 'caretaker'] },
+      role: { $in: ['office_head', 'head_office_admin', 'caretaker'] },
       is_active: true,
     },
     { _id: 1 }

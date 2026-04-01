@@ -9,6 +9,7 @@ import type {
   RequisitionVerifyPayload,
 } from '@/services/requisitionService';
 import { assignmentService } from '@/services/assignmentService';
+import { refreshActiveQueries } from '@/lib/queryRefresh';
 
 const { queryKeys, query } = API_CONFIG;
 const { heavyList, detail } = query.profiles;
@@ -68,8 +69,8 @@ export const useVerifyRequisition = (id: string) => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: RequisitionVerifyPayload) => requisitionService.verify(id, payload),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.requisitions });
+    onSuccess: async () => {
+      await refreshActiveQueries(queryClient, [queryKeys.requisitions]);
       toast.success('Requisition updated.');
     },
     onError: (error: Error) => {
@@ -88,8 +89,8 @@ export const useMapRequisitionLine = (requisitionId: string) => {
       lineId: string;
       payload: RequisitionLineMapPayload;
     }) => requisitionService.mapLine(requisitionId, lineId, payload),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [...queryKeys.requisitions, 'detail', requisitionId] });
+    onSuccess: async () => {
+      await refreshActiveQueries(queryClient, [[...queryKeys.requisitions, 'detail', requisitionId]]);
       toast.success('Line mapped successfully.');
     },
     onError: (error: Error) => {
@@ -102,12 +103,21 @@ export const useFulfillRequisition = (requisitionId: string, issuingOfficeId?: s
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: RequisitionFulfillPayload) => requisitionService.fulfill(requisitionId, payload),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.requisitions });
-      queryClient.invalidateQueries({ queryKey: [...queryKeys.assignments, 'requisition', requisitionId] });
+    onSuccess: async () => {
+      const queryFamilies: Array<readonly unknown[]> = [
+        queryKeys.requisitions,
+        queryKeys.assignments,
+        [...queryKeys.assignments, 'requisition', requisitionId],
+        queryKeys.assetItems,
+        queryKeys.consumableBalances,
+        queryKeys.consumableLedger,
+        queryKeys.consumableRollup,
+        queryKeys.consumableExpiry,
+      ];
       if (issuingOfficeId) {
-        queryClient.invalidateQueries({ queryKey: [...queryKeys.assetItems, 'byLocation', issuingOfficeId] });
+        queryFamilies.push([...queryKeys.assetItems, 'byLocation', issuingOfficeId]);
       }
+      await refreshActiveQueries(queryClient, queryFamilies);
       toast.success('Fulfillment submitted.');
     },
     onError: (error: Error) => {

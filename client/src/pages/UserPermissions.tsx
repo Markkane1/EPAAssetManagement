@@ -1,4 +1,18 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
+import { format } from "date-fns";
+import { toast } from "sonner";
+import {
+  Download,
+  Eye,
+  Pencil,
+  Plus,
+  Save,
+  Search,
+  Shield,
+  Trash2,
+  UserPlus,
+  Users,
+} from "lucide-react";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,26 +37,14 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { 
-  Download,
-  Shield, 
-  Search, 
-  UserPlus, 
-  Save, 
-  Users,
-  Eye,
-  Pencil,
-  Trash2,
-  Plus
-} from "lucide-react";
-import { toast } from "sonner";
-import { format } from "date-fns";
-import { normalizeRole } from "@/services/authService";
 import {
-  PAGE_ALLOWED_ROLES,
+  buildDefaultPermissionsForRole,
+  getAuthorizationPages,
+  getAuthorizationRoles,
   type AppPageKey,
 } from "@/config/pagePermissions";
 import { usePageSearch } from "@/contexts/PageSearchContext";
+import { normalizeRole } from "@/services/authService";
 import { type RolePermission } from "@/services/userPermissionService";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { exportToCSV } from "@/lib/exportUtils";
@@ -53,47 +55,20 @@ import {
 } from "@/hooks/useUserPermissionsAdmin";
 
 type PermissionType = "view" | "create" | "edit" | "delete";
-type CoreRole = "org_admin" | "office_head" | "caretaker" | "employee";
-type PageCategory = "Main" | "Inventory" | "Management" | "System";
 
 interface PermissionPage {
   id: AppPageKey;
   name: string;
-  category: PageCategory;
+  category: string;
 }
 
-const appPages: PermissionPage[] = [
-  { id: "dashboard", name: "Dashboard", category: "Main" },
-  { id: "profile", name: "Profile", category: "Main" },
-  { id: "requisitions", name: "Requisitions", category: "Main" },
-  { id: "requisitions-new", name: "New Requisition", category: "Main" },
-  { id: "returns", name: "Returns", category: "Main" },
-  { id: "returns-new", name: "New Return Request", category: "Main" },
-  { id: "returns-detail", name: "Return Detail", category: "Main" },
-  { id: "assets", name: "Assets", category: "Inventory" },
-  { id: "asset-items", name: "Asset Items", category: "Inventory" },
-  { id: "consumables", name: "Consumables", category: "Inventory" },
-  { id: "office-consumables", name: "Office Consumables", category: "Inventory" },
-  { id: "assignments", name: "Assignments", category: "Inventory" },
-  { id: "transfers", name: "Transfers", category: "Inventory" },
-  { id: "maintenance", name: "Maintenance", category: "Inventory" },
-  { id: "purchase-orders", name: "Purchase Orders", category: "Inventory" },
-  { id: "employees", name: "Employees", category: "Management" },
-  { id: "offices", name: "Offices", category: "Management" },
-  { id: "rooms-sections", name: "Rooms & Sections", category: "Management" },
-  { id: "categories", name: "Categories", category: "Management" },
-  { id: "vendors", name: "Vendors", category: "Management" },
-  { id: "projects", name: "Projects", category: "Management" },
-  { id: "schemes", name: "Schemes", category: "Management" },
-  { id: "reports", name: "Reports", category: "System" },
-  { id: "compliance", name: "Compliance", category: "System" },
-  { id: "approval-matrix", name: "Approvals Queue", category: "System" },
-  { id: "settings", name: "Settings", category: "System" },
-  { id: "audit-logs", name: "Audit Logs", category: "System" },
-  { id: "user-permissions", name: "User Permissions", category: "System" },
-  { id: "user-management", name: "User Management", category: "System" },
-  { id: "user-activity", name: "User Activity", category: "System" },
-];
+interface CatalogRole {
+  id: string;
+  name: string;
+  description: string;
+  source_roles: string[];
+  system: boolean;
+}
 
 interface UserRole {
   id: string;
@@ -102,43 +77,10 @@ interface UserRole {
   permissions: Record<string, PermissionType[]>;
   usersCount: number;
   sourceRoles?: string[];
+  system?: boolean;
 }
 
 const ALL_ACTIONS: PermissionType[] = ["view", "create", "edit", "delete"];
-const CORE_ROLE_SET = new Set<CoreRole>([
-  "org_admin",
-  "office_head",
-  "caretaker",
-  "employee",
-]);
-const APP_PAGE_SET = new Set<string>(appPages.map((page) => page.id));
-
-const ROLE_ACTION_OVERRIDES: Record<
-  CoreRole,
-  Partial<Record<AppPageKey, PermissionType[]>>
-> = {
-  org_admin: {},
-  office_head: {
-    "rooms-sections": ["view", "create", "edit", "delete"],
-    assets: ["view", "create", "edit", "delete"],
-    "asset-items": ["view", "create", "edit", "delete"],
-    "office-consumables": ["view", "create", "edit", "delete"],
-    requisitions: ["view", "edit"],
-    returns: ["view", "edit"],
-    "returns-detail": ["view", "edit"],
-  },
-  caretaker: {
-    "rooms-sections": ["view", "create", "edit", "delete"],
-    requisitions: ["view", "edit"],
-    returns: ["view", "edit"],
-    "returns-detail": ["view", "edit"],
-  },
-  employee: {
-    "requisitions-new": ["view", "create"],
-    "returns-new": ["view", "create"],
-    profile: ["view", "edit"],
-  },
-};
 
 function normalizePermissionList(actions: PermissionType[]) {
   const unique = new Set(actions);
@@ -150,7 +92,7 @@ function normalizePermissionList(actions: PermissionType[]) {
   return Array.from(unique);
 }
 
-function createEmptyPermissionMap() {
+function createEmptyPermissionMap(appPages: PermissionPage[]) {
   return appPages.reduce((acc, page) => {
     acc[page.id] = [];
     return acc;
@@ -168,52 +110,40 @@ function sanitizePermissionActions(actions: unknown): PermissionType[] {
 }
 
 function sanitizePermissionMap(
-  permissions: unknown
+  permissions: unknown,
+  appPages: PermissionPage[]
 ): Record<string, PermissionType[]> {
-  const base = createEmptyPermissionMap();
+  const pageSet = new Set<string>(appPages.map((page) => page.id));
+  const base = createEmptyPermissionMap(appPages);
   if (!permissions || typeof permissions !== "object") {
     return base;
   }
   Object.entries(permissions as Record<string, unknown>).forEach(
     ([pageId, actions]) => {
-      if (!APP_PAGE_SET.has(pageId)) return;
+      if (!pageSet.has(pageId)) return;
       base[pageId] = sanitizePermissionActions(actions);
     }
   );
-
-  const raw = permissions as Record<string, unknown>;
-  const legacyAssetActions = sanitizePermissionActions(raw["office-assets"]);
-  if (legacyAssetActions.length > 0) {
-    base.assets = normalizePermissionList([
-      ...(base.assets || []),
-      ...legacyAssetActions,
-    ]);
-  }
-  const legacyAssetItemActions = sanitizePermissionActions(raw["office-asset-items"]);
-  if (legacyAssetItemActions.length > 0) {
-    base["asset-items"] = normalizePermissionList([
-      ...(base["asset-items"] || []),
-      ...legacyAssetItemActions,
-    ]);
-  }
-
   return base;
 }
 
-function sanitizeSourceRoles(sourceRoles: unknown): string[] {
+function sanitizeSourceRoles(sourceRoles: unknown, validRoleIds: Set<string>): string[] {
   if (!Array.isArray(sourceRoles)) return [];
   return Array.from(
     new Set(
       sourceRoles
         .map((entry) => String(entry || "").trim())
-        .filter((entry): entry is CoreRole =>
-          CORE_ROLE_SET.has(entry as CoreRole)
-        )
+        .filter((entry) => validRoleIds.has(entry))
     )
   );
 }
 
-function normalizeStoredRoles(rows: unknown): UserRole[] {
+function normalizeStoredRoles(
+  rows: unknown,
+  appPages: PermissionPage[],
+  validRoleIds: Set<string>,
+  systemRoleIds: Set<string>
+): UserRole[] {
   if (!Array.isArray(rows)) return [];
   return rows
     .map((entry) => {
@@ -222,90 +152,59 @@ function normalizeStoredRoles(rows: unknown): UserRole[] {
       const id = String(record.id || "").trim();
       const name = String(record.name || "").trim();
       if (!id || !name) return null;
-      const description = String(record.description || "").trim();
       return {
         id,
         name,
-        description,
+        description: String(record.description || "").trim(),
         usersCount: 0,
-        sourceRoles: sanitizeSourceRoles(record.sourceRoles),
-        permissions: sanitizePermissionMap(record.permissions),
+        system: systemRoleIds.has(id),
+        sourceRoles: sanitizeSourceRoles(record.sourceRoles, validRoleIds),
+        permissions: sanitizePermissionMap(record.permissions, appPages),
       } as UserRole;
     })
     .filter((role): role is UserRole => Boolean(role));
 }
 
-function serializeRolesForSave(roles: UserRole[]): RolePermission[] {
+function serializeRolesForSave(
+  roles: UserRole[],
+  validRoleIds: Set<string>,
+  appPages: PermissionPage[]
+): RolePermission[] {
   return roles.map((role) => ({
     id: String(role.id || "").trim(),
     name: String(role.name || "").trim(),
     description: String(role.description || "").trim(),
-    sourceRoles: sanitizeSourceRoles(role.sourceRoles),
-    permissions: sanitizePermissionMap(role.permissions),
+    sourceRoles: sanitizeSourceRoles(role.sourceRoles, validRoleIds),
+    permissions: sanitizePermissionMap(role.permissions, appPages),
   }));
 }
 
-function buildDefaultPermissions(role: CoreRole) {
-  const permissions: Record<string, PermissionType[]> = {};
-  appPages.forEach((page) => {
-    if (role === "org_admin") {
-      permissions[page.id] = [...ALL_ACTIONS];
-      return;
-    }
-    const allowedRoles = PAGE_ALLOWED_ROLES[page.id] || [];
-    permissions[page.id] = allowedRoles.includes(role) ? ["view"] : [];
-  });
-
-  const overrides = ROLE_ACTION_OVERRIDES[role] || {};
-  Object.entries(overrides).forEach(([pageId, actions]) => {
-    permissions[pageId] = normalizePermissionList(actions || []);
-  });
-
-  return permissions;
+function buildDefaultRoles(appPages: PermissionPage[], catalogRoles: CatalogRole[]): UserRole[] {
+  return catalogRoles.map((role) => ({
+    id: role.id,
+    name: role.name,
+    description: role.description,
+    usersCount: 0,
+    system: role.system,
+    sourceRoles: role.source_roles,
+    permissions: Object.fromEntries(
+      appPages.map((page) => [
+        page.id,
+        normalizePermissionList(
+          sanitizePermissionActions(buildDefaultPermissionsForRole(role.id)[page.id] || [])
+        ),
+      ])
+    ),
+  }));
 }
-
-const initialRoles: UserRole[] = [
-  {
-    id: "org_admin",
-    name: "Organization Admin",
-    description: "Full platform administration across all offices.",
-    usersCount: 0,
-    sourceRoles: ["org_admin"],
-    permissions: buildDefaultPermissions("org_admin"),
-  },
-  {
-    id: "office_head",
-    name: "Office Head",
-    description: "Office-scoped operations, requisition actions, and room/section management.",
-    usersCount: 0,
-    sourceRoles: ["office_head"],
-    permissions: buildDefaultPermissions("office_head"),
-  },
-  {
-    id: "caretaker",
-    name: "Caretaker",
-    description: "Office-scoped requisition/return operations and room/section management.",
-    usersCount: 0,
-    sourceRoles: ["caretaker"],
-    permissions: buildDefaultPermissions("caretaker"),
-  },
-  {
-    id: "employee",
-    name: "Employee",
-    description: "Submit and track own requisitions/returns and view assigned workflows.",
-    usersCount: 0,
-    sourceRoles: ["employee"],
-    permissions: buildDefaultPermissions("employee"),
-  },
-];
 
 export default function UserPermissions() {
   const isMobile = useIsMobile();
-  const [roles, setRoles] = useState<UserRole[]>(initialRoles);
-  const [selectedRole, setSelectedRole] = useState<string>("org_admin");
-  const [hasHydratedFromServer, setHasHydratedFromServer] = useState(false);
   const pageSearch = usePageSearch();
   const searchQuery = pageSearch?.term || "";
+  const [roles, setRoles] = useState<UserRole[]>([]);
+  const [selectedRole, setSelectedRole] = useState<string>("");
+  const [hasHydratedFromServer, setHasHydratedFromServer] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [isAddRoleOpen, setIsAddRoleOpen] = useState(false);
   const [newRoleName, setNewRoleName] = useState("");
@@ -315,29 +214,84 @@ export default function UserPermissions() {
   const rolePermissionsQuery = useRolePermissionsCatalog();
   const savePermissionsMutation = useUpdateRolePermissionsCatalog();
 
+  const appPages = useMemo<PermissionPage[]>(() => {
+    const pages =
+      rolePermissionsQuery.data?.catalog?.pages?.length
+        ? rolePermissionsQuery.data.catalog.pages
+        : getAuthorizationPages();
+    return pages.map((page) => ({
+      id: page.id,
+      name: page.name,
+      category: String(page.category || "System"),
+    }));
+  }, [rolePermissionsQuery.data?.catalog]);
+
+  const catalogRoles = useMemo<CatalogRole[]>(() => {
+    const roles =
+      rolePermissionsQuery.data?.catalog?.roles?.length
+        ? rolePermissionsQuery.data.catalog.roles
+        : getAuthorizationRoles();
+    return roles.map((role) => ({
+      id: role.id,
+      name: role.name,
+      description: role.description,
+      source_roles: role.source_roles,
+      system: role.system,
+    }));
+  }, [rolePermissionsQuery.data?.catalog]);
+
+  const validRoleIds = useMemo(
+    () =>
+      new Set(
+        catalogRoles.flatMap((role) => [role.id, ...(role.source_roles || [])])
+      ),
+    [catalogRoles]
+  );
+  const systemRoleIds = useMemo(
+    () => new Set(catalogRoles.filter((role) => role.system).map((role) => role.id)),
+    [catalogRoles]
+  );
+  const defaultRoles = useMemo(
+    () => buildDefaultRoles(appPages, catalogRoles),
+    [appPages, catalogRoles]
+  );
+
   useEffect(() => {
     if (hasHydratedFromServer) return;
     if (rolePermissionsQuery.isLoading) return;
+    if (appPages.length === 0 || catalogRoles.length === 0) return;
+
     if (rolePermissionsQuery.isError) {
+      setRoles(defaultRoles);
+      setSelectedRole(defaultRoles[0]?.id || "");
       setHasHydratedFromServer(true);
       toast.error("Failed to load saved permissions. Showing current defaults.");
       return;
     }
 
-    const hydratedRoles = normalizeStoredRoles(rolePermissionsQuery.data?.roles);
-    if (hydratedRoles.length > 0) {
-      setRoles(hydratedRoles);
-      if (!hydratedRoles.some((role) => role.id === selectedRole)) {
-        setSelectedRole(hydratedRoles[0].id);
-      }
+    const hydratedRoles = normalizeStoredRoles(
+      rolePermissionsQuery.data?.roles,
+      appPages,
+      validRoleIds,
+      systemRoleIds
+    );
+    const nextRoles = hydratedRoles.length > 0 ? hydratedRoles : defaultRoles;
+    setRoles(nextRoles);
+    if (!nextRoles.some((role) => role.id === selectedRole)) {
+      setSelectedRole(nextRoles[0]?.id || "");
     }
     setHasHydratedFromServer(true);
   }, [
+    appPages,
+    catalogRoles.length,
+    defaultRoles,
     hasHydratedFromServer,
     rolePermissionsQuery.data?.roles,
     rolePermissionsQuery.isError,
     rolePermissionsQuery.isLoading,
     selectedRole,
+    systemRoleIds,
+    validRoleIds,
   ]);
 
   const roleCounts = useMemo(() => {
@@ -353,26 +307,40 @@ export default function UserPermissions() {
     () =>
       roles.map((role) => ({
         ...role,
-        usersCount: (role.sourceRoles || [role.id]).reduce((total, roleKey) => total + (roleCounts[roleKey] || 0), 0),
+        usersCount: (role.sourceRoles || [role.id]).reduce(
+          (total, roleKey) => total + (roleCounts[roleKey] || 0),
+          0
+        ),
       })),
-    [roles, roleCounts],
+    [roles, roleCounts]
   );
 
-  const currentRole = rolesWithCounts.find((r) => r.id === selectedRole);
+  const currentRole = rolesWithCounts.find((role) => role.id === selectedRole);
 
-  const filteredPages = appPages.filter((page) => {
-    const matchesSearch = page.name.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCategory = categoryFilter === "all" || page.category === categoryFilter;
-    return matchesSearch && matchesCategory;
-  });
+  const filteredPages = useMemo(
+    () =>
+      appPages.filter((page) => {
+        const matchesSearch = page.name
+          .toLowerCase()
+          .includes(searchQuery.toLowerCase());
+        const matchesCategory =
+          categoryFilter === "all" || page.category === categoryFilter;
+        return matchesSearch && matchesCategory;
+      }),
+    [appPages, categoryFilter, searchQuery]
+  );
 
-  const groupedPages = filteredPages.reduce((acc, page) => {
-    if (!acc[page.category]) {
-      acc[page.category] = [];
-    }
-    acc[page.category].push(page);
-    return acc;
-  }, {} as Record<string, typeof appPages>);
+  const groupedPages = useMemo(
+    () =>
+      filteredPages.reduce((acc, page) => {
+        if (!acc[page.category]) {
+          acc[page.category] = [];
+        }
+        acc[page.category].push(page);
+        return acc;
+      }, {} as Record<string, PermissionPage[]>),
+    [filteredPages]
+  );
 
   const togglePermission = (pageId: string, permission: PermissionType) => {
     setRoles((prevRoles) =>
@@ -381,19 +349,15 @@ export default function UserPermissions() {
 
         const currentPermissions = role.permissions[pageId] || [];
         const hasPermission = currentPermissions.includes(permission);
-
-        let newPermissions: PermissionType[];
-        if (hasPermission) {
-          newPermissions = currentPermissions.filter((p) => p !== permission);
-        } else {
-          newPermissions = [...currentPermissions, permission];
-        }
+        const newPermissions = hasPermission
+          ? currentPermissions.filter((entry) => entry !== permission)
+          : [...currentPermissions, permission];
 
         return {
           ...role,
           permissions: {
             ...role.permissions,
-            [pageId]: newPermissions,
+            [pageId]: normalizePermissionList(newPermissions),
           },
         };
       })
@@ -408,16 +372,20 @@ export default function UserPermissions() {
   const handleSavePermissions = () => {
     savePermissionsMutation.mutate(
       {
-        roles: serializeRolesForSave(roles),
+        roles: serializeRolesForSave(roles, validRoleIds, appPages),
       },
       {
         onSuccess: (response) => {
-          const hydratedRoles = normalizeStoredRoles(response.roles);
-          if (hydratedRoles.length > 0) {
-            setRoles(hydratedRoles);
-            if (!hydratedRoles.some((role) => role.id === selectedRole)) {
-              setSelectedRole(hydratedRoles[0].id);
-            }
+          const hydratedRoles = normalizeStoredRoles(
+            response.roles,
+            appPages,
+            validRoleIds,
+            systemRoleIds
+          );
+          const nextRoles = hydratedRoles.length > 0 ? hydratedRoles : defaultRoles;
+          setRoles(nextRoles);
+          if (!nextRoles.some((role) => role.id === selectedRole)) {
+            setSelectedRole(nextRoles[0]?.id || "");
           }
         },
       }
@@ -457,18 +425,20 @@ export default function UserPermissions() {
 
     const newRole: UserRole = {
       id: newRoleName.toLowerCase().replace(/\s+/g, "-"),
-      name: newRoleName,
-      description: newRoleDescription,
+      name: newRoleName.trim(),
+      description: newRoleDescription.trim(),
       usersCount: 0,
-      permissions: createEmptyPermissionMap(),
+      sourceRoles: [],
+      system: false,
+      permissions: createEmptyPermissionMap(appPages),
     };
 
-    setRoles([...roles, newRole]);
+    setRoles((prev) => [...prev, newRole]);
     setSelectedRole(newRole.id);
     setNewRoleName("");
     setNewRoleDescription("");
     setIsAddRoleOpen(false);
-    toast.success(`Role "${newRoleName}" created`);
+    toast.success(`Role "${newRole.name}" created`);
   };
 
   const selectAllForPage = (pageId: string) => {
@@ -479,7 +449,7 @@ export default function UserPermissions() {
           ...role,
           permissions: {
             ...role.permissions,
-            [pageId]: ["view", "create", "edit", "delete"],
+            [pageId]: [...ALL_ACTIONS],
           },
         };
       })
@@ -524,7 +494,6 @@ export default function UserPermissions() {
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* Roles List */}
         <div className="lg:col-span-1">
           <Card>
             <CardHeader className="pb-3">
@@ -587,12 +556,25 @@ export default function UserPermissions() {
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-medium">{role.name}</span>
-                    <Badge variant="secondary" className={selectedRole === role.id ? "bg-primary-foreground/20 text-primary-foreground" : ""}>
+                    <Badge
+                      variant="secondary"
+                      className={
+                        selectedRole === role.id
+                          ? "bg-primary-foreground/20 text-primary-foreground"
+                          : ""
+                      }
+                    >
                       <Users className="h-3 w-3 mr-1" />
                       {role.usersCount}
                     </Badge>
                   </div>
-                  <p className={`text-xs mt-1 ${selectedRole === role.id ? "text-primary-foreground/80" : "text-muted-foreground"}`}>
+                  <p
+                    className={`text-xs mt-1 ${
+                      selectedRole === role.id
+                        ? "text-primary-foreground/80"
+                        : "text-muted-foreground"
+                    }`}
+                  >
                     {role.description}
                   </p>
                 </button>
@@ -601,7 +583,6 @@ export default function UserPermissions() {
           </Card>
         </div>
 
-        {/* Permissions Matrix */}
         <div className="lg:col-span-3">
           <Card>
             <CardHeader>
@@ -631,10 +612,11 @@ export default function UserPermissions() {
                     className="h-10 w-full rounded-md border bg-background px-3 text-sm"
                   >
                     <option value="all">All Categories</option>
-                    <option value="Main">Main</option>
-                    <option value="Inventory">Inventory</option>
-                    <option value="Management">Management</option>
-                    <option value="System">System</option>
+                    {Array.from(new Set(appPages.map((page) => page.category))).map((category) => (
+                      <option key={category} value={category}>
+                        {category}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
@@ -671,38 +653,19 @@ export default function UserPermissions() {
                             </div>
                           </div>
                           <div className="grid grid-cols-2 gap-2">
-                            <label className="flex items-center gap-2 text-sm">
-                              <Checkbox
-                                checked={hasPermission(page.id, "view")}
-                                onCheckedChange={() => togglePermission(page.id, "view")}
-                              />
-                              <Eye className="h-4 w-4 text-muted-foreground" />
-                              View
-                            </label>
-                            <label className="flex items-center gap-2 text-sm">
-                              <Checkbox
-                                checked={hasPermission(page.id, "create")}
-                                onCheckedChange={() => togglePermission(page.id, "create")}
-                              />
-                              <Plus className="h-4 w-4 text-muted-foreground" />
-                              Create
-                            </label>
-                            <label className="flex items-center gap-2 text-sm">
-                              <Checkbox
-                                checked={hasPermission(page.id, "edit")}
-                                onCheckedChange={() => togglePermission(page.id, "edit")}
-                              />
-                              <Pencil className="h-4 w-4 text-muted-foreground" />
-                              Edit
-                            </label>
-                            <label className="flex items-center gap-2 text-sm">
-                              <Checkbox
-                                checked={hasPermission(page.id, "delete")}
-                                onCheckedChange={() => togglePermission(page.id, "delete")}
-                              />
-                              <Trash2 className="h-4 w-4 text-muted-foreground" />
-                              Delete
-                            </label>
+                            {ALL_ACTIONS.map((action) => (
+                              <label key={action} className="flex items-center gap-2 text-sm">
+                                <Checkbox
+                                  checked={hasPermission(page.id, action)}
+                                  onCheckedChange={() => togglePermission(page.id, action)}
+                                />
+                                {action === "view" && <Eye className="h-4 w-4 text-muted-foreground" />}
+                                {action === "create" && <Plus className="h-4 w-4 text-muted-foreground" />}
+                                {action === "edit" && <Pencil className="h-4 w-4 text-muted-foreground" />}
+                                {action === "delete" && <Trash2 className="h-4 w-4 text-muted-foreground" />}
+                                {action.charAt(0).toUpperCase() + action.slice(1)}
+                              </label>
+                            ))}
                           </div>
                         </div>
                       ))}
@@ -806,7 +769,6 @@ export default function UserPermissions() {
                 </div>
               )}
 
-              {/* Legend */}
               <div className="mt-4 flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
                 <div className="flex items-center gap-2">
                   <Eye className="h-4 w-4" />

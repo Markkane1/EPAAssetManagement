@@ -3,6 +3,7 @@ import { purchaseOrderService } from '@/services/purchaseOrderService';
 import type { PurchaseOrderCreateDto, PurchaseOrderUpdateDto } from '@/services/purchaseOrderService';
 import { toast } from 'sonner';
 import { API_CONFIG } from '@/config/api.config';
+import { refreshActiveQueries } from '@/lib/queryRefresh';
 
 const { queryKeys, messages, query } = API_CONFIG;
 
@@ -54,8 +55,8 @@ export const useCreatePurchaseOrder = () => {
   
   return useMutation({
     mutationFn: (data: PurchaseOrderCreateDto) => purchaseOrderService.create(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.purchaseOrders });
+    onSuccess: async () => {
+      await refreshActiveQueries(queryClient, [queryKeys.purchaseOrders]);
       toast.success(messages.purchaseOrderCreated);
     },
     onError: (error: Error) => {
@@ -70,8 +71,8 @@ export const useUpdatePurchaseOrder = () => {
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: PurchaseOrderUpdateDto }) =>
       purchaseOrderService.update(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.purchaseOrders });
+    onSuccess: async () => {
+      await refreshActiveQueries(queryClient, [queryKeys.purchaseOrders]);
       toast.success(messages.purchaseOrderUpdated);
     },
     onError: (error: Error) => {
@@ -85,8 +86,8 @@ export const useDeletePurchaseOrder = () => {
   
   return useMutation({
     mutationFn: (id: string) => purchaseOrderService.delete(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.purchaseOrders });
+    onSuccess: async () => {
+      await refreshActiveQueries(queryClient, [queryKeys.purchaseOrders]);
       toast.success(messages.purchaseOrderDeleted);
     },
     onError: (error: Error) => {

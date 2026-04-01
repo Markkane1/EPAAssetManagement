@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
-import { PageHeader } from "@/components/shared/PageHeader";
+import { CollectionWorkspace } from "@/components/shared/CollectionWorkspace";
 import { DataTable } from "@/components/shared/DataTable";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -23,7 +23,6 @@ import { Assignment } from "@/types";
 import {
   useAssignments,
   useCreateAssignment,
-  usePagedAssignments,
   useRequestReturn,
   useReassignAsset,
 } from "@/hooks/useAssignments";
@@ -35,12 +34,13 @@ import { ReassignmentFormModal } from "@/components/forms/ReassignmentFormModal"
 import { ReturnFormModal } from "@/components/forms/ReturnFormModal";
 import { useAuth } from "@/contexts/AuthContext";
 import { useDashboardMe } from "@/hooks/useDashboard";
-import { MetricCard, TimelineList, WorkflowPanel } from "@/components/shared/workflow";
+import { TimelineList } from "@/components/shared/workflow";
+import { isOfficeAdminRole } from "@/services/authService";
 
 export default function Assignments() {
-  const PAGE_SIZE = 100;
   const { role } = useAuth();
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const createAssignment = useCreateAssignment();
   const requestReturn = useRequestReturn();
   const reassignAsset = useReassignAsset();
@@ -48,35 +48,38 @@ export default function Assignments() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isReassignOpen, setIsReassignOpen] = useState(false);
   const [isReturnOpen, setIsReturnOpen] = useState(false);
+  const [tableDisplay, setTableDisplay] = useState<{
+    filteredCount: number;
+    totalPages: number;
+    rangeStart: number;
+    rangeEnd: number;
+  } | null>(null);
   const [detailModal, setDetailModal] = useState<{ open: boolean; assignment: any | null }>({
     open: false,
     assignment: null,
   });
-  const isLimitedRole = role === "employee" || role === "office_head";
+  const isLimitedRole = role === "employee" || isOfficeAdminRole(role);
   const needsFullLists = !isLimitedRole && (isModalOpen || isReassignOpen || isReturnOpen);
-  const needsEmployeeLookup = role === "office_head" || needsFullLists;
-  const { data: assignments, isLoading } = usePagedAssignments({ page, limit: PAGE_SIZE });
+  const needsEmployeeLookup = isOfficeAdminRole(role) || needsFullLists;
+  const { data: assignments, isLoading } = useAssignments();
   const { data: me, isLoading: isMeLoading } = useDashboardMe({ enabled: isLimitedRole });
   const { data: assetItems } = useAssetItems({ enabled: needsFullLists });
   const { data: assets } = useAssets({ enabled: needsFullLists });
   const { data: employees } = useEmployees({ enabled: needsEmployeeLookup });
   const { data: modalAssignments } = useAssignments({ enabled: needsFullLists });
 
-  const assignmentList = assignments?.items || [];
+  const assignmentList = assignments || [];
   const assetItemList = assetItems || [];
   const assetList = assets || [];
   const employeeList = employees || [];
   const fullAssignmentList = modalAssignments || [];
-  const totalAssignments = assignments?.total || assignmentList.length;
-  const totalPages = Math.max(1, Math.ceil(totalAssignments / PAGE_SIZE));
-
   const currentEmployeeId = me?.employeeId || null;
   const currentDirectorateId = me?.employee?.directorate_id || null;
   const visibleAssignments = assignmentList.filter((assignment) => {
     if (role === "employee") {
       return currentEmployeeId ? assignment.employee_id === currentEmployeeId : false;
     }
-    if (role === "office_head") {
+    if (isOfficeAdminRole(role)) {
       return currentDirectorateId
         ? employeeList.some(
             (employee) =>
@@ -86,6 +89,18 @@ export default function Assignments() {
     }
     return true;
   });
+  const totalAssignments = visibleAssignments.length;
+  const totalPages = Math.max(1, Math.ceil(totalAssignments / pageSize));
+  const displayCount = tableDisplay?.filteredCount ?? totalAssignments;
+  const displayTotalPages = tableDisplay?.totalPages ?? totalPages;
+  const displayRangeStart = tableDisplay?.rangeStart ?? (displayCount === 0 ? 0 : (page - 1) * pageSize + 1);
+  const displayRangeEnd = tableDisplay?.rangeEnd ?? Math.min(page * pageSize, displayCount);
+
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
   const activeAssignments = visibleAssignments.filter((assignment) => assignment.is_active).length;
   const returnedAssignments = visibleAssignments.length - activeAssignments;
   const expectedReturns = visibleAssignments.filter((assignment) => Boolean(assignment.expected_return_date)).length;
@@ -154,7 +169,7 @@ export default function Assignments() {
       key: "notes",
       label: "Notes",
       render: (value: string) => (
-        <span className="text-sm text-muted-foreground truncate max-w-[150px] block">
+        <span className="block max-w-[16rem] break-words text-sm leading-5 text-muted-foreground [overflow-wrap:anywhere]">
           {value || "—"}
         </span>
       ),
@@ -167,6 +182,7 @@ export default function Assignments() {
 
   const handleSubmit = async (data: any) => {
     await createAssignment.mutateAsync(data);
+    setPage(1);
   };
 
   const handleReturnAsset = (id: string) => {
@@ -208,7 +224,7 @@ export default function Assignments() {
     </DropdownMenu>
   );
 
-  if (isLoading || (isLimitedRole && isMeLoading) || (role === "office_head" && needsEmployeeLookup && !employees)) {
+  if (isLoading || (isLimitedRole && isMeLoading) || (isOfficeAdminRole(role) && needsEmployeeLookup && !employees)) {
     return (
       <MainLayout title="Assignments" description="Track asset assignments to employees">
         <div className="flex items-center justify-center h-64">
@@ -220,7 +236,7 @@ export default function Assignments() {
 
   return (
     <MainLayout title="Assignments" description="Track asset assignments to employees">
-      <PageHeader
+      <CollectionWorkspace
         title="Assignments"
         description="View and manage asset assignments"
         eyebrow={isLimitedRole ? "Scoped view" : "Operations"}
@@ -253,24 +269,32 @@ export default function Assignments() {
             </div>
           )
         }
-      />
-
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="Visible assignments" value={visibleAssignments.length} helper="Based on your role scope" icon={PackageCheck} tone="primary" />
-        <MetricCard label="Active" value={activeAssignments} helper="Currently issued items" icon={RefreshCw} tone="success" />
-        <MetricCard label="Returned" value={returnedAssignments} helper="Closed assignment records" icon={RotateCcw} />
-        <MetricCard label="Expected returns" value={expectedReturns} helper="Records with a target return date" icon={Calendar} tone="warning" />
-      </div>
-
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
-        <WorkflowPanel
-          title="Assignment worklist"
-          description="Search, review, and act on assignment records. Open the row menu for operational actions."
-        >
+        metrics={[
+          { label: "Visible assignments", value: visibleAssignments.length, helper: "Based on your role scope", icon: PackageCheck, tone: "primary" },
+          { label: "Active", value: activeAssignments, helper: "Currently issued items", icon: RefreshCw, tone: "success" },
+          { label: "Returned", value: returnedAssignments, helper: "Closed assignment records", icon: RotateCcw },
+          { label: "Expected returns", value: expectedReturns, helper: "Records with a target return date", icon: Calendar, tone: "warning" },
+        ]}
+        panelTitle="Assignment worklist"
+        panelDescription="Search, review, and act on assignment records. Open the row menu for operational actions."
+        secondaryPanel={{
+          title: "Recent assignment activity",
+          description: "A compact timeline of the latest assignment records in this page.",
+          content: (
+            <TimelineList
+              items={recentTimeline}
+              emptyTitle="No assignment activity yet"
+              emptyDescription="Recent assignment updates will appear here once records are available."
+            />
+          ),
+        }}
+      >
           <DataTable
             columns={columns}
             data={visibleAssignments}
             pagination={false}
+            externalPage={page}
+            pageSize={pageSize}
             searchPlaceholder="Search assignments..."
             actions={isLimitedRole ? undefined : actions}
             virtualized
@@ -278,41 +302,32 @@ export default function Assignments() {
               title: "No assignments available",
               description: "Assignments will appear here once assets are issued within your scope.",
             }}
+            pageSizeOptions={[10, 20, 50, 100]}
+            onExternalPageChange={setPage}
+            onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
+            onDisplayStateChange={setTableDisplay}
           />
           <div className="mt-4 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
             <p className="text-sm text-muted-foreground">
-              Showing {assignmentList.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1} to{" "}
-              {Math.min(page * PAGE_SIZE, totalAssignments)} of {totalAssignments} assignments
+              Showing {displayRangeStart} to {displayRangeEnd} of {displayCount} assignments
             </p>
             <div className="flex items-center gap-2">
               <Button variant="outline" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page === 1}>
                 Previous
               </Button>
               <span className="text-sm font-medium">
-                Page {page} of {totalPages}
+                Page {page} of {displayTotalPages}
               </span>
               <Button
                 variant="outline"
-                onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
-                disabled={page >= totalPages}
+                onClick={() => setPage((current) => Math.min(displayTotalPages, current + 1))}
+                disabled={page >= displayTotalPages}
               >
                 Next
               </Button>
             </div>
           </div>
-        </WorkflowPanel>
-
-        <WorkflowPanel
-          title="Recent assignment activity"
-          description="A compact timeline of the latest assignment records in this page."
-        >
-          <TimelineList
-            items={recentTimeline}
-            emptyTitle="No assignment activity yet"
-            emptyDescription="Recent assignment updates will appear here once records are available."
-          />
-        </WorkflowPanel>
-      </div>
+      </CollectionWorkspace>
 
       {!isLimitedRole && (
         <>

@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Assignment, AssetItem, Employee, Asset } from "@/types";
 import { FormDialogActions } from "@/components/forms/FormDialogActions";
 import { SearchableComboboxField } from "@/components/forms/SearchableComboboxField";
+import { isAssetItemAssignable } from "@/lib/assetItemStatusRules";
 import {
   useAssetItemOptions,
   useAssetNameMap,
@@ -92,10 +93,14 @@ export function AssignmentFormModal({
   }, [assignment, form]);
 
   useEffect(() => {
-    if (selectedAssetItem) {
+    if (selectedAssetItem && isAssetItemAssignable(selectedAssetItem)) {
       form.setValue("assetItemId", selectedAssetItem.id);
+      return;
     }
-  }, [selectedAssetItem, form]);
+    if (!assignment) {
+      form.setValue("assetItemId", "");
+    }
+  }, [assignment, selectedAssetItem, form]);
 
   const handleSubmit = async (data: AssignmentFormData) => {
     setIsSubmitting(true);
@@ -111,9 +116,7 @@ export function AssignmentFormModal({
   // Filter available asset items (unassigned)
   const availableItems = assetItems.filter(
     (item) =>
-      item.assignment_status === "Unassigned" ||
-      item.id === assignment?.asset_item_id ||
-      item.id === selectedAssetItem?.id
+      isAssetItemAssignable(item) || item.id === assignment?.asset_item_id
   );
 
   const assetNameById = useAssetNameMap(assets);
@@ -168,7 +171,7 @@ export function AssignmentFormModal({
             error={form.formState.errors.employeeId?.message}
           />
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="assignedDate">Assignment Date *</Label>
               <Input
@@ -194,7 +197,7 @@ export function AssignmentFormModal({
             <div className="space-y-2">
               <Label>Assignment Status</Label>
               <div className="flex items-center gap-2">
-                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                <span className={`status-badge normal-case tracking-normal ${
                   assignment.returned_date 
                     ? "bg-success/10 text-success" 
                     : assignment.is_active 
@@ -232,3 +235,4 @@ export function AssignmentFormModal({
     </Dialog>
   );
 }
+

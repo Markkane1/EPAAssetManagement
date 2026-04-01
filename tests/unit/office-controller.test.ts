@@ -20,6 +20,10 @@ vi.mock("../../server/src/models/office.model", () => ({
   },
 }));
 
+vi.mock("../../server/src/services/officeReferenceSync.service", () => ({
+  syncOfficeReferenceData: vi.fn().mockResolvedValue(undefined),
+}));
+
 import { officeController } from "../../server/src/controllers/office.controller";
 
 function createResponse() {

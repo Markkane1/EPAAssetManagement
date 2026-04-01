@@ -165,7 +165,7 @@ const DialogOverlay = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTML
       <div
         ref={ref}
         className={cn(
-          "fixed inset-0 z-50 bg-black/80 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
+          "fixed inset-0 z-50 bg-[rgba(26,28,24,0.32)] backdrop-blur-[6px] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
           className
         )}
         data-state={open ? "open" : "closed"}
@@ -179,10 +179,21 @@ DialogOverlay.displayName = "DialogOverlay";
 type DialogContentProps = React.HTMLAttributes<HTMLDivElement> & {
   onInteractOutside?: (event: Event) => void;
   onPointerDownOutside?: (event: PointerEvent) => void;
+  dismissOnOutsideInteract?: boolean;
 };
 
 const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps>(
-  ({ className, children, onInteractOutside, onPointerDownOutside, ...props }, ref) => {
+  (
+    {
+      className,
+      children,
+      onInteractOutside,
+      onPointerDownOutside,
+      dismissOnOutsideInteract = false,
+      ...props
+    },
+    ref
+  ) => {
     const { open, setOpen, contentRef } = useDialogContext();
     const mergedRef = composeRefs(contentRef, ref);
 
@@ -205,29 +216,38 @@ const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps>(
 
     return (
       <DialogPortal>
-        <DialogOverlay
+        <DialogOverlay />
+        <div
+          className={cn(
+            "fixed inset-0 z-50 flex min-h-dvh items-start justify-center overflow-y-auto overscroll-contain p-3 scrollbar-thin sm:items-center sm:p-6"
+          )}
           onPointerDown={(event) => {
+            if (event.target !== event.currentTarget) return;
             onPointerDownOutside?.(event.nativeEvent);
             onInteractOutside?.(event.nativeEvent);
+            if (dismissOnOutsideInteract && !event.defaultPrevented) {
+              setOpen(false);
+            }
           }}
-        />
-        <div
-          ref={mergedRef}
-          role="dialog"
-          aria-modal="true"
-          className={cn(
-            "fixed left-[50%] top-[50%] z-50 grid max-h-[90vh] w-[calc(100%-1rem)] max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 overflow-y-auto border bg-background p-4 shadow-lg duration-200 data-[state=open]:animate-in sm:w-full sm:rounded-lg sm:p-6",
-            className
-          )}
-          data-state="open"
-          onPointerDown={(event) => event.stopPropagation()}
-          {...props}
         >
-          {children}
-          <DialogClose className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none">
-            <X className="h-4 w-4" />
-            <span className="sr-only">Close</span>
-          </DialogClose>
+          <div
+            ref={mergedRef}
+            role="dialog"
+            aria-modal="true"
+            className={cn(
+              "relative my-4 grid w-full max-w-lg gap-4 overflow-y-auto overscroll-contain rounded-[1.5rem] border border-[rgba(26,28,24,0.09)] bg-white p-4 shadow-[0_8px_48px_-8px_rgba(26,28,24,0.18),0_2px_8px_rgba(26,28,24,0.06)] duration-200 data-[state=open]:animate-in max-h-[calc(100dvh-1.5rem)] sm:my-6 sm:max-h-[calc(100dvh-3rem)] sm:p-6 scrollbar-thin",
+              className
+            )}
+            data-state="open"
+            onPointerDown={(event) => event.stopPropagation()}
+            {...props}
+          >
+            {children}
+            <DialogClose className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none">
+              <X className="h-4 w-4" />
+              <span className="sr-only">Close</span>
+            </DialogClose>
+          </div>
         </div>
       </DialogPortal>
     );

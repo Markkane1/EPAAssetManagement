@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { z } from "zod";
 import {
   Dialog,
   DialogContent,
@@ -11,6 +12,11 @@ import { Textarea } from "@/components/ui/textarea";
 import type { Employee, Office } from "@/types";
 import { SearchableSelect } from "@/components/shared/SearchableSelect";
 import { FormDialogActions } from "@/components/forms/FormDialogActions";
+
+const employeeTransferSchema = z.object({
+  newOfficeId: z.string().trim().min(1, "New office is required."),
+  reason: z.string().trim().max(300, "Reason must be 300 characters or fewer.").optional(),
+});
 
 interface EmployeeTransferModalProps {
   open: boolean;
@@ -49,8 +55,12 @@ export function EmployeeTransferModal({
   }, [open, employee?.id]);
 
   const handleSubmit = async () => {
-    if (!newOfficeId) {
-      setError("New office is required.");
+    const validation = employeeTransferSchema.safeParse({
+      newOfficeId,
+      reason,
+    });
+    if (!validation.success) {
+      setError(validation.error.issues[0]?.message || "Review the transfer details.");
       return;
     }
 
@@ -58,8 +68,8 @@ export function EmployeeTransferModal({
     setError(null);
     try {
       await onSubmit({
-        newOfficeId,
-        reason: reason.trim() || undefined,
+        newOfficeId: validation.data.newOfficeId,
+        reason: validation.data.reason || undefined,
       });
       onOpenChange(false);
     } catch (submitError) {
@@ -94,7 +104,10 @@ export function EmployeeTransferModal({
             <SearchableSelect
               id="newOffice"
               value={newOfficeId}
-              onValueChange={setNewOfficeId}
+              onValueChange={(value) => {
+                setNewOfficeId(value);
+                if (error) setError(null);
+              }}
               placeholder="Select destination office"
               searchPlaceholder="Search offices..."
               emptyText="No eligible offices available."
@@ -107,7 +120,10 @@ export function EmployeeTransferModal({
             <Textarea
               id="transferReason"
               value={reason}
-              onChange={(event) => setReason(event.target.value)}
+              onChange={(event) => {
+                setReason(event.target.value);
+                if (error) setError(null);
+              }}
               placeholder="Optional transfer reason"
             />
           </div>

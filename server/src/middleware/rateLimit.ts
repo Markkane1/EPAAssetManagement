@@ -16,6 +16,23 @@ type Bucket = {
 
 const store = new Map<string, Bucket>();
 
+// Sweep expired entries every 5 minutes to prevent unbounded memory growth.
+// The guard lets test environments skip the background timer.
+if (typeof setInterval !== 'undefined') {
+  setInterval(() => {
+    const now = Date.now();
+    store.forEach((bucket, key) => {
+      if (bucket.resetAt <= now) {
+        store.delete(key);
+      }
+    });
+  }, 5 * 60 * 1000).unref();
+}
+
+export function clearRateLimitStore() {
+  store.clear();
+}
+
 function getClientKey(req: Request) {
   return req.ip || req.socket.remoteAddress || 'unknown';
 }

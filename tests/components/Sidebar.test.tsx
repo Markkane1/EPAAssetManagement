@@ -78,7 +78,7 @@ describe("Sidebar", () => {
       isOrgAdmin: false,
     });
     canAccessPageMock.mockImplementation(({ page }: { page: string }) =>
-      ["dashboard", "assignments", "inventory", "requisitions", "returns", "reports", "compliance"].includes(page)
+      ["dashboard", "my-assets", "assignments", "inventory", "requisitions", "returns", "reports", "compliance"].includes(page)
     );
 
     renderSidebar("/reports");

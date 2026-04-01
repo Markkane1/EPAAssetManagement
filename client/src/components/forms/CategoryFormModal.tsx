@@ -20,17 +20,21 @@ import { useDialogFormReset } from "@/components/forms/useDialogFormReset";
 const categorySchema = z.object({
   name: z.string().min(1, "Name is required").max(100),
   description: z.string().max(500).optional(),
+  subcategoriesText: z.string().optional(),
   scope: z.enum(["GENERAL", "LAB_ONLY"]),
   assetType: z.enum(["ASSET", "CONSUMABLE"]),
 });
 
 type CategoryFormData = z.infer<typeof categorySchema>;
+type CategorySubmitData = Omit<CategoryFormData, "subcategoriesText"> & {
+  subcategories?: string[];
+};
 
 interface CategoryFormModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   category?: Category | null;
-  onSubmit: (data: CategoryFormData) => Promise<void>;
+  onSubmit: (data: CategorySubmitData) => Promise<void>;
 }
 
 export function CategoryFormModal({ open, onOpenChange, category, onSubmit }: CategoryFormModalProps) {
@@ -42,6 +46,7 @@ export function CategoryFormModal({ open, onOpenChange, category, onSubmit }: Ca
     defaultValues: {
       name: category?.name || "",
       description: category?.description || "",
+      subcategoriesText: (category?.subcategories || []).join("\n"),
       scope: category?.scope === "LAB_ONLY" ? "LAB_ONLY" : "GENERAL",
       assetType: category?.asset_type === "CONSUMABLE" ? "CONSUMABLE" : "ASSET",
     },
@@ -51,6 +56,7 @@ export function CategoryFormModal({ open, onOpenChange, category, onSubmit }: Ca
     () => ({
       name: category?.name || "",
       description: category?.description || "",
+      subcategoriesText: (category?.subcategories || []).join("\n"),
       scope: category?.scope === "LAB_ONLY" ? "LAB_ONLY" : "GENERAL",
       assetType: category?.asset_type === "CONSUMABLE" ? "CONSUMABLE" : "ASSET",
     }),
@@ -61,7 +67,16 @@ export function CategoryFormModal({ open, onOpenChange, category, onSubmit }: Ca
   const handleSubmit = async (data: CategoryFormData) => {
     setIsSubmitting(true);
     try {
-      await onSubmit(data);
+      await onSubmit({
+        name: data.name,
+        description: data.description,
+        scope: data.scope,
+        assetType: data.assetType,
+        subcategories: data.subcategoriesText
+          ?.split(/\r?\n|,/)
+          .map((entry) => entry.trim())
+          .filter(Boolean),
+      });
       form.reset();
       onOpenChange(false);
     } finally {
@@ -71,7 +86,7 @@ export function CategoryFormModal({ open, onOpenChange, category, onSubmit }: Ca
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px] max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle>{isEditing ? "Edit Category" : "Add Category"}</DialogTitle>
           <DialogDescription>
@@ -89,6 +104,18 @@ export function CategoryFormModal({ open, onOpenChange, category, onSubmit }: Ca
           <div className="space-y-2">
             <Label htmlFor="description">Description</Label>
             <Textarea id="description" {...form.register("description")} placeholder="Optional description..." rows={3} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="subcategoriesText">Subcategories</Label>
+            <Textarea
+              id="subcategoriesText"
+              {...form.register("subcategoriesText")}
+              placeholder={"Add one subcategory per line\nExample: Laptops"}
+              rows={4}
+            />
+            <p className="text-xs text-muted-foreground">
+              One subcategory per line. These options will be available for assets and consumables in this category.
+            </p>
           </div>
           <div className="space-y-2">
             <Label>Category Type *</Label>

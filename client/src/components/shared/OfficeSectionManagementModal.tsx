@@ -200,7 +200,7 @@ export function OfficeSectionManagementModal({ open, onOpenChange, offices }: Of
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[860px] max-h-[85vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-[860px]">
         <DialogHeader>
           <DialogTitle>Manage Rooms / Sections</DialogTitle>
           <DialogDescription>Create and maintain office-specific rooms/sections.</DialogDescription>

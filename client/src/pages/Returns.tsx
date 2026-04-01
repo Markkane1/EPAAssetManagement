@@ -196,7 +196,7 @@ export default function Returns() {
             <Label htmlFor="returns-status" className="sr-only">Status</Label>
             <select
               id="returns-status"
-              className="flex h-11 w-full rounded-xl border border-input/80 bg-background/90 px-3.5 py-2 text-sm"
+              className="flex h-11 w-full rounded-xl border border-input/80 bg-white px-3.5 py-2 text-sm"
               value={status}
               onChange={(event) => setStatus(event.target.value)}
             >
@@ -223,7 +223,7 @@ export default function Returns() {
                 <Label htmlFor="returns-employee" className="sr-only">Employee</Label>
                 <select
                   id="returns-employee"
-                  className="flex h-11 w-full rounded-xl border border-input/80 bg-background/90 px-3.5 py-2 text-sm"
+                  className="flex h-11 w-full rounded-xl border border-input/80 bg-white px-3.5 py-2 text-sm"
                   value={employeeId}
                   onChange={(event) => setEmployeeId(event.target.value)}
                 >

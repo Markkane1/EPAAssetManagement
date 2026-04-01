@@ -64,6 +64,7 @@ const ConsumableLotSchema = new Schema<any>(
     document_id: { type: Schema.Types.ObjectId, ref: 'Document', default: null },
     source_type: { type: String, enum: LOT_SOURCES, required: true, default: 'procurement' },
     vendor_id: { type: Schema.Types.ObjectId, ref: 'Vendor', default: null },
+    purchase_order_id: { type: Schema.Types.ObjectId, ref: 'PurchaseOrder', default: null },
     project_id: { type: Schema.Types.ObjectId, ref: 'Project', default: null },
     scheme_id: { type: Schema.Types.ObjectId, ref: 'Scheme', default: null },
     handover_file_name: { type: String, default: null },
@@ -109,6 +110,7 @@ ConsumableLotSchema.index({ expiry_date: 1 });
 ConsumableLotSchema.index({ batch_no: 1 });
 ConsumableLotSchema.index({ source_type: 1, expiry_date: 1, received_at: -1 });
 ConsumableLotSchema.index({ vendor_id: 1, expiry_date: 1, received_at: -1 });
+ConsumableLotSchema.index({ purchase_order_id: 1, expiry_date: 1, received_at: -1 });
 ConsumableLotSchema.index({ project_id: 1, scheme_id: 1, expiry_date: 1, received_at: -1 });
 ConsumableLotSchema.index({ expiry_date: 1, received_at: -1 });
 

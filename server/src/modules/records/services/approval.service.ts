@@ -4,13 +4,22 @@ import { UserModel } from '../../../models/user.model';
 import { createBulkNotifications, resolveNotificationRecipientsByOffice } from '../../../services/notification.service';
 import { createHttpError } from '../../../utils/httpError';
 import { RequestContext } from '../../../utils/scope';
-import { buildUserRoleMatchFilter, hasRoleCapability } from '../../../utils/roles';
+import { buildUserRoleMatchFilter, hasRoleCapability, normalizeRoles } from '../../../utils/roles';
 import { logAudit } from './audit.service';
 
 export interface ApprovalRequestInput {
   approverUserId?: string;
   approverRole?: string;
   notes?: string;
+}
+
+function expandApproverRoles(role: string) {
+  const [normalized] = normalizeRoles([role], null, { allowEmpty: true });
+  if (!normalized) return [] as string[];
+  if (normalized === 'office_head' || normalized === 'head_office_admin') {
+    return ['office_head', 'head_office_admin'];
+  }
+  return [normalized];
 }
 
 function uniqueObjectIdStrings(list: Array<string | null | undefined>) {
@@ -93,7 +102,7 @@ export async function requestApproval(ctx: RequestContext, recordId: string, inp
   } else if (input.approverRole) {
     const roleUsers = await UserModel.find(
       {
-        ...buildUserRoleMatchFilter([String(input.approverRole).trim().toLowerCase()]),
+        ...buildUserRoleMatchFilter(expandApproverRoles(String(input.approverRole))),
         location_id: record.office_id,
         is_active: true,
       },

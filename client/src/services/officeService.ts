@@ -1,6 +1,7 @@
 import api from '@/lib/api';
 import { Office, OfficeType } from '@/types';
 import { ListQuery, PagedListResponse, toListQueryString } from '@/services/pagination';
+import { fetchAllPages } from '@/services/fetchAllPages';
 
 const LIST_LIMIT = 2000;
 
@@ -61,7 +62,12 @@ function buildOfficeQuery(query: OfficeListQuery = {}, meta = false) {
 }
 
 export const officeService = {
-  getAll: (query: OfficeListQuery = {}) => api.get<Office[]>(`/offices${buildOfficeQuery(query)}`),
+  getAll: (query: OfficeListQuery = {}) =>
+    fetchAllPages(
+      query,
+      (pagedQuery) => api.get<PagedListResponse<Office>>(`/offices${buildOfficeQuery(pagedQuery, true)}`),
+      { pageSize: LIST_LIMIT }
+    ),
   getPaged: (query: OfficeListQuery = {}) =>
     api.get<PagedListResponse<Office>>(`/offices${buildOfficeQuery(query, true)}`),
   getById: (id: string) => api.get<Office>(`/offices/${id}`),

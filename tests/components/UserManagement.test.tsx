@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const setTermMock = vi.fn();
 const exportToCSVMock = vi.fn();
-const usePagedUsersMock = vi.fn();
+const useUsersMock = vi.fn();
 const useLocationsMock = vi.fn();
 const useUserRolePermissionsCatalogMock = vi.fn();
 const createUserMutateAsyncMock = vi.fn();
@@ -176,7 +176,7 @@ vi.mock("@/hooks/useLocations", () => ({
 }));
 
 vi.mock("@/hooks/useUsers", () => ({
-  usePagedUsers: (filters: unknown) => usePagedUsersMock(filters),
+  useUsers: (filters: unknown) => useUsersMock(filters),
   useUserRolePermissionsCatalog: () => useUserRolePermissionsCatalogMock(),
   useCreateUser: () => ({
     mutateAsync: createUserMutateAsyncMock,
@@ -220,7 +220,7 @@ describe("UserManagement page", () => {
         options?.onSuccess?.();
       }
     );
-    usePagedUsersMock.mockReturnValue({ data: usersData, isLoading: false });
+    useUsersMock.mockReturnValue({ data: usersData.items, isLoading: false });
     useLocationsMock.mockReturnValue({ data: locationsData, isLoading: false });
     useUserRolePermissionsCatalogMock.mockReturnValue({
       data: {
@@ -236,7 +236,7 @@ describe("UserManagement page", () => {
   });
 
   it("should render a loading state while users are being fetched", () => {
-    usePagedUsersMock.mockReturnValue({ data: undefined, isLoading: true });
+    useUsersMock.mockReturnValue({ data: undefined, isLoading: true });
 
     const { container } = render(<UserManagement />);
 
@@ -267,7 +267,7 @@ describe("UserManagement page", () => {
     await userEvent.type(within(dialog).getByLabelText(/first name/i), "John");
     await userEvent.type(within(dialog).getByLabelText(/last name/i), "Doe");
     await userEvent.type(within(dialog).getByLabelText(/^email/i), "john@example.com");
-    await userEvent.type(within(dialog).getByLabelText(/^password/i), "Secret123");
+    await userEvent.type(within(dialog).getByLabelText(/^password/i), "Secret1234!A");
     await userEvent.selectOptions(within(dialog).getAllByLabelText("select-trigger")[0], "employee");
     await userEvent.click(within(dialog).getByRole("button", { name: /district lab/i }));
     await userEvent.click(within(dialog).getByRole("button", { name: /^create user$/i }));
@@ -276,7 +276,7 @@ describe("UserManagement page", () => {
       expect(createUserMutateAsyncMock).toHaveBeenCalledWith(
         expect.objectContaining({
           email: "john@example.com",
-          password: "Secret123",
+          password: "Secret1234!A",
           firstName: "John",
           lastName: "Doe",
           role: "employee",
@@ -286,6 +286,26 @@ describe("UserManagement page", () => {
         })
       );
     });
+  });
+
+  it("should block creating a new user when the password is too weak", async () => {
+    render(<UserManagement />);
+
+    await userEvent.click(screen.getByRole("button", { name: /add user/i }));
+    const dialog = screen.getByRole("dialog");
+
+    await userEvent.type(within(dialog).getByLabelText(/first name/i), "John");
+    await userEvent.type(within(dialog).getByLabelText(/last name/i), "Doe");
+    await userEvent.type(within(dialog).getByLabelText(/^email/i), "john@example.com");
+    await userEvent.type(within(dialog).getByLabelText(/^password/i), "weakpass");
+    await userEvent.selectOptions(within(dialog).getAllByLabelText("select-trigger")[0], "employee");
+    await userEvent.click(within(dialog).getByRole("button", { name: /district lab/i }));
+    await userEvent.click(within(dialog).getByRole("button", { name: /^create user$/i }));
+
+    expect(
+      within(dialog).getByText(/password must be at least 12 characters and include uppercase, lowercase, number, and symbol/i)
+    ).toBeInTheDocument();
+    expect(createUserMutateAsyncMock).not.toHaveBeenCalled();
   });
 
   it("should edit an existing user role and location", async () => {
@@ -324,19 +344,19 @@ describe("UserManagement page", () => {
 
     await userEvent.click(screen.getAllByTitle(/reset password/i)[0]);
     const dialog = screen.getByRole("dialog");
-    await userEvent.type(within(dialog).getByLabelText(/^new password$/i), "Secret123");
+    await userEvent.type(within(dialog).getByLabelText(/^new password$/i), "StrongPass123!");
     await userEvent.type(within(dialog).getByLabelText(/confirm password/i), "Mismatch123");
     expect(within(dialog).getByText(/passwords do not match/i)).toBeInTheDocument();
 
     await userEvent.clear(within(dialog).getByLabelText(/confirm password/i));
-    await userEvent.type(within(dialog).getByLabelText(/confirm password/i), "Secret123");
+    await userEvent.type(within(dialog).getByLabelText(/confirm password/i), "StrongPass123!");
     await userEvent.click(within(dialog).getByRole("button", { name: /reset password/i }));
 
     await waitFor(() =>
       expect(resetPasswordMutateMock).toHaveBeenCalledWith(
         {
           userId: "user-1",
-          newPassword: "Secret123",
+          newPassword: "StrongPass123!",
         },
         expect.any(Object)
       )

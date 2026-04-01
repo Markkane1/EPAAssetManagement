@@ -23,6 +23,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 
 const ISSUER_ROLES = new Set([
   "org_admin",
+  "head_office_admin",
   "office_head",
   "caretaker",
 ]);

@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
 import { MainLayout } from '@/components/layout/MainLayout';
-import { PageHeader } from '@/components/shared/PageHeader';
+import { CollectionWorkspace } from '@/components/shared/CollectionWorkspace';
 import { DataTable } from '@/components/shared/DataTable';
-import { Card, CardContent } from '@/components/ui/card';
 import {
   Select,
   SelectContent,
@@ -10,6 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { AlertTriangle, CalendarClock, MapPin, Package } from 'lucide-react';
 import { useConsumableExpiry } from '@/hooks/useConsumableInventory';
 import { useConsumableItems } from '@/hooks/useConsumableItems';
 import { useOffices } from '@/hooks/useOffices';
@@ -51,6 +51,8 @@ export default function ConsumableExpiry() {
     if (locationId === ALL_VALUE) return true;
     return row.locationId === locationId;
   });
+  const expiringItemCount = new Set(visibleExpiry.map((row) => row.itemId)).size;
+  const expiringLocationCount = new Set(visibleExpiry.map((row) => row.locationId).filter(Boolean)).size;
 
   useEffect(() => {
     if (locationId !== ALL_VALUE && !filteredLocations.some((loc) => loc.id === locationId)) {
@@ -101,15 +103,26 @@ export default function ConsumableExpiry() {
 
   return (
     <MainLayout title="Expiry Dashboard" description="Lots nearing expiration">
-      <PageHeader
+      <CollectionWorkspace
         title="Expiry Dashboard"
         description="Expiring lots in the next 30/60/90 days"
+        eyebrow="Consumables workspace"
+        meta={
+          <>
+            <span>{visibleExpiry.length} expiring balance rows in scope</span>
+            <span className="hidden h-1 w-1 rounded-full bg-border sm:inline-block" />
+            <span>{mode === 'chemicals' ? 'Chemical expiry watch' : 'General consumable expiry watch'}</span>
+          </>
+        }
         extra={<ConsumableModeToggle mode={mode} onChange={setMode} />}
-      />
-
-      <Card className="mb-6">
-        <CardContent className="pt-6">
-          <div className="grid grid-cols-2 gap-4">
+        metrics={[
+          { label: 'Expiring rows', value: visibleExpiry.length, helper: 'Rows matching the active range and location filter', icon: AlertTriangle, tone: 'warning' },
+          { label: 'Days window', value: days, helper: 'Current expiry lookahead window', icon: CalendarClock, tone: 'primary' },
+          { label: 'Items', value: expiringItemCount, helper: 'Distinct items with upcoming expiries', icon: Package, tone: 'success' },
+          { label: 'Locations', value: expiringLocationCount, helper: 'Locations affected by upcoming expiries', icon: MapPin },
+        ]}
+        filterBar={
+          <div className="grid w-full grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <label className="text-sm font-medium">Days</label>
               <Select value={String(days)} onValueChange={(v) => setDays(Number(v))}>
@@ -136,15 +149,19 @@ export default function ConsumableExpiry() {
               />
             </div>
           </div>
-        </CardContent>
-      </Card>
+        }
+        panelTitle="Expiry watchlist"
+        panelDescription="Track upcoming expiries with the same dashboard-style shell used across the rest of the consumables workspace."
+      >
 
-      <DataTable
-        columns={columns}
-        data={visibleExpiry as any}
-        searchPlaceholder="Search expiring lots..."
-      />
+        <DataTable
+          columns={columns}
+          data={visibleExpiry as any}
+          searchPlaceholder="Search expiring lots..."
+        />
+      </CollectionWorkspace>
     </MainLayout>
   );
 }
+
 

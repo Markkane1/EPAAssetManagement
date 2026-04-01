@@ -29,8 +29,13 @@ import { generateAndStoreIssuanceReport } from '../services/requisitionIssuanceR
 import { generateHandoverSlip } from '../services/assignmentSlip.service';
 import { createBulkNotifications } from '../services/notification.service';
 import { isAssetItemHeldByOffice } from '../utils/assetHolder';
+import { getAssetItemAssignmentBlockReason } from '../utils/assetItemStatusRules';
 import { assertUploadedFileIntegrity } from '../utils/uploadValidation';
-import { buildUserRoleMatchFilter } from '../utils/roles';
+import {
+  OFFICE_ADMIN_ROLE_VALUES,
+  buildUserRoleMatchFilter,
+  isOfficeAdminRole,
+} from '../utils/roles';
 import {
   hasPermissionAction,
   loadStoredRolePermissionsContext,
@@ -75,8 +80,14 @@ import {
   buildRequisitionMappingSummary,
 } from './requisition.controller.helpers';
 
-const LEGACY_REQUISITION_VIEWER_ROLES = new Set(['org_admin', 'office_head', 'caretaker', 'employee']);
-const LEGACY_REQUISITION_MANAGER_ROLES = new Set(['office_head', 'caretaker']);
+const LEGACY_REQUISITION_VIEWER_ROLES = new Set([
+  'org_admin',
+  'head_office_admin',
+  'office_head',
+  'caretaker',
+  'employee',
+]);
+const LEGACY_REQUISITION_MANAGER_ROLES = new Set<string>([...OFFICE_ADMIN_ROLE_VALUES, 'caretaker']);
 const SUBMITTED_STATUSES = new Set(['SUBMITTED', 'PENDING_VERIFICATION']);
 const CARETAKER_PENDING_FULFILLMENT_STATUSES = new Set([
   'APPROVED',
@@ -319,7 +330,7 @@ export const requisitionController = {
         filter.office_id = ctx.locationId;
         if (ctx.role === 'employee') {
           filter.submitted_by_user_id = ctx.userId;
-        } else if (ctx.role === 'office_head') {
+        } else if (isOfficeAdminRole(ctx.role)) {
           if (status && !SUBMITTED_STATUSES.has(status)) {
             throw createHttpError(403, 'Office head can only view submitted requisitions');
           }
@@ -447,7 +458,7 @@ export const requisitionController = {
           }
         }
         const normalizedStatus = String(requisition.status || '').toUpperCase();
-        if (ctx.role === 'office_head' && !SUBMITTED_STATUSES.has(normalizedStatus)) {
+        if (isOfficeAdminRole(ctx.role) && !SUBMITTED_STATUSES.has(normalizedStatus)) {
           throw createHttpError(403, 'Office head can only access submitted requisitions');
         }
         if (ctx.role === 'caretaker' && SUBMITTED_STATUSES.has(normalizedStatus)) {
@@ -582,7 +593,7 @@ export const requisitionController = {
       const enrichedLine = enrichedLines.find((entry) => String(entry._id) === lineId) || line.toJSON();
 
       const [officeHeadUserIds, caretakerUserIds, orgAdminUserIds] = await Promise.all([
-        resolveActiveUserIdsByOfficeAndRoles(officeId, ['office_head']),
+          resolveActiveUserIdsByOfficeAndRoles(officeId, [...OFFICE_ADMIN_ROLE_VALUES]),
         resolveActiveUserIdsByOfficeAndRoles(officeId, ['caretaker']),
         resolveActiveOrgAdminUserIds(),
       ]);
@@ -868,7 +879,7 @@ export const requisitionController = {
       const mappingSummary = buildRequisitionMappingSummary(responseLines as Array<Record<string, unknown>>);
 
       const [officeHeadUserIds, orgAdminUserIds] = await Promise.all([
-        resolveActiveUserIdsByOfficeAndRoles(officeId, ['office_head']),
+          resolveActiveUserIdsByOfficeAndRoles(officeId, [...OFFICE_ADMIN_ROLE_VALUES]),
         resolveActiveOrgAdminUserIds(),
       ]);
       await dispatchRequisitionNotifications({
@@ -948,7 +959,7 @@ export const requisitionController = {
       if (!officeId) {
         throw createHttpError(400, 'Requisition office is missing');
       }
-      if (!ctx.isOrgAdmin && ctx.role !== 'office_head') {
+      if (!ctx.isOrgAdmin && !isOfficeAdminRole(ctx.role)) {
         throw createHttpError(403, 'Only office head can approve or reject submitted requisitions');
       }
 
@@ -1166,7 +1177,7 @@ export const requisitionController = {
       }
       if (adjustNotification) {
         const [officeHeadUserIds, caretakerUserIds, orgAdminUserIds] = await Promise.all([
-          resolveActiveUserIdsByOfficeAndRoles(adjustNotification.officeId, ['office_head']),
+          resolveActiveUserIdsByOfficeAndRoles(adjustNotification.officeId, [...OFFICE_ADMIN_ROLE_VALUES]),
           resolveActiveUserIdsByOfficeAndRoles(adjustNotification.officeId, ['caretaker']),
           resolveActiveOrgAdminUserIds(),
         ]);
@@ -1398,7 +1409,7 @@ export const requisitionController = {
       }
       if (signedUploadNotification) {
         const [officeHeadUserIds, caretakerUserIds, orgAdminUserIds] = await Promise.all([
-          resolveActiveUserIdsByOfficeAndRoles(signedUploadNotification.officeId, ['office_head']),
+          resolveActiveUserIdsByOfficeAndRoles(signedUploadNotification.officeId, [...OFFICE_ADMIN_ROLE_VALUES]),
           resolveActiveUserIdsByOfficeAndRoles(signedUploadNotification.officeId, ['caretaker']),
           resolveActiveOrgAdminUserIds(),
         ]);
@@ -1621,11 +1632,9 @@ export const requisitionController = {
                 if (!isAssetItemHeldByOffice(item, issuingOfficeId)) {
                   throw createHttpError(400, `Asset item ${item.id} is not in the issuing office`);
                 }
-                if (item.assignment_status === 'Assigned') {
-                  throw createHttpError(400, `Asset item ${item.id} is already assigned`);
-                }
-                if (item.is_active === false) {
-                  throw createHttpError(400, `Asset item ${item.id} is inactive`);
+                const assignmentBlockReason = getAssetItemAssignmentBlockReason(item);
+                if (assignmentBlockReason) {
+                  throw createHttpError(400, `Asset item ${item.id} cannot be issued: ${assignmentBlockReason}`);
                 }
               }
 
@@ -1901,7 +1910,7 @@ export const requisitionController = {
       }
 
       const [officeHeadUserIds, caretakerUserIds, orgAdminUserIds] = await Promise.all([
-        resolveActiveUserIdsByOfficeAndRoles(issuingOfficeId, ['office_head']),
+          resolveActiveUserIdsByOfficeAndRoles(issuingOfficeId, [...OFFICE_ADMIN_ROLE_VALUES]),
         resolveActiveUserIdsByOfficeAndRoles(issuingOfficeId, ['caretaker']),
         resolveActiveOrgAdminUserIds(),
       ]);

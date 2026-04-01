@@ -15,6 +15,7 @@ import { useAssets } from "@/hooks/useAssets";
 import { isHeadOfficeLocation } from "@/lib/locationUtils";
 import { useAuth } from "@/contexts/AuthContext";
 import { EmployeeTransferModal } from "@/components/forms/EmployeeTransferModal";
+import { isOfficeAdminRole } from "@/services/authService";
 
 export default function EmployeeDetail() {
   const { id } = useParams<{ id: string }>();
@@ -42,7 +43,7 @@ export default function EmployeeDetail() {
   const currentLocation = locationId ? locationList.find((l) => l.id === locationId) : null;
   const isHeadofficeIssuer =
     isHeadOfficeLocation(currentLocation) &&
-    (role === "office_head" || role === "caretaker");
+    (isOfficeAdminRole(role) || role === "caretaker");
   const canTransferEmployee = isOrgAdmin || isHeadofficeIssuer;
   const directorate = employee && isHeadOfficeLocation(location)
     ? directorateList.find((d) => d.id === employee.directorate_id)
@@ -298,7 +299,7 @@ export default function EmployeeDetail() {
                                 {assignment.is_active ? "Active" : "Returned"}
                               </Badge>
                             </td>
-                            <td className="py-3 px-4 text-sm text-muted-foreground max-w-[200px] truncate">
+                            <td className="max-w-[200px] break-words px-4 py-3 text-sm leading-5 text-muted-foreground [overflow-wrap:anywhere]">
                               {assignment.notes || "-"}
                             </td>
                           </tr>

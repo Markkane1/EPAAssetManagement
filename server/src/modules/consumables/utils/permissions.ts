@@ -1,5 +1,6 @@
 export type ConsumableRole =
   | 'org_admin'
+  | 'head_office_admin'
   | 'office_head'
   | 'caretaker'
   | 'employee'
@@ -85,7 +86,7 @@ export function resolveConsumablePermissions(role?: string | null): ConsumablePe
     };
   }
 
-  if (role === 'office_head') {
+  if (role === 'office_head' || role === 'head_office_admin') {
     return {
       ...basePermissions,
       canReceiveOffice: true,

@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { createCrudController } from './crudController';
 import { projectRepository } from '../repositories/project.repository';
 import { ProjectModel } from '../models/project.model';
-import { readPagination } from '../utils/requestParsing';
+import { escapeRegex, readPagination } from '../utils/requestParsing';
 import { createHttpError } from '../utils/httpError';
 import { buildSearchTerms, buildSearchTermsQuery } from '../utils/searchTerms';
 
@@ -48,6 +48,10 @@ function toTrimmed(value: unknown) {
   return String(value ?? '').trim();
 }
 
+function normalizeProjectName(value: unknown) {
+  return toTrimmed(value).replace(/\s+/g, ' ');
+}
+
 function toDate(value: unknown) {
   const parsed = new Date(String(value ?? ''));
   if (Number.isNaN(parsed.getTime())) return null;
@@ -78,12 +82,33 @@ function assertProjectDates(payload: Record<string, unknown>) {
   }
 }
 
+async function assertUniqueProjectName(name: unknown, excludeId?: string) {
+  const normalizedName = normalizeProjectName(name);
+  if (!normalizedName) {
+    throw createHttpError(400, 'name is required');
+  }
+
+  const filter: Record<string, unknown> = {
+    name: new RegExp(`^${escapeRegex(normalizedName)}$`, 'i'),
+  };
+  if (excludeId) {
+    filter._id = { $ne: excludeId };
+  }
+
+  const existing = await ProjectModel.exists(filter);
+  if (existing) {
+    throw createHttpError(409, 'A project with this name already exists');
+  }
+}
+
 export const projectController = {
   ...baseController,
   create: async (req: Request, res: Response, next: NextFunction) => {
     try {
       const payload = buildPayload(req.body || {});
+      payload.name = normalizeProjectName(payload.name);
       assertProjectDates(payload);
+      await assertUniqueProjectName(payload.name);
       payload.search_terms = resolveProjectSearchTerms(payload);
       const created = await projectRepository.create(payload);
       res.status(201).json(created);
@@ -99,11 +124,15 @@ export const projectController = {
       }
 
       const incoming = buildPayload(req.body || {});
+      if (incoming.name !== undefined) {
+        incoming.name = normalizeProjectName(incoming.name);
+      }
       const merged: Record<string, unknown> = {
         ...(typeof (existing as any).toObject === 'function' ? (existing as any).toObject() : (existing as any)),
         ...incoming,
       };
       assertProjectDates(merged);
+      await assertUniqueProjectName(merged.name, String(req.params.id || '').trim());
       incoming.search_terms = resolveProjectSearchTerms(incoming, merged);
 
       const updated = await projectRepository.updateById(String(req.params.id || '').trim(), incoming);

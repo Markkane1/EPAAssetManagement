@@ -4,7 +4,16 @@ import authService, { AppRole, User, normalizeRole } from '@/services/authServic
 import { activityService } from '@/services/activityService';
 import api, { ApiError } from '@/lib/api';
 import { userPermissionService } from '@/services/userPermissionService';
-import { setRuntimeRolePermissions } from '@/config/pagePermissions';
+import {
+  cacheRuntimeAuthorizationState,
+  clearCachedRuntimeAuthorizationState,
+  clearRuntimeAuthorizationState,
+  hydrateRuntimeAuthorizationState,
+  setRuntimeAllowedPages,
+  setRuntimeAuthorizationCatalog,
+  setRuntimeAuthorizationPolicy,
+  setRuntimeRolePermissions,
+} from '@/config/pagePermissions';
 import { clearAuditLogs } from '@/lib/auditLog';
 
 interface AuthContextType {
@@ -71,6 +80,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         role: normalizedRole,
         activeRole: normalizedActiveRole,
         roles: normalizedRoles,
+        locationId: me.locationId || null,
       };
       if (currentUserIdRef.current && currentUserIdRef.current !== normalizedUser.id) {
         clearAuditLogs();
@@ -84,17 +94,39 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setIsOrgAdmin(normalizedRoles.includes('org_admin') || normalizedRole === 'org_admin');
       setLocationId(me.locationId || null);
 
+      const hydratedFromCache = hydrateRuntimeAuthorizationState({
+        userId: normalizedUser.id,
+        activeRole: normalizedActiveRole,
+      });
+
       try {
         const runtime = await userPermissionService.getEffectiveRolePermissions();
-        setRuntimeRolePermissions([
+        const runtimePolicy = runtime.policy || runtime.authorization_policy || null;
+        setRuntimeAuthorizationCatalog(runtime.catalog);
+        setRuntimeAllowedPages(runtime.allowed_pages || []);
+        setRuntimeAuthorizationPolicy(runtimePolicy);
+        const rolePermissions = [
           {
             id: String(runtime.role || normalizedRole),
             sourceRoles: [String(runtime.role || normalizedRole)],
             permissions: runtime.permissions || {},
           },
-        ]);
+        ];
+        setRuntimeRolePermissions(rolePermissions);
+        cacheRuntimeAuthorizationState({
+          userId: normalizedUser.id,
+          role: String(runtime.role || normalizedRole),
+          activeRole: normalizedActiveRole,
+          allowedPages: runtime.allowed_pages || [],
+          rolePermissions,
+          catalog: runtime.catalog,
+          policy: runtimePolicy,
+        });
       } catch {
-        setRuntimeRolePermissions(null);
+        if (!hydratedFromCache) {
+          clearRuntimeAuthorizationState();
+          clearCachedRuntimeAuthorizationState();
+        }
       }
     } catch (err) {
       // Only clear local auth state on confirmed auth failures (401/403).
@@ -112,13 +144,31 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         setRoles([]);
         setIsOrgAdmin(false);
         setLocationId(null);
-        setRuntimeRolePermissions(null);
+        clearRuntimeAuthorizationState();
+        clearCachedRuntimeAuthorizationState();
       }
     }
     setIsLoading(false);
   }, []);
 
   useEffect(() => {
+    const cachedUser = authService.getCurrentUser();
+    if (cachedUser) {
+      currentUserIdRef.current = cachedUser.id;
+      setUser(cachedUser);
+      setRole(cachedUser.role);
+      setActiveRole(cachedUser.activeRole || cachedUser.role);
+      setRoles(cachedUser.roles || [cachedUser.role]);
+      setIsOrgAdmin(
+        (cachedUser.roles || [cachedUser.role]).includes('org_admin') ||
+          cachedUser.role === 'org_admin'
+      );
+      setLocationId(cachedUser.locationId || null);
+      hydrateRuntimeAuthorizationState({
+        userId: cachedUser.id,
+        activeRole: cachedUser.activeRole || cachedUser.role,
+      });
+    }
     loadCurrentUser();
   }, [loadCurrentUser]);
 
@@ -158,7 +208,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     setRoles([]);
     setIsOrgAdmin(false);
     setLocationId(null);
-    setRuntimeRolePermissions(null);
+    clearRuntimeAuthorizationState();
+    clearCachedRuntimeAuthorizationState();
   };
 
   return (

@@ -96,11 +96,32 @@ describe("Profile page", () => {
     });
 
     render(<Profile />);
-    await userEvent.type(screen.getByLabelText("Current Password"), "OldPass123!");
-    await userEvent.type(screen.getByLabelText("New Password"), "NewPass123!");
+    await userEvent.type(screen.getByLabelText("Current Password"), "OldPass123!Aa");
+    await userEvent.type(screen.getByLabelText("New Password"), "NewStrong123!");
     await userEvent.type(screen.getByLabelText("Confirm New Password"), "Different123!");
     fireEvent.submit(screen.getByRole("button", { name: /update password/i }).closest("form")!);
-    expect(toastErrorMock).toHaveBeenCalledWith("New passwords do not match");
+    expect(screen.getByText("New passwords do not match")).toBeInTheDocument();
+    expect(apiPostMock).not.toHaveBeenCalled();
+  });
+
+  it("should block password submission when the new password is too weak", async () => {
+    useAuthMock.mockReturnValue({
+      user: { id: "user-1", email: "admin@example.com", role: "org_admin", roles: ["org_admin"] },
+      roles: ["org_admin"],
+      activeRole: "org_admin",
+      switchActiveRole: vi.fn(),
+      logout: vi.fn(),
+    });
+
+    render(<Profile />);
+    await userEvent.type(screen.getByLabelText("Current Password"), "OldPass123!Aa");
+    await userEvent.type(screen.getByLabelText("New Password"), "weakpass");
+    await userEvent.type(screen.getByLabelText("Confirm New Password"), "weakpass");
+    await userEvent.click(screen.getByRole("button", { name: /update password/i }));
+
+    expect(
+      screen.getByText(/password must be at least 12 characters and include uppercase, lowercase, number, and symbol/i)
+    ).toBeInTheDocument();
     expect(apiPostMock).not.toHaveBeenCalled();
   });
 
@@ -114,13 +135,13 @@ describe("Profile page", () => {
     });
 
     render(<Profile />);
-    await userEvent.type(screen.getByLabelText("Current Password"), "OldPass123!");
-    await userEvent.type(screen.getByLabelText("New Password"), "NewPass123!");
-    await userEvent.type(screen.getByLabelText("Confirm New Password"), "NewPass123!");
+    await userEvent.type(screen.getByLabelText("Current Password"), "OldPass123!Aa");
+    await userEvent.type(screen.getByLabelText("New Password"), "NewStrong123!");
+    await userEvent.type(screen.getByLabelText("Confirm New Password"), "NewStrong123!");
     await userEvent.click(screen.getByRole("button", { name: /update password/i }));
 
     await waitFor(() => {
-      expect(apiPostMock).toHaveBeenCalledWith("/auth/change-password", { oldPassword: "OldPass123!", newPassword: "NewPass123!" });
+      expect(apiPostMock).toHaveBeenCalledWith("/auth/change-password", { oldPassword: "OldPass123!Aa", newPassword: "NewStrong123!" });
     });
     expect(toastSuccessMock).toHaveBeenCalledWith("Password updated");
     expect(screen.getByLabelText("Current Password")).toHaveValue("");
@@ -137,9 +158,9 @@ describe("Profile page", () => {
     });
 
     render(<Profile />);
-    await userEvent.type(screen.getByLabelText("Current Password"), "OldPass123!");
-    await userEvent.type(screen.getByLabelText("New Password"), "NewPass123!");
-    await userEvent.type(screen.getByLabelText("Confirm New Password"), "NewPass123!");
+    await userEvent.type(screen.getByLabelText("Current Password"), "OldPass123!Aa");
+    await userEvent.type(screen.getByLabelText("New Password"), "NewStrong123!");
+    await userEvent.type(screen.getByLabelText("Confirm New Password"), "NewStrong123!");
     await userEvent.click(screen.getByRole("button", { name: /update password/i }));
     await waitFor(() => expect(toastErrorMock).toHaveBeenCalledWith("Backend said no"));
   });

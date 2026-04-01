@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
+import { z } from "zod";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { PageHeader } from "@/components/shared/PageHeader";
-import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -71,10 +71,10 @@ import { UserWithDetails } from "@/services/userService";
 import {
   useCreateUser,
   useDeleteUser,
-  usePagedUsers,
   useResetUserPassword,
   useUpdateUserLocation,
   useUpdateUserRole,
+  useUsers,
   useUserRolePermissionsCatalog,
 } from "@/hooks/useUsers";
 import { useLocations } from "@/hooks/useLocations";
@@ -82,9 +82,37 @@ import { usePageSearch } from "@/contexts/PageSearchContext";
 import { cn } from "@/lib/utils";
 import { exportToCSV } from "@/lib/exportUtils";
 import { SearchableSelect } from "@/components/shared/SearchableSelect";
+import { emailSchema, strongPasswordSchema } from "@/lib/securityUtils";
+import { StatsCard } from "@/components/dashboard/StatsCard";
+import { FilterBar, WorkflowPanel } from "@/components/shared/workflow";
+
+const userNameSchema = z.string().trim().min(1, "This field is required").max(80, "Must be 80 characters or fewer");
+
+const createUserSchema = z.object({
+  firstName: userNameSchema,
+  lastName: userNameSchema,
+  email: emailSchema.transform((value) => value.toLowerCase()),
+  password: strongPasswordSchema,
+  role: z.string().trim().min(1, "Role is required"),
+  locationId: z.string().trim().min(1, "Location is required"),
+});
+
+const resetPasswordSchema = z.object({
+  newPassword: strongPasswordSchema,
+  confirmPassword: z.string().min(1, "Confirm the new password"),
+}).superRefine((value, context) => {
+  if (value.newPassword !== value.confirmPassword) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["confirmPassword"],
+      message: "Passwords do not match",
+    });
+  }
+});
 
 const CORE_ROLE_OPTIONS: Array<{ id: string; label: string }> = [
   { id: "org_admin", label: "Org Admin" },
+  { id: "head_office_admin", label: "Head Office Admin" },
   { id: "office_head", label: "Office Head" },
   { id: "caretaker", label: "Caretaker" },
   { id: "employee", label: "Employee" },
@@ -95,14 +123,15 @@ const CORE_ROLE_OPTIONS: Array<{ id: string; label: string }> = [
 ];
 
 const CORE_ROLE_COLORS: Record<string, string> = {
-  org_admin: "bg-yellow-500 text-yellow-950",
-  office_head: "bg-sky-500 text-white",
-  caretaker: "bg-teal-600 text-white",
-  employee: "bg-emerald-500 text-white",
-  storekeeper: "bg-cyan-600 text-white",
-  inventory_controller: "bg-blue-600 text-white",
-  procurement_officer: "bg-orange-500 text-white",
-  compliance_auditor: "bg-slate-600 text-white",
+  org_admin: "bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]",
+  head_office_admin: "bg-[hsl(36_85%_52%)] text-[hsl(24_100%_12%)]",
+  office_head: "bg-[hsl(102_43%_50%)] text-white",
+  caretaker: "bg-[hsl(var(--accent))] text-[hsl(var(--accent-foreground))]",
+  employee: "bg-[hsl(var(--secondary))] text-[hsl(var(--secondary-foreground))] border border-border",
+  storekeeper: "bg-[hsl(98_45%_83%)] text-[hsl(100_98%_18%)]",
+  inventory_controller: "bg-[hsl(90_16%_75%)] text-[hsl(90_8%_18%)]",
+  procurement_officer: "bg-[hsl(36_85%_52%)] text-[hsl(24_100%_12%)]",
+  compliance_auditor: "bg-[hsl(183_29%_32%)] text-white",
 };
 
 function toRoleLabel(role?: string | null, roleNameMap?: Map<string, string>) {
@@ -155,14 +184,11 @@ export default function UserManagement() {
   const [newUserExtraRoles, setNewUserExtraRoles] = useState("");
   const [newUserLocation, setNewUserLocation] = useState<string>("");
   const [newUserLocationPickerOpen, setNewUserLocationPickerOpen] = useState(false);
+  const [createUserError, setCreateUserError] = useState("");
+  const [resetPasswordError, setResetPasswordError] = useState("");
 
   // Fetch all users with their profiles and roles
-  const { data: users = { items: [], page: 1, limit: 50, total: 0, hasMore: false }, isLoading: usersLoading } =
-    usePagedUsers({ page, limit: pageSize, search: searchQuery || undefined });
-
-  useEffect(() => {
-    setPage(1);
-  }, [searchQuery, pageSize]);
+  const { data: users = [], isLoading: usersLoading } = useUsers({ search: searchQuery || undefined });
 
   // Fetch all locations
   const { data: locations = [] } = useLocations();
@@ -184,36 +210,48 @@ export default function UserManagement() {
     setNewUserExtraRoles("");
     setNewUserLocation("");
     setNewUserLocationPickerOpen(false);
+    setCreateUserError("");
   };
 
   const handleCreateUser = async () => {
-    const errors: string[] = [];
-    if (!newUserFirstName.trim()) errors.push("First name is required");
-    if (!newUserLastName.trim()) errors.push("Last name is required");
-    if (!newUserEmail.trim()) errors.push("Email is required");
-    if (!newUserPassword) errors.push("Password is required");
-    if (!newUserRole) errors.push("Role is required");
-    if (!newUserLocation) errors.push("Location is required");
-
-    if (errors.length > 0) {
-      toast.error(errors.join(" | "));
-      return;
-    }
-    
-    const allRoles = Array.from(
-      new Set([newUserRole, ...parseRoleList(newUserExtraRoles)])
-    ).filter(Boolean) as AppRole[];
-
-    await createUserMutation.mutateAsync({
-      email: newUserEmail.trim(),
+    const validation = createUserSchema.safeParse({
+      firstName: newUserFirstName,
+      lastName: newUserLastName,
+      email: newUserEmail,
       password: newUserPassword,
-      firstName: newUserFirstName.trim(),
-      lastName: newUserLastName.trim(),
-      role: newUserRole as AppRole,
-      roles: allRoles,
-      activeRole: newUserRole as AppRole,
+      role: newUserRole,
       locationId: newUserLocation,
     });
+    if (!validation.success) {
+      const message = validation.error.issues[0]?.message || "Review the new user details";
+      setCreateUserError(message);
+      toast.error(message);
+      return;
+    }
+
+    const extraRoles = parseRoleList(newUserExtraRoles);
+    const invalidExtraRole = extraRoles.find((entry) => !roleNameMap.has(entry));
+    if (invalidExtraRole) {
+      const message = `Unknown additional role: ${invalidExtraRole}`;
+      setCreateUserError(message);
+      toast.error(message);
+      return;
+    }
+
+    setCreateUserError("");
+    const allRoles = Array.from(new Set([validation.data.role, ...extraRoles])).filter(Boolean) as AppRole[];
+
+    await createUserMutation.mutateAsync({
+      email: validation.data.email,
+      password: validation.data.password,
+      firstName: validation.data.firstName,
+      lastName: validation.data.lastName,
+      role: validation.data.role as AppRole,
+      roles: allRoles,
+      activeRole: validation.data.role as AppRole,
+      locationId: validation.data.locationId,
+    });
+    setPage(1);
     setIsCreateDialogOpen(false);
     resetNewUserForm();
   };
@@ -244,9 +282,17 @@ export default function UserManagement() {
     if (!editingUser) return;
 
     try {
-      const allRoles = Array.from(
-        new Set([selectedRole, ...parseRoleList(selectedExtraRoles)])
-      ).filter(Boolean) as AppRole[];
+      if (!selectedRole) {
+        toast.error("Role is required");
+        return;
+      }
+      const extraRoles = parseRoleList(selectedExtraRoles);
+      const invalidExtraRole = extraRoles.find((entry) => !roleNameMap.has(entry));
+      if (invalidExtraRole) {
+        toast.error(`Unknown additional role: ${invalidExtraRole}`);
+        return;
+      }
+      const allRoles = Array.from(new Set([selectedRole, ...extraRoles])).filter(Boolean) as AppRole[];
       const currentActiveRole = String(editingUser.activeRole || editingUser.role || "").trim().toLowerCase();
       const currentRoles = (editingUser.roles || [editingUser.role || ""])
         .map((entry) => String(entry || "").trim().toLowerCase())
@@ -280,7 +326,7 @@ export default function UserManagement() {
   };
 
   const visibleUsers = useMemo(() => {
-    const rows = users.items || [];
+    const rows = users || [];
     return rows.filter((user) => {
       const normalizedRole = String(user.role || "").trim().toLowerCase();
       const matchesRole = roleFilter === "all" || normalizedRole === roleFilter;
@@ -288,9 +334,23 @@ export default function UserManagement() {
       const matchesLocation = locationFilter === "all" || locationId === locationFilter;
       return matchesRole && matchesLocation;
     });
-  }, [users.items, roleFilter, locationFilter]);
-  const totalUsers = users.total || 0;
-  const totalPages = Math.max(1, Math.ceil(totalUsers / pageSize));
+  }, [locationFilter, roleFilter, users]);
+  const totalUsers = users.length;
+  const totalPages = Math.max(1, Math.ceil(visibleUsers.length / pageSize));
+  const pagedUsers = useMemo(
+    () => visibleUsers.slice((page - 1) * pageSize, page * pageSize),
+    [page, pageSize, visibleUsers]
+  );
+
+  useEffect(() => {
+    setPage(1);
+  }, [searchQuery, roleFilter, locationFilter, pageSize]);
+
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
   const selectedNewUserLocation = useMemo(
     () => locations.find((location) => location.id === newUserLocation) || null,
     [locations, newUserLocation]
@@ -325,6 +385,10 @@ export default function UserManagement() {
     });
     return Array.from(map.entries()).map(([id, label]) => ({ id, label }));
   }, [rolePermissionsCatalog?.roles, roleNameMap, visibleUsers]);
+  const assignedLocationCount = useMemo(
+    () => new Set(users.map((user) => user.location_id).filter(Boolean)).size,
+    [users]
+  );
 
   const getRoleBadge = (role: AppRole | null) => {
     if (!role) return <Badge variant="outline">No Role</Badge>;
@@ -364,6 +428,14 @@ export default function UserManagement() {
       <PageHeader
         title="User Management"
         description="Create, edit and manage user accounts"
+        eyebrow="Access control"
+        meta={
+          <>
+            <span>{totalUsers} users in directory</span>
+            <span className="hidden h-1 w-1 rounded-full bg-border sm:inline-block" />
+            <span>{roleOptions.length} available roles</span>
+          </>
+        }
         action={{
           label: "Add User",
           onClick: () => setIsCreateDialogOpen(true),
@@ -378,10 +450,43 @@ export default function UserManagement() {
         }
       />
 
-      <Card>
-        <CardContent className="pt-6">
-          {/* Search */}
-          <div className="flex flex-wrap items-center gap-4 mb-6">
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
+        <StatsCard
+          title="Total Users"
+          value={totalUsers}
+          subtitle="Directory records across the current search scope"
+          icon={Users}
+          variant="primary"
+        />
+        <StatsCard
+          title="Visible Users"
+          value={visibleUsers.length}
+          subtitle="Rows after role and location filters"
+          icon={Search}
+          variant="info"
+        />
+        <StatsCard
+          title="Role Catalog"
+          value={roleOptions.length}
+          subtitle="Core and dynamic role options available"
+          icon={Shield}
+          variant="warning"
+        />
+        <StatsCard
+          title="Assigned Locations"
+          value={assignedLocationCount}
+          subtitle="Distinct offices currently linked to users"
+          icon={MapPin}
+          variant="success"
+        />
+      </div>
+
+      <WorkflowPanel
+        title="User Directory"
+        description="Search, filter, and manage user accounts using the same workspace layout as the operational pages."
+      >
+        <FilterBar className="mb-6">
+          <div className="flex flex-wrap items-center gap-4">
             <div className="relative w-full sm:max-w-sm sm:flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
@@ -423,14 +528,14 @@ export default function UserManagement() {
               <span>{visibleUsers.length} shown ({totalUsers} total users)</span>
             </div>
           </div>
+        </FilterBar>
 
-          {/* Users Table */}
-          {usersLoading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-            </div>
-          ) : (
-            <div className="rounded-md border">
+        {usersLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          </div>
+        ) : (
+          <div className="table-shell">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -450,7 +555,7 @@ export default function UserManagement() {
                       </TableCell>
                     </TableRow>
                   ) : (
-                    visibleUsers.map((user) => (
+                    pagedUsers.map((user) => (
                       <TableRow key={user.id}>
                         <TableCell>
                           <div className="flex items-center gap-3">
@@ -517,43 +622,42 @@ export default function UserManagement() {
                   )}
                 </TableBody>
               </Table>
+          </div>
+        )}
+        {!usersLoading && totalUsers > 0 && (
+          <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-muted-foreground">
+              Showing {pagedUsers.length === 0 ? 0 : (page - 1) * pageSize + 1} to {Math.min(page * pageSize, visibleUsers.length)} of {visibleUsers.length}
+            </p>
+            <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:flex-nowrap">
+              <Select value={String(pageSize)} onValueChange={(value) => setPageSize(Number(value))}>
+                <SelectTrigger className="w-full sm:w-[130px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="25">25 / page</SelectItem>
+                  <SelectItem value="50">50 / page</SelectItem>
+                  <SelectItem value="100">100 / page</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button variant="outline" size="icon" disabled={page <= 1} onClick={() => setPage((prev) => prev - 1)}>
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <span className="text-sm font-medium">
+                Page {page} of {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="icon"
+                disabled={page >= totalPages}
+                onClick={() => setPage((prev) => prev + 1)}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
             </div>
-          )}
-          {!usersLoading && totalUsers > 0 && (
-            <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-sm text-muted-foreground">
-                Showing {(page - 1) * pageSize + 1} to {Math.min(page * pageSize, totalUsers)} of {totalUsers}
-              </p>
-              <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:flex-nowrap">
-                <Select value={String(pageSize)} onValueChange={(value) => setPageSize(Number(value))}>
-                  <SelectTrigger className="w-full sm:w-[130px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="25">25 / page</SelectItem>
-                    <SelectItem value="50">50 / page</SelectItem>
-                    <SelectItem value="100">100 / page</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Button variant="outline" size="icon" disabled={page <= 1} onClick={() => setPage((prev) => prev - 1)}>
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-                <span className="text-sm font-medium">
-                  Page {page} of {totalPages}
-                </span>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  disabled={page >= totalPages}
-                  onClick={() => setPage((prev) => prev + 1)}
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+          </div>
+        )}
+      </WorkflowPanel>
 
       {/* Edit User Dialog */}
       <Dialog open={!!editingUser} onOpenChange={() => setEditingUser(null)}>
@@ -590,6 +694,7 @@ export default function UserManagement() {
               />
               <p className="text-xs text-muted-foreground">
                 {selectedRole === "org_admin" && "Global access across all offices."}
+                {selectedRole === "head_office_admin" && "Head-office-scoped management access without global system control."}
                 {selectedRole === "office_head" && "Office-scoped management access."}
                 {selectedRole === "caretaker" && "Office-scoped custody and workflow operations."}
                 {selectedRole === "employee" && "Basic office-scoped access."}
@@ -599,6 +704,7 @@ export default function UserManagement() {
                 {selectedRole === "compliance_auditor" && "Read-only compliance and audit visibility."}
                 {selectedRole &&
                   ![
+                    "head_office_admin",
                     "org_admin",
                     "office_head",
                     "caretaker",
@@ -669,14 +775,18 @@ export default function UserManagement() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-4">
+            <div className="space-y-4 py-4">
+            {createUserError && <p className="text-sm text-destructive">{createUserError}</p>}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="firstName">First Name *</Label>
                 <Input
                   id="firstName"
                   value={newUserFirstName}
-                  onChange={(e) => setNewUserFirstName(e.target.value)}
+                  onChange={(e) => {
+                    setNewUserFirstName(e.target.value);
+                    if (createUserError) setCreateUserError("");
+                  }}
                   placeholder="John"
                   required
                 />
@@ -686,7 +796,10 @@ export default function UserManagement() {
                 <Input
                   id="lastName"
                   value={newUserLastName}
-                  onChange={(e) => setNewUserLastName(e.target.value)}
+                  onChange={(e) => {
+                    setNewUserLastName(e.target.value);
+                    if (createUserError) setCreateUserError("");
+                  }}
                   placeholder="Doe"
                   required
                 />
@@ -695,27 +808,33 @@ export default function UserManagement() {
 
             <div className="space-y-2">
               <Label htmlFor="email">Email *</Label>
-              <Input
-                id="email"
-                type="email"
-                value={newUserEmail}
-                onChange={(e) => setNewUserEmail(e.target.value)}
-                placeholder="user@EPAPunjab.gov.pk"
-                required
-              />
+                <Input
+                  id="email"
+                  type="email"
+                  value={newUserEmail}
+                  onChange={(e) => {
+                    setNewUserEmail(e.target.value);
+                    if (createUserError) setCreateUserError("");
+                  }}
+                  placeholder="user@EPAPunjab.gov.pk"
+                  required
+                />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="password">Password *</Label>
-              <Input
-                id="password"
-                type="password"
-                value={newUserPassword}
-                onChange={(e) => setNewUserPassword(e.target.value)}
-                placeholder="Minimum 6 characters"
-                required
-              />
-            </div>
+                <Input
+                  id="password"
+                  type="password"
+                  value={newUserPassword}
+                  onChange={(e) => {
+                    setNewUserPassword(e.target.value);
+                    if (createUserError) setCreateUserError("");
+                  }}
+                  placeholder="At least 12 chars with upper, lower, number, symbol"
+                  required
+                />
+              </div>
 
             <div className="space-y-2">
               <Label className="flex items-center gap-2">
@@ -723,7 +842,11 @@ export default function UserManagement() {
                 Role *
               </Label>
               <Select value={newUserRole} onValueChange={(v) => setNewUserRole(v as AppRole)}>
-                <SelectTrigger>
+                <SelectTrigger
+                  onClick={() => {
+                    if (createUserError) setCreateUserError("");
+                  }}
+                >
                   <SelectValue placeholder="Select a role" />
                 </SelectTrigger>
                 <SelectContent>
@@ -736,7 +859,10 @@ export default function UserManagement() {
               </Select>
               <Input
                 value={newUserExtraRoles}
-                onChange={(event) => setNewUserExtraRoles(event.target.value)}
+                onChange={(event) => {
+                  setNewUserExtraRoles(event.target.value);
+                  if (createUserError) setCreateUserError("");
+                }}
                 placeholder="Additional roles (comma separated)"
               />
             </div>
@@ -757,7 +883,7 @@ export default function UserManagement() {
                     <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                <PopoverContent className="p-0" align="start">
                   <Command>
                     <CommandInput placeholder="Type location name..." />
                     <CommandList>
@@ -769,6 +895,7 @@ export default function UserManagement() {
                           onSelect={() => {
                             setNewUserLocation(location.id);
                             setNewUserLocationPickerOpen(false);
+                            if (createUserError) setCreateUserError("");
                           }}
                         >
                           <Check
@@ -843,6 +970,7 @@ export default function UserManagement() {
           setResetPasswordUser(null);
           setNewPassword("");
           setConfirmPassword("");
+          setResetPasswordError("");
         }
       }}>
         <DialogContent className="max-w-md">
@@ -857,14 +985,18 @@ export default function UserManagement() {
           </DialogHeader>
 
           <div className="space-y-4 py-4">
+            {resetPasswordError && <p className="text-sm text-destructive">{resetPasswordError}</p>}
             <div className="space-y-2">
               <Label htmlFor="newPassword">New Password</Label>
               <Input
                 id="newPassword"
                 type="password"
                 value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="Minimum 6 characters"
+                onChange={(e) => {
+                  setNewPassword(e.target.value);
+                  if (resetPasswordError) setResetPasswordError("");
+                }}
+                placeholder="At least 12 chars with upper, lower, number, symbol"
               />
             </div>
 
@@ -874,7 +1006,10 @@ export default function UserManagement() {
                 id="confirmPassword"
                 type="password"
                 value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
+                onChange={(e) => {
+                  setConfirmPassword(e.target.value);
+                  if (resetPasswordError) setResetPasswordError("");
+                }}
                 placeholder="Confirm new password"
               />
               {confirmPassword && newPassword !== confirmPassword && (
@@ -889,17 +1024,24 @@ export default function UserManagement() {
             </Button>
             <Button 
               onClick={() => {
-                if (resetPasswordUser && newPassword === confirmPassword) {
+                const validation = resetPasswordSchema.safeParse({ newPassword, confirmPassword });
+                if (!validation.success) {
+                  setResetPasswordError(validation.error.issues[0]?.message || "Review the new password");
+                  return;
+                }
+                if (resetPasswordUser) {
+                  setResetPasswordError("");
                   resetPasswordMutation.mutate(
                     {
                       userId: resetPasswordUser.user_id,
-                      newPassword,
+                      newPassword: validation.data.newPassword,
                     },
                     {
                       onSuccess: () => {
                         setResetPasswordUser(null);
                         setNewPassword("");
                         setConfirmPassword("");
+                        setResetPasswordError("");
                       },
                     }
                   );
@@ -908,7 +1050,6 @@ export default function UserManagement() {
               disabled={
                 resetPasswordMutation.isPending || 
                 !newPassword || 
-                newPassword.length < 6 || 
                 newPassword !== confirmPassword
               }
             >
@@ -923,3 +1064,4 @@ export default function UserManagement() {
     </MainLayout>
   );
 }
+

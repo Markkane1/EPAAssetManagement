@@ -1,5 +1,6 @@
 import api from '@/lib/api';
 import authService from '@/services/authService';
+import { fetchAllPages } from '@/services/fetchAllPages';
 
 export type ActivityType =
   | 'login'
@@ -63,6 +64,8 @@ export const activityService = {
     await activityService.logActivity('logout', 'User logged out');
   },
   getRecentActivities: (limit = 50) => api.get<ActivityLogWithUser[]>(`/activities?limit=${limit}`),
+  getAllActivities: (query: ActivityListQuery = {}) =>
+    fetchAllPages(query, (pagedQuery) => activityService.getPagedActivities(pagedQuery), { pageSize: 200 }),
   getPagedActivities: (query: ActivityListQuery = {}) => {
     const params = new URLSearchParams();
     params.set('meta', '1');

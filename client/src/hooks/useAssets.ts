@@ -3,18 +3,27 @@ import { assetService } from '@/services/assetService';
 import type { AssetCreateDto, AssetListQuery, AssetUpdateDto } from '@/services/assetService';
 import { toast } from 'sonner';
 import { API_CONFIG } from '@/config/api.config';
+import { refreshActiveQueries } from '@/lib/queryRefresh';
 
 const { queryKeys, messages, query } = API_CONFIG;
 const { heavyList, detail } = query.profiles;
 
 const assetKeys = {
-  list: (queryParams?: AssetListQuery) => [...queryKeys.assets, 'list', queryParams?.search?.trim() ?? ''] as const,
+  list: (queryParams?: AssetListQuery) => [
+    ...queryKeys.assets,
+    'list',
+    queryParams?.search?.trim() ?? '',
+    queryParams?.categoryId ?? 'ALL_CATEGORY',
+    queryParams?.subcategory ?? 'ALL_SUBCATEGORY',
+  ] as const,
   paged: (queryParams?: AssetListQuery) => [
     ...queryKeys.assets,
     'paged',
     queryParams?.page ?? 1,
     queryParams?.limit ?? null,
     queryParams?.search?.trim() ?? '',
+    queryParams?.categoryId ?? 'ALL_CATEGORY',
+    queryParams?.subcategory ?? 'ALL_SUBCATEGORY',
   ] as const,
   detail: (id: string) => [...queryKeys.assets, 'detail', id] as const,
   byCategory: (categoryId: string) => [...queryKeys.assets, 'byCategory', categoryId] as const,
@@ -91,14 +100,16 @@ export const useCreateAsset = () => {
   
   return useMutation({
     mutationFn: (data: AssetCreateDto) => assetService.create(data),
-    onSuccess: (asset) => {
+    onSuccess: async (asset) => {
       if (asset?.id) {
         queryClient.setQueryData(assetKeys.detail(asset.id), asset);
       }
-      queryClient.invalidateQueries({ queryKey: [...queryKeys.assets, 'list'] });
-      queryClient.invalidateQueries({ queryKey: [...queryKeys.assets, 'paged'] });
-      queryClient.invalidateQueries({ queryKey: [...queryKeys.assets, 'byCategory'] });
-      queryClient.invalidateQueries({ queryKey: [...queryKeys.assets, 'byVendor'] });
+      await refreshActiveQueries(queryClient, [
+        [...queryKeys.assets, 'list'],
+        [...queryKeys.assets, 'paged'],
+        [...queryKeys.assets, 'byCategory'],
+        [...queryKeys.assets, 'byVendor'],
+      ]);
       toast.success(messages.assetCreated);
     },
     onError: (error: Error) => {
@@ -113,12 +124,14 @@ export const useUpdateAsset = () => {
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: AssetUpdateDto }) =>
       assetService.update(id, data),
-    onSuccess: (asset, variables) => {
+    onSuccess: async (asset, variables) => {
       queryClient.setQueryData(assetKeys.detail(variables.id), asset);
-      queryClient.invalidateQueries({ queryKey: [...queryKeys.assets, 'list'] });
-      queryClient.invalidateQueries({ queryKey: [...queryKeys.assets, 'paged'] });
-      queryClient.invalidateQueries({ queryKey: [...queryKeys.assets, 'byCategory'] });
-      queryClient.invalidateQueries({ queryKey: [...queryKeys.assets, 'byVendor'] });
+      await refreshActiveQueries(queryClient, [
+        [...queryKeys.assets, 'list'],
+        [...queryKeys.assets, 'paged'],
+        [...queryKeys.assets, 'byCategory'],
+        [...queryKeys.assets, 'byVendor'],
+      ]);
       toast.success(messages.assetUpdated);
     },
     onError: (error: Error) => {
@@ -132,12 +145,14 @@ export const useDeleteAsset = () => {
   
   return useMutation({
     mutationFn: (id: string) => assetService.delete(id),
-    onSuccess: (_data, id) => {
+    onSuccess: async (_data, id) => {
       queryClient.removeQueries({ queryKey: assetKeys.detail(id), exact: true });
-      queryClient.invalidateQueries({ queryKey: [...queryKeys.assets, 'list'] });
-      queryClient.invalidateQueries({ queryKey: [...queryKeys.assets, 'paged'] });
-      queryClient.invalidateQueries({ queryKey: [...queryKeys.assets, 'byCategory'] });
-      queryClient.invalidateQueries({ queryKey: [...queryKeys.assets, 'byVendor'] });
+      await refreshActiveQueries(queryClient, [
+        [...queryKeys.assets, 'list'],
+        [...queryKeys.assets, 'paged'],
+        [...queryKeys.assets, 'byCategory'],
+        [...queryKeys.assets, 'byVendor'],
+      ]);
       toast.success(messages.assetDeleted);
     },
     onError: (error: Error) => {

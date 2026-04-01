@@ -6,6 +6,7 @@ const ConsumableItemSchema = new Schema<any>(
     name: { type: String, required: true, trim: true },
     cas_number: { type: String, default: null, trim: true },
     category_id: { type: Schema.Types.ObjectId, ref: 'Category', default: null },
+    subcategory: { type: String, default: null, trim: true },
     base_uom: { type: String, required: true, trim: true },
     is_hazardous: { type: Boolean, default: false },
     is_controlled: { type: Boolean, default: false },
@@ -22,6 +23,7 @@ const ConsumableItemSchema = new Schema<any>(
 
 ConsumableItemSchema.index({ name: 1 });
 ConsumableItemSchema.index({ category_id: 1, name: 1 });
+ConsumableItemSchema.index({ category_id: 1, subcategory: 1, name: 1 });
 
 export const ConsumableItemModel = mongoose.model('ConsumableItem', ConsumableItemSchema);
 

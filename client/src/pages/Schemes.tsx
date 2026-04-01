@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
-import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTable } from "@/components/shared/DataTable";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -15,6 +14,7 @@ import { Scheme, Project } from "@/types";
 import { SchemeFormModal } from "@/components/forms/SchemeFormModal";
 import { useSchemes, useCreateScheme, useUpdateScheme, useDeleteScheme } from "@/hooks/useSchemes";
 import { useProjects } from "@/hooks/useProjects";
+import { CollectionWorkspace } from "@/components/shared/CollectionWorkspace";
 
 export default function Schemes() {
   const { data: schemes, isLoading } = useSchemes();
@@ -30,6 +30,8 @@ export default function Schemes() {
   const projectList = projects || [];
 
   const projectMap = new Map(projectList.map((project) => [project.id, project.name]));
+  const activeSchemeCount = schemeList.filter((scheme) => scheme.is_active).length;
+  const mappedProjectCount = new Set(schemeList.map((scheme) => scheme.project_id).filter(Boolean)).size;
 
   const enrichedSchemes = schemeList.map((scheme) => ({
     ...scheme,
@@ -105,13 +107,29 @@ export default function Schemes() {
 
   return (
     <MainLayout title="Schemes" description="Manage project schemes">
-      <PageHeader
+      <CollectionWorkspace
         title="Schemes"
         description="Create and manage schemes under projects"
         action={{ label: "Add Scheme", onClick: handleAddScheme }}
-      />
-
-      <DataTable columns={columns} data={enrichedSchemes} searchPlaceholder="Search schemes..." actions={actions} />
+        eyebrow="Scheme workspace"
+        meta={
+          <>
+            <span>{schemeList.length} schemes in scope</span>
+            <span className="hidden h-1 w-1 rounded-full bg-border sm:inline-block" />
+            <span>Project-linked configuration records</span>
+          </>
+        }
+        metrics={[
+          { label: "Schemes", value: schemeList.length, helper: "Visible scheme definitions", icon: MoreHorizontal, tone: "primary" },
+          { label: "Active", value: activeSchemeCount, helper: "Currently active scheme records", icon: Pencil, tone: "success" },
+          { label: "Projects linked", value: mappedProjectCount, helper: "Projects referenced by these schemes", icon: Trash2 },
+          { label: "Projects loaded", value: projectList.length, helper: "Available parent projects in memory", icon: Loader2, tone: "warning" },
+        ]}
+        panelTitle="Scheme worklist"
+        panelDescription="Review scheme definitions, keep them tied to the correct projects, and use the row menu for management actions."
+      >
+        <DataTable columns={columns} data={enrichedSchemes} searchPlaceholder="Search schemes..." actions={actions} />
+      </CollectionWorkspace>
 
       <SchemeFormModal
         open={isModalOpen}

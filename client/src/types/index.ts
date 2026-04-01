@@ -31,8 +31,8 @@ export enum AssetCondition {
 
 export enum FunctionalStatus {
   Functional = "Functional",
-  NeedRepairs = "Need Repairs",
-  Dead = "Dead",
+  NeedsRepair = "Needs Repair",
+  NonRepairable = "Non-Repairable",
 }
 
 export enum ItemSource {
@@ -66,6 +66,7 @@ export enum PurchaseOrderStatus {
 
 export enum UserRole {
   OrgAdmin = "org_admin",
+  HeadOfficeAdmin = "head_office_admin",
   OfficeHead = "office_head",
   Caretaker = "caretaker",
   Employee = "employee",
@@ -83,6 +84,7 @@ export interface Category {
   id: string;
   name: string;
   description: string | null;
+  subcategories?: string[] | null;
   scope?: CategoryScope | null;
   asset_type?: CategoryAssetType | null;
   created_at: string;
@@ -105,6 +107,26 @@ export interface Office {
     consumables?: boolean;
     chemicals?: boolean;
   } | null;
+  is_active?: boolean | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Store {
+  id: string;
+  name: string;
+  code: string;
+  is_system?: boolean | null;
+  is_active?: boolean | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Store {
+  id: string;
+  name: string;
+  code: string;
+  is_system?: boolean | null;
   is_active?: boolean | null;
   created_at: string;
   updated_at: string;
@@ -223,6 +245,7 @@ export interface CategoryPartial {
   id: string;
   name: string;
   description: string | null;
+  subcategories?: string[] | null;
   scope?: CategoryScope | null;
   asset_type?: CategoryAssetType | null;
 }
@@ -243,6 +266,7 @@ export interface Asset {
   description: string | null;
   specification?: string | null;
   category_id: string | null;
+  subcategory?: string | null;
   vendor_id: string | null;
   purchase_order_id: string | null;
   project_id: string | null;
@@ -651,6 +675,7 @@ export interface ConsumableItem {
   name: string;
   cas_number: string | null;
   category_id: string | null;
+  subcategory?: string | null;
   base_uom: ConsumableBaseUom;
   is_hazardous: boolean;
   is_controlled: boolean;
@@ -671,6 +696,7 @@ export interface ConsumableLot {
   consumable_id: string;
   source_type: 'procurement' | 'project';
   vendor_id: string | null;
+  purchase_order_id?: string | null;
   project_id: string | null;
   scheme_id: string | null;
   handover_file_name?: string | null;
@@ -858,6 +884,8 @@ export interface SystemSettings {
     maintenance_reminders: boolean;
     assignment_notifications: boolean;
     warranty_expiry_alerts: boolean;
+    consumable_notifications: boolean;
+    purchase_order_notifications: boolean;
   };
   security: {
     two_factor_required: boolean;

@@ -113,8 +113,12 @@ export default function AssetDetail() {
                 <p className="text-sm text-muted-foreground">Category</p>
                 <div className="flex items-center gap-2">
                   <Package className="h-4 w-4 text-muted-foreground" />
-                  <Badge variant="secondary">{category?.name || "N/A"}</Badge>
+                  <Badge variant="secondary" className="rounded-md">{category?.name || "N/A"}</Badge>
                 </div>
+              </div>
+              <div className="space-y-1">
+                <p className="text-sm text-muted-foreground">Subcategory</p>
+                <span className="font-medium">{asset.subcategory || "N/A"}</span>
               </div>
               <div className="space-y-1">
                 <p className="text-sm text-muted-foreground">Vendor</p>
@@ -187,15 +191,22 @@ export default function AssetDetail() {
                 </Badge>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-muted-foreground">Damaged</span>
-                <Badge variant="destructive">
-                  {relatedItems.filter((i) => i.item_status === "Damaged").length}
+                <span className="text-muted-foreground">Retired</span>
+                <Badge variant="secondary">
+                  {relatedItems.filter((i) => i.item_status === "Retired").length}
                 </Badge>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-muted-foreground">Transferred</span>
+                <span className="text-muted-foreground">In Transfer</span>
                 <Badge variant="outline" className="text-primary border-primary">
-                  {relatedItems.filter((i) => i.item_status === "Transferred").length}
+                  {
+                    relatedItems.filter(
+                      (i) =>
+                        i.assignment_status === "InTransit" ||
+                        i.item_status === "Transferred" ||
+                        i.item_status === "InTransit"
+                    ).length
+                  }
                 </Badge>
               </div>
             </CardContent>
@@ -219,8 +230,8 @@ export default function AssetDetail() {
                       <th className="text-left py-3 px-4 font-medium">Tag</th>
                       <th className="text-left py-3 px-4 font-medium">Serial Number</th>
                       <th className="text-left py-3 px-4 font-medium">Location</th>
-                      <th className="text-left py-3 px-4 font-medium">Status</th>
-                      <th className="text-left py-3 px-4 font-medium">Assignment</th>
+                      <th className="text-left py-3 px-4 font-medium">Asset State</th>
+                      <th className="text-left py-3 px-4 font-medium">Custody</th>
                       <th className="text-left py-3 px-4 font-medium">Warranty</th>
                       <th className="text-left py-3 px-4 font-medium">Actions</th>
                     </tr>
@@ -284,4 +295,3 @@ export default function AssetDetail() {
     </MainLayout>
   );
 }
-

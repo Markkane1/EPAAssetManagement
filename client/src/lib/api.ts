@@ -3,9 +3,52 @@ function trimTrailingSlash(value: string) {
   return value.replace(/\/+$/, '');
 }
 
-function resolveApiBaseUrl() {
-  const configured = String(import.meta.env.VITE_API_BASE_URL || '').trim();
-  if (configured) {
+function normalizeHostname(value: string) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === '[::1]') return '::1';
+  return normalized;
+}
+
+function isLoopbackHostname(value: string) {
+  const normalized = normalizeHostname(value);
+  return normalized === 'localhost' || normalized === '127.0.0.1' || normalized === '::1';
+}
+
+type LocationLike = Pick<Location, 'hostname' | 'protocol'>;
+
+function shouldUseConfiguredApiBaseUrl(configured: string, locationLike?: LocationLike) {
+  if (!configured) return false;
+  if (!/^https?:\/\//i.test(configured)) return true;
+
+  try {
+    const targetUrl = new URL(configured);
+    if (!locationLike) {
+      return true;
+    }
+
+    const appHost = normalizeHostname(locationLike.hostname);
+    const apiHost = normalizeHostname(targetUrl.hostname);
+
+    if (locationLike.protocol === 'https:' && targetUrl.protocol !== 'https:') {
+      return false;
+    }
+
+    if (isLoopbackHostname(apiHost) && !isLoopbackHostname(appHost)) {
+      return false;
+    }
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function resolveApiBaseUrl(
+  locationLike: LocationLike | undefined = typeof window !== 'undefined' ? window.location : undefined,
+  configuredOverride?: string
+) {
+  const configured = String(configuredOverride ?? (import.meta.env.VITE_API_BASE_URL || '')).trim();
+  if (configured && shouldUseConfiguredApiBaseUrl(configured, locationLike)) {
     return trimTrailingSlash(configured);
   }
   return '/api';
@@ -175,6 +218,21 @@ function extractApiErrorPayload(errorText: string, status: number): {
   return { message: errorText };
 }
 
+function describeApiTarget(requestUrl: string) {
+  if (/^https?:\/\//i.test(requestUrl)) {
+    return requestUrl;
+  }
+  return API_BASE_URL || '/api';
+}
+
+function wrapNetworkError(requestUrl: string, error: unknown) {
+  return new ApiError(
+    `Unable to reach the API server (${describeApiTarget(requestUrl)}). Check the API URL and server availability.`,
+    0,
+    error
+  );
+}
+
 // Generic API response handler
 async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
@@ -207,12 +265,17 @@ async function fetchAPI<T>(
     }
   }
 
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-    ...options,
-    cache: method === 'GET' ? 'no-store' : options.cache,
-    headers,
-    credentials: 'include',
-  });
+  const requestUrl = `${API_BASE_URL}${endpoint}`;
+  let response: Response;
+  try {
+    response = await fetch(requestUrl, {
+      ...options,
+      headers,
+      credentials: 'include',
+    });
+  } catch (error) {
+    throw wrapNetworkError(requestUrl, error);
+  }
   
   return handleResponse<T>(response);
 }
@@ -225,22 +288,34 @@ async function uploadAPI<T>(endpoint: string, data: FormData, method: 'POST' | '
     (headers as Record<string, string>)['x-csrf-token'] = csrfToken;
   }
 
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-    method,
-    body: data,
-    headers,
-    credentials: 'include',
-  });
+  const requestUrl = `${API_BASE_URL}${endpoint}`;
+  let response: Response;
+  try {
+    response = await fetch(requestUrl, {
+      method,
+      body: data,
+      headers,
+      credentials: 'include',
+    });
+  } catch (error) {
+    throw wrapNetworkError(requestUrl, error);
+  }
 
   return handleResponse<T>(response);
 }
 
 // Download helper for binary responses
 async function downloadAPI(endpoint: string): Promise<Blob> {
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-    method: 'GET',
-    credentials: 'include',
-  });
+  const requestUrl = `${API_BASE_URL}${endpoint}`;
+  let response: Response;
+  try {
+    response = await fetch(requestUrl, {
+      method: 'GET',
+      credentials: 'include',
+    });
+  } catch (error) {
+    throw wrapNetworkError(requestUrl, error);
+  }
   if (!response.ok) {
     const error = await response.text();
     throw new Error(extractApiErrorPayload(error, response.status).message);

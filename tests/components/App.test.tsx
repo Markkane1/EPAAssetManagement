@@ -96,10 +96,7 @@ describe("App routing", () => {
   it("should wire allowed-role protected routes, profile, and not-found routing", async () => {
     await renderAt("/settings");
     expect(await screen.findByText("Settings Page")).toBeInTheDocument();
-    expect(screen.getByTestId("protected-route")).toHaveAttribute(
-      "data-roles",
-      "org_admin,office_head"
-    );
+    expect(screen.getByTestId("protected-route")).toHaveAttribute("data-page", "settings");
 
     cleanup();
     await renderAt("/profile");

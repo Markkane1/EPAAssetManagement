@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { z } from "zod";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,6 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Switch } from "@/components/ui/switch";
 import {
   Table,
@@ -43,11 +45,36 @@ const DELEGABLE_ROLES = [
   "compliance_auditor",
 ];
 
+const delegationSchema = z
+  .object({
+    officeId: z.string().trim().min(1, "Office is required"),
+    delegateUserId: z.string().trim().min(1, "Delegate user is required"),
+    startsAt: z.string().trim().min(1, "Start date is required"),
+    endsAt: z.string().trim().min(1, "End date is required"),
+    delegatedRoles: z.array(z.string().trim()).min(1, "Select at least one delegated role"),
+    reason: z.string().trim().max(300, "Reason must be 300 characters or fewer").optional(),
+  })
+  .superRefine((value, context) => {
+    const startDate = new Date(value.startsAt);
+    const endDate = new Date(value.endsAt);
+    if (Number.isNaN(startDate.getTime())) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["startsAt"], message: "Enter a valid start date" });
+    }
+    if (Number.isNaN(endDate.getTime())) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["endsAt"], message: "Enter a valid end date" });
+    }
+    if (!Number.isNaN(startDate.getTime()) && !Number.isNaN(endDate.getTime()) && endDate <= startDate) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["endsAt"], message: "End date must be after the start date" });
+    }
+  });
+
 function toRoleLabel(value: string) {
   const normalized = String(value || "").trim().toLowerCase();
   switch (normalized) {
     case "org_admin":
       return "Org Admin";
+    case "head_office_admin":
+      return "Head Office Admin";
     case "office_head":
       return "Office Head";
     case "caretaker":
@@ -89,6 +116,7 @@ export default function RoleDelegations() {
   const [endsAt, setEndsAt] = useState("");
   const [reason, setReason] = useState("");
   const [selectedRoles, setSelectedRoles] = useState<string[]>(["employee"]);
+  const [createError, setCreateError] = useState("");
 
   const { data: locations = [] } = useLocations();
   const { data: employees = [] } = useEmployees();
@@ -131,18 +159,32 @@ export default function RoleDelegations() {
     setEndsAt("");
     setReason("");
     setSelectedRoles(["employee"]);
+    setCreateError("");
   };
 
   const onSubmitCreate = async () => {
     const officeId = isOrgAdmin ? (selectedOfficeId !== "ALL" ? selectedOfficeId : "") : locationId || "";
-    if (!delegateUserId || !startsAt || !endsAt || selectedRoles.length === 0 || !officeId) return;
-    await createDelegation.mutateAsync({
+    const validation = delegationSchema.safeParse({
+      officeId,
       delegateUserId,
-      officeId: isOrgAdmin ? officeId : undefined,
+      startsAt,
+      endsAt,
       delegatedRoles: selectedRoles,
-      startsAt: new Date(startsAt).toISOString(),
-      endsAt: new Date(endsAt).toISOString(),
-      reason: reason.trim() || undefined,
+      reason,
+    });
+    if (!validation.success) {
+      setCreateError(validation.error.issues[0]?.message || "Review the delegation details");
+      return;
+    }
+
+    setCreateError("");
+    await createDelegation.mutateAsync({
+      delegateUserId: validation.data.delegateUserId,
+      officeId: isOrgAdmin ? validation.data.officeId : undefined,
+      delegatedRoles: validation.data.delegatedRoles,
+      startsAt: new Date(validation.data.startsAt).toISOString(),
+      endsAt: new Date(validation.data.endsAt).toISOString(),
+      reason: validation.data.reason || undefined,
     });
     setIsCreateDialogOpen(false);
     resetCreateForm();
@@ -282,12 +324,20 @@ export default function RoleDelegations() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
+            {createError && (
+              <Alert variant="destructive">
+                <AlertDescription>{createError}</AlertDescription>
+              </Alert>
+            )}
             {isOrgAdmin && (
               <div className="space-y-2">
                 <Label>Office</Label>
                 <SearchableSelect
                   value={selectedOfficeId}
-                  onValueChange={setSelectedOfficeId}
+                  onValueChange={(value) => {
+                    setSelectedOfficeId(value);
+                    if (createError) setCreateError("");
+                  }}
                   placeholder="Select office"
                   searchPlaceholder="Search offices..."
                   emptyText="No offices found."
@@ -299,7 +349,10 @@ export default function RoleDelegations() {
               <Label>Delegate user</Label>
               <SearchableSelect
                 value={delegateUserId}
-                onValueChange={setDelegateUserId}
+                onValueChange={(value) => {
+                  setDelegateUserId(value);
+                  if (createError) setCreateError("");
+                }}
                 placeholder="Select user"
                 searchPlaceholder="Search users..."
                 emptyText="No users with linked accounts found for this office."
@@ -312,12 +365,22 @@ export default function RoleDelegations() {
                 <Input
                   type="datetime-local"
                   value={startsAt}
-                  onChange={(event) => setStartsAt(event.target.value)}
+                  onChange={(event) => {
+                    setStartsAt(event.target.value);
+                    if (createError) setCreateError("");
+                  }}
                 />
               </div>
               <div className="space-y-2">
                 <Label>Ends at</Label>
-                <Input type="datetime-local" value={endsAt} onChange={(event) => setEndsAt(event.target.value)} />
+                <Input
+                  type="datetime-local"
+                  value={endsAt}
+                  onChange={(event) => {
+                    setEndsAt(event.target.value);
+                    if (createError) setCreateError("");
+                  }}
+                />
               </div>
             </div>
             <div className="space-y-2">
@@ -331,6 +394,7 @@ export default function RoleDelegations() {
                         type="checkbox"
                         checked={checked}
                         onChange={(event) => {
+                          if (createError) setCreateError("");
                           if (event.target.checked) {
                             setSelectedRoles((prev) => Array.from(new Set([...prev, role])));
                           } else {
@@ -346,7 +410,14 @@ export default function RoleDelegations() {
             </div>
             <div className="space-y-2">
               <Label>Reason (optional)</Label>
-              <Input value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Annual leave coverage" />
+              <Input
+                value={reason}
+                onChange={(event) => {
+                  setReason(event.target.value);
+                  if (createError) setCreateError("");
+                }}
+                placeholder="Annual leave coverage"
+              />
             </div>
           </div>
           <DialogFooter>

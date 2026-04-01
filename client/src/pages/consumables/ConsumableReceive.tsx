@@ -24,10 +24,11 @@ import { useConsumableUnits } from '@/hooks/useConsumableUnits';
 import { useCategories } from '@/hooks/useCategories';
 import { useProjects } from '@/hooks/useProjects';
 import { useSchemes } from '@/hooks/useSchemes';
+import { useCreatePurchaseOrder, usePurchaseOrders } from '@/hooks/usePurchaseOrders';
 import { useVendors } from '@/hooks/useVendors';
 import { useOffices } from '@/hooks/useOffices';
 import { getCompatibleUnits } from '@/lib/unitUtils';
-import type { Category, ConsumableItem, Project, Scheme, Vendor } from '@/types';
+import type { Category, ConsumableItem, Project, PurchaseOrder, Scheme, Vendor } from '@/types';
 import { useConsumableMode } from '@/hooks/useConsumableMode';
 import { filterConsumableCategoriesByMode, filterItemsByMode } from '@/lib/consumableMode';
 import { ConsumableModeToggle } from '@/components/consumables/ConsumableModeToggle';
@@ -35,12 +36,15 @@ import { useAuth } from '@/contexts/AuthContext';
 import { canAccessPage } from '@/config/pagePermissions';
 import { getFormEntityId } from '@/components/forms/formEntityUtils';
 import { usePdfAttachmentField } from '@/components/forms/usePdfAttachmentField';
+import { PurchaseOrderFormModal } from '@/components/forms/PurchaseOrderFormModal';
+import { MetricCard, WorkflowPanel } from '@/components/shared/workflow';
 
 const receiveSchema = z.object({
   categoryId: z.string().min(1, 'Category is required'),
   itemId: z.string().min(1, 'Item is required'),
   source: z.enum(['procurement', 'project']),
   vendorId: z.string().optional(),
+  purchaseOrderId: z.string().optional(),
   projectId: z.string().optional(),
   schemeId: z.string().optional(),
   lotNumber: z.string().min(1, 'Lot number is required'),
@@ -97,6 +101,7 @@ export default function ConsumableReceive() {
     !isOrgAdmin && canAccessPage({ page: 'office-consumables', role, isOrgAdmin });
   const [itemPickerOpen, setItemPickerOpen] = useState(false);
   const [targetPickerOpen, setTargetPickerOpen] = useState(false);
+  const [purchaseOrderModalOpen, setPurchaseOrderModalOpen] = useState(false);
   const [orgAdminReceiveTarget, setOrgAdminReceiveTarget] = useState('STORE:HEAD_OFFICE_STORE');
   const { data: items } = useConsumableItems();
   const { data: categories } = useCategories({ assetType: 'CONSUMABLE' });
@@ -105,6 +110,8 @@ export default function ConsumableReceive() {
   const { data: units } = useConsumableUnits();
   const { data: offices } = useOffices({ isActive: true });
   const { data: labOffices } = useOffices({ capability: 'chemicals', isActive: true });
+  const { data: purchaseOrders } = usePurchaseOrders();
+  const createPurchaseOrder = useCreatePurchaseOrder();
   const { mode, setMode } = useConsumableMode();
   const centralReceiveMutation = useReceiveConsumables();
   const officeReceiveMutation = useReceiveConsumablesOffice();
@@ -178,6 +185,7 @@ export default function ConsumableReceive() {
       itemId: '',
       source: 'procurement',
       vendorId: '',
+      purchaseOrderId: '',
       projectId: '',
       schemeId: '',
       lotNumber: '',
@@ -197,6 +205,7 @@ export default function ConsumableReceive() {
   const modeFilteredItems = useMemo(() => filterItemsByMode(items || [], mode), [items, mode]);
   const selectedCategoryId = form.watch('categoryId');
   const selectedSource = officeReceivingFlow ? 'procurement' : form.watch('source');
+  const selectedVendorId = form.watch('vendorId');
   const selectedProjectId = form.watch('projectId');
   const filteredItems = useMemo(
     () => modeFilteredItems.filter((item) => item.category_id === selectedCategoryId),
@@ -214,10 +223,44 @@ export default function ConsumableReceive() {
     () => (schemes || []).filter((scheme) => getFormEntityId(scheme.project_id) === selectedProjectId),
     [schemes, selectedProjectId]
   );
+  const purchaseOrderList = useMemo(
+    () => (purchaseOrders || []).filter((order) => order.source_type === 'procurement'),
+    [purchaseOrders]
+  );
+  const accessibleVendorIds = useMemo(
+    () => new Set((vendors || []).map((vendor) => getFormEntityId(vendor)).filter(Boolean) as string[]),
+    [vendors]
+  );
+  const visiblePurchaseOrders = useMemo(
+    () =>
+      purchaseOrderList.filter((order) => {
+        if (order.vendor_id && !accessibleVendorIds.has(order.vendor_id)) {
+          return false;
+        }
+        if (selectedVendorId && order.vendor_id !== selectedVendorId) {
+          return false;
+        }
+        return true;
+      }),
+    [accessibleVendorIds, purchaseOrderList, selectedVendorId]
+  );
+  const purchaseOrderById = useMemo(
+    () => new Map(purchaseOrderList.map((order) => [order.id, order])),
+    [purchaseOrderList]
+  );
+  const purchaseOrderPrefill = useMemo(
+    () => ({
+      sourceType: 'procurement' as const,
+      vendorId: selectedVendorId || undefined,
+    }),
+    [selectedVendorId]
+  );
 
   const selectedItem: ConsumableItem | undefined = useMemo(() => {
     return filteredItems.find((item) => item.id === selectedItemId);
   }, [filteredItems, selectedItemId]);
+  const categoryCount = filteredCategories.length;
+  const itemCount = filteredItems.length;
 
   useEffect(() => {
     if (officeReceivingFlow) {
@@ -246,8 +289,16 @@ export default function ConsumableReceive() {
     const exists = (vendors || []).some((vendor) => getFormEntityId(vendor) === currentVendorId);
     if (!exists) {
       form.setValue('vendorId', '');
+      form.setValue('purchaseOrderId', '');
     }
   }, [form, vendors]);
+
+  useEffect(() => {
+    if (selectedSource === 'procurement') return;
+    if (form.getValues('purchaseOrderId')) {
+      form.setValue('purchaseOrderId', '');
+    }
+  }, [form, selectedSource]);
 
   useEffect(() => {
     const currentItem = form.getValues('itemId');
@@ -314,6 +365,24 @@ export default function ConsumableReceive() {
     setContainers((prev) => prev.map((item, idx) => (idx === index ? { ...item, [key]: value } : item)));
   };
 
+  const handlePurchaseOrderChange = (nextValue: string) => {
+    const purchaseOrderId = nextValue === '__none__' ? '' : nextValue;
+    form.setValue('purchaseOrderId', purchaseOrderId, { shouldDirty: true, shouldValidate: true });
+    const selectedOrder = purchaseOrderId ? purchaseOrderById.get(purchaseOrderId) : null;
+    if (selectedOrder?.vendor_id) {
+      form.setValue('vendorId', selectedOrder.vendor_id, { shouldDirty: true, shouldValidate: true });
+    }
+  };
+
+  const handlePurchaseOrderSubmit = async (data: any) => {
+    const createdOrder = await createPurchaseOrder.mutateAsync(data);
+    setPurchaseOrderModalOpen(false);
+    form.setValue('purchaseOrderId', createdOrder.id, { shouldDirty: true, shouldValidate: true });
+    if (createdOrder.vendor_id) {
+      form.setValue('vendorId', createdOrder.vendor_id, { shouldDirty: true, shouldValidate: true });
+    }
+  };
+
   const handleSubmit = async (data: ReceiveFormData) => {
     const effectiveSource = officeReceivingFlow ? 'procurement' : data.source;
     const requiresContainer = Boolean(
@@ -335,6 +404,7 @@ export default function ConsumableReceive() {
           expiryDate: data.expiryDate,
         source: effectiveSource,
         vendorId: effectiveSource === 'procurement' ? data.vendorId || undefined : undefined,
+        purchaseOrderId: effectiveSource === 'procurement' ? data.purchaseOrderId || undefined : undefined,
         projectId: effectiveSource === 'project' ? data.projectId || undefined : undefined,
         schemeId: effectiveSource === 'project' ? data.schemeId || undefined : undefined,
       },
@@ -358,6 +428,7 @@ export default function ConsumableReceive() {
       itemId: '',
       source: 'procurement',
       vendorId: '',
+      purchaseOrderId: '',
       projectId: '',
       schemeId: '',
       lotNumber: buildAutoLotNumber(),
@@ -388,13 +459,27 @@ export default function ConsumableReceive() {
             ? `Receive procurement lots directly into ${receivingTargetLabel}`
             : 'Receive consumable and lab lots into the Central Store'
         }
+        eyebrow="Consumables workspace"
+        meta={
+          <>
+            <span>{categoryCount} eligible categories</span>
+            <span className="hidden h-1 w-1 rounded-full bg-border sm:inline-block" />
+            <span>{itemCount} item options for the selected category mode</span>
+          </>
+        }
         extra={<ConsumableModeToggle mode={mode} onChange={setMode} />}
       />
 
-      <Card>
-        <CardContent className="pt-6 space-y-6">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <MetricCard label="Categories" value={categoryCount} helper="Consumable categories available in this mode" icon={Loader2} tone="primary" />
+        <MetricCard label="Items" value={itemCount} helper="Intake-ready item definitions after category filtering" icon={Loader2} tone="success" />
+        <MetricCard label="Purchase orders" value={visiblePurchaseOrders.length} helper="Procurement orders available for binding" icon={Loader2} />
+        <MetricCard label="Containers" value={containers.length} helper="Tracked containers being added with this lot" icon={Loader2} tone="warning" />
+      </div>
+
+      <WorkflowPanel title="Stock intake workflow" description="Receive procurement or project-supplied consumables through the same dashboard-aligned operational shell as the rest of the inventory system.">
           <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label>
                   {isOrgAdmin && !officeScopedFlow
@@ -410,7 +495,7 @@ export default function ConsumableReceive() {
                         {selectedReceiveTargetLabel}
                       </Button>
                     </PopoverTrigger>
-                    <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                    <PopoverContent className="p-0" align="start">
                       <Command>
                         <CommandInput placeholder="Search receiving target..." />
                         <CommandList>
@@ -455,7 +540,7 @@ export default function ConsumableReceive() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label>Item *</Label>
                 <Popover open={itemPickerOpen} onOpenChange={setItemPickerOpen}>
@@ -464,7 +549,7 @@ export default function ConsumableReceive() {
                       {selectedItem ? selectedItem.name : 'Search item by name...'}
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                  <PopoverContent className="p-0" align="start">
                     <Command>
                       <CommandInput placeholder="Type item name..." />
                       <CommandList>
@@ -506,6 +591,7 @@ export default function ConsumableReceive() {
                         form.setValue('schemeId', '');
                       } else {
                         form.setValue('vendorId', '');
+                        form.setValue('purchaseOrderId', '');
                       }
                     }}
                   >
@@ -519,12 +605,21 @@ export default function ConsumableReceive() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               {selectedSource === 'procurement' ? (
                 <>
                   <div className="space-y-2">
                     <Label>Vendor *</Label>
-                    <Select value={form.watch('vendorId') || ''} onValueChange={(v) => form.setValue('vendorId', v)}>
+                    <Select
+                      value={form.watch('vendorId') || ''}
+                      onValueChange={(v) => {
+                        form.setValue('vendorId', v, { shouldDirty: true, shouldValidate: true });
+                        const selectedOrder = purchaseOrderById.get(form.getValues('purchaseOrderId') || '');
+                        if (selectedOrder && selectedOrder.vendor_id !== v) {
+                          form.setValue('purchaseOrderId', '', { shouldDirty: true, shouldValidate: true });
+                        }
+                      }}
+                    >
                       <SelectTrigger><SelectValue placeholder="Select vendor" /></SelectTrigger>
                       <SelectContent>
                         {(vendors || []).map((vendor: Vendor) => {
@@ -537,6 +632,32 @@ export default function ConsumableReceive() {
                     {form.formState.errors.vendorId && (
                       <p className="text-sm text-destructive">{form.formState.errors.vendorId.message}</p>
                     )}
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <Label>Purchase Order</Label>
+                      <Button type="button" variant="outline" size="sm" onClick={() => setPurchaseOrderModalOpen(true)}>
+                        New Purchase Order
+                      </Button>
+                    </div>
+                    <Select
+                      value={form.watch('purchaseOrderId') || '__none__'}
+                      onValueChange={handlePurchaseOrderChange}
+                    >
+                      <SelectTrigger><SelectValue placeholder="Link a procurement purchase order" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">No purchase order</SelectItem>
+                        {visiblePurchaseOrders.map((order: PurchaseOrder) => (
+                          <SelectItem key={order.id} value={order.id}>
+                            {order.order_number}
+                            {order.source_name ? ` - ${order.source_name}` : ''}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      Link the received lot to its procurement order to keep intake and purchasing in sync.
+                    </p>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="handoverDocumentation">{attachmentLabel}</Label>
@@ -712,8 +833,19 @@ export default function ConsumableReceive() {
               </Button>
             </div>
           </form>
-        </CardContent>
-      </Card>
+      </WorkflowPanel>
+      <PurchaseOrderFormModal
+        open={purchaseOrderModalOpen}
+        onOpenChange={setPurchaseOrderModalOpen}
+        vendors={vendors || []}
+        projects={projects || []}
+        schemes={schemes || []}
+        sourceTypeLocked="procurement"
+        prefill={purchaseOrderPrefill}
+        onSubmit={handlePurchaseOrderSubmit}
+      />
     </MainLayout>
   );
 }
+
+

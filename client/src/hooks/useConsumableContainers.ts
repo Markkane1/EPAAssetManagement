@@ -7,6 +7,7 @@ import type {
   ConsumableContainerUpdateDto,
 } from '@/services/consumableContainerService';
 import { toast } from 'sonner';
+import { refreshActiveQueries } from '@/lib/queryRefresh';
 
 const { queryKeys, query, messages } = API_CONFIG;
 
@@ -22,9 +23,13 @@ export const useCreateConsumableContainer = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (data: ConsumableContainerCreateDto) => consumableContainerService.create(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.consumableContainers });
-      queryClient.invalidateQueries({ queryKey: queryKeys.consumableBalances });
+    onSuccess: async () => {
+      await refreshActiveQueries(queryClient, [
+        queryKeys.consumableContainers,
+        queryKeys.consumableBalances,
+        queryKeys.consumableRollup,
+        queryKeys.consumableExpiry,
+      ]);
       toast.success('Container created successfully');
     },
     onError: (error: Error) => {
@@ -38,9 +43,13 @@ export const useUpdateConsumableContainer = () => {
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: ConsumableContainerUpdateDto }) =>
       consumableContainerService.update(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.consumableContainers });
-      queryClient.invalidateQueries({ queryKey: queryKeys.consumableBalances });
+    onSuccess: async () => {
+      await refreshActiveQueries(queryClient, [
+        queryKeys.consumableContainers,
+        queryKeys.consumableBalances,
+        queryKeys.consumableRollup,
+        queryKeys.consumableExpiry,
+      ]);
       toast.success('Container updated successfully');
     },
     onError: (error: Error) => {
@@ -53,9 +62,13 @@ export const useDeleteConsumableContainer = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => consumableContainerService.delete(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.consumableContainers });
-      queryClient.invalidateQueries({ queryKey: queryKeys.consumableBalances });
+    onSuccess: async () => {
+      await refreshActiveQueries(queryClient, [
+        queryKeys.consumableContainers,
+        queryKeys.consumableBalances,
+        queryKeys.consumableRollup,
+        queryKeys.consumableExpiry,
+      ]);
       toast.success('Container deleted successfully');
     },
     onError: (error: Error) => {

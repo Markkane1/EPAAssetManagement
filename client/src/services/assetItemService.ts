@@ -1,6 +1,7 @@
 import api from '@/lib/api';
 import { AssetItem, AssetStatus, AssetCondition, ItemSource, AssignmentStatus, FunctionalStatus } from '@/types';
 import { ListQuery, PagedListResponse, toListQueryString } from '@/services/pagination';
+import { fetchAllPages } from '@/services/fetchAllPages';
 
 export interface AssetItemCreateDto {
   assetId: string;
@@ -44,16 +45,40 @@ export interface AssetItemUpdateDto {
 
 const LIST_LIMIT = 1000;
 
-export type AssetItemListQuery = ListQuery;
+export interface AssetItemListQuery extends ListQuery {
+  search?: string;
+  assetId?: string;
+  assetName?: string;
+  categoryId?: string;
+  subcategory?: string;
+}
+
+function buildAssetItemQuery(query: AssetItemListQuery = {}, meta = false) {
+  const params = new URLSearchParams();
+  const pagination = toListQueryString({ ...query, meta });
+  if (pagination.startsWith('?')) {
+    const queryString = new URLSearchParams(pagination.slice(1));
+    queryString.forEach((value, key) => params.set(key, value));
+  }
+  if (query.search?.trim()) params.set('search', query.search.trim());
+  if (query.assetId?.trim()) params.set('assetId', query.assetId.trim());
+  if (query.assetName?.trim()) params.set('assetName', query.assetName.trim());
+  if (query.categoryId?.trim()) params.set('categoryId', query.categoryId.trim());
+  if (query.subcategory?.trim()) params.set('subcategory', query.subcategory.trim());
+  const encoded = params.toString();
+  return encoded ? `?${encoded}` : '';
+}
 
 export const assetItemService = {
   getAll: (query: AssetItemListQuery = {}) =>
-    api.get<AssetItem[]>(`/asset-items${toListQueryString({ limit: LIST_LIMIT, ...query })}`),
+    fetchAllPages(
+      query,
+      (pagedQuery) => api.get<PagedListResponse<AssetItem>>(`/asset-items${buildAssetItemQuery({ limit: LIST_LIMIT, ...pagedQuery }, true)}`),
+      { pageSize: LIST_LIMIT }
+    ),
 
   getPaged: (query: AssetItemListQuery = {}) =>
-    api.get<PagedListResponse<AssetItem>>(
-      `/asset-items${toListQueryString({ limit: LIST_LIMIT, ...query, meta: true })}`
-    ),
+    api.get<PagedListResponse<AssetItem>>(`/asset-items${buildAssetItemQuery({ limit: LIST_LIMIT, ...query }, true)}`),
   
   getById: (id: string) => api.get<AssetItem>(`/asset-items/${id}`),
   

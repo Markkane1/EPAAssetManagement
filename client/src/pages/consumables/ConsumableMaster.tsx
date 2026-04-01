@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { MainLayout } from '@/components/layout/MainLayout';
-import { PageHeader } from '@/components/shared/PageHeader';
+import { CollectionWorkspace } from '@/components/shared/CollectionWorkspace';
 import { DataTable } from '@/components/shared/DataTable';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -11,7 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { MoreHorizontal, Pencil, Trash2, Loader2 } from 'lucide-react';
+import { Beaker, Boxes, Loader2, MoreHorizontal, Package2, Pencil, Ruler, Trash2 } from 'lucide-react';
 import { useCategories } from '@/hooks/useCategories';
 import {
   useConsumableItems,
@@ -26,7 +26,8 @@ import { useConsumableMode } from '@/hooks/useConsumableMode';
 import { filterItemsByMode } from '@/lib/consumableMode';
 import { ConsumableModeToggle } from '@/components/consumables/ConsumableModeToggle';
 import { useAuth } from '@/contexts/AuthContext';
-import { MetricCard, TimelineList, WorkflowPanel } from '@/components/shared/workflow';
+import { TimelineList } from '@/components/shared/workflow';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 export default function ConsumableMaster() {
   const { role, isOrgAdmin } = useAuth();
@@ -43,19 +44,51 @@ export default function ConsumableMaster() {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editing, setEditing] = useState<ConsumableItem | null>(null);
+  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [subcategoryFilter, setSubcategoryFilter] = useState('all');
 
-  const categoryList = categories || [];
+  const categoryList = useMemo(() => categories || [], [categories]);
   const unitList = units || [];
   const itemList = filterItemsByMode(items || [], mode);
-  const lotTrackedCount = itemList.filter((item) => item.requires_lot_tracking).length;
-  const containerTrackedCount = itemList.filter((item) => item.is_controlled || item.requires_container_tracking).length;
-  const recentTimeline = itemList.slice(0, 5).map((item) => ({
+  const filteredSubcategories = useMemo(
+    () =>
+      categoryFilter === 'all'
+        ? Array.from(new Set(categoryList.flatMap((category) => category.subcategories || []))).sort((left, right) =>
+            left.localeCompare(right)
+          )
+        : categoryList.find((category) => category.id === categoryFilter)?.subcategories || [],
+    [categoryFilter, categoryList]
+  );
+  const visibleItems = itemList.filter((item) => {
+    const matchesCategory = categoryFilter === 'all' || item.category_id === categoryFilter;
+    const matchesSubcategory = subcategoryFilter === 'all' || item.subcategory === subcategoryFilter;
+    return matchesCategory && matchesSubcategory;
+  });
+  const lotTrackedCount = visibleItems.filter((item) => item.requires_lot_tracking).length;
+  const containerTrackedCount = visibleItems.filter((item) => item.is_controlled || item.requires_container_tracking).length;
+  const recentTimeline = visibleItems.slice(0, 5).map((item) => ({
     id: item.id,
     title: item.name,
-    description: categoryList.find((cat) => cat.id === item.category_id)?.name || 'Uncategorized',
+    description: [categoryList.find((cat) => cat.id === item.category_id)?.name || 'Uncategorized', item.subcategory || null]
+      .filter(Boolean)
+      .join(' / '),
     meta: `${item.base_uom} base unit`,
     badge: item.is_chemical ? 'CHEMICAL' : 'GENERAL',
   }));
+
+  useEffect(() => {
+    if (categoryFilter === 'all') return;
+    if (!categoryList.some((category) => category.id === categoryFilter)) {
+      setCategoryFilter('all');
+    }
+  }, [categoryFilter, categoryList]);
+
+  useEffect(() => {
+    if (subcategoryFilter === 'all') return;
+    if (!filteredSubcategories.includes(subcategoryFilter)) {
+      setSubcategoryFilter('all');
+    }
+  }, [filteredSubcategories, subcategoryFilter]);
 
   const columns = [
     {
@@ -70,6 +103,11 @@ export default function ConsumableMaster() {
           </div>
         );
       },
+    },
+    {
+      key: 'subcategory',
+      label: 'Subcategory',
+      render: (value: string | null | undefined) => value || 'N/A',
     },
     {
       key: 'base_uom',
@@ -157,7 +195,7 @@ export default function ConsumableMaster() {
 
   return (
     <MainLayout title="Item Master" description="Consumable item master">
-      <PageHeader
+      <CollectionWorkspace
         title="Item Master"
         description={`Create and maintain ${modeLabel} inventory items`}
         eyebrow="Master data"
@@ -170,37 +208,67 @@ export default function ConsumableMaster() {
         }
         extra={<ConsumableModeToggle mode={mode} onChange={setMode} />}
         action={canManage ? { label: 'Add Consumable Item', onClick: handleAdd } : undefined}
-      />
-
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="Items" value={itemList.length} helper="Visible in the active consumable mode" icon={Loader2} tone="primary" />
-        <MetricCard label="Lot tracked" value={lotTrackedCount} helper="Items requiring batch-level tracking" icon={Loader2} tone="warning" />
-        <MetricCard label="Container tracked" value={containerTrackedCount} helper="Items requiring container or controlled tracking" icon={Loader2} />
-        <MetricCard label="Units" value={unitList.length} helper="Reusable consumable units of measure" icon={Loader2} />
-      </div>
-
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
-        <WorkflowPanel title="Consumable item master" description="Manage item definitions, units, and tracking requirements.">
-          <DataTable
-            columns={columns}
-            data={itemList as any}
-            searchPlaceholder="Search consumable items..."
-            actions={canManage ? actions : undefined}
-            emptyState={{
-              title: "No consumable items in this mode",
-              description: "Create the first item to start managing consumable inventory.",
-            }}
-          />
-        </WorkflowPanel>
-
-        <WorkflowPanel title="Recent item definitions" description="A compact look at the latest visible item definitions in this mode.">
-          <TimelineList
-            items={recentTimeline}
-            emptyTitle="No items yet"
-            emptyDescription="Item definitions will appear here once you add consumables to the master list."
-          />
-        </WorkflowPanel>
-      </div>
+        metrics={[
+          { label: 'Items', value: visibleItems.length, helper: 'Visible after the current category filters', icon: Boxes, tone: 'primary' },
+          { label: 'Lot tracked', value: lotTrackedCount, helper: 'Items requiring batch-level tracking', icon: Package2, tone: 'warning' },
+          { label: 'Container tracked', value: containerTrackedCount, helper: 'Items requiring container or controlled tracking', icon: Beaker },
+          { label: 'Units', value: unitList.length, helper: 'Reusable consumable units of measure', icon: Ruler, tone: 'success' },
+        ]}
+        filterBar={
+          <>
+            <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+              <SelectTrigger className="w-full sm:w-[200px]">
+                <SelectValue placeholder="Filter by category" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All categories</SelectItem>
+                {categoryList.map((category) => (
+                  <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={subcategoryFilter}
+              onValueChange={setSubcategoryFilter}
+              disabled={filteredSubcategories.length === 0}
+            >
+              <SelectTrigger className="w-full sm:w-[220px]">
+                <SelectValue placeholder="Filter by subcategory" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All subcategories</SelectItem>
+                {filteredSubcategories.map((subcategory) => (
+                  <SelectItem key={subcategory} value={subcategory}>{subcategory}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </>
+        }
+        panelTitle="Consumable item master"
+        panelDescription="Manage item definitions, category/subcategory taxonomy, units, and tracking requirements in the same dashboard-aligned shell."
+        secondaryPanel={{
+          title: 'Recent item definitions',
+          description: 'A compact look at the latest visible item definitions in this mode.',
+          content: (
+            <TimelineList
+              items={recentTimeline}
+              emptyTitle="No items yet"
+              emptyDescription="Item definitions will appear here once you add consumables to the master list."
+            />
+          ),
+        }}
+      >
+        <DataTable
+          columns={columns}
+          data={visibleItems as any}
+          searchPlaceholder="Search consumable items..."
+          actions={canManage ? actions : undefined}
+          emptyState={{
+            title: "No consumable items in this mode",
+            description: "Create the first item to start managing consumable inventory.",
+          }}
+        />
+      </CollectionWorkspace>
 
       {canManage && (
         <ConsumableItemFormModal

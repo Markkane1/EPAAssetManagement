@@ -4,6 +4,7 @@ import type { TransferCreateDto } from '@/services/transferService';
 import { toast } from 'sonner';
 import { API_CONFIG } from '@/config/api.config';
 import { ApiError } from '@/lib/api';
+import { refreshActiveQueries } from '@/lib/queryRefresh';
 
 const { queryKeys, messages, query } = API_CONFIG;
 
@@ -29,9 +30,8 @@ export const useCreateTransfer = () => {
 
   return useMutation({
     mutationFn: (data: TransferCreateDto) => transferService.create(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.transfers });
-      queryClient.invalidateQueries({ queryKey: queryKeys.assetItems });
+    onSuccess: async () => {
+      await refreshActiveQueries(queryClient, [queryKeys.transfers, queryKeys.assetItems]);
       toast.success(messages.transferCreated);
     },
     onError: (error: Error) => {
@@ -87,9 +87,8 @@ export const useTransferAction = () => {
           throw new Error('Unsupported transfer action');
       }
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.transfers });
-      queryClient.invalidateQueries({ queryKey: queryKeys.assetItems });
+    onSuccess: async () => {
+      await refreshActiveQueries(queryClient, [queryKeys.transfers, queryKeys.assetItems]);
       toast.success(messages.transferUpdated);
     },
     onError: (error: Error) => {
@@ -116,8 +115,8 @@ export const useDeleteTransfer = () => {
 
   return useMutation({
     mutationFn: (id: string) => transferService.delete(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.transfers });
+    onSuccess: async () => {
+      await refreshActiveQueries(queryClient, [queryKeys.transfers]);
       toast.success(messages.transferDeleted);
     },
     onError: (error: Error) => {

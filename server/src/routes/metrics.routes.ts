@@ -14,11 +14,11 @@ router.get('/', requireAuth, async (req: AuthRequest, res: Response, next: NextF
 
     const acceptHeader = String(req.headers.accept || '').toLowerCase();
     if (acceptHeader.includes('text/plain')) {
-      res.setHeader('Content-Type', 'text/plain; version=0.0.4');
-      return res.status(200).send(renderPrometheusMetrics());
+      res.setHeader('Content-Type', 'text/plain; version=0.0.4; charset=utf-8');
+      return res.status(200).send(await renderPrometheusMetrics());
     }
 
-    return res.status(200).json(getMetricsSnapshot());
+    return res.status(200).json(await getMetricsSnapshot());
   } catch (error) {
     return next(error);
   }

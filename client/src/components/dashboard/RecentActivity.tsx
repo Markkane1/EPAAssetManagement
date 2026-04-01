@@ -81,7 +81,7 @@ export function RecentActivity() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-sm">{activity.title}</p>
-                    <p className="text-sm text-muted-foreground truncate">
+                    <p className="text-sm leading-5 text-muted-foreground [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2] overflow-hidden">
                       {activity.description}
                     </p>
                     <div className="flex items-center gap-2 mt-1">

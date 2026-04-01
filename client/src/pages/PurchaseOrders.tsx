@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
-import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTable } from "@/components/shared/DataTable";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { Button } from "@/components/ui/button";
@@ -18,6 +17,7 @@ import { useVendors } from "@/hooks/useVendors";
 import { useProjects } from "@/hooks/useProjects";
 import { useSchemes } from "@/hooks/useSchemes";
 import { PurchaseOrderFormModal } from "@/components/forms/PurchaseOrderFormModal";
+import { CollectionWorkspace } from "@/components/shared/CollectionWorkspace";
 
 export default function PurchaseOrders() {
   const { data: purchaseOrders, isLoading } = usePurchaseOrders();
@@ -42,6 +42,9 @@ export default function PurchaseOrders() {
     projectName: projectList.find((project) => project.id === order.project_id)?.name || "N/A",
     schemeName: schemeList.find((scheme) => (scheme.id || scheme._id) === order.scheme_id)?.name || "N/A",
   }));
+  const procurementCount = orderList.filter((order) => order.source_type === "procurement").length;
+  const projectCount = orderList.filter((order) => order.source_type === "project").length;
+  const openOrderCount = orderList.filter((order) => String(order.status || "").toUpperCase() !== "COMPLETED").length;
 
   const columns = [
     {
@@ -102,7 +105,7 @@ export default function PurchaseOrders() {
       key: "notes",
       label: "Notes",
       render: (value: string) => (
-        <span className="text-sm text-muted-foreground truncate max-w-[200px] block">
+        <span className="block max-w-[18rem] break-words text-sm leading-5 text-muted-foreground [overflow-wrap:anywhere]">
           {value || "—"}
         </span>
       ),
@@ -170,21 +173,37 @@ export default function PurchaseOrders() {
 
   return (
     <MainLayout title="Purchase Orders" description="Manage vendor orders">
-      <PageHeader
+      <CollectionWorkspace
         title="Purchase Orders"
         description="Create and track purchase orders from vendors"
+        eyebrow="Procurement workspace"
+        meta={
+          <>
+            <span>{orderList.length} purchase orders in scope</span>
+            <span className="hidden h-1 w-1 rounded-full bg-border sm:inline-block" />
+            <span>Assets and consumables can bind to these records</span>
+          </>
+        }
         action={{
           label: "New Order",
           onClick: handleAddOrder,
         }}
-      />
-
-      <DataTable
-        columns={columns}
-        data={enrichedOrders}
-        searchPlaceholder="Search orders..."
-        actions={actions as any}
-      />
+        metrics={[
+          { label: "Orders", value: orderList.length, helper: "Total purchase-order records loaded", icon: Eye, tone: "primary" },
+          { label: "Procurement", value: procurementCount, helper: "Vendor procurement orders", icon: Pencil, tone: "success" },
+          { label: "Project", value: projectCount, helper: "Project-linked order records", icon: MoreHorizontal },
+          { label: "Open", value: openOrderCount, helper: "Orders not yet completed", icon: Loader2, tone: "warning" },
+        ]}
+        panelTitle="Purchase-order ledger"
+        panelDescription="Track vendor and project orders in one operational ledger and keep linked procurement records easy to audit."
+      >
+        <DataTable
+          columns={columns}
+          data={enrichedOrders}
+          searchPlaceholder="Search orders..."
+          actions={actions as any}
+        />
+      </CollectionWorkspace>
 
       <PurchaseOrderFormModal
         open={isModalOpen}

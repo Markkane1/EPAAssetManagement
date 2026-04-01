@@ -1,6 +1,5 @@
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
-import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTable } from "@/components/shared/DataTable";
 import { Button } from "@/components/ui/button";
 import {
@@ -21,7 +20,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Vendor } from "@/types";
 import {
-  usePagedVendors,
+  useVendors,
   useVendor,
   useCreateVendor,
   useUpdateVendor,
@@ -32,23 +31,25 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useLocations } from "@/hooks/useLocations";
 import { SearchableSelect } from "@/components/shared/SearchableSelect";
 import { usePageSearch } from "@/contexts/PageSearchContext";
+import { CollectionWorkspace } from "@/components/shared/CollectionWorkspace";
 
 export default function Vendors() {
-  const PAGE_SIZE = 60;
   const { role, locationId } = useAuth();
   const isOrgAdmin = role === "org_admin";
   const [officeFilter, setOfficeFilter] = useState<string>("all");
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const { data: locations = [] } = useLocations();
   const selectedOfficeId = isOrgAdmin && officeFilter !== "all" ? officeFilter : undefined;
   const pageSearch = usePageSearch();
   const searchTerm = useDeferredValue((pageSearch?.term || "").trim());
-  const { data: vendors, isLoading } = usePagedVendors({
-    page,
-    limit: PAGE_SIZE,
-    officeId: selectedOfficeId,
-    search: searchTerm || undefined,
-  });
+  const [tableDisplay, setTableDisplay] = useState<{
+    filteredCount: number;
+    totalPages: number;
+    rangeStart: number;
+    rangeEnd: number;
+  } | null>(null);
+  const { data: vendors, isLoading } = useVendors(selectedOfficeId, searchTerm || undefined);
   const createVendor = useCreateVendor();
   const updateVendor = useUpdateVendor();
   const deleteVendor = useDeleteVendor();
@@ -62,9 +63,13 @@ export default function Vendors() {
     isError: isViewingVendorError,
   } = useVendor(viewingVendorId || "");
 
-  const vendorList = vendors?.items || [];
-  const totalVendors = vendors?.total || vendorList.length;
-  const totalPages = Math.max(1, Math.ceil(totalVendors / PAGE_SIZE));
+  const vendorList = vendors || [];
+  const totalVendors = vendorList.length;
+  const totalPages = Math.max(1, Math.ceil(totalVendors / pageSize));
+  const displayCount = tableDisplay?.filteredCount ?? totalVendors;
+  const displayTotalPages = tableDisplay?.totalPages ?? totalPages;
+  const displayRangeStart = tableDisplay?.rangeStart ?? (displayCount === 0 ? 0 : (page - 1) * pageSize + 1);
+  const displayRangeEnd = tableDisplay?.rangeEnd ?? Math.min(page * pageSize, displayCount);
   const scopedLocations = isOrgAdmin
     ? locations
     : locations.filter((office) => office.id === locationId);
@@ -77,10 +82,18 @@ export default function Vendors() {
       }, {}),
     [locations]
   );
+  const contactableCount = vendorList.filter((vendor) => Boolean(vendor.email || vendor.phone)).length;
+  const assignedOfficeCount = vendorList.filter((vendor) => Boolean(vendor.office_id)).length;
 
   useEffect(() => {
     setPage(1);
   }, [officeFilter, searchTerm]);
+
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
 
   const columns = [
     { key: "name", label: "Vendor Name", render: (value: string, row: Vendor) => (
@@ -88,7 +101,7 @@ export default function Vendors() {
     )},
     { key: "email", label: "Email", render: (value: string) => <a href={`mailto:${value}`} className="text-primary hover:underline">{value}</a> },
     { key: "phone", label: "Phone", render: (value: string) => <span className="text-muted-foreground">{value}</span> },
-    { key: "address", label: "Address", render: (value: string) => <span className="text-sm text-muted-foreground truncate max-w-[200px] block">{value}</span> },
+    { key: "address", label: "Address", render: (value: string) => <span className="block max-w-[18rem] break-words text-sm leading-5 text-muted-foreground [overflow-wrap:anywhere]">{value}</span> },
     ...(isOrgAdmin
       ? [
           {
@@ -126,6 +139,7 @@ export default function Vendors() {
       await updateVendor.mutateAsync({ id: editingVendor.id, data: payload });
     } else {
       await createVendor.mutateAsync(payload);
+      setPage(1);
     }
   };
 
@@ -174,58 +188,80 @@ export default function Vendors() {
 
   return (
     <MainLayout title="Vendors" description="Manage your suppliers">
-      <PageHeader
+      <CollectionWorkspace
         title="Vendors"
         description="View and manage asset suppliers and vendors"
+        eyebrow="Supplier workspace"
+        meta={
+          <>
+            <span>{totalVendors} vendors in scope</span>
+            <span className="hidden h-1 w-1 rounded-full bg-border sm:inline-block" />
+            <span>{isOrgAdmin ? "Cross-office administration" : "Office-scoped supplier list"}</span>
+          </>
+        }
         action={{ label: "Add Vendor", onClick: handleAddVendor }}
-      />
-
-      {isOrgAdmin && (
-        <div className="mb-4 w-full max-w-sm">
-          <SearchableSelect
-            value={officeFilter}
-            onValueChange={setOfficeFilter}
-            placeholder="Filter by office"
-            searchPlaceholder="Search offices..."
-            emptyText="No offices found."
-            options={[
-              { value: "all", label: "All Offices" },
-              ...locations.map((office) => ({ value: office.id, label: office.name })),
-            ]}
-          />
+        metrics={[
+          { label: "Visible vendors", value: totalVendors, helper: "Current vendor records in this view", icon: Eye, tone: "primary" },
+          { label: "Contactable", value: contactableCount, helper: "Rows with email or phone details", icon: Mail, tone: "success" },
+          { label: "Office linked", value: assignedOfficeCount, helper: "Suppliers already tied to an office", icon: Phone },
+          { label: "Office scope", value: isOrgAdmin ? scopedLocations.length : 1, helper: "Offices represented in vendor administration", icon: Loader2, tone: "warning" },
+        ]}
+        filterBar={
+          isOrgAdmin ? (
+            <div className="w-full max-w-sm">
+              <SearchableSelect
+                value={officeFilter}
+                onValueChange={setOfficeFilter}
+                placeholder="Filter by office"
+                searchPlaceholder="Search offices..."
+                emptyText="No offices found."
+                options={[
+                  { value: "all", label: "All Offices" },
+                  ...locations.map((office) => ({ value: office.id, label: office.name })),
+                ]}
+              />
+            </div>
+          ) : null
+        }
+        panelTitle="Vendor worklist"
+        panelDescription="Review supplier records, open the row menu for contact or maintenance actions, and keep office-scoped vendor data aligned."
+      >
+        <DataTable
+          columns={columns}
+          data={vendorList}
+          pagination={false}
+          externalPage={page}
+          pageSize={pageSize}
+          searchable={false}
+          useGlobalPageSearch={false}
+          searchPlaceholder="Search vendors..."
+          actions={actions}
+          pageSizeOptions={[10, 20, 50, 100]}
+          onExternalPageChange={setPage}
+          onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
+          onDisplayStateChange={setTableDisplay}
+        />
+        <div className="mt-4 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
+          <p className="text-sm text-muted-foreground">
+            Showing {displayRangeStart} to {displayRangeEnd} of {displayCount} vendors
+          </p>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page === 1}>
+              Previous
+            </Button>
+            <span className="text-sm font-medium">
+              Page {page} of {displayTotalPages}
+            </span>
+            <Button
+              variant="outline"
+              onClick={() => setPage((current) => Math.min(displayTotalPages, current + 1))}
+              disabled={page >= displayTotalPages}
+            >
+              Next
+            </Button>
+          </div>
         </div>
-      )}
-
-      <DataTable
-        columns={columns}
-        data={vendorList}
-        pagination={false}
-        searchable={false}
-        useGlobalPageSearch={false}
-        searchPlaceholder="Search vendors..."
-        actions={actions}
-      />
-      <div className="mt-4 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
-        <p className="text-sm text-muted-foreground">
-          Showing {vendorList.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1} to{" "}
-          {Math.min(page * PAGE_SIZE, totalVendors)} of {totalVendors} vendors
-        </p>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page === 1}>
-            Previous
-          </Button>
-          <span className="text-sm font-medium">
-            Page {page} of {totalPages}
-          </span>
-          <Button
-            variant="outline"
-            onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
-            disabled={page >= totalPages}
-          >
-            Next
-          </Button>
-        </div>
-      </div>
+      </CollectionWorkspace>
 
       <VendorFormModal
         open={isModalOpen}

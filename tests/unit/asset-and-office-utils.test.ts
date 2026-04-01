@@ -61,9 +61,11 @@ describe("access control helpers", () => {
   });
 
   it("should resolve access context from the database when the user exists", async () => {
-    vi.mocked(UserModel.findById).mockResolvedValueOnce({
-      id: "user-1",
-      location_id: new Types.ObjectId("507f1f77bcf86cd799439011"),
+    vi.mocked(UserModel.findById).mockReturnValueOnce({
+      lean: vi.fn().mockResolvedValue({
+        _id: "user-1",
+        location_id: new Types.ObjectId("507f1f77bcf86cd799439011"),
+      }),
     } as never);
 
     const ctx = await resolveAccessContext({
@@ -86,7 +88,9 @@ describe("access control helpers", () => {
       status: 401,
     });
 
-    vi.mocked(UserModel.findById).mockResolvedValueOnce(null as never);
+    vi.mocked(UserModel.findById).mockReturnValueOnce({
+      lean: vi.fn().mockResolvedValue(null),
+    } as never);
 
     await expect(
       resolveAccessContext({

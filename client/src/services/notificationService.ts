@@ -1,4 +1,5 @@
 import api from '@/lib/api';
+import { fetchAllPages } from '@/services/fetchAllPages';
 
 export interface NotificationRecord {
   id: string;
@@ -43,6 +44,26 @@ function buildListQuery(query: NotificationListQuery = {}) {
 }
 
 export const notificationService = {
+  listAll: async (query: NotificationListQuery = {}) => {
+    const pageSize = Math.min(100, Math.max(1, query.limit || 100));
+    return fetchAllPages(
+      query,
+      async (pagedQuery) => {
+        const response = await notificationService.list({
+          ...pagedQuery,
+          limit: pageSize,
+        });
+        return {
+          items: response.data,
+          page: response.page,
+          limit: response.limit,
+          total: response.total,
+          hasMore: response.page * response.limit < response.total,
+        };
+      },
+      { pageSize }
+    );
+  },
   list: (query: NotificationListQuery = {}) => {
     const queryString = buildListQuery(query);
     return api.get<NotificationListResponse>(`/notifications${queryString ? `?${queryString}` : ''}`);

@@ -1,6 +1,7 @@
 import api from '@/lib/api';
 import { Employee } from '@/types';
 import { ListQuery, PagedListResponse, toListQueryString } from '@/services/pagination';
+import { fetchAllPages } from '@/services/fetchAllPages';
 
 const LIST_LIMIT = 2000;
 
@@ -41,7 +42,14 @@ export type EmployeeListQuery = ListQuery;
 
 export const employeeService = {
   getAll: (query: EmployeeListQuery = {}) =>
-    api.get<Employee[]>(`/employees${toListQueryString({ limit: LIST_LIMIT, ...query })}`),
+    fetchAllPages(
+      query,
+      (pagedQuery) =>
+        api.get<PagedListResponse<Employee>>(
+          `/employees${toListQueryString({ limit: LIST_LIMIT, ...pagedQuery, meta: true })}`
+        ),
+      { pageSize: LIST_LIMIT }
+    ),
 
   getPaged: (query: EmployeeListQuery = {}) =>
     api.get<PagedListResponse<Employee>>(

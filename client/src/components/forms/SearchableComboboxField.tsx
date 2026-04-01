@@ -55,14 +55,18 @@ export function SearchableComboboxField({
             variant="outline"
             role="combobox"
             aria-expanded={open}
-            className="w-full justify-between"
+            title={value || placeholder}
+            className="min-h-11 h-auto w-full justify-between py-2 text-left whitespace-normal"
             disabled={disabled}
           >
-            <span className="truncate text-left">{value || placeholder}</span>
+            <span className="min-w-0 flex-1 break-words text-left leading-5 [overflow-wrap:anywhere]">{value || placeholder}</span>
             <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-50" />
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+        <PopoverContent
+          className="w-[var(--radix-popover-trigger-width)] min-w-[18rem] max-w-[calc(100vw-1.5rem)] p-0"
+          align="start"
+        >
           <Command>
             <CommandInput placeholder={searchPlaceholder} />
             <CommandList>
@@ -76,10 +80,12 @@ export function SearchableComboboxField({
                     onOpenChange(false);
                   }}
                 >
-                  <span className={option.primaryClassName}>{option.primaryText}</span>
-                  {option.secondaryText ? (
-                    <span className="ml-2 text-xs text-muted-foreground">{option.secondaryText}</span>
-                  ) : null}
+                  <div className="min-w-0 flex-1">
+                    <span className={option.primaryClassName}>{option.primaryText}</span>
+                    {option.secondaryText ? (
+                      <span className="mt-0.5 block text-xs text-muted-foreground">{option.secondaryText}</span>
+                    ) : null}
+                  </div>
                 </CommandItem>
               ))}
             </CommandList>

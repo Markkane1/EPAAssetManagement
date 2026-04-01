@@ -147,7 +147,7 @@ const SheetOverlay = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLD
       <div
         ref={ref}
         className={cn(
-          "fixed inset-0 z-50 bg-black/80 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
+          "fixed inset-0 z-50 bg-[rgba(26,28,24,0.32)] backdrop-blur-[6px] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
           className
         )}
         data-state={open ? "open" : "closed"}
@@ -159,7 +159,7 @@ const SheetOverlay = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLD
 SheetOverlay.displayName = "SheetOverlay";
 
 const sheetVariants = cva(
-  "fixed z-50 gap-4 bg-background p-6 shadow-lg transition ease-in-out data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:duration-300 data-[state=open]:duration-500",
+  "fixed z-50 gap-4 overflow-y-auto overscroll-contain border-[rgba(26,28,24,0.09)] bg-white p-6 scrollbar-thin shadow-[0_8px_48px_-8px_rgba(26,28,24,0.18),0_2px_8px_rgba(26,28,24,0.06)] transition ease-in-out data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:duration-300 data-[state=open]:duration-500",
   {
     variants: {
       side: {

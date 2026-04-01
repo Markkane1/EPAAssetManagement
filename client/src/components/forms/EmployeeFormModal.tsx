@@ -44,6 +44,7 @@ export function EmployeeFormModal({
   employee,
   directorates: _directorates,
   locations,
+  locationLocked = false,
   fixedLocationId,
   onSubmit,
 }: EmployeeFormModalProps) {
@@ -139,7 +140,7 @@ export function EmployeeFormModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[560px] max-h-[85vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-[560px]">
         <DialogHeader>
           <DialogTitle>{isEditing ? "Edit Employee" : "Add Employee"}</DialogTitle>
           <DialogDescription>
@@ -147,7 +148,7 @@ export function EmployeeFormModal({
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="firstName">First Name *</Label>
               <Input id="firstName" {...form.register("firstName")} placeholder="John" />
@@ -186,7 +187,7 @@ export function EmployeeFormModal({
               <p className="text-xs text-muted-foreground">Set the employee's initial password during creation.</p>
             </div>
           )}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="phone">Phone</Label>
               <Input id="phone" {...form.register("phone")} placeholder="+92 300 1234567" />
@@ -202,7 +203,7 @@ export function EmployeeFormModal({
               id="employee-office"
               value={selectedLocationId || ""}
               onValueChange={(value) => form.setValue("locationId", value, { shouldValidate: true })}
-              disabled={Boolean(fixedLocationId)}
+              disabled={locationLocked || Boolean(fixedLocationId)}
               placeholder="Search office..."
               searchPlaceholder="Search offices, labs, and directorates..."
               emptyText="No offices found."
@@ -230,3 +231,4 @@ export function EmployeeFormModal({
     </Dialog>
   );
 }
+

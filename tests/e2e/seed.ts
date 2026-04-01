@@ -24,11 +24,9 @@ type SeedResult = {
 };
 
 async function clearDatabase() {
-  const dbCollections = await mongoose.connection.db?.collections();
-  if (!dbCollections) return;
-  for (const collection of dbCollections) {
-    await collection.deleteMany({});
-  }
+  const database = mongoose.connection.db;
+  if (!database) return;
+  await database.dropDatabase();
 }
 
 export async function seedE2E(): Promise<SeedResult> {

@@ -3,9 +3,8 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { MainLayout } from '@/components/layout/MainLayout';
-import { PageHeader } from '@/components/shared/PageHeader';
+import { CollectionWorkspace } from '@/components/shared/CollectionWorkspace';
 import { DataTable } from '@/components/shared/DataTable';
-import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -18,7 +17,7 @@ import {
 } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
-import { Loader2 } from 'lucide-react';
+import { BriefcaseBusiness, Loader2, MapPin, Package, Users } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useConsumableMode } from '@/hooks/useConsumableMode';
 import { ConsumableModeToggle } from '@/components/consumables/ConsumableModeToggle';
@@ -228,6 +227,8 @@ export default function ConsumableAssignments() {
   }, [assigneeOptions, form]);
 
   const availableQty = itemId ? availableByItemId.get(itemId) || 0 : 0;
+  const officeCount = filteredLocations.length;
+  const assigneeCount = assigneeOptions.length;
 
   const handleSubmit = async (data: AssignmentFormData) => {
     if (!filteredLocations.some((office) => office.id === data.sourceOfficeId)) {
@@ -356,14 +357,27 @@ export default function ConsumableAssignments() {
 
   return (
     <MainLayout title="Consumable Assignments" description="Assign consumables to employees and sections">
-      <PageHeader
+      <CollectionWorkspace
         title="Consumable Assignments"
         description="Assign stock from office storage to employees or sections/rooms"
+        eyebrow="Consumables workspace"
+        meta={
+          <>
+            <span>{officeCount} source offices in scope</span>
+            <span className="hidden h-1 w-1 rounded-full bg-border sm:inline-block" />
+            <span>{filteredItems.length} consumable items available for assignment</span>
+          </>
+        }
         extra={<ConsumableModeToggle mode={mode} onChange={setMode} />}
-      />
-
-      <Card className="mb-6">
-        <CardContent className="pt-6">
+        metrics={[
+          { label: 'Source offices', value: officeCount, helper: 'Offices that can issue stock in this mode', icon: MapPin, tone: 'primary' },
+          { label: 'Assignees', value: assigneeCount, helper: 'Employees or sections eligible for the selected office', icon: Users, tone: 'success' },
+          { label: 'Item options', value: filteredItems.length, helper: 'Consumable items with available stock', icon: Package },
+          { label: 'Available qty', value: availableQty, helper: selectedItem?.base_uom || 'Base unit', icon: BriefcaseBusiness, tone: 'warning' },
+        ]}
+        panelTitle="Consumable assignment"
+        panelDescription="Issue office-held consumables to employees or sub-locations using the same dashboard-style shell as the rest of the workspace."
+      >
           <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
             <div className="grid grid-cols-3 gap-4">
               <div className="space-y-2">
@@ -426,7 +440,7 @@ export default function ConsumableAssignments() {
                       {selectedItem ? selectedItem.name : 'Search item by name...'}
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                  <PopoverContent className="p-0" align="start">
                     <Command>
                       <CommandInput placeholder="Type item name..." />
                       <CommandList>
@@ -521,19 +535,21 @@ export default function ConsumableAssignments() {
               </Button>
             </div>
           </form>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardContent className="pt-6">
-          <h3 className="mb-4 text-lg font-semibold">Recent Assignments</h3>
+          <div className="border-t border-border/70 pt-6">
+            <div className="mb-4">
+              <h3 className="text-lg font-semibold tracking-tight">Recent assignments</h3>
+              <p className="text-sm text-muted-foreground">
+                Track the latest consumable issues to employees and sections in the same operational shell.
+              </p>
+            </div>
           <DataTable
             columns={columns}
             data={assignmentHistory as any}
             searchPlaceholder="Search assignments..."
           />
-        </CardContent>
-      </Card>
+          </div>
+      </CollectionWorkspace>
     </MainLayout>
   );
 }
+

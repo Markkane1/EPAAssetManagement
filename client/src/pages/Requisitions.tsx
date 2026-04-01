@@ -12,6 +12,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { FilterBar, FilterField, MetricCard, TimelineList, WorkflowPanel } from "@/components/shared/workflow";
 import { useRequisitions } from "@/hooks/useRequisitions";
+import { isOfficeAdminRole } from "@/services/authService";
 
 function asId<T extends { id?: string; _id?: string }>(row: T): string {
   return String(row.id || row._id || "");
@@ -109,7 +110,7 @@ export default function Requisitions() {
 
   const statusOptions = useMemo(() => {
     if (role === "employee") return EMPLOYEE_STATUS_OPTIONS;
-    if (role === "office_head") return OFFICE_HEAD_STATUS_OPTIONS;
+    if (isOfficeAdminRole(role)) return OFFICE_HEAD_STATUS_OPTIONS;
     if (role === "caretaker") {
       return isApprovedQueue ? CARETAKER_APPROVED_QUEUE_OPTIONS : CARETAKER_FULFILLED_QUEUE_OPTIONS;
     }
@@ -242,7 +243,7 @@ export default function Requisitions() {
             <Label htmlFor="requisition-status" className="sr-only">Status</Label>
             <select
               id="requisition-status"
-              className="flex h-11 w-full rounded-xl border border-input/80 bg-background/90 px-3.5 py-2 text-sm"
+              className="flex h-11 w-full rounded-xl border border-input/80 bg-white px-3.5 py-2 text-sm"
               value={status}
               onChange={(event) => setStatus(event.target.value)}
             >

@@ -196,6 +196,7 @@ vi.mock("@/hooks/useSettings", () => ({
 }));
 vi.mock("@/hooks/useNotifications", () => ({
   useNotifications: ({ unreadOnly }: any = {}) => ({ data: unreadOnly ? { data: notifications, total: 1, page: 1, limit: 1 } : { data: notifications, total: 1, page: 1, limit: 50 }, isLoading: false }),
+  useAllNotifications: () => ({ data: notifications, isLoading: false }),
   useMarkAllNotificationsRead: () => makeMutation({ onMutate: (...args) => markAllReadMutateMock(...args) }),
   useMarkNotificationRead: () => makeMutation({ onMutate: (...args) => markReadMutateMock(...args) }),
   useNotificationAction: () => ({ isPending: false, mutate: (payload: any, options?: any) => { notificationActionMutateMock(payload); if (payload.action === "OPEN_RECORD") { options?.onSuccess?.({ openPath: "/requisitions/req-1" }); return; } options?.onSuccess?.({}); } }),
@@ -227,7 +228,12 @@ vi.mock("@/hooks/useConsumableInventory", () => ({ useConsumableBalances: () => 
 vi.mock("@/hooks/useConsumableItems", () => ({ useConsumableItems: () => ({ data: consumableItems, isLoading: false }) }));
 vi.mock("@/hooks/useConsumableLots", () => ({ useConsumableLots: () => ({ data: lots, isLoading: false }) }));
 vi.mock("@/hooks/use-mobile", () => ({ useIsMobile: () => false }));
-vi.mock("@/services/activityService", () => ({ activityService: { getPagedActivities: () => activityPageData } }));
+vi.mock("@/services/activityService", () => ({
+  activityService: {
+    getPagedActivities: () => activityPageData,
+    getAllActivities: () => activities,
+  },
+}));
 vi.mock("@/lib/exportUtils", () => ({ exportToCSV: (...args: unknown[]) => exportToCSVMock(...args), exportToJSON: (...args: unknown[]) => exportToJSONMock(...args), formatDateForExport: (value: string) => value }));
 vi.mock("@/lib/auditLog", () => ({ getAuditLogs: () => auditLogs }));
 vi.mock("@/services/reportService", () => ({ reportService: { getNonCompliance: () => complianceResponse } }));

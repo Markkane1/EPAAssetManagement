@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Project } from "@/types";
 import { FormDialogActions } from "@/components/forms/FormDialogActions";
 import { useDialogFormReset } from "@/components/forms/useDialogFormReset";
+import { ApiError } from "@/lib/api";
 
 const projectSchema = z.object({
   name: z.string().min(1, "Name is required").max(100),
@@ -56,10 +57,15 @@ interface ProjectFormModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   project?: Project | null;
+  existingProjects?: Project[];
   onSubmit: (data: ProjectFormData) => Promise<void>;
 }
 
-export function ProjectFormModal({ open, onOpenChange, project, onSubmit }: ProjectFormModalProps) {
+function normalizeProjectName(value: string) {
+  return String(value || "").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+export function ProjectFormModal({ open, onOpenChange, project, existingProjects = [], onSubmit }: ProjectFormModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const isEditing = !!project;
   const defaultEndDate = useMemo(() => {
@@ -100,11 +106,30 @@ export function ProjectFormModal({ open, onOpenChange, project, onSubmit }: Proj
   useDialogFormReset({ open, form, values: resetValues });
 
   const handleSubmit = async (data: ProjectFormData) => {
+    const normalizedName = normalizeProjectName(data.name);
+    const hasDuplicateName = existingProjects.some((entry) => {
+      if (project?.id && entry.id === project.id) {
+        return false;
+      }
+      return normalizeProjectName(entry.name) === normalizedName;
+    });
+
+    if (hasDuplicateName) {
+      form.setError("name", { message: "A project with this name already exists" });
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       await onSubmit(data);
       form.reset();
       onOpenChange(false);
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 409) {
+        form.setError("name", { message: error.message || "A project with this name already exists" });
+        return;
+      }
+      form.setError("root", { message: error instanceof Error ? error.message : "Failed to save project" });
     } finally {
       setIsSubmitting(false);
     }
@@ -120,7 +145,7 @@ export function ProjectFormModal({ open, onOpenChange, project, onSubmit }: Proj
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="name">Name *</Label>
               <Input id="name" {...form.register("name")} placeholder="Project name" />
@@ -140,7 +165,7 @@ export function ProjectFormModal({ open, onOpenChange, project, onSubmit }: Proj
             <Label htmlFor="description">Description</Label>
             <Textarea id="description" {...form.register("description")} placeholder="Project description..." rows={3} />
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="startDate">Start Date *</Label>
               <Input id="startDate" type="date" {...form.register("startDate")} />
@@ -161,8 +186,12 @@ export function ProjectFormModal({ open, onOpenChange, project, onSubmit }: Proj
             onCancel={() => onOpenChange(false)}
             submitLabel={isEditing ? "Update" : "Create"}
           />
+          {form.formState.errors.root?.message && (
+            <p className="text-sm text-destructive">{form.formState.errors.root.message}</p>
+          )}
         </form>
       </DialogContent>
     </Dialog>
   );
 }
+

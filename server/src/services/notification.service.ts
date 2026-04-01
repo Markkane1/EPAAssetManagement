@@ -3,85 +3,30 @@ import { createHttpError } from '../utils/httpError';
 import { NotificationModel } from '../models/notification.model';
 import { UserModel } from '../models/user.model';
 import { SystemSettingsModel } from '../models/systemSettings.model';
-import { buildUserRoleMatchFilter } from '../utils/roles';
+import { OFFICE_ADMIN_ROLE_VALUES, buildUserRoleMatchFilter } from '../utils/roles';
+import {
+  NOTIFICATION_TYPES_SET,
+  NOTIFICATION_ENTITY_TYPES_SET,
+} from '../constants/notificationTypes';
 
-const NOTIFICATION_TYPES = new Set([
-  'ASSIGNMENT_DRAFT_CREATED',
-  'HANDOVER_SLIP_READY',
-  'ASSIGNMENT_ISSUED',
-  'RETURN_REQUESTED',
-  'RETURN_SLIP_READY',
-  'ASSIGNMENT_RETURNED',
-  'ASSIGNMENT_CANCELLED',
-  'TRANSFER_REQUESTED',
-  'TRANSFER_APPROVED',
-  'TRANSFER_REJECTED',
-  'TRANSFER_DISPATCHED',
-  'TRANSFER_RECEIVED',
-  'TRANSFER_CANCELLED',
-  'MAINTENANCE_SCHEDULED',
-  'MAINTENANCE_DUE',
-  'MAINTENANCE_OVERDUE',
-  'MAINTENANCE_COMPLETED',
-  'MAINTENANCE_UPDATED',
-  'MAINTENANCE_REMOVED',
-  'LOW_STOCK_ALERT',
-  'WARRANTY_EXPIRY_ALERT',
-  'REQUISITION_SUBMITTED',
-  'REQUISITION_APPROVED',
-  'REQUISITION_FULFILLED',
-  'REQUISITION_STATUS_CHANGED',
-  'REQUISITION_VERIFIED',
-  'REQUISITION_REJECTED',
-  'REQUISITION_ADJUSTED',
-  'REQUISITION_LINE_MAPPED',
-  'REQUISITION_ISSUANCE_SIGNED',
-  'RETURN_REQUEST_SUBMITTED',
-  'RETURN_REQUEST_RECEIVED',
-  'RETURN_REQUEST_CLOSED',
-  'CONSUMABLE_RECEIVED',
-  'CONSUMABLE_TRANSFERRED',
-  'CONSUMABLE_CONSUMED',
-  'CONSUMABLE_ADJUSTED',
-  'CONSUMABLE_DISPOSED',
-  'CONSUMABLE_RETURNED',
-  'CONSUMABLE_OPENING_BALANCE',
-  'CONSUMABLE_ISSUED',
-  'APPROVAL_REQUESTED',
-  'APPROVAL_DECIDED',
-  'PURCHASE_ORDER_CREATED',
-  'PURCHASE_ORDER_STATUS_CHANGED',
-  'PURCHASE_ORDER_REMOVED',
-  'EMPLOYEE_TRANSFERRED',
-  'ROLE_DELEGATED',
-  'ROLE_DELEGATION_REVOKED',
-]);
-
-const NOTIFICATION_ENTITY_TYPES = new Set([
-  'Assignment',
-  'Requisition',
-  'Transfer',
-  'MaintenanceRecord',
-  'AssetItem',
-  'ConsumableItem',
-  'ReturnRequest',
-  'Record',
-  'PurchaseOrder',
-  'Employee',
-  'RoleDelegation',
-]);
+const NOTIFICATION_TYPES = NOTIFICATION_TYPES_SET;
+const NOTIFICATION_ENTITY_TYPES = NOTIFICATION_ENTITY_TYPES_SET;
 
 type NotificationPreferenceKey =
   | 'low_stock_alerts'
   | 'maintenance_reminders'
   | 'assignment_notifications'
-  | 'warranty_expiry_alerts';
+  | 'warranty_expiry_alerts'
+  | 'consumable_notifications'
+  | 'purchase_order_notifications';
 
 type NotificationSettingsSnapshot = {
   low_stock_alerts: boolean;
   maintenance_reminders: boolean;
   assignment_notifications: boolean;
   warranty_expiry_alerts: boolean;
+  consumable_notifications: boolean;
+  purchase_order_notifications: boolean;
 };
 
 const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettingsSnapshot = {
@@ -89,6 +34,8 @@ const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettingsSnapshot = {
   maintenance_reminders: true,
   assignment_notifications: true,
   warranty_expiry_alerts: false,
+  consumable_notifications: true,
+  purchase_order_notifications: true,
 };
 const NOTIFICATION_SETTINGS_CACHE_TTL_MS = 30_000;
 let cachedNotificationSettings: { expiresAt: number; snapshot: NotificationSettingsSnapshot } | null = null;
@@ -120,19 +67,19 @@ const NOTIFICATION_TYPE_TO_PREFERENCE: Record<string, NotificationPreferenceKey>
   RETURN_REQUEST_SUBMITTED: 'assignment_notifications',
   RETURN_REQUEST_RECEIVED: 'assignment_notifications',
   RETURN_REQUEST_CLOSED: 'assignment_notifications',
-  CONSUMABLE_RECEIVED: 'assignment_notifications',
-  CONSUMABLE_TRANSFERRED: 'assignment_notifications',
-  CONSUMABLE_CONSUMED: 'assignment_notifications',
-  CONSUMABLE_ADJUSTED: 'assignment_notifications',
-  CONSUMABLE_DISPOSED: 'assignment_notifications',
-  CONSUMABLE_RETURNED: 'assignment_notifications',
-  CONSUMABLE_OPENING_BALANCE: 'assignment_notifications',
-  CONSUMABLE_ISSUED: 'assignment_notifications',
+  CONSUMABLE_RECEIVED: 'consumable_notifications',
+  CONSUMABLE_TRANSFERRED: 'consumable_notifications',
+  CONSUMABLE_CONSUMED: 'consumable_notifications',
+  CONSUMABLE_ADJUSTED: 'consumable_notifications',
+  CONSUMABLE_DISPOSED: 'consumable_notifications',
+  CONSUMABLE_RETURNED: 'consumable_notifications',
+  CONSUMABLE_OPENING_BALANCE: 'consumable_notifications',
+  CONSUMABLE_ISSUED: 'consumable_notifications',
   APPROVAL_REQUESTED: 'assignment_notifications',
   APPROVAL_DECIDED: 'assignment_notifications',
-  PURCHASE_ORDER_CREATED: 'assignment_notifications',
-  PURCHASE_ORDER_STATUS_CHANGED: 'assignment_notifications',
-  PURCHASE_ORDER_REMOVED: 'assignment_notifications',
+  PURCHASE_ORDER_CREATED: 'purchase_order_notifications',
+  PURCHASE_ORDER_STATUS_CHANGED: 'purchase_order_notifications',
+  PURCHASE_ORDER_REMOVED: 'purchase_order_notifications',
   EMPLOYEE_TRANSFERRED: 'assignment_notifications',
   ROLE_DELEGATED: 'assignment_notifications',
   ROLE_DELEGATION_REVOKED: 'assignment_notifications',
@@ -248,6 +195,14 @@ function sanitizeNotificationSettings(settings: any) {
       notifications.warranty_expiry_alerts,
       DEFAULT_NOTIFICATION_SETTINGS.warranty_expiry_alerts
     ),
+    consumable_notifications: asBoolean(
+      notifications.consumable_notifications,
+      DEFAULT_NOTIFICATION_SETTINGS.consumable_notifications
+    ),
+    purchase_order_notifications: asBoolean(
+      notifications.purchase_order_notifications,
+      DEFAULT_NOTIFICATION_SETTINGS.purchase_order_notifications
+    ),
   } satisfies NotificationSettingsSnapshot;
 }
 
@@ -348,6 +303,11 @@ function normalizeRecipientResolutionInput(
   const includeRoles = Array.from(
     new Set(
       (input.includeRoles || ['office_head', 'caretaker'])
+        .flatMap((role) =>
+          String(role || '').trim().toLowerCase() === 'office_head'
+            ? [...OFFICE_ADMIN_ROLE_VALUES]
+            : [role]
+        )
         .map((role) => String(role || '').trim().toLowerCase())
         .filter(Boolean)
     )

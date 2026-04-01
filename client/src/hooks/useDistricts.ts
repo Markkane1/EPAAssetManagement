@@ -3,6 +3,7 @@ import { districtService } from '@/services/districtService';
 import type { DistrictCreateDto, DistrictUpdateDto } from '@/services/districtService';
 import { toast } from 'sonner';
 import { API_CONFIG } from '@/config/api.config';
+import { refreshActiveQueries } from '@/lib/queryRefresh';
 
 const { queryKeys, messages, query } = API_CONFIG;
 
@@ -29,8 +30,8 @@ export const useCreateDistrict = () => {
 
   return useMutation({
     mutationFn: (data: DistrictCreateDto) => districtService.create(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.districts });
+    onSuccess: async () => {
+      await refreshActiveQueries(queryClient, [queryKeys.districts]);
       toast.success(messages.districtCreated);
     },
     onError: (error: Error) => {
@@ -45,8 +46,8 @@ export const useUpdateDistrict = () => {
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: DistrictUpdateDto }) =>
       districtService.update(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.districts });
+    onSuccess: async () => {
+      await refreshActiveQueries(queryClient, [queryKeys.districts]);
       toast.success(messages.districtUpdated);
     },
     onError: (error: Error) => {
@@ -60,8 +61,8 @@ export const useDeleteDistrict = () => {
 
   return useMutation({
     mutationFn: (id: string) => districtService.delete(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.districts });
+    onSuccess: async () => {
+      await refreshActiveQueries(queryClient, [queryKeys.districts]);
       toast.success(messages.districtDeleted);
     },
     onError: (error: Error) => {

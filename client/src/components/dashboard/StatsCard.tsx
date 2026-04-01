@@ -39,12 +39,12 @@ export function StatsCard({
       tone={toneMap[variant]}
       trend={
         trend ? (
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1.5">
             <span className={trend.isPositive ? "text-success" : "text-destructive"}>
               {trend.isPositive ? "+" : ""}
               {trend.value}%
             </span>
-            <span>vs last month</span>
+            <span className="text-muted-foreground">vs last month</span>
           </div>
         ) : undefined
       }

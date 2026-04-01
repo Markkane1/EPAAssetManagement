@@ -4,7 +4,6 @@ import { Response, NextFunction } from 'express';
 import type { Express } from 'express';
 import { AssetModel } from '../models/asset.model';
 import { AssetItemModel } from '../models/assetItem.model';
-import { CategoryModel } from '../models/category.model';
 import { mapFields } from '../utils/mapFields';
 import { resolveAccessContext, isOfficeManager } from '../utils/accessControl';
 import { createHttpError } from '../utils/httpError';
@@ -12,9 +11,17 @@ import type { AuthRequest } from '../middleware/auth';
 import { officeAssetItemFilter } from '../utils/assetHolder';
 import { assertUploadedFileIntegrity } from '../utils/uploadValidation';
 import { buildSearchTermsQuery } from '../utils/searchTerms';
+import { ensureCategorySelection } from '../utils/categoryHierarchy';
+import { parseOptionalSubcategory } from '../utils/categorySubcategories';
+import { resolveOfficeCanonicalAsset } from '../services/officeAssetCanonicalization.service';
+import {
+  assertPurchaseOrderAllowedForSource,
+  resolveProcurementPurchaseOrderBinding,
+} from '../utils/purchaseOrderBinding';
 
 const fieldMap = {
   categoryId: 'category_id',
+  subcategory: 'subcategory',
   vendorId: 'vendor_id',
   purchaseOrderId: 'purchase_order_id',
   projectId: 'project_id',
@@ -124,6 +131,7 @@ function buildPayload(body: Record<string, unknown>) {
   if (body.name !== undefined) payload.name = body.name;
   if (body.description !== undefined) payload.description = body.description;
   if (body.specification !== undefined) payload.specification = normalizeNullableString(body.specification);
+  if (body.subcategory !== undefined) payload.subcategory = parseOptionalSubcategory(body.subcategory);
   if (body.currency !== undefined) payload.currency = body.currency;
   if (body.quantity !== undefined) payload.quantity = body.quantity;
   if (payload.acquisition_date) {
@@ -134,22 +142,16 @@ function buildPayload(body: Record<string, unknown>) {
     payload.dimensions = dimensions;
   }
   if (payload.vendor_id === "") payload.vendor_id = null;
+  if (payload.purchase_order_id === "") payload.purchase_order_id = null;
   if (payload.project_id === "") payload.project_id = null;
   if (payload.scheme_id === "") payload.scheme_id = null;
 
   return payload;
 }
 
-async function ensureAssetCategoryType(categoryId: unknown) {
-  if (!categoryId) return;
-  const category = await CategoryModel.findById(categoryId, { asset_type: 1 }).lean();
-  if (!category) {
-    throw createHttpError(400, 'Selected category does not exist');
-  }
-  const categoryAssetType = String((category as Record<string, unknown>).asset_type || 'ASSET').toUpperCase();
-  if (categoryAssetType !== 'ASSET') {
-    throw createHttpError(400, 'Selected category is not valid for moveable assets');
-  }
+async function ensureAssetCategorySelection(categoryId: unknown, subcategory: unknown) {
+  const { normalizedSubcategory } = await ensureCategorySelection(categoryId, subcategory, 'ASSET');
+  return normalizedSubcategory;
 }
 
 export const assetController = {
@@ -161,9 +163,13 @@ export const assetController = {
       const meta = String(query.meta || '').trim() === '1';
       const search = String(query.search || '').trim();
       const searchFilter = search ? buildSearchTermsQuery(search) || {} : {};
+      const categoryId = normalizeNullableString(query.categoryId ?? query.category_id);
+      const subcategory = parseOptionalSubcategory(query.subcategory);
       const access = await resolveAccessContext(req.user);
       if (access.isOrgAdmin) {
-        const assetFilter = { is_active: { $ne: false }, ...searchFilter };
+        const assetFilter: Record<string, unknown> = { is_active: { $ne: false }, ...searchFilter };
+        if (categoryId) assetFilter.category_id = categoryId;
+        if (subcategory) assetFilter.subcategory = subcategory;
         const assets = await AssetModel.find(assetFilter)
           .sort({ name: 1 })
           .skip(skip)
@@ -186,7 +192,9 @@ export const assetController = {
         ...officeAssetItemFilter(access.officeId),
         is_active: { $ne: false },
       });
-      const assetFilter = { _id: { $in: assetIds }, is_active: { $ne: false }, ...searchFilter };
+      const assetFilter: Record<string, unknown> = { _id: { $in: assetIds }, is_active: { $ne: false }, ...searchFilter };
+      if (categoryId) assetFilter.category_id = categoryId;
+      if (subcategory) assetFilter.subcategory = subcategory;
       const assets = await AssetModel.find(assetFilter)
         .sort({ name: 1 })
         .skip(skip)
@@ -229,9 +237,14 @@ export const assetController = {
   getByCategory: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const { limit, skip } = readPagination(req.query as Record<string, unknown>);
+      const subcategory = parseOptionalSubcategory((req.query as Record<string, unknown>).subcategory);
       const access = await resolveAccessContext(req.user);
       if (access.isOrgAdmin) {
-        const assets = await AssetModel.find({ category_id: req.params.categoryId, is_active: { $ne: false } })
+        const assets = await AssetModel.find({
+          category_id: req.params.categoryId,
+          ...(subcategory ? { subcategory } : {}),
+          is_active: { $ne: false },
+        })
           .sort({ name: 1 })
           .skip(skip)
           .limit(limit)
@@ -246,6 +259,7 @@ export const assetController = {
       const assets = await AssetModel.find({
         _id: { $in: assetIds },
         category_id: req.params.categoryId,
+        ...(subcategory ? { subcategory } : {}),
         is_active: { $ne: false },
       })
         .sort({ name: 1 })
@@ -302,7 +316,38 @@ export const assetController = {
         }
       }
       const payload = buildPayload(req.body);
-      await ensureAssetCategoryType(payload.category_id);
+      payload.subcategory = await ensureAssetCategorySelection(payload.category_id, payload.subcategory);
+      assertPurchaseOrderAllowedForSource(payload.asset_source, payload.purchase_order_id, 'Purchase order');
+      if (String(payload.asset_source || 'procurement').trim().toLowerCase() === 'procurement') {
+        const binding = await resolveProcurementPurchaseOrderBinding({
+          purchaseOrderId: payload.purchase_order_id,
+          vendorId: payload.vendor_id,
+        });
+        payload.purchase_order_id = binding.purchaseOrderId;
+        payload.vendor_id = binding.vendorId;
+        if (
+          (payload.unit_price === null || payload.unit_price === undefined || payload.unit_price === '') &&
+          binding.purchaseOrder?.unit_price !== null &&
+          binding.purchaseOrder?.unit_price !== undefined
+        ) {
+          payload.unit_price = binding.purchaseOrder.unit_price;
+        }
+      } else {
+        payload.purchase_order_id = null;
+      }
+      if (!access.isOrgAdmin && access.officeId) {
+        const existingOfficeAsset = await resolveOfficeCanonicalAsset(access.officeId, payload);
+        if (existingOfficeAsset) {
+          if (uploadedFile?.path) {
+            try {
+              await fs.unlink(uploadedFile.path);
+            } catch {
+              // ignore cleanup failures
+            }
+          }
+          return res.json(existingOfficeAsset);
+        }
+      }
       if (uploadedFile) {
         Object.assign(payload, buildAttachmentPayload(uploadedFile));
       }
@@ -335,16 +380,42 @@ export const assetController = {
           throw createHttpError(400, 'assetAttachment must be a PDF file');
         }
       }
+      const asset: any = await AssetModel.findById(req.params.id);
+      if (!asset) return res.status(404).json({ message: 'Not found' });
+
       const payload = buildPayload(req.body);
-      if (payload.category_id !== undefined) {
-        await ensureAssetCategoryType(payload.category_id);
+      if (payload.category_id !== undefined || payload.subcategory !== undefined) {
+        payload.subcategory = await ensureAssetCategorySelection(
+          payload.category_id !== undefined ? payload.category_id : asset?.category_id,
+          payload.subcategory !== undefined ? payload.subcategory : asset?.subcategory
+        );
+      }
+      const effectiveSourceType = payload.asset_source !== undefined ? payload.asset_source : asset?.asset_source;
+      const effectivePurchaseOrderId =
+        payload.purchase_order_id !== undefined ? payload.purchase_order_id : asset?.purchase_order_id;
+      const effectiveVendorId = payload.vendor_id !== undefined ? payload.vendor_id : asset?.vendor_id;
+      assertPurchaseOrderAllowedForSource(effectiveSourceType, effectivePurchaseOrderId, 'Purchase order');
+      if (String(effectiveSourceType || 'procurement').trim().toLowerCase() === 'procurement') {
+        const binding = await resolveProcurementPurchaseOrderBinding({
+          purchaseOrderId: effectivePurchaseOrderId,
+          vendorId: effectiveVendorId,
+        });
+        payload.purchase_order_id = binding.purchaseOrderId;
+        payload.vendor_id = binding.vendorId;
+        if (
+          payload.unit_price === undefined &&
+          binding.purchaseOrder?.unit_price !== null &&
+          binding.purchaseOrder?.unit_price !== undefined &&
+          (asset?.unit_price === null || asset?.unit_price === undefined)
+        ) {
+          payload.unit_price = binding.purchaseOrder.unit_price;
+        }
+      } else if (payload.purchase_order_id !== undefined || payload.asset_source !== undefined) {
+        payload.purchase_order_id = null;
       }
       if (uploadedFile) {
         Object.assign(payload, buildAttachmentPayload(uploadedFile));
       }
-
-      const asset: any = await AssetModel.findById(req.params.id);
-      if (!asset) return res.status(404).json({ message: 'Not found' });
 
       oldAttachmentPath = asset.attachment_path ? String(asset.attachment_path) : null;
       Object.assign(asset, payload);
@@ -390,4 +461,3 @@ export const assetController = {
     }
   },
 };
-

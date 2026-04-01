@@ -1,12 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { MainLayout } from "@/components/layout/MainLayout";
-import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTable } from "@/components/shared/DataTable";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { MoreHorizontal, Eye, Pencil, Package, Mail, Loader2, ArrowRightLeft } from "lucide-react";
+import { MoreHorizontal, Eye, Pencil, Building2, Mail, Loader2, ArrowRightLeft, Users, Package } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,7 +15,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Employee } from "@/types";
 import {
-  usePagedEmployees,
+  useEmployees,
   useCreateEmployee,
   useUpdateEmployee,
   useTransferEmployee,
@@ -27,13 +26,21 @@ import { EmployeeFormModal } from "@/components/forms/EmployeeFormModal";
 import { EmployeeTransferModal } from "@/components/forms/EmployeeTransferModal";
 import { isHeadOfficeLocationName, isHeadOfficeLocation } from "@/lib/locationUtils";
 import { useAuth } from "@/contexts/AuthContext";
+import { isOfficeAdminRole } from "@/services/authService";
+import { CollectionWorkspace } from "@/components/shared/CollectionWorkspace";
 
 export default function Employees() {
-  const PAGE_SIZE = 100;
   const navigate = useNavigate();
   const { role, isOrgAdmin, locationId } = useAuth();
   const [page, setPage] = useState(1);
-  const { data: employees, isLoading } = usePagedEmployees({ page, limit: PAGE_SIZE });
+  const [pageSize, setPageSize] = useState(20);
+  const [tableDisplay, setTableDisplay] = useState<{
+    filteredCount: number;
+    totalPages: number;
+    rangeStart: number;
+    rangeEnd: number;
+  } | null>(null);
+  const { data: employees, isLoading } = useEmployees();
   const { data: directorates } = useDirectorates();
   const { data: locations } = useLocations();
   const createEmployee = useCreateEmployee();
@@ -45,22 +52,20 @@ export default function Employees() {
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
   const [transferTarget, setTransferTarget] = useState<Employee | null>(null);
 
-  const employeeList = employees?.items || [];
+  const employeeList = employees || [];
   const directorateList = directorates || [];
   const locationList = locations || [];
-  const totalEmployees = employees?.total || employeeList.length;
-  const totalPages = Math.max(1, Math.ceil(totalEmployees / PAGE_SIZE));
 
   const currentLocation = locationId ? locationList.find((loc) => loc.id === locationId) : undefined;
   const isOrgAdminHeadOffice = isOrgAdmin && isHeadOfficeLocation(currentLocation);
-  const isOfficeAdmin = role === "office_head" || (isOrgAdmin && !isOrgAdminHeadOffice);
+  const isOfficeAdmin = isOfficeAdminRole(role) || (isOrgAdmin && !isOrgAdminHeadOffice);
   const isHeadofficeIssuer =
     isHeadOfficeLocation(currentLocation) &&
-    (role === "office_head" || role === "caretaker");
+    (isOfficeAdminRole(role) || role === "caretaker");
   const canManageEmployees = isOrgAdminHeadOffice || isOfficeAdmin;
   const canTransferEmployees = isOrgAdmin || isHeadofficeIssuer;
 
-  const allowedLocations = isOrgAdminHeadOffice
+  const allowedLocations = isOrgAdmin
     ? locationList
     : locationId
       ? locationList.filter((loc) => loc.id === locationId)
@@ -78,6 +83,21 @@ export default function Employees() {
       fullName: `${emp.first_name} ${emp.last_name}`,
     };
   });
+  const activeEmployeeCount = enrichedEmployees.filter((employee) => employee.is_active).length;
+  const headOfficeEmployeeCount = enrichedEmployees.filter((employee) => isHeadOfficeLocationName(employee.locationName)).length;
+  const directorateCoverage = new Set(enrichedEmployees.map((employee) => employee.directorate_id).filter(Boolean)).size;
+  const totalEmployees = enrichedEmployees.length;
+  const totalPages = Math.max(1, Math.ceil(totalEmployees / pageSize));
+  const displayCount = tableDisplay?.filteredCount ?? totalEmployees;
+  const displayTotalPages = tableDisplay?.totalPages ?? totalPages;
+  const displayRangeStart = tableDisplay?.rangeStart ?? (displayCount === 0 ? 0 : (page - 1) * pageSize + 1);
+  const displayRangeEnd = tableDisplay?.rangeEnd ?? Math.min(page * pageSize, displayCount);
+
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
 
   const columns = [
     { key: "fullName", label: "Employee", render: (value: string, row: any) => (
@@ -113,6 +133,7 @@ export default function Employees() {
       await updateEmployee.mutateAsync({ id: editingEmployee.id, data: payload });
     } else {
       await createEmployee.mutateAsync(data);
+      setPage(1);
     }
   };
 
@@ -178,48 +199,70 @@ export default function Employees() {
 
   return (
     <MainLayout title="Employees" description="Manage your organization's personnel">
-      <PageHeader
+      <CollectionWorkspace
         title="Employees"
         description="View and manage employees and their asset assignments"
         action={canManageEmployees ? { label: "Add Employee", onClick: handleAddEmployee } : undefined}
-      />
-      <DataTable 
-        columns={columns} 
-        data={enrichedEmployees} 
-        pagination={false}
-        searchPlaceholder="Search employees..." 
-        actions={actions} 
-        onRowClick={(row) => navigate(`/employees/${row.id}`)}
-      />
-      <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
-        <p className="text-sm text-muted-foreground">
-          Showing {employeeList.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1} to{" "}
-          {Math.min(page * PAGE_SIZE, totalEmployees)} of {totalEmployees} employees
-        </p>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page === 1}>
-            Previous
-          </Button>
-          <span className="text-sm font-medium">
-            Page {page} of {totalPages}
-          </span>
-          <Button
-            variant="outline"
-            onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
-            disabled={page >= totalPages}
-          >
-            Next
-          </Button>
+        eyebrow="People workspace"
+        meta={
+          <>
+            <span>{totalEmployees} employees in scope</span>
+            <span className="hidden h-1 w-1 rounded-full bg-border sm:inline-block" />
+            <span>{canManageEmployees ? "Workforce management enabled" : "Read-only roster access"}</span>
+          </>
+        }
+        metrics={[
+          { label: "Visible employees", value: totalEmployees, helper: "Rows in the current employee view", icon: Users, tone: "primary" },
+          { label: "Active", value: activeEmployeeCount, helper: "Currently active personnel records", icon: Mail, tone: "success" },
+          { label: "Head office", value: headOfficeEmployeeCount, helper: "Employees currently placed at head office", icon: Building2 },
+          { label: "Directorates", value: directorateCoverage, helper: "Distinct directorate assignments in scope", icon: ArrowRightLeft, tone: "warning" },
+        ]}
+        panelTitle="Employee roster"
+        panelDescription="Browse the workforce, open profiles, and use row actions for activation, editing, and transfer operations."
+      >
+        <DataTable
+          columns={columns}
+          data={enrichedEmployees}
+          pagination={false}
+          externalPage={page}
+          pageSize={pageSize}
+          searchPlaceholder="Search employees..."
+          actions={actions}
+          onRowClick={(row) => navigate(`/employees/${row.id}`)}
+          pageSizeOptions={[10, 20, 50, 100]}
+          onExternalPageChange={setPage}
+          onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
+          onDisplayStateChange={setTableDisplay}
+        />
+        <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
+          <p className="text-sm text-muted-foreground">
+            Showing {displayRangeStart} to {displayRangeEnd} of {displayCount} employees
+          </p>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page === 1}>
+              Previous
+            </Button>
+            <span className="text-sm font-medium">
+              Page {page} of {displayTotalPages}
+            </span>
+            <Button
+              variant="outline"
+              onClick={() => setPage((current) => Math.min(displayTotalPages, current + 1))}
+              disabled={page >= displayTotalPages}
+            >
+              Next
+            </Button>
+          </div>
         </div>
-      </div>
+      </CollectionWorkspace>
       <EmployeeFormModal
         open={isModalOpen}
         onOpenChange={setIsModalOpen}
         employee={editingEmployee}
         directorates={directorateList}
         locations={allowedLocations}
-        locationLocked={!isOrgAdminHeadOffice}
-        fixedLocationId={!isOrgAdminHeadOffice ? locationId : null}
+        locationLocked={!isOrgAdmin}
+        fixedLocationId={!isOrgAdmin ? locationId : null}
         onSubmit={handleSubmit}
       />
       <EmployeeTransferModal

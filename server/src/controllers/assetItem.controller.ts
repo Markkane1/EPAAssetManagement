@@ -13,6 +13,17 @@ import {
   getAssetItemOfficeId,
   officeAssetItemFilter,
 } from '../utils/assetHolder';
+import {
+  getDefaultPrimaryStatusForFunctionalStatus,
+  getAssetItemAssignmentBlockReason,
+  normalizeFunctionalStatus,
+  validateFunctionalStatusCombination,
+} from '../utils/assetItemStatusRules';
+import { resolveHeadOfficeStore } from './transfer.controller.helpers';
+import {
+  resolveOfficeCanonicalAssetId,
+  syncAssetQuantityFloor,
+} from '../services/officeAssetCanonicalization.service';
 
 const fieldMap = {
   assetId: 'asset_id',
@@ -31,7 +42,7 @@ const fieldMap = {
   isActive: 'is_active',
 };
 
-const MANAGER_ALLOWED_UPDATE_FIELDS = new Set(['item_status', 'item_condition', 'notes']);
+const MANAGER_ALLOWED_UPDATE_FIELDS = new Set(['item_status', 'item_condition', 'functional_status', 'notes']);
 const HEAD_OFFICE_STORE_CODE = 'HEAD_OFFICE_STORE';
 
 function clampInt(value: unknown, fallback: number, max: number) {
@@ -50,10 +61,54 @@ function buildPayload(body: Record<string, unknown>) {
 
   if (body.tag !== undefined) payload.tag = body.tag;
   if (body.notes !== undefined) payload.notes = body.notes;
+  const normalizedFunctionalStatus = normalizeFunctionalStatus(payload.functional_status);
+  if (normalizedFunctionalStatus) {
+    payload.functional_status = normalizedFunctionalStatus;
+  }
   if (payload.purchase_date) payload.purchase_date = new Date(String(payload.purchase_date));
   if (payload.warranty_expiry) payload.warranty_expiry = new Date(String(payload.warranty_expiry));
 
   return payload;
+}
+
+function applyFunctionalStateRules(params: {
+  payload: Record<string, unknown>;
+  currentItem?: { item_status?: unknown; functional_status?: unknown } | null;
+}) {
+  const functionalStatus = normalizeFunctionalStatus(
+    params.payload.functional_status ?? params.currentItem?.functional_status ?? 'Functional'
+  ) || 'Functional';
+
+  params.payload.functional_status = functionalStatus;
+
+  const hadExplicitItemStatus = params.payload.item_status !== undefined;
+  const currentItemStatus = String(params.currentItem?.item_status || '').trim();
+  const candidateItemStatus = String(
+    (hadExplicitItemStatus ? params.payload.item_status : currentItemStatus) || ''
+  ).trim();
+  const fallbackItemStatus = getDefaultPrimaryStatusForFunctionalStatus(functionalStatus);
+  const validationErrorForCandidate = validateFunctionalStatusCombination({
+    itemStatus: candidateItemStatus,
+    functionalStatus,
+  });
+  const itemStatus =
+    !candidateItemStatus || (!hadExplicitItemStatus && validationErrorForCandidate)
+      ? fallbackItemStatus
+      : candidateItemStatus;
+
+  const validationError = validateFunctionalStatusCombination({
+    itemStatus,
+    functionalStatus,
+  });
+  if (validationError) {
+    throw createHttpError(400, validationError);
+  }
+
+  if (!hadExplicitItemStatus && params.currentItem?.item_status === itemStatus) {
+    return;
+  }
+
+  params.payload.item_status = itemStatus;
 }
 
 function generateAssetTag(assetId: string, index: number) {
@@ -63,21 +118,9 @@ function generateAssetTag(assetId: string, index: number) {
 }
 
 async function resolveDefaultHolder() {
-  const systemStore = await StoreModel.findOne({
-    code: HEAD_OFFICE_STORE_CODE,
-    is_active: { $ne: false },
-  });
-  if (systemStore) {
-    return { holder_type: 'STORE' as const, holder_id: systemStore.id };
-  }
-  const headOffice = await OfficeModel.findOne({
-    type: 'HEAD_OFFICE',
-    is_active: { $ne: false },
-  });
-  if (headOffice) {
-    return { holder_type: 'OFFICE' as const, holder_id: String(headOffice._id) };
-  }
-  return null;
+  const systemStore = await resolveHeadOfficeStore();
+  if (!systemStore) return null;
+  return { holder_type: 'STORE' as const, holder_id: String(systemStore._id || systemStore.id) };
 }
 
 async function resolveRequestedHolder(
@@ -151,6 +194,68 @@ function parseDateSafe(value: unknown) {
   return parsed;
 }
 
+function normalizeNullableString(value: unknown) {
+  if (value === undefined || value === null) return null;
+  const normalized = String(value).trim();
+  return normalized || null;
+}
+
+function escapeRegex(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function buildFlexibleExactRegex(value: string) {
+  const normalized = String(value || '')
+    .trim()
+    .replace(/\s+/g, ' ');
+  if (!normalized) return null;
+  const pattern = normalized
+    .split(' ')
+    .map((part) => escapeRegex(part))
+    .join('\\s+');
+  return new RegExp(`^${pattern}$`, 'i');
+}
+
+async function resolveFilteredAssetIds(params: {
+  access: Awaited<ReturnType<typeof resolveAccessContext>>;
+  assetId: string | null;
+  assetName: string | null;
+  categoryId: string | null;
+  subcategory: string | null;
+}) {
+  const { access, assetId, assetName, categoryId, subcategory } = params;
+  if (!assetId && !assetName && !categoryId && !subcategory) {
+    return null;
+  }
+
+  const assetFilter: Record<string, unknown> = { is_active: { $ne: false } };
+  if (categoryId) assetFilter.category_id = categoryId;
+  if (subcategory) assetFilter.subcategory = subcategory;
+  if (assetName) {
+    const assetNameRegex = buildFlexibleExactRegex(assetName);
+    if (assetNameRegex) {
+      assetFilter.name = assetNameRegex;
+    }
+  }
+
+  if (!access.isOrgAdmin) {
+    if (!access.officeId) throw createHttpError(403, 'User is not assigned to an office');
+    const accessibleAssetIds = await AssetItemModel.distinct('asset_id', {
+      ...officeAssetItemFilter(access.officeId),
+      is_active: { $ne: false },
+    });
+    const normalizedAccessibleIds = accessibleAssetIds.map((value) => String(value));
+    assetFilter._id = assetId
+      ? { $in: normalizedAccessibleIds.filter((value) => value === assetId) }
+      : { $in: normalizedAccessibleIds };
+  } else if (assetId) {
+    assetFilter._id = assetId;
+  }
+
+  const assetIds = await AssetModel.distinct('_id', assetFilter);
+  return assetIds.map((value) => String(value));
+}
+
 async function maybeDispatchWarrantyExpiryAlert(params: {
   assetItem: any;
   excludeUserIds?: string[];
@@ -203,10 +308,43 @@ export const assetItemController = {
       const page = clampInt(req.query.page, 1, 10_000);
       const meta = String(req.query.meta || '') === '1';
       const access = await resolveAccessContext(req.user);
+      const search = normalizeNullableString(req.query.search);
+      const assetId = normalizeNullableString(req.query.assetId ?? req.query.asset_id);
+      const assetName = normalizeNullableString(req.query.assetName ?? req.query.asset_name);
+      const categoryId = normalizeNullableString(req.query.categoryId ?? req.query.category_id);
+      const subcategory = normalizeNullableString(req.query.subcategory);
       const filter: Record<string, unknown> = { is_active: { $ne: false } };
       if (!access.isOrgAdmin) {
         if (!access.officeId) throw createHttpError(403, 'User is not assigned to an office');
         Object.assign(filter, officeAssetItemFilter(access.officeId));
+      }
+      const filteredAssetIds = await resolveFilteredAssetIds({
+        access,
+        assetId,
+        assetName,
+        categoryId,
+        subcategory,
+      });
+      if (filteredAssetIds) {
+        filter.asset_id = { $in: filteredAssetIds };
+      }
+      if (search) {
+        const searchRegex = new RegExp(escapeRegex(search), 'i');
+        const matchingAssetIds = await AssetModel.distinct('_id', {
+          $or: [
+            { name: searchRegex },
+            { description: searchRegex },
+            { specification: searchRegex },
+            { subcategory: searchRegex },
+          ],
+          is_active: { $ne: false },
+        });
+        filter.$or = [
+          { tag: searchRegex },
+          { serial_number: searchRegex },
+          { notes: searchRegex },
+          { asset_id: { $in: matchingAssetIds } },
+        ];
       }
       const items = await AssetItemModel.find(filter)
         .sort({ created_at: -1 })
@@ -291,6 +429,7 @@ export const assetItemController = {
       const filter: Record<string, unknown> = {
         item_status: 'Available',
         assignment_status: 'Unassigned',
+        functional_status: { $nin: ['Needs Repair', 'Need Repairs', 'Non-Repairable', 'Dead'] },
         is_active: { $ne: false },
       };
       if (!access.isOrgAdmin) {
@@ -301,7 +440,7 @@ export const assetItemController = {
         .sort({ created_at: -1 })
         .skip((page - 1) * limit)
         .limit(limit);
-      res.json(items);
+      res.json(items.filter((item) => !getAssetItemAssignmentBlockReason(item)));
     } catch (error) {
       next(error);
     }
@@ -314,10 +453,9 @@ export const assetItemController = {
       }
       const payload = buildPayload(req.body);
       if (payload.assignment_status === undefined) payload.assignment_status = 'Unassigned';
-      if (payload.item_status === undefined) payload.item_status = 'Available';
       if (payload.item_condition === undefined) payload.item_condition = 'New';
-      if (payload.functional_status === undefined) payload.functional_status = 'Functional';
       if (payload.item_source === undefined) payload.item_source = 'Purchased';
+      applyFunctionalStateRules({ payload });
       if (!payload.asset_id) {
         return res.status(400).json({ message: 'Asset is required' });
       }
@@ -337,16 +475,25 @@ export const assetItemController = {
         }
         ensureOfficeScope(access, holder.holder_id);
       }
-      await validateHolderAndCategory(String(payload.asset_id), holder);
+      let targetAssetId = String(payload.asset_id);
+      if (holder.holder_type === 'OFFICE') {
+        const canonicalAssetId = await resolveOfficeCanonicalAssetId(holder.holder_id, asset);
+        if (canonicalAssetId) {
+          targetAssetId = canonicalAssetId;
+        }
+      }
+      await validateHolderAndCategory(targetAssetId, holder);
       payload.holder_type = holder.holder_type;
       payload.holder_id = holder.holder_id;
+      payload.asset_id = targetAssetId;
       delete payload.location_id;
 
+      const existingCount = await AssetItemModel.countDocuments({ asset_id: payload.asset_id });
       if (!payload.tag && payload.asset_id) {
-        const existingCount = await AssetItemModel.countDocuments({ asset_id: payload.asset_id });
         payload.tag = generateAssetTag(String(payload.asset_id), existingCount + 1);
       }
       const item = await AssetItemModel.create(payload);
+      await syncAssetQuantityFloor(String(payload.asset_id), existingCount + 1);
       await maybeDispatchWarrantyExpiryAlert({
         assetItem: item,
         excludeUserIds: [access.userId],
@@ -394,12 +541,6 @@ export const assetItemController = {
         return res.status(400).json({ message: 'Cannot create items for an inactive asset' });
       }
 
-      const existingCount = await AssetItemModel.countDocuments({ asset_id: assetId });
-      const maxAllowed = asset.quantity || 0;
-      if (maxAllowed > 0 && existingCount + items.length > maxAllowed) {
-        return res.status(400).json({ message: `Only ${maxAllowed} items allowed for this asset` });
-      }
-
       const holderPayload: Record<string, unknown> = {};
       if (locationId) holderPayload.location_id = locationId;
       if (holderType) holderPayload.holder_type = holderType;
@@ -411,15 +552,34 @@ export const assetItemController = {
         }
         ensureOfficeScope(access, holder.holder_id);
       }
-      await validateHolderAndCategory(assetId, holder);
+      let targetAssetId = assetId;
+      let targetAsset: any = asset;
+      if (holder.holder_type === 'OFFICE') {
+        const canonicalAssetId = await resolveOfficeCanonicalAssetId(holder.holder_id, asset);
+        if (canonicalAssetId && canonicalAssetId !== assetId) {
+          const canonicalAsset = await AssetModel.findById(canonicalAssetId);
+          if (canonicalAsset) {
+            targetAssetId = canonicalAssetId;
+            targetAsset = canonicalAsset;
+          }
+        }
+      }
+      await validateHolderAndCategory(targetAssetId, holder);
+
+      const existingCount = await AssetItemModel.countDocuments({ asset_id: targetAssetId });
+      const maxAllowed = targetAsset?.quantity || 0;
+      const requestedTotal = existingCount + items.length;
+      if (maxAllowed > 0 && requestedTotal > maxAllowed && targetAssetId === assetId) {
+        return res.status(400).json({ message: `Only ${maxAllowed} items allowed for this asset` });
+      }
 
       const docs = items.map((item, index) => ({
-        asset_id: assetId,
+        asset_id: targetAssetId,
         holder_type: holder.holder_type,
         holder_id: holder.holder_id,
         serial_number: item.serialNumber,
         warranty_expiry: item.warrantyExpiry || null,
-        tag: generateAssetTag(assetId, existingCount + index + 1),
+        tag: generateAssetTag(targetAssetId, existingCount + index + 1),
         assignment_status: 'Unassigned',
         item_status: itemStatus || 'Available',
         item_condition: itemCondition || 'New',
@@ -429,7 +589,10 @@ export const assetItemController = {
         is_active: true,
       }));
 
+      docs.forEach((doc) => applyFunctionalStateRules({ payload: doc as unknown as Record<string, unknown> }));
+
       const created = await AssetItemModel.insertMany(docs);
+      await syncAssetQuantityFloor(targetAssetId, requestedTotal);
       await Promise.all(
         created.map((item) =>
           maybeDispatchWarrantyExpiryAlert({
@@ -466,6 +629,7 @@ export const assetItemController = {
       }
       const item = await AssetItemModel.findById(req.params.id);
       if (!item) return res.status(404).json({ message: 'Not found' });
+      const previousAssetId = String(item.asset_id || '');
       const officeId = getAssetItemOfficeId(item);
       if (!access.isOrgAdmin && officeId) {
         ensureOfficeScope(access, officeId);
@@ -473,9 +637,25 @@ export const assetItemController = {
       const targetAssetId = String(payload.asset_id || item.asset_id || '');
       const targetOfficeId = getAssetItemOfficeId(item);
       if (targetAssetId && targetOfficeId) {
-        await enforceAssetCategoryScopeForOffice(targetAssetId, targetOfficeId);
+        const targetAsset = await AssetModel.findById(targetAssetId).lean();
+        if (targetAsset && !Array.isArray(targetAsset)) {
+          const canonicalAssetId = await resolveOfficeCanonicalAssetId(targetOfficeId, targetAsset);
+          if (canonicalAssetId) {
+            payload.asset_id = canonicalAssetId;
+          }
+        }
+        await enforceAssetCategoryScopeForOffice(String(payload.asset_id || targetAssetId), targetOfficeId);
       }
+      applyFunctionalStateRules({ payload, currentItem: item });
       const updated = await AssetItemModel.findByIdAndUpdate(req.params.id, payload, { new: true });
+      if (payload.asset_id) {
+        await Promise.all([
+          syncAssetQuantityFloor(String(payload.asset_id), 0),
+          previousAssetId && previousAssetId !== String(payload.asset_id)
+            ? syncAssetQuantityFloor(previousAssetId, 0)
+            : Promise.resolve(),
+        ]);
+      }
       if (updated) {
         await maybeDispatchWarrantyExpiryAlert({
           assetItem: updated,

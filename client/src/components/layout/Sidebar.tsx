@@ -59,6 +59,7 @@ const managementNavItems: NavItem[] = [
   { label: "Offices", href: "/offices", icon: MapPin, page: "offices" },
   { label: "Rooms & Sections", href: "/rooms-sections", icon: Building2, page: "rooms-sections" },
   { label: "Categories", href: "/categories", icon: FolderTree, page: "categories" },
+  { label: "Subcategories", href: "/subcategories", icon: FolderTree, page: "subcategories" },
   { label: "Vendors", href: "/vendors", icon: Truck, page: "vendors" },
   { label: "Projects", href: "/projects", icon: FolderKanban, page: "projects" },
   { label: "Schemes", href: "/schemes", icon: Layers, page: "schemes" },
@@ -72,15 +73,13 @@ const systemNavItems: NavItem[] = [
     label: "Delegations",
     href: "/settings/delegations",
     icon: UserCog,
-    page: "profile",
-    allowedRoles: ["org_admin", "office_head", "caretaker"],
+    page: "role-delegations",
   },
   {
     label: "Settings",
     href: "/settings",
     icon: Settings,
     page: "settings",
-    allowedRoles: ["org_admin", "office_head"],
   },
 ];
 
@@ -89,13 +88,13 @@ const complianceItem: NavItem = { label: "Compliance", href: "/compliance", icon
 
 const reportNavItems: NavItem[] = [
   { label: "Overview", href: "/reports", icon: FileText, page: "reports" },
-  { label: "Asset Summary", href: "/reports/asset-summary", icon: FileText, page: "reports" },
-  { label: "Asset Items Inventory", href: "/reports/asset-items-inventory", icon: FileText, page: "reports" },
+  { label: "Asset Summary", href: "/reports/asset-summary", icon: FileText, page: "reports-advanced" },
+  { label: "Asset Items Inventory", href: "/reports/asset-items-inventory", icon: FileText, page: "reports-advanced" },
   { label: "Assignment Summary", href: "/reports/assignment-summary", icon: FileText, page: "reports" },
-  { label: "Status Distribution", href: "/reports/status-distribution", icon: FileText, page: "reports" },
-  { label: "Maintenance Report", href: "/reports/maintenance-report", icon: FileText, page: "reports" },
-  { label: "Location Inventory", href: "/reports/location-inventory", icon: FileText, page: "reports" },
-  { label: "Financial Summary", href: "/reports/financial-summary", icon: FileText, page: "reports" },
+  { label: "Status Distribution", href: "/reports/status-distribution", icon: FileText, page: "reports-advanced" },
+  { label: "Maintenance Report", href: "/reports/maintenance-report", icon: FileText, page: "reports-advanced" },
+  { label: "Location Inventory", href: "/reports/location-inventory", icon: FileText, page: "reports-advanced" },
+  { label: "Financial Summary", href: "/reports/financial-summary", icon: FileText, page: "reports-advanced" },
   { label: "Employee Assets", href: "/reports/employee-assets", icon: FileText, page: "reports" },
 ];
 
@@ -126,13 +125,13 @@ const employeeServicesRootItem: NavItem = {
   page: "requisitions",
 };
 const employeeServicesNavItems: NavItem[] = [
-  { label: "My Assets", href: "/my-assets", icon: Package, page: "assignments", allowedRoles: ["employee"] },
+  { label: "My Assets", href: "/my-assets", icon: Package, page: "my-assets" },
   {
     label: "Assignment Records",
     href: "/assignments",
     icon: ClipboardList,
     page: "assignments",
-    allowedRoles: ["org_admin", "office_head", "caretaker"],
+    allowedRoles: ["org_admin", "head_office_admin", "office_head", "caretaker"],
   },
   { label: "Maintenance Requests", href: "/maintenance", icon: Wrench, page: "maintenance", allowedRoles: ["employee"] },
   {
@@ -161,7 +160,7 @@ const employeeServicesNavItems: NavItem[] = [
     href: "/requisitions",
     icon: ClipboardList,
     page: "requisitions",
-    allowedRoles: ["org_admin", "office_head"],
+    allowedRoles: ["org_admin", "head_office_admin", "office_head"],
   },
   {
     label: "Fulfilled Requisitions",
@@ -175,7 +174,7 @@ const employeeServicesNavItems: NavItem[] = [
     href: "/requisitions/approved",
     icon: ClipboardList,
     page: "requisitions",
-    allowedRoles: ["org_admin", "caretaker"],
+    allowedRoles: ["org_admin", "head_office_admin", "caretaker"],
   },
   {
     label: "New Requisition",
@@ -196,7 +195,7 @@ const employeeServicesNavItems: NavItem[] = [
     href: "/returns",
     icon: ArrowRightLeft,
     page: "returns",
-    allowedRoles: ["org_admin", "office_head", "caretaker", "inventory_controller"],
+    allowedRoles: ["org_admin", "head_office_admin", "office_head", "caretaker", "inventory_controller"],
   },
   {
     label: "New Return Request",
@@ -282,6 +281,7 @@ export function Sidebar({ className, isMobileDrawer = false, onNavigate }: Sideb
       location.pathname.startsWith("/offices") ||
       location.pathname.startsWith("/rooms-sections") ||
       location.pathname.startsWith("/categories") ||
+      location.pathname.startsWith("/subcategories") ||
       location.pathname.startsWith("/vendors") ||
       location.pathname.startsWith("/projects") ||
       location.pathname.startsWith("/schemes") ||
@@ -332,6 +332,7 @@ export function Sidebar({ className, isMobileDrawer = false, onNavigate }: Sideb
       location.pathname.startsWith("/offices") ||
       location.pathname.startsWith("/rooms-sections") ||
       location.pathname.startsWith("/categories") ||
+      location.pathname.startsWith("/subcategories") ||
       location.pathname.startsWith("/vendors") ||
       location.pathname.startsWith("/projects") ||
       location.pathname.startsWith("/schemes") ||
@@ -382,17 +383,6 @@ export function Sidebar({ className, isMobileDrawer = false, onNavigate }: Sideb
     });
   };
 
-  const filterReportItems = (items: NavItem[]) => {
-    const base = filterItems(items);
-    if (role !== "employee") return base;
-    const employeeAllowed = new Set([
-      "/reports",
-      "/reports/assignment-summary",
-      "/reports/employee-assets",
-    ]);
-    return base.filter((item) => employeeAllowed.has(item.href));
-  };
-
   const getUserInitials = () => {
     if (!user?.email) return "U";
     return user.email.charAt(0).toUpperCase();
@@ -402,6 +392,7 @@ export function Sidebar({ className, isMobileDrawer = false, onNavigate }: Sideb
     if (isOrgAdmin) return "Org Admin";
     switch (role) {
       case 'office_head': return "Office Head";
+      case 'head_office_admin': return "Head Office Admin";
       case 'caretaker': return "Caretaker";
       case 'employee': return "Employee";
       default: {
@@ -428,7 +419,7 @@ export function Sidebar({ className, isMobileDrawer = false, onNavigate }: Sideb
           "h-10 w-full rounded-2xl",
           effectiveCollapsed ? "justify-center" : "justify-start px-3",
           isActive
-            ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-[0_16px_32px_-18px_rgba(34,211,238,0.45)] hover:bg-sidebar-primary/95 hover:text-sidebar-primary-foreground"
+            ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-[0_16px_32px_-18px_rgba(37,109,1,0.28)] hover:bg-sidebar-primary/95 hover:text-sidebar-primary-foreground"
             : "text-sidebar-foreground/78 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
           linkClassName
         )}
@@ -491,7 +482,7 @@ export function Sidebar({ className, isMobileDrawer = false, onNavigate }: Sideb
               <img 
                 src={epaLogo} 
                 alt="EPA Logo" 
-                className="h-11 w-11 rounded-2xl border border-white/20 object-contain bg-white/95 p-1"
+                className="h-11 w-11 rounded-2xl border border-border/70 bg-card p-1 object-contain"
               />
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold text-sidebar-foreground">EPA AMS</p>
@@ -648,6 +639,7 @@ export function Sidebar({ className, isMobileDrawer = false, onNavigate }: Sideb
               location.pathname.startsWith("/offices") ||
               location.pathname.startsWith("/rooms-sections") ||
               location.pathname.startsWith("/categories") ||
+              location.pathname.startsWith("/subcategories") ||
               location.pathname.startsWith("/vendors") ||
               location.pathname.startsWith("/projects") ||
               location.pathname.startsWith("/schemes") ||
@@ -693,7 +685,7 @@ export function Sidebar({ className, isMobileDrawer = false, onNavigate }: Sideb
           {/* System */}
           {(() => {
             const items = filterItems(systemNavItems);
-            const reportItems = filterReportItems(reportNavItems);
+            const reportItems = filterItems(reportNavItems);
             const showCompliance = canAccessPage({ page: complianceItem.page, role, isOrgAdmin });
             const showReports = reportItems.length > 0;
             const isReportsActive = location.pathname.startsWith("/reports");
@@ -775,11 +767,11 @@ export function Sidebar({ className, isMobileDrawer = false, onNavigate }: Sideb
         {/* Footer */}
         <div className="border-t border-sidebar-border/80 p-3">
           {!effectiveCollapsed ? (
-            <div className="flex items-center gap-3 rounded-2xl border border-white/5 bg-white/[0.03] px-3 py-3">
+            <div className="flex items-center gap-3 rounded-2xl border border-border/50 bg-card/80 px-3 py-3">
               <div className={cn(
                 "flex h-10 w-10 items-center justify-center rounded-2xl text-sm font-medium",
                 isOrgAdmin 
-                  ? "bg-yellow-400 text-yellow-950" 
+                  ? "bg-[hsl(98_45%_83%)] text-[hsl(100_98%_18%)]"
                   : "bg-sidebar-primary text-sidebar-primary-foreground"
               )}>
                 {isOrgAdmin ? <Crown className="h-4 w-4" /> : getUserInitials()}
@@ -798,7 +790,7 @@ export function Sidebar({ className, isMobileDrawer = false, onNavigate }: Sideb
                   <div className={cn(
                     "flex h-10 w-10 cursor-pointer items-center justify-center rounded-2xl text-sm font-medium",
                     isOrgAdmin 
-                      ? "bg-yellow-400 text-yellow-950" 
+                      ? "bg-[hsl(98_45%_83%)] text-[hsl(100_98%_18%)]"
                       : "bg-sidebar-primary text-sidebar-primary-foreground"
                   )}>
                     {isOrgAdmin ? <Crown className="h-4 w-4" /> : getUserInitials()}

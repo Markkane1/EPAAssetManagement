@@ -2,7 +2,9 @@ export type NotificationToggleKey =
   | 'low_stock_alerts'
   | 'maintenance_reminders'
   | 'assignment_notifications'
-  | 'warranty_expiry_alerts';
+  | 'warranty_expiry_alerts'
+  | 'consumable_notifications'
+  | 'purchase_order_notifications';
 
 export type NotificationAreaStatus = 'Live' | 'Planned';
 
@@ -20,6 +22,8 @@ export const NOTIFICATION_TOGGLE_LABELS: Record<NotificationToggleKey, string> =
   maintenance_reminders: 'Maintenance Reminders',
   assignment_notifications: 'Assignment Notifications',
   warranty_expiry_alerts: 'Warranty Expiry Alerts',
+  consumable_notifications: 'Consumable Notifications',
+  purchase_order_notifications: 'Purchase Order Notifications',
 };
 
 export const NOTIFICATION_AREA_DEFINITIONS: NotificationAreaDefinition[] = [
@@ -77,7 +81,7 @@ export const NOTIFICATION_AREA_DEFINITIONS: NotificationAreaDefinition[] = [
     id: 'consumables-workflow',
     area: 'Consumables workflow',
     events: 'Issue, receive, transfer, consume, adjust, dispose, return, opening balance',
-    toggle: 'assignment_notifications',
+    toggle: 'consumable_notifications',
     status: 'Live',
     notes: 'Emitted for office-scoped consumable transactions and lab-capable flows.',
   },
@@ -85,7 +89,7 @@ export const NOTIFICATION_AREA_DEFINITIONS: NotificationAreaDefinition[] = [
     id: 'purchase-order-workflow',
     area: 'Purchase order workflow',
     events: 'Purchase order created, status changed, removed',
-    toggle: 'assignment_notifications',
+    toggle: 'purchase_order_notifications',
     status: 'Live',
     notes: 'Emitted when office context can be resolved for recipients.',
   },

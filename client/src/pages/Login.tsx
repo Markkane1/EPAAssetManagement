@@ -9,6 +9,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2, AlertCircle, Eye, EyeOff, ShieldAlert } from 'lucide-react';
 import epaLogo from '@/assets/epa-logo.jpg';
 import { CaptchaChallenge } from '@/components/auth/CaptchaChallenge';
+import { ApiError } from '@/lib/api';
 import { 
   loginSchema, 
   recordFailedAttempt, 
@@ -32,6 +33,15 @@ export default function Login() {
   const location = useLocation();
   
   const from = location.state?.from?.pathname || '/';
+
+  const isConnectivityFailure = (value: unknown) => {
+    if (value instanceof ApiError) {
+      return value.status === 0;
+    }
+
+    const message = value instanceof Error ? value.message : String(value || '');
+    return /networkerror|failed to fetch|unable to reach the api server/i.test(message);
+  };
 
   // Check lockout status on mount and periodically
   useEffect(() => {
@@ -81,8 +91,13 @@ export default function Login() {
       auditLog.loginSuccess(email);
       navigate(from, { replace: true });
     } catch (err: any) {
-      const attemptResult = recordFailedAttempt();
       auditLog.loginFailed(email, err.message);
+      if (isConnectivityFailure(err)) {
+        setError(err.message || 'Unable to reach the API server. Please try again.');
+        return;
+      }
+
+      const attemptResult = recordFailedAttempt();
       if (attemptResult.isLocked) {
         setError(`Too many failed attempts. Account locked for ${attemptResult.lockoutMinutes} minutes.`);
         setLockoutInfo({ locked: true, remainingMinutes: attemptResult.lockoutMinutes });

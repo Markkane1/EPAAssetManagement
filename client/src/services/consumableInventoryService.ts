@@ -20,6 +20,7 @@ export interface ReceivePayload {
     expiryDate?: string;
     source: 'procurement' | 'project';
     vendorId?: string;
+    purchaseOrderId?: string;
     projectId?: string;
     schemeId?: string;
     docs?: { sdsUrl?: string; coaUrl?: string; invoiceUrl?: string };

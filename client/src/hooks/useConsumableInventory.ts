@@ -15,6 +15,7 @@ import type {
 } from '@/services/consumableInventoryService';
 import { API_CONFIG } from '@/config/api.config';
 import { ApiError } from '@/lib/api';
+import { refreshActiveQueries } from '@/lib/queryRefresh';
 
 const { queryKeys, messages, query } = API_CONFIG;
 const { detail } = query.profiles;
@@ -30,6 +31,15 @@ function getApprovalRequestId(error: Error) {
       | Record<string, unknown>
       | undefined;
   return String(approvalRequest?.id || approvalRequest?._id || '').trim();
+}
+
+async function refreshConsumableInventoryQueries(queryClient: ReturnType<typeof useQueryClient>) {
+  await refreshActiveQueries(queryClient, [
+    queryKeys.consumableBalances,
+    queryKeys.consumableLedger,
+    queryKeys.consumableRollup,
+    queryKeys.consumableExpiry,
+  ]);
 }
 
 export const useConsumableBalances = (filters?: BalancesQuery, options: QueryToggleOptions = {}) =>
@@ -72,9 +82,8 @@ export const useReceiveConsumables = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: ReceivePayload) => consumableInventoryService.receive(payload),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.consumableBalances });
-      queryClient.invalidateQueries({ queryKey: queryKeys.consumableLedger });
+    onSuccess: async () => {
+      await refreshConsumableInventoryQueries(queryClient);
       toast.success(messages.consumableTxnSuccess);
     },
     onError: (error: Error) => {
@@ -87,9 +96,8 @@ export const useReceiveConsumablesOffice = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: ReceivePayload) => consumableInventoryService.receiveOffice(payload),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.consumableBalances });
-      queryClient.invalidateQueries({ queryKey: queryKeys.consumableLedger });
+    onSuccess: async () => {
+      await refreshConsumableInventoryQueries(queryClient);
       toast.success('Stock received into your office successfully');
     },
     onError: (error: Error) => {
@@ -102,9 +110,8 @@ export const useTransferConsumables = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: TransferPayload) => consumableInventoryService.transfer(payload),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.consumableBalances });
-      queryClient.invalidateQueries({ queryKey: queryKeys.consumableLedger });
+    onSuccess: async () => {
+      await refreshConsumableInventoryQueries(queryClient);
       toast.success(messages.consumableTxnSuccess);
     },
     onError: (error: Error) => {
@@ -122,9 +129,8 @@ export const useConsumeConsumables = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: ConsumePayload) => consumableInventoryService.consume(payload),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.consumableBalances });
-      queryClient.invalidateQueries({ queryKey: queryKeys.consumableLedger });
+    onSuccess: async () => {
+      await refreshConsumableInventoryQueries(queryClient);
       toast.success(messages.consumableTxnSuccess);
     },
     onError: (error: Error) => {
@@ -137,9 +143,8 @@ export const useAdjustConsumables = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: AdjustPayload) => consumableInventoryService.adjust(payload),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.consumableBalances });
-      queryClient.invalidateQueries({ queryKey: queryKeys.consumableLedger });
+    onSuccess: async () => {
+      await refreshConsumableInventoryQueries(queryClient);
       toast.success(messages.consumableTxnSuccess);
     },
     onError: (error: Error) => {
@@ -152,9 +157,8 @@ export const useDisposeConsumables = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: DisposePayload) => consumableInventoryService.dispose(payload),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.consumableBalances });
-      queryClient.invalidateQueries({ queryKey: queryKeys.consumableLedger });
+    onSuccess: async () => {
+      await refreshConsumableInventoryQueries(queryClient);
       toast.success(messages.consumableTxnSuccess);
     },
     onError: (error: Error) => {
@@ -172,9 +176,8 @@ export const useReturnConsumables = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: ReturnPayload) => consumableInventoryService.returnToCentral(payload),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.consumableBalances });
-      queryClient.invalidateQueries({ queryKey: queryKeys.consumableLedger });
+    onSuccess: async () => {
+      await refreshConsumableInventoryQueries(queryClient);
       toast.success(messages.consumableTxnSuccess);
     },
     onError: (error: Error) => {
@@ -187,9 +190,8 @@ export const useOpeningBalanceConsumables = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: OpeningBalancePayload) => consumableInventoryService.openingBalance(payload),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.consumableBalances });
-      queryClient.invalidateQueries({ queryKey: queryKeys.consumableLedger });
+    onSuccess: async () => {
+      await refreshConsumableInventoryQueries(queryClient);
       toast.success(messages.consumableTxnSuccess);
     },
     onError: (error: Error) => {

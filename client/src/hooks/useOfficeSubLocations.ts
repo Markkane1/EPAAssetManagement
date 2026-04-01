@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { officeSubLocationService } from '@/services/officeSubLocationService';
+import { refreshActiveQueries } from '@/lib/queryRefresh';
 
 const queryKey = ['officeSubLocations'] as const;
 
@@ -14,8 +15,8 @@ export const useCreateOfficeSubLocation = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: officeSubLocationService.create,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey });
+    onSuccess: async () => {
+      await refreshActiveQueries(queryClient, [queryKey]);
       toast.success('Section created successfully');
     },
     onError: (error: Error) => {
@@ -29,8 +30,8 @@ export const useUpdateOfficeSubLocation = () => {
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: { name?: string; is_active?: boolean } }) =>
       officeSubLocationService.update(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey });
+    onSuccess: async () => {
+      await refreshActiveQueries(queryClient, [queryKey]);
       toast.success('Section updated successfully');
     },
     onError: (error: Error) => {
@@ -43,8 +44,8 @@ export const useDeleteOfficeSubLocation = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => officeSubLocationService.delete(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey });
+    onSuccess: async () => {
+      await refreshActiveQueries(queryClient, [queryKey]);
       toast.success('Section deleted successfully');
     },
     onError: (error: Error) => {
@@ -52,4 +53,3 @@ export const useDeleteOfficeSubLocation = () => {
     },
   });
 };
-

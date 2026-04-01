@@ -103,7 +103,7 @@ export function DistrictManagementModal({ open, onOpenChange, divisions }: Distr
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[760px] max-h-[85vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-[760px]">
         <DialogHeader>
           <DialogTitle>Manage Districts</DialogTitle>
           <DialogDescription>Add, edit, or remove district entries.</DialogDescription>

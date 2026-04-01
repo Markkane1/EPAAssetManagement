@@ -3,6 +3,7 @@ import { directorateService } from '@/services/directorateService';
 import type { DirectorateCreateDto, DirectorateUpdateDto } from '@/services/directorateService';
 import { toast } from 'sonner';
 import { API_CONFIG } from '@/config/api.config';
+import { refreshActiveQueries } from '@/lib/queryRefresh';
 
 const { queryKeys, messages, query } = API_CONFIG;
 
@@ -28,8 +29,8 @@ export const useCreateDirectorate = () => {
   
   return useMutation({
     mutationFn: (data: DirectorateCreateDto) => directorateService.create(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.directorates });
+    onSuccess: async () => {
+      await refreshActiveQueries(queryClient, [queryKeys.directorates]);
       toast.success(messages.directorateCreated);
     },
     onError: (error: Error) => {
@@ -44,8 +45,8 @@ export const useUpdateDirectorate = () => {
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: DirectorateUpdateDto }) =>
       directorateService.update(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.directorates });
+    onSuccess: async () => {
+      await refreshActiveQueries(queryClient, [queryKeys.directorates]);
       toast.success(messages.directorateUpdated);
     },
     onError: (error: Error) => {
@@ -59,8 +60,8 @@ export const useDeleteDirectorate = () => {
   
   return useMutation({
     mutationFn: (id: string) => directorateService.delete(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.directorates });
+    onSuccess: async () => {
+      await refreshActiveQueries(queryClient, [queryKeys.directorates]);
       toast.success(messages.directorateDeleted);
     },
     onError: (error: Error) => {

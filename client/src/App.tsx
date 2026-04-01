@@ -40,6 +40,7 @@ const PurchaseOrders = lazy(() => import("./pages/PurchaseOrders"));
 const Offices = lazy(() => import("./pages/Offices"));
 const RoomsSections = lazy(() => import("./pages/RoomsSections"));
 const Categories = lazy(() => import("./pages/Categories"));
+const Subcategories = lazy(() => import("./pages/Subcategories"));
 const Vendors = lazy(() => import("./pages/Vendors"));
 const Projects = lazy(() => import("./pages/Projects"));
 const Schemes = lazy(() => import("./pages/Schemes"));
@@ -139,7 +140,7 @@ const App = () => {
                   <Route path="/employees" element={<ProtectedRoute page="employees"><Employees /></ProtectedRoute>} />
                   <Route path="/employees/:id" element={<ProtectedRoute page="employees"><EmployeeDetail /></ProtectedRoute>} />
                   <Route path="/assignments" element={<ProtectedRoute page="assignments"><AssignmentsEntry /></ProtectedRoute>} />
-                  <Route path="/my-assets" element={<ProtectedRoute page="assignments" allowedRoles={["employee"]}><MyAssets /></ProtectedRoute>} />
+                  <Route path="/my-assets" element={<ProtectedRoute page="my-assets"><MyAssets /></ProtectedRoute>} />
                   <Route path="/transfers" element={<ProtectedRoute page="transfers"><Transfers /></ProtectedRoute>} />
                   <Route path="/transfers/:id" element={<ProtectedRoute page="transfers"><TransferDetail /></ProtectedRoute>} />
                   <Route path="/maintenance" element={<ProtectedRoute page="maintenance"><Maintenance /></ProtectedRoute>} />
@@ -147,6 +148,7 @@ const App = () => {
                   <Route path="/offices" element={<ProtectedRoute page="offices"><Offices /></ProtectedRoute>} />
                   <Route path="/rooms-sections" element={<ProtectedRoute page="rooms-sections"><RoomsSections /></ProtectedRoute>} />
                   <Route path="/categories" element={<ProtectedRoute page="categories"><Categories /></ProtectedRoute>} />
+                  <Route path="/subcategories" element={<ProtectedRoute page="subcategories"><Subcategories /></ProtectedRoute>} />
                   <Route path="/vendors" element={<ProtectedRoute page="vendors"><Vendors /></ProtectedRoute>} />
                   <Route path="/projects" element={<ProtectedRoute page="projects"><Projects /></ProtectedRoute>} />
                   <Route path="/schemes" element={<ProtectedRoute page="schemes"><Schemes /></ProtectedRoute>} />
@@ -162,7 +164,7 @@ const App = () => {
                   <Route
                     path="/reports/asset-summary"
                     element={
-                      <ProtectedRoute page="reports" allowedRoles={["org_admin", "office_head", "caretaker", "procurement_officer", "compliance_auditor"]}>
+                      <ProtectedRoute page="reports-advanced">
                         <AssetSummaryReport />
                       </ProtectedRoute>
                     }
@@ -170,7 +172,7 @@ const App = () => {
                   <Route
                     path="/reports/asset-items-inventory"
                     element={
-                      <ProtectedRoute page="reports" allowedRoles={["org_admin", "office_head", "caretaker", "procurement_officer", "compliance_auditor"]}>
+                      <ProtectedRoute page="reports-advanced">
                         <AssetItemsInventoryReport />
                       </ProtectedRoute>
                     }
@@ -179,7 +181,7 @@ const App = () => {
                   <Route
                     path="/reports/status-distribution"
                     element={
-                      <ProtectedRoute page="reports" allowedRoles={["org_admin", "office_head", "caretaker", "procurement_officer", "compliance_auditor"]}>
+                      <ProtectedRoute page="reports-advanced">
                         <StatusDistributionReport />
                       </ProtectedRoute>
                     }
@@ -187,7 +189,7 @@ const App = () => {
                   <Route
                     path="/reports/maintenance-report"
                     element={
-                      <ProtectedRoute page="reports" allowedRoles={["org_admin", "office_head", "caretaker", "procurement_officer", "compliance_auditor"]}>
+                      <ProtectedRoute page="reports-advanced">
                         <MaintenanceReport />
                       </ProtectedRoute>
                     }
@@ -195,7 +197,7 @@ const App = () => {
                   <Route
                     path="/reports/location-inventory"
                     element={
-                      <ProtectedRoute page="reports" allowedRoles={["org_admin", "office_head", "caretaker", "procurement_officer", "compliance_auditor"]}>
+                      <ProtectedRoute page="reports-advanced">
                         <LocationInventoryReport />
                       </ProtectedRoute>
                     }
@@ -203,15 +205,15 @@ const App = () => {
                   <Route
                     path="/reports/financial-summary"
                     element={
-                      <ProtectedRoute page="reports" allowedRoles={["org_admin", "office_head", "caretaker", "procurement_officer", "compliance_auditor"]}>
+                      <ProtectedRoute page="reports-advanced">
                         <FinancialSummaryReport />
                       </ProtectedRoute>
                     }
                   />
                   <Route path="/reports/employee-assets" element={<ProtectedRoute page="reports"><EmployeeAssetsReport /></ProtectedRoute>} />
-                  <Route path="/settings" element={<ProtectedRoute page="settings" allowedRoles={["org_admin", "office_head"]}><Settings /></ProtectedRoute>} />
-                  <Route path="/settings/notifications" element={<ProtectedRoute page="profile"><NotificationDetails /></ProtectedRoute>} />
-                  <Route path="/settings/delegations" element={<ProtectedRoute page="profile" allowedRoles={["org_admin", "office_head", "caretaker"]}><RoleDelegations /></ProtectedRoute>} />
+                  <Route path="/settings" element={<ProtectedRoute page="settings"><Settings /></ProtectedRoute>} />
+                  <Route path="/settings/notifications" element={<ProtectedRoute page="notifications"><NotificationDetails /></ProtectedRoute>} />
+                  <Route path="/settings/delegations" element={<ProtectedRoute page="role-delegations"><RoleDelegations /></ProtectedRoute>} />
                   <Route path="/audit-logs" element={<ProtectedRoute page="audit-logs"><AuditLogs /></ProtectedRoute>} />
                   <Route path="/approval-matrix" element={<ProtectedRoute page="approval-matrix"><ApprovalMatrix /></ProtectedRoute>} />
                   <Route path="/user-permissions" element={<ProtectedRoute page="user-permissions"><UserPermissions /></ProtectedRoute>} />

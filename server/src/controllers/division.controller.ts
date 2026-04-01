@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { createCrudController } from './crudController';
 import { DivisionModel } from '../models/division.model';
+import { syncOfficeReferenceData } from '../services/officeReferenceSync.service';
 
 const baseController = createCrudController({
   repository: {
@@ -23,11 +24,12 @@ export const divisionController = {
   ...baseController,
   list: async (req: Request, res: Response, next: NextFunction) => {
     try {
+      await syncOfficeReferenceData();
       const limit = clampInt((req.query as Record<string, unknown>).limit, 500, 1, 2000);
       const page = clampInt((req.query as Record<string, unknown>).page, 1, 1, 100000);
       const skip = (page - 1) * limit;
       const data = await DivisionModel.find()
-        .sort({ created_at: -1 })
+        .sort({ name: 1, created_at: -1 })
         .skip(skip)
         .limit(limit)
         .lean();

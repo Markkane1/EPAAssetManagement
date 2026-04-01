@@ -7,6 +7,7 @@ const vendorCreateMock = vi.fn();
 const vendorFindByIdAndUpdateMock = vi.fn();
 const vendorFindByIdAndDeleteMock = vi.fn();
 const officeExistsMock = vi.fn();
+const logAuditMock = vi.fn();
 
 vi.mock("../../server/src/utils/scope", () => ({
   getRequestContext: (...args: unknown[]) => getRequestContextMock(...args),
@@ -26,6 +27,10 @@ vi.mock("../../server/src/models/office.model", () => ({
   OfficeModel: {
     exists: (...args: unknown[]) => officeExistsMock(...args),
   },
+}));
+
+vi.mock("../../server/src/modules/records/services/audit.service", () => ({
+  logAudit: (...args: unknown[]) => logAuditMock(...args),
 }));
 
 import { vendorController } from "../../server/src/controllers/vendor.controller";
@@ -56,11 +61,20 @@ describe("vendorController", () => {
     );
     expect(invalidNext).toHaveBeenCalledWith(expect.objectContaining({ status: 400 }));
 
+    getRequestContextMock.mockResolvedValueOnce({ isOrgAdmin: false, locationId: officeId, role: "employee", roles: ["employee"] });
+    const forbiddenNext = vi.fn();
+    await vendorController.list(
+      { query: {} } as never,
+      createResponse() as never,
+      forbiddenNext
+    );
+    expect(forbiddenNext).toHaveBeenCalledWith(expect.objectContaining({ status: 403 }));
+
     const leanMock = vi.fn().mockResolvedValue([{ id: "vendor-1" }]);
     vendorFindMock.mockReturnValue({
       sort: () => ({ skip: () => ({ limit: () => ({ lean: leanMock }) }) }),
     });
-    getRequestContextMock.mockResolvedValueOnce({ isOrgAdmin: false, locationId: officeId, role: "office_head" });
+    getRequestContextMock.mockResolvedValueOnce({ isOrgAdmin: false, locationId: officeId, role: "office_head", roles: ["office_head"] });
 
     const res = createResponse();
     await vendorController.list(
@@ -77,6 +91,12 @@ describe("vendorController", () => {
   });
 
   it("should enforce vendor read scope for getById", async () => {
+    getRequestContextMock.mockResolvedValueOnce({ isOrgAdmin: false, locationId: officeId, role: "employee", roles: ["employee"] });
+    const deniedNext = vi.fn();
+    await vendorController.getById({ params: { id: "vendor-1" } } as never, createResponse() as never, deniedNext);
+    expect(deniedNext).toHaveBeenCalledWith(expect.objectContaining({ status: 403 }));
+    expect(vendorFindByIdMock).not.toHaveBeenCalled();
+
     getRequestContextMock.mockResolvedValueOnce({ isOrgAdmin: false, locationId: officeId, role: "office_head" });
     vendorFindByIdMock.mockReturnValueOnce({ lean: async () => null });
     const notFoundRes = createResponse();
@@ -96,7 +116,12 @@ describe("vendorController", () => {
     await vendorController.create({ body: {} } as never, createResponse() as never, forbiddenNext);
     expect(forbiddenNext).toHaveBeenCalledWith(expect.objectContaining({ status: 403 }));
 
-    getRequestContextMock.mockResolvedValueOnce({ isOrgAdmin: false, locationId: officeId, role: "office_head" });
+    getRequestContextMock.mockResolvedValueOnce({
+      isOrgAdmin: false,
+      locationId: officeId,
+      role: "procurement_officer",
+      roles: ["procurement_officer"],
+    });
     officeExistsMock.mockResolvedValueOnce(true);
     vendorCreateMock.mockResolvedValueOnce({ id: "vendor-1" });
     const res = createResponse();

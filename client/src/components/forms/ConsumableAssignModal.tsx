@@ -23,6 +23,7 @@ import { ConsumableAsset, Employee, Location, ConsumableAssigneeType } from "@/t
 import { convertQuantity, getCompatibleUnits } from "@/lib/unitUtils";
 import { useAuth } from "@/contexts/AuthContext";
 import { FormDialogActions } from "@/components/forms/FormDialogActions";
+import { isOfficeAdminRole } from "@/services/authService";
 
 const assignSchema = z.object({
   assigneeType: z.enum(["employee", "location"]),
@@ -88,7 +89,7 @@ export function ConsumableAssignModal({
   const assignees = useMemo(() => {
     if (assigneeType === "employee") {
       let list = employees.filter((emp) => emp.is_active);
-      if (role === "office_head" && currentEmployee?.directorate_id) {
+      if (isOfficeAdminRole(role) && currentEmployee?.directorate_id) {
         list = list.filter((emp) => emp.directorate_id === currentEmployee.directorate_id);
       }
       return list;
@@ -110,7 +111,7 @@ export function ConsumableAssignModal({
   }, [open, form, consumable]);
 
   useEffect(() => {
-    if (role === "office_head" && assigneeType !== "employee") {
+    if (isOfficeAdminRole(role) && assigneeType !== "employee") {
       form.setValue("assigneeType", "employee");
     }
   }, [role, assigneeType, form]);
@@ -168,13 +169,13 @@ export function ConsumableAssignModal({
               : "Select a consumable first"}
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label>Assign To *</Label>
               <Select
                 value={assigneeType}
                 onValueChange={(v) => form.setValue("assigneeType", v as ConsumableAssigneeType)}
-                disabled={role === "office_head"}
+                disabled={isOfficeAdminRole(role)}
               >
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -226,7 +227,7 @@ export function ConsumableAssignModal({
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="quantity">Quantity *</Label>
               <Input id="quantity" type="number" step="0.01" {...form.register("quantity")} />
@@ -278,3 +279,4 @@ export function ConsumableAssignModal({
     </Dialog>
   );
 }
+

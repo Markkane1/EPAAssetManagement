@@ -4,6 +4,7 @@ import {
   notificationService,
   type NotificationListQuery,
 } from '@/services/notificationService';
+import { refreshActiveQueries } from '@/lib/queryRefresh';
 
 const { queryKeys, query } = API_CONFIG;
 const { live } = query.profiles;
@@ -24,12 +25,23 @@ export const useNotifications = (params: UseNotificationsParams = {}) => {
   });
 };
 
+export const useAllNotifications = (params: UseNotificationsParams = {}) => {
+  const { unreadOnly, limit, scopeKey = 'default', enabled = true } = params;
+  return useQuery({
+    queryKey: [...queryKeys.notifications, 'all', scopeKey, unreadOnly ?? false, limit ?? 100],
+    queryFn: () => notificationService.listAll({ unreadOnly, limit }),
+    staleTime: live.staleTime,
+    refetchOnWindowFocus: live.refetchOnWindowFocus,
+    enabled,
+  });
+};
+
 export const useMarkNotificationRead = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => notificationService.markRead(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.notifications });
+    onSuccess: async () => {
+      await refreshActiveQueries(queryClient, [queryKeys.notifications]);
     },
   });
 };
@@ -38,8 +50,8 @@ export const useMarkAllNotificationsRead = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: () => notificationService.markAllRead(),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.notifications });
+    onSuccess: async () => {
+      await refreshActiveQueries(queryClient, [queryKeys.notifications]);
     },
   });
 };
@@ -49,8 +61,8 @@ export const useNotificationAction = () => {
   return useMutation({
     mutationFn: (payload: { id: string; action: 'APPROVE' | 'REJECT' | 'ACKNOWLEDGE' | 'OPEN_RECORD'; decisionNotes?: string }) =>
       notificationService.action(payload.id, { action: payload.action, decisionNotes: payload.decisionNotes }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.notifications });
+    onSuccess: async () => {
+      await refreshActiveQueries(queryClient, [queryKeys.notifications]);
     },
   });
 };

@@ -5,12 +5,28 @@ import { userService } from '@/services/userService';
 import type { CreateUserDto, UserListQuery } from '@/services/userService';
 import { userPermissionService } from '@/services/userPermissionService';
 import type { AppRole } from '@/services/authService';
+import { refreshActiveQueries } from '@/lib/queryRefresh';
 
 const { queryKeys, query } = API_CONFIG;
 const { heavyList, referenceData } = query.profiles;
 
 type QueryToggleOptions = {
   enabled?: boolean;
+};
+
+export const useUsers = (queryInput: UserListQuery = {}, options: QueryToggleOptions = {}) => {
+  const { enabled = true } = options;
+  return useQuery({
+    queryKey: [
+      ...queryKeys.users,
+      'list',
+      queryInput.search?.trim() || '',
+    ],
+    queryFn: () => userService.getAll(queryInput),
+    staleTime: heavyList.staleTime,
+    refetchOnWindowFocus: heavyList.refetchOnWindowFocus,
+    enabled,
+  });
 };
 
 export const usePagedUsers = (queryInput: UserListQuery, options: QueryToggleOptions = {}) => {
@@ -62,8 +78,8 @@ export const useCreateUser = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: CreateUserDto) => userService.create(payload),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.users });
+    onSuccess: async () => {
+      await refreshActiveQueries(queryClient, [queryKeys.users]);
       toast.success('User created successfully');
     },
     onError: (error: Error) => {
@@ -82,8 +98,8 @@ export const useUpdateUserRole = () => {
       userId: string;
       payload: { role?: AppRole; roles?: AppRole[]; activeRole?: AppRole };
     }) => userService.updateRole(userId, payload),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.users });
+    onSuccess: async () => {
+      await refreshActiveQueries(queryClient, [queryKeys.users]);
       toast.success('User role updated successfully');
     },
     onError: (error: Error) => {
@@ -97,8 +113,8 @@ export const useUpdateUserLocation = () => {
   return useMutation({
     mutationFn: ({ userId, locationId }: { userId: string; locationId: string | null }) =>
       userService.updateLocation(userId, locationId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.users });
+    onSuccess: async () => {
+      await refreshActiveQueries(queryClient, [queryKeys.users]);
       toast.success('User location updated successfully');
     },
     onError: (error: Error) => {
@@ -111,8 +127,8 @@ export const useDeleteUser = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (userId: string) => userService.delete(userId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.users });
+    onSuccess: async () => {
+      await refreshActiveQueries(queryClient, [queryKeys.users]);
       toast.success('User deleted successfully');
     },
     onError: (error: Error) => {

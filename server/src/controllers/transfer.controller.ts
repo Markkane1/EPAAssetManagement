@@ -22,6 +22,10 @@ import {
   setAssetItemOfficeHolderUpdate,
   setAssetItemStoreHolderUpdate,
 } from '../utils/assetHolder';
+import {
+  canonicalizeOfficeAssetItems,
+  syncAssetQuantityFloor,
+} from '../services/officeAssetCanonicalization.service';
 
 import {
   HEAD_OFFICE_STORE_CODE,
@@ -738,6 +742,16 @@ export const transferController = {
             item_status: 'Transferred',
           },
           withSession(txSession)
+        );
+        const canonicalization = await canonicalizeOfficeAssetItems({
+          officeId: toOfficeId,
+          assetItemIds,
+          session: txSession,
+        });
+        await Promise.all(
+          canonicalization.canonicalAssetIds.map((assetId) =>
+            syncAssetQuantityFloor(assetId, 0, { session: txSession })
+          )
         );
 
         await updateTransferRecordStatus(access, transfer.id, 'Completed', transfer.notes || undefined, txSession);

@@ -4,6 +4,7 @@ import { mapFields } from '../utils/mapFields';
 import type { AuthRequest } from '../middleware/auth';
 import { escapeRegex, readPagination } from '../utils/requestParsing';
 import { buildSearchTerms, buildSearchTermsQuery } from '../utils/searchTerms';
+import { syncOfficeReferenceData } from '../services/officeReferenceSync.service';
 
 const fieldMap = {
   name: 'name',
@@ -354,6 +355,7 @@ export const officeController = {
       }
       payload.search_terms = resolveOfficeSearchTerms(payload);
       const data = await OfficeModel.create(payload);
+      await syncOfficeReferenceData();
       return res.status(201).json(data.toJSON());
     } catch (error) {
       next(error);
@@ -415,6 +417,7 @@ export const officeController = {
 
       const data = await OfficeModel.findByIdAndUpdate(officeId, payload, { new: true });
       if (!data) return res.status(404).json({ message: 'Not found' });
+      await syncOfficeReferenceData();
       return res.json(data.toJSON());
     } catch (error) {
       next(error);

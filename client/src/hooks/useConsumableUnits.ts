@@ -6,6 +6,7 @@ import type {
   ConsumableUnitUpdateDto,
 } from '@/services/consumableUnitService';
 import { API_CONFIG } from '@/config/api.config';
+import { refreshActiveQueries } from '@/lib/queryRefresh';
 
 const { queryKeys, messages, query } = API_CONFIG;
 
@@ -20,8 +21,8 @@ export const useCreateConsumableUnit = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (data: ConsumableUnitCreateDto) => consumableUnitService.create(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.consumableUnits });
+    onSuccess: async () => {
+      await refreshActiveQueries(queryClient, [queryKeys.consumableUnits]);
       toast.success(messages.consumableUnitCreated);
     },
     onError: (error: Error) => {
@@ -35,8 +36,8 @@ export const useUpdateConsumableUnit = () => {
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: ConsumableUnitUpdateDto }) =>
       consumableUnitService.update(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.consumableUnits });
+    onSuccess: async () => {
+      await refreshActiveQueries(queryClient, [queryKeys.consumableUnits]);
       toast.success(messages.consumableUnitUpdated);
     },
     onError: (error: Error) => {
@@ -49,8 +50,8 @@ export const useDeleteConsumableUnit = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => consumableUnitService.delete(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.consumableUnits });
+    onSuccess: async () => {
+      await refreshActiveQueries(queryClient, [queryKeys.consumableUnits]);
       toast.success(messages.consumableUnitDeleted);
     },
     onError: (error: Error) => {

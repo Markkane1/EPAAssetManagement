@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
-  PAGE_ALLOWED_ROLES,
   canAccessPage,
   setRuntimeRolePermissions,
 } from "../../client/src/config/pagePermissions";
@@ -31,7 +30,24 @@ describe("pagePermissions", () => {
   });
 
   it("should resolve alias pages through their linked permission groups", () => {
-    expect(PAGE_ALLOWED_ROLES["office-assets"]).toEqual([]);
+    setRuntimeRolePermissions([
+      {
+        id: "caretaker-runtime",
+        sourceRoles: ["caretaker"],
+        permissions: {
+          assets: ["view"],
+          "asset-items": ["view"],
+        },
+      },
+      {
+        id: "office-head-runtime",
+        sourceRoles: ["office_head"],
+        permissions: {
+          assets: ["view"],
+          "asset-items": ["view"],
+        },
+      },
+    ]);
     expect(canAccessPage({ page: "office-assets", role: "caretaker", isOrgAdmin: false })).toBe(true);
     expect(canAccessPage({ page: "office-asset-items", role: "office_head", isOrgAdmin: false })).toBe(true);
   });

@@ -13,6 +13,11 @@ import { useNavigate } from "react-router-dom";
 import { useState } from "react";
 import api from "@/lib/api";
 import { toast } from "sonner";
+import { strongPasswordSchema } from "@/lib/securityUtils";
+
+const changePasswordSchema = strongPasswordSchema
+  .transform((value) => value.trim())
+  .pipe(strongPasswordSchema);
 
 export default function Profile() {
   const { user, roles, activeRole, switchActiveRole, logout } = useAuth();
@@ -22,6 +27,7 @@ export default function Profile() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
   const [isSwitchingRole, setIsSwitchingRole] = useState(false);
+  const [passwordError, setPasswordError] = useState("");
 
   const handleLogout = () => {
     logout();
@@ -30,16 +36,35 @@ export default function Profile() {
 
   const handlePasswordChange = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (newPassword !== confirmPassword) {
-      toast.error("New passwords do not match");
+    setPasswordError("");
+
+    const normalizedCurrentPassword = currentPassword.trim();
+    const normalizedNewPassword = newPassword.trim();
+    const normalizedConfirmPassword = confirmPassword.trim();
+
+    if (!normalizedCurrentPassword) {
+      setPasswordError("Current password is required");
+      return;
+    }
+    const passwordValidation = changePasswordSchema.safeParse(normalizedNewPassword);
+    if (!passwordValidation.success) {
+      setPasswordError(passwordValidation.error.issues[0]?.message || "Enter a stronger password");
+      return;
+    }
+    if (normalizedCurrentPassword === normalizedNewPassword) {
+      setPasswordError("New password must be different from current password");
+      return;
+    }
+    if (normalizedNewPassword !== normalizedConfirmPassword) {
+      setPasswordError("New passwords do not match");
       return;
     }
 
     setIsUpdatingPassword(true);
     try {
       await api.post("/auth/change-password", {
-        oldPassword: currentPassword,
-        newPassword,
+        oldPassword: normalizedCurrentPassword,
+        newPassword: normalizedNewPassword,
       });
       toast.success("Password updated");
       setCurrentPassword("");
@@ -74,6 +99,8 @@ export default function Profile() {
     switch (normalized) {
       case "org_admin":
         return "Administrator";
+      case "head_office_admin":
+        return "Head Office Admin";
       case "office_head":
         return "Office Head";
       case "caretaker":
@@ -211,8 +238,12 @@ export default function Profile() {
                   id="current-password"
                   type="password"
                   value={currentPassword}
-                  onChange={(event) => setCurrentPassword(event.target.value)}
+                  onChange={(event) => {
+                    setCurrentPassword(event.target.value);
+                    if (passwordError) setPasswordError("");
+                  }}
                   required
+                  aria-invalid={passwordError ? "true" : "false"}
                 />
               </div>
               <div className="space-y-2">
@@ -221,9 +252,16 @@ export default function Profile() {
                   id="new-password"
                   type="password"
                   value={newPassword}
-                  onChange={(event) => setNewPassword(event.target.value)}
+                  onChange={(event) => {
+                    setNewPassword(event.target.value);
+                    if (passwordError) setPasswordError("");
+                  }}
                   required
+                  aria-invalid={passwordError ? "true" : "false"}
                 />
+                <p className="text-xs text-muted-foreground">
+                  Use at least 12 characters with uppercase, lowercase, a number, and a symbol.
+                </p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="confirm-password">Confirm New Password</Label>
@@ -231,10 +269,15 @@ export default function Profile() {
                   id="confirm-password"
                   type="password"
                   value={confirmPassword}
-                  onChange={(event) => setConfirmPassword(event.target.value)}
+                  onChange={(event) => {
+                    setConfirmPassword(event.target.value);
+                    if (passwordError) setPasswordError("");
+                  }}
                   required
+                  aria-invalid={passwordError ? "true" : "false"}
                 />
               </div>
+              {passwordError && <p className="text-sm text-destructive">{passwordError}</p>}
               <Button type="submit" className="w-full" disabled={isUpdatingPassword}>
                 <KeyRound className="mr-2 h-4 w-4" />
                 {isUpdatingPassword ? "Updating..." : "Update Password"}

@@ -55,7 +55,7 @@ export async function generateReportPDF(params: {
   const doc = new jsPDF();
 
   // Add EPA branding header
-  doc.setFillColor(46, 111, 64); // EPA Green #2E6F40
+  doc.setFillColor(37, 109, 1); // Primary #256D01
   doc.rect(0, 0, 210, 35, "F");
 
   doc.setTextColor(255, 255, 255);
@@ -81,7 +81,7 @@ export async function generateReportPDF(params: {
     body: data,
     startY: 60,
     headStyles: {
-      fillColor: [37, 61, 44], // Dark green #253D2C
+      fillColor: [57, 102, 104], // Tertiary #396668
       textColor: [255, 255, 255],
       fontStyle: "bold",
       fontSize: 9,
@@ -90,7 +90,7 @@ export async function generateReportPDF(params: {
       fontSize: 8,
     },
     alternateRowStyles: {
-      fillColor: [207, 255, 220], // Light mint #CFFFDC
+      fillColor: [243, 244, 237], // Surface container low #F3F4ED
     },
     margin: { top: 60 },
     styles: {
@@ -104,7 +104,7 @@ export async function generateReportPDF(params: {
   for (let i = 1; i <= pageCount; i++) {
     doc.setPage(i);
     doc.setFontSize(8);
-    doc.setTextColor(128, 128, 128);
+    doc.setTextColor(113, 122, 105);
     doc.text(
       `Page ${i} of ${pageCount} | EPA Asset Management System`,
       105,

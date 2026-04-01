@@ -3,9 +3,18 @@ import { useMemo } from "react";
 import type { Asset, AssetItem, Employee, Vendor } from "@/types";
 
 import type { SearchableComboboxOption } from "@/components/forms/SearchableComboboxField";
+import { normalizeSearchText, normalizeWhitespace } from "@/lib/textNormalization";
 
 function useIdMap<T extends { id: string }>(items: T[]) {
   return useMemo(() => new Map(items.map((item) => [item.id, item])), [items]);
+}
+
+function normalizeAssetOptionKey(asset: Asset) {
+  return [
+    normalizeSearchText(asset.name),
+    String(asset.category_id || "").trim(),
+    normalizeSearchText(asset.subcategory),
+  ].join("::");
 }
 
 export function useAssetNameMap(assets: Asset[]) {
@@ -16,11 +25,25 @@ export function useAssetNameMap(assets: Asset[]) {
 
 export function useAssetOptions(assets: Asset[]) {
   return useMemo<SearchableComboboxOption[]>(() => {
-    return assets.map((asset) => ({
-      value: asset.id,
-      searchText: `${asset.name} ${asset.description || ""}`.trim(),
-      primaryText: asset.name,
-    }));
+    const seen = new Set<string>();
+    const options: SearchableComboboxOption[] = [];
+
+    for (const asset of assets) {
+      const optionKey = normalizeAssetOptionKey(asset);
+      if (seen.has(optionKey)) continue;
+      seen.add(optionKey);
+      const primaryText = normalizeWhitespace(asset.name) || "Unknown";
+      const secondaryText = normalizeWhitespace(asset.subcategory) || undefined;
+
+      options.push({
+        value: asset.id,
+        searchText: `${primaryText} ${secondaryText || ""} ${normalizeWhitespace(asset.description)}`.trim(),
+        primaryText,
+        secondaryText,
+      });
+    }
+
+    return options;
   }, [assets]);
 }
 

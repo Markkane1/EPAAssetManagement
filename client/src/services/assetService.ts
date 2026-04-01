@@ -1,11 +1,14 @@
 import api from '@/lib/api';
 import { Asset } from '@/types';
 import { ListQuery, PagedListResponse, toListQueryString } from '@/services/pagination';
+import { fetchAllPages } from '@/services/fetchAllPages';
 
 const LIST_LIMIT = 2000;
 
 export interface AssetListQuery extends ListQuery {
   search?: string;
+  categoryId?: string;
+  subcategory?: string;
 }
 
 export interface AssetCreateDto {
@@ -13,7 +16,9 @@ export interface AssetCreateDto {
   description?: string;
   specification?: string;
   categoryId: string;
+  subcategory?: string;
   vendorId?: string;
+  purchaseOrderId?: string;
   unitPrice?: number;
   price?: number;
   quantity?: number;
@@ -36,7 +41,9 @@ export interface AssetUpdateDto {
   description?: string;
   specification?: string;
   categoryId?: string;
+  subcategory?: string;
   vendorId?: string;
+  purchaseOrderId?: string;
   unitPrice?: number;
   price?: number;
   quantity?: number;
@@ -80,8 +87,10 @@ function appendIfDefined(form: FormData, key: string, value: unknown) {
 function toAssetFormData(data: AssetCreateDto | AssetUpdateDto) {
   const normalized = {
     ...data,
+    subcategory: data.subcategory?.trim() || undefined,
     unitPrice: data.unitPrice ?? data.price,
     vendorId: data.vendorId === '' ? undefined : data.vendorId,
+    purchaseOrderId: data.purchaseOrderId === '' ? undefined : data.purchaseOrderId,
     projectId: data.projectId === '' ? undefined : data.projectId,
     schemeId: data.schemeId === '' ? undefined : data.schemeId,
     acquisitionDate: data.acquisitionDate === '' ? undefined : data.acquisitionDate,
@@ -95,7 +104,9 @@ function toAssetFormData(data: AssetCreateDto | AssetUpdateDto) {
   appendIfDefined(form, 'description', normalized.description);
   appendIfDefined(form, 'specification', normalized.specification);
   appendIfDefined(form, 'categoryId', normalized.categoryId);
+  appendIfDefined(form, 'subcategory', normalized.subcategory);
   appendIfDefined(form, 'vendorId', normalized.vendorId);
+  appendIfDefined(form, 'purchaseOrderId', normalized.purchaseOrderId);
   appendIfDefined(form, 'projectId', normalized.projectId);
   appendIfDefined(form, 'schemeId', normalized.schemeId);
   appendIfDefined(form, 'assetSource', normalized.assetSource);
@@ -126,12 +137,17 @@ function buildAssetQuery(query: AssetListQuery = {}, meta = false) {
     queryString.forEach((value, key) => params.set(key, value));
   }
   if (query.search?.trim()) params.set('search', query.search.trim());
+  if (query.categoryId?.trim()) params.set('categoryId', query.categoryId.trim());
+  if (query.subcategory?.trim()) params.set('subcategory', query.subcategory.trim());
   const encoded = params.toString();
   return encoded ? `?${encoded}` : '';
 }
 
 export const assetService = {
-  getAll: (query: AssetListQuery = {}) => api.get<Asset[]>(`/assets${buildAssetQuery(query)}`),
+  getAll: (query: AssetListQuery = {}) =>
+    fetchAllPages(query, (pagedQuery) => api.get<PagedListResponse<Asset>>(`/assets${buildAssetQuery(pagedQuery, true)}`), {
+      pageSize: LIST_LIMIT,
+    }),
 
   getPaged: (query: AssetListQuery = {}) =>
     api.get<PagedListResponse<Asset>>(`/assets${buildAssetQuery(query, true)}`),

@@ -78,6 +78,7 @@ const assignments = [{ id: "assignment-1", asset_item_id: "item-1", employee_id:
 const offices = locations;
 const divisions = [{ id: "division-1", name: "North" }];
 const districts = [{ id: "district-1", name: "District One" }];
+const stores = [{ id: "store-1", name: "Main Store", code: "MAIN", is_active: true }];
 const purchaseOrders = [{ id: "po-1", order_number: "PO-1", vendor_id: "vendor-1", order_date: "2026-01-02", status: "PENDING", total_amount: 5000, unit_price: 1000, tax_percentage: 5, tax_amount: 250, source_type: "procurement", source_name: "Procurement", notes: "note" }];
 const sections = [{ id: "section-1", office_id: "office-1", name: "Room A", is_active: true }];
 const approvalRequests = [{ id: "approval-1", transaction_type: "CONSUMABLE_TRANSFER", approvals: [{ decision: "Approved" }], required_approvals: 2, risk_tags: ["HIGH_VALUE"], amount: 4500, requested_at: "2026-01-01T00:00:00.000Z", maker_user_id: "user-1", office_id: "office-1" }];
@@ -287,6 +288,7 @@ vi.mock("@/hooks/useOffices", () => ({
 }));
 vi.mock("@/hooks/useDivisions", () => ({ useDivisions: () => ({ data: divisions, isLoading: false }) }));
 vi.mock("@/hooks/useDistricts", () => ({ useDistricts: () => ({ data: districts, isLoading: false }) }));
+vi.mock("@/hooks/useStores", () => ({ useStores: () => ({ data: stores, isLoading: false }) }));
 vi.mock("@/hooks/usePurchaseOrders", () => ({ usePurchaseOrders: () => ({ data: purchaseOrders, isLoading: false }), useCreatePurchaseOrder: () => createMutation(), useUpdatePurchaseOrder: () => createMutation(), useDeletePurchaseOrder: () => createMutation() }));
 vi.mock("@/hooks/useOfficeSubLocations", () => ({ useOfficeSubLocations: () => ({ data: sections, isLoading: false }), useCreateOfficeSubLocation: () => createMutation(), useUpdateOfficeSubLocation: () => createMutation(), useDeleteOfficeSubLocation: () => createMutation() }));
 vi.mock("@/hooks/useApprovalMatrix", () => ({ usePendingApprovalMatrixRequests: () => ({ data: approvalRequests, isLoading: false, isError: false, refetch: refetchMock }), useDecideApprovalMatrixRequest: () => createMutation() }));

@@ -10,13 +10,24 @@ import type { AuthRequest } from '../middleware/auth';
 import { resolveAccessContext } from '../utils/accessControl';
 import { officeAssetItemFilter } from '../utils/assetHolder';
 import { ConsumableItemModel } from '../modules/consumables/models/consumableItem.model';
+import { ensureSubcategoriesNotInUse } from '../utils/categoryHierarchy';
+import { parseSubcategories } from '../utils/categorySubcategories';
 import {
   resolveConsumableRequestScope,
-  resolveScopeLabOnlyRestrictions,
 } from '../modules/consumables/utils/accessScope';
 
 const CATEGORY_SCOPES = new Set(['GENERAL', 'LAB_ONLY']);
 const CATEGORY_ASSET_TYPES = new Set(['ASSET', 'CONSUMABLE']);
+
+function serializeCategory<T extends Record<string, unknown> | null | undefined>(category: T) {
+  if (!category) return category;
+  return {
+    ...category,
+    scope: String((category as Record<string, unknown>).scope || 'GENERAL').trim().toUpperCase(),
+    asset_type: String((category as Record<string, unknown>).asset_type || 'ASSET').trim().toUpperCase(),
+    subcategories: parseSubcategories((category as Record<string, unknown>).subcategories) || [],
+  };
+}
 
 function sanitizeCategoryText(value: string) {
   return value
@@ -57,8 +68,33 @@ function parseDescription(value: unknown) {
   return description || null;
 }
 
+function applyConsumableCategoryReadScope(
+  filter: Record<string, unknown>,
+  scope: { canAccessLabOnly: boolean }
+) {
+  if (scope.canAccessLabOnly) {
+    return filter;
+  }
+  const exclusions = Array.isArray(filter.$nor)
+    ? [...(filter.$nor as Record<string, unknown>[])]
+    : [];
+  exclusions.push({ scope: 'LAB_ONLY', asset_type: 'CONSUMABLE' });
+  filter.$nor = exclusions;
+  return filter;
+}
+
+function isRestrictedConsumableCategory(
+  category: { scope?: unknown; asset_type?: unknown } | null | undefined,
+  scope: { canAccessLabOnly: boolean }
+) {
+  if (scope.canAccessLabOnly) return false;
+  const categoryScope = String(category?.scope || 'GENERAL').trim().toUpperCase();
+  const assetType = String(category?.asset_type || 'ASSET').trim().toUpperCase();
+  return assetType === 'CONSUMABLE' && categoryScope === 'LAB_ONLY';
+}
+
 export const categoryController = {
-  list: async (req: Request, res: Response, next: NextFunction) => {
+  list: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const query = req.query as Record<string, unknown>;
       const { page, limit, skip } = readPagination(query, { defaultLimit: 200, maxLimit: 1000 });
@@ -79,23 +115,29 @@ export const categoryController = {
       if (search) {
         Object.assign(filter, buildSearchTermsQuery(search) || {});
       }
+      const consumableScope = await resolveConsumableRequestScope(req);
+      applyConsumableCategoryReadScope(filter, consumableScope);
 
-      const categories = await CategoryModel.find(filter, { name: 1, description: 1, scope: 1, asset_type: 1, created_at: 1 })
+      const categories = await CategoryModel.find(
+        filter,
+        { name: 1, description: 1, subcategories: 1, scope: 1, asset_type: 1, created_at: 1 }
+      )
         .sort({ name: 1 })
         .skip(skip)
         .limit(limit)
         .lean();
+      const serializedCategories = categories.map((category) => serializeCategory(category));
       if (!meta) {
-        return res.json(categories);
+        return res.json(serializedCategories);
       }
 
       const total = await CategoryModel.countDocuments(filter);
       return res.json({
-        items: categories,
+        items: serializedCategories,
         page,
         limit,
         total,
-        hasMore: skip + categories.length < total,
+        hasMore: skip + serializedCategories.length < total,
       });
     } catch (error) {
       next(error);
@@ -153,12 +195,11 @@ export const categoryController = {
         category_id: { $in: categoryIds },
       };
       if (!consumableScope.canAccessLabOnly) {
-        const { labOnlyCategoryIds } = await resolveScopeLabOnlyRestrictions(consumableScope);
-        if (labOnlyCategoryIds.length > 0) {
-          const blockedIds = new Set(labOnlyCategoryIds.map((id) => String(id)));
-          const allowedCategoryIds = categoryIds.filter((id) => !blockedIds.has(String(id)));
-          consumableMatch.category_id = { $in: allowedCategoryIds };
-        }
+        const allowedCategories = await CategoryModel.find(
+          { _id: { $in: categoryIds }, $nor: [{ scope: 'LAB_ONLY', asset_type: 'CONSUMABLE' }] },
+          { _id: 1 }
+        ).lean<{ _id: Types.ObjectId }[]>();
+        consumableMatch.category_id = { $in: allowedCategories.map((entry) => entry._id) };
       }
 
       const scopedCategoryIds = consumableMatch.category_id as { $in: Types.ObjectId[] };
@@ -179,11 +220,15 @@ export const categoryController = {
       next(error);
     }
   },
-  getById: async (req: Request, res: Response, next: NextFunction) => {
+  getById: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const category = await CategoryModel.findById(req.params.id).lean();
       if (!category) return res.status(404).json({ message: 'Not found' });
-      res.json(category);
+      const consumableScope = await resolveConsumableRequestScope(req);
+      if (isRestrictedConsumableCategory(category as { scope?: unknown; asset_type?: unknown }, consumableScope)) {
+        return res.status(404).json({ message: 'Not found' });
+      }
+      res.json(serializeCategory(category));
     } catch (error) {
       next(error);
     }
@@ -200,10 +245,12 @@ export const categoryController = {
       };
       const description = parseDescription((req.body as Record<string, unknown>).description);
       if (description !== undefined) payload.description = description;
-      payload.search_terms = buildSearchTerms([payload.name]);
+      const subcategories = parseSubcategories((req.body as Record<string, unknown>).subcategories);
+      if (subcategories !== undefined) payload.subcategories = subcategories;
+      payload.search_terms = buildSearchTerms([payload.name, ...(subcategories || [])]);
 
       const category = await CategoryModel.create(payload);
-      res.status(201).json(category);
+      res.status(201).json(serializeCategory(category.toObject()));
     } catch (error) {
       next(error);
     }
@@ -212,7 +259,10 @@ export const categoryController = {
     try {
       const body = req.body as Record<string, unknown>;
       const payload: Record<string, unknown> = {};
-      const existing = await CategoryModel.findById(req.params.id, { name: 1 }).lean<{ name?: string } | null>();
+      const existing = await CategoryModel.findById(req.params.id, { name: 1, subcategories: 1 }).lean<{
+        name?: string;
+        subcategories?: string[];
+      } | null>();
       if (!existing) return res.status(404).json({ message: 'Not found' });
       if (body.name !== undefined) payload.name = parseName(body.name);
       if (body.description !== undefined) payload.description = parseDescription(body.description);
@@ -220,14 +270,22 @@ export const categoryController = {
       if (body.assetType !== undefined || body.asset_type !== undefined) {
         payload.asset_type = parseAssetType(body.assetType ?? body.asset_type);
       }
-      payload.search_terms = buildSearchTerms([payload.name ?? existing.name]);
+      if (body.subcategories !== undefined) {
+        const subcategories = parseSubcategories(body.subcategories) || [];
+        await ensureSubcategoriesNotInUse(String(req.params.id), subcategories);
+        payload.subcategories = subcategories;
+      }
+      payload.search_terms = buildSearchTerms([
+        payload.name ?? existing.name,
+        ...((payload.subcategories as string[] | undefined) ?? existing.subcategories ?? []),
+      ]);
 
       const category = await CategoryModel.findByIdAndUpdate(req.params.id, payload, {
         new: true,
         runValidators: true,
       });
       if (!category) return res.status(404).json({ message: 'Not found' });
-      res.json(category);
+      res.json(serializeCategory(category.toObject()));
     } catch (error) {
       next(error);
     }

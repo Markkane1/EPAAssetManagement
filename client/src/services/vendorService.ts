@@ -1,6 +1,7 @@
 import api from '@/lib/api';
 import { Vendor } from '@/types';
 import { ListQuery, PagedListResponse, toListQueryString } from '@/services/pagination';
+import { fetchAllPages } from '@/services/fetchAllPages';
 
 const LIST_LIMIT = 1000;
 
@@ -42,7 +43,12 @@ function buildVendorQuery(query: VendorListQuery = {}, meta = false) {
 }
 
 export const vendorService = {
-  getAll: (query: VendorListQuery = {}) => api.get<Vendor[]>(`/vendors${buildVendorQuery(query)}`),
+  getAll: (query: VendorListQuery = {}) =>
+    fetchAllPages(
+      query,
+      (pagedQuery) => api.get<PagedListResponse<Vendor>>(`/vendors${buildVendorQuery(pagedQuery, true)}`),
+      { pageSize: LIST_LIMIT }
+    ),
 
   getPaged: (query: VendorListQuery = {}) =>
     api.get<PagedListResponse<Vendor>>(`/vendors${buildVendorQuery(query, true)}`),

@@ -54,15 +54,19 @@ export function SearchableSelect({
           role="combobox"
           aria-expanded={open}
           disabled={disabled}
-          className={cn("h-11 w-full justify-between rounded-xl font-normal", triggerClassName)}
+          title={selectedOption ? selectedOption.label : placeholder}
+          className={cn(
+            "min-h-11 h-auto w-full justify-between rounded-xl py-2 text-left font-normal whitespace-normal",
+            triggerClassName
+          )}
         >
-          <span className="truncate text-left">
+          <span className="min-w-0 flex-1 break-words text-left leading-5 [overflow-wrap:anywhere]">
             {selectedOption ? selectedOption.label : placeholder}
           </span>
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className={cn("w-[--radix-popover-trigger-width] rounded-2xl border-border/80 p-0 shadow-[0_24px_60px_-32px_rgba(15,23,42,0.45)]", className)} align="start">
+      <PopoverContent className={cn("min-w-[18rem] max-w-[calc(100vw-1.5rem)] rounded-2xl border-border/80 p-0 shadow-[0_24px_60px_-32px_rgba(26,28,24,0.14)]", className)} align="start">
         <Command>
           <CommandInput placeholder={searchPlaceholder} />
           <CommandList>
@@ -84,7 +88,7 @@ export function SearchableSelect({
                     option.value === value ? "opacity-100" : "opacity-0"
                   )}
                 />
-                <span className="truncate">{option.label}</span>
+                <span className="min-w-0 flex-1 break-words leading-5 text-left [overflow-wrap:anywhere]">{option.label}</span>
               </CommandItem>
             ))}
           </CommandList>

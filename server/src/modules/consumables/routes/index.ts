@@ -40,6 +40,7 @@ import { consumableContainerController } from '../controllers/consumableContaine
 import { consumableReasonCodeController } from '../controllers/consumableReasonCode.controller';
 import { consumableInventoryController } from '../controllers/consumableInventory.controller';
 import type { AuthRequest } from '../../../middleware/auth';
+import { normalizeRole } from '../../../utils/roles';
 
 const router = Router();
 const consumableMutationLimiter = createScopedRateLimiter('consumables-mutation', {
@@ -75,7 +76,11 @@ const requireRoles = (roles: string[]) => (req: AuthRequest, res: any, next: any
   const role = req.user?.role;
   if (!role) return res.status(401).json({ message: 'Unauthorized' });
   if (role === 'org_admin') return next();
-  if (roles.includes(role)) return next();
+  const normalizedRole = normalizeRole(role);
+  const allowedRoles = roles.flatMap((entry) =>
+    entry === 'office_head' ? ['office_head', 'head_office_admin'] : [entry]
+  );
+  if (allowedRoles.includes(normalizedRole)) return next();
   return res.status(403).json({ message: 'Forbidden' });
 };
 

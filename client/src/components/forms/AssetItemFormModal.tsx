@@ -18,6 +18,15 @@ import { Asset, Location } from "@/types";
 import { useAuth } from "@/contexts/AuthContext";
 import { FormDialogActions } from "@/components/forms/FormDialogActions";
 import { SearchableComboboxField } from "@/components/forms/SearchableComboboxField";
+import { normalizeWhitespace } from "@/lib/textNormalization";
+import {
+  assetItemConditionOptions,
+  assetItemFunctionalStatusOptions,
+  assetItemPrimaryStatusOptions,
+  getAllowedAssetStates,
+  getDefaultAssetState,
+  getFunctionalStatusHelperText,
+} from "@/lib/assetItemStatusRules";
 import {
   useAssetOptions,
   useEntityById,
@@ -51,40 +60,32 @@ interface AssetItemFormModalProps {
   }) => Promise<void>;
 }
 
-const statusOptions = ["Available", "Assigned", "Maintenance", "Transferred"];
-const conditionOptions = ["New", "Good", "Fair", "Poor", "Damaged", "Retired"];
-const functionalOptions = ["Functional", "Need Repairs", "Dead"];
-const CENTRAL_STORE_LOCATION_ID = "HEAD_OFFICE_STORE";
-const CENTRAL_STORE_LABEL = "Central Store";
-
 export function AssetItemFormModal({ open, onOpenChange, assets, locations, onSubmit }: AssetItemFormModalProps) {
   const { isOrgAdmin, locationId: authLocationId } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [assetPickerOpen, setAssetPickerOpen] = useState(false);
   const [locationPickerOpen, setLocationPickerOpen] = useState(false);
   const serialInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
-  const defaultLocationId = isOrgAdmin ? CENTRAL_STORE_LOCATION_ID : authLocationId || "";
+  const activeLocations = useMemo(
+    () => locations.filter((location) => location.is_active !== false),
+    [locations]
+  );
+  const orgAdminDefaultLocationId = useMemo(() => {
+    const headOffice = activeLocations.find((location) => location.type === "HEAD_OFFICE");
+    return headOffice?.id || activeLocations[0]?.id || "";
+  }, [activeLocations]);
+  const defaultLocationId = isOrgAdmin ? orgAdminDefaultLocationId : authLocationId || "";
 
   const locationOptions = useMemo(() => {
     const officeOptions = isOrgAdmin
-      ? locations
-      : locations.filter((location) => (authLocationId ? location.id === authLocationId : false));
+      ? activeLocations
+      : activeLocations.filter((location) => (authLocationId ? location.id === authLocationId : false));
 
-    if (!isOrgAdmin) {
-      return officeOptions.map((location) => ({
-        id: location.id,
-        name: location.name,
-      }));
-    }
-
-    return [
-      { id: CENTRAL_STORE_LOCATION_ID, name: CENTRAL_STORE_LABEL },
-      ...officeOptions.map((location) => ({
-        id: location.id,
-        name: location.name,
-      })),
-    ];
-  }, [isOrgAdmin, locations, authLocationId]);
+    return officeOptions.map((location) => ({
+      id: location.id,
+      name: location.name,
+    }));
+  }, [activeLocations, authLocationId, isOrgAdmin]);
 
   const form = useForm<AssetItemFormData>({
     resolver: zodResolver(assetItemSchema),
@@ -110,11 +111,17 @@ export function AssetItemFormModal({ open, onOpenChange, assets, locations, onSu
   const selectedLocation = getLocationById(selectedLocationId);
   const assetQuantity = selectedAsset?.quantity || 0;
   const assetOptions = useAssetOptions(assets);
-  const officeOptions = useNamedEntityOptions(locationOptions, (location) =>
-    location.id === CENTRAL_STORE_LOCATION_ID
-      ? `${location.name} head office store`
-      : location.name,
-  );
+  const officeOptions = useNamedEntityOptions(locationOptions);
+  const functionalStatus = form.watch("functionalStatus");
+  const itemStatus = form.watch("itemStatus");
+  const canSubmit = Boolean(selectedAssetId && selectedLocationId && locationOptions.length > 0);
+
+  useEffect(() => {
+    const allowedStates = getAllowedAssetStates(functionalStatus);
+    if (!allowedStates.includes(itemStatus as (typeof allowedStates)[number])) {
+      form.setValue("itemStatus", getDefaultAssetState(functionalStatus), { shouldDirty: true });
+    }
+  }, [functionalStatus, itemStatus, form]);
 
   useEffect(() => {
     if (open) {
@@ -205,7 +212,7 @@ export function AssetItemFormModal({ open, onOpenChange, assets, locations, onSu
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[650px] max-h-[85vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-[650px]">
         <DialogHeader>
           <DialogTitle>Add Asset Item</DialogTitle>
           <DialogDescription>
@@ -213,12 +220,20 @@ export function AssetItemFormModal({ open, onOpenChange, assets, locations, onSu
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <SearchableComboboxField
               label="Asset *"
               open={assetPickerOpen}
               onOpenChange={setAssetPickerOpen}
-              value={selectedAsset?.name}
+              value={
+                selectedAsset
+                  ? `${normalizeWhitespace(selectedAsset.name)}${
+                      selectedAsset.subcategory
+                        ? ` - ${normalizeWhitespace(selectedAsset.subcategory)}`
+                        : ""
+                    }`
+                  : undefined
+              }
               options={assetOptions}
               placeholder="Search asset by name..."
               searchPlaceholder="Type asset name..."
@@ -243,27 +258,31 @@ export function AssetItemFormModal({ open, onOpenChange, assets, locations, onSu
               {!isOrgAdmin && (
                 <p className="text-xs text-muted-foreground">Only your assigned office is available.</p>
               )}
+              {isOrgAdmin && locationOptions.length === 0 && (
+                <p className="text-xs text-destructive">Create an active office before adding asset items.</p>
+              )}
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-2">
-              <Label>Status</Label>
+              <Label>Asset State</Label>
               <Select value={form.watch("itemStatus")} onValueChange={(v) => form.setValue("itemStatus", v)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {statusOptions.map((s) => (
+                  {assetItemPrimaryStatusOptions.map((s) => (
                     <SelectItem key={s} value={s}>{s}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              <p className="text-xs text-muted-foreground">Main operational state for this item.</p>
             </div>
             <div className="space-y-2">
               <Label>Condition</Label>
               <Select value={form.watch("itemCondition")} onValueChange={(v) => form.setValue("itemCondition", v)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {conditionOptions.map((c) => (
+                  {assetItemConditionOptions.map((c) => (
                     <SelectItem key={c} value={c}>{c}</SelectItem>
                   ))}
                 </SelectContent>
@@ -274,11 +293,12 @@ export function AssetItemFormModal({ open, onOpenChange, assets, locations, onSu
               <Select value={form.watch("functionalStatus")} onValueChange={(v) => form.setValue("functionalStatus", v)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {functionalOptions.map((status) => (
+                  {assetItemFunctionalStatusOptions.map((status) => (
                     <SelectItem key={status} value={status}>{status}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              <p className="text-xs text-muted-foreground">{getFunctionalStatusHelperText(functionalStatus)}</p>
             </div>
           </div>
 
@@ -349,9 +369,11 @@ export function AssetItemFormModal({ open, onOpenChange, assets, locations, onSu
             isSubmitting={isSubmitting}
             onCancel={() => onOpenChange(false)}
             submitLabel="Create Item"
+            disableSubmit={!canSubmit}
           />
         </form>
       </DialogContent>
     </Dialog>
   );
 }
+

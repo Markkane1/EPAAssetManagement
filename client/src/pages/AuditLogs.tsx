@@ -328,7 +328,7 @@ export default function AuditLogs() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredLogs.slice(0, 100).map((log) => (
+                  filteredLogs.map((log) => (
                     <TableRow key={log.id}>
                       <TableCell className="font-mono text-xs">
                         {format(new Date(log.timestamp), 'MMM dd, yyyy HH:mm:ss')}
@@ -350,7 +350,7 @@ export default function AuditLogs() {
                           {log.category}
                         </Badge>
                       </TableCell>
-                      <TableCell className="max-w-[300px] truncate text-sm text-muted-foreground">
+                      <TableCell className="max-w-[300px] text-sm leading-5 text-muted-foreground whitespace-normal break-words [overflow-wrap:anywhere]">
                         {log.details || '-'}
                       </TableCell>
                       <TableCell>
@@ -370,11 +370,6 @@ export default function AuditLogs() {
               </TableBody>
             </Table>
           </div>
-          {filteredLogs.length > 100 && (
-            <p className="text-sm text-muted-foreground text-center mt-4">
-              Showing first 100 of {filteredLogs.length} logs. Export to see all.
-            </p>
-          )}
         </CardContent>
       </Card>
     </MainLayout>

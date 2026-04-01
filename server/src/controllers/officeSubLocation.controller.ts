@@ -4,8 +4,9 @@ import type { AuthRequest } from '../middleware/auth';
 import { createHttpError } from '../utils/httpError';
 import { OfficeSubLocationModel } from '../models/officeSubLocation.model';
 import { OfficeModel } from '../models/office.model';
+import { OFFICE_ADMIN_ROLE_VALUES } from '../utils/roles';
 
-const WRITE_ROLES = new Set(['org_admin', 'office_head', 'caretaker']);
+const WRITE_ROLES = new Set<string>(['org_admin', ...OFFICE_ADMIN_ROLE_VALUES, 'caretaker']);
 
 function parseBoolean(value: unknown, fallback: boolean) {
   if (value === undefined || value === null || value === '') return fallback;

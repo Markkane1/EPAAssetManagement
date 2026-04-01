@@ -13,6 +13,7 @@ import { logAudit } from '../modules/records/services/audit.service';
 import { RecordModel } from '../models/record.model';
 import { enforceAssetCategoryScopeForOffice } from '../utils/categoryScope';
 import { readParam, clampInt } from '../utils/requestParsing';
+import { isOfficeAdminRole } from '../utils/roles';
 
 const HEAD_OFFICE_STORE_CODE = 'HEAD_OFFICE_STORE';
 
@@ -151,7 +152,7 @@ async function ensureDocumentExists(documentId: string, fieldName: string) {
 
 function canApproveTransfer(access: Awaited<ReturnType<typeof resolveAccessContext>>, fromOfficeId: string) {
   if (access.isOrgAdmin) return true;
-  return access.role === 'office_head' && access.officeId === fromOfficeId;
+  return isOfficeAdminRole(access.role) && access.officeId === fromOfficeId;
 }
 
 function canOperateSourceOffice(

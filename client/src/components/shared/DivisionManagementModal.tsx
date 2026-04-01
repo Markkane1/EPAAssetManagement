@@ -88,7 +88,7 @@ export function DivisionManagementModal({ open, onOpenChange }: DivisionManageme
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[720px] max-h-[85vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-[720px]">
         <DialogHeader>
           <DialogTitle>Manage Divisions</DialogTitle>
           <DialogDescription>Add, edit, or remove division entries.</DialogDescription>

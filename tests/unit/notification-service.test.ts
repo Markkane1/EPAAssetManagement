@@ -32,6 +32,7 @@ vi.mock("../../server/src/models/systemSettings.model", () => ({
 }));
 
 vi.mock("../../server/src/utils/roles", () => ({
+  OFFICE_ADMIN_ROLE_VALUES: ["office_head", "head_office_admin"],
   buildUserRoleMatchFilter: (...args: unknown[]) => buildUserRoleMatchFilterMock(...args),
 }));
 
@@ -91,7 +92,7 @@ describe("notification.service", () => {
       excludeUserIds: ["507f1f77bcf86cd799439012"],
     });
 
-    expect(buildUserRoleMatchFilterMock).toHaveBeenCalledWith(["office_head", "caretaker"]);
+    expect(buildUserRoleMatchFilterMock).toHaveBeenCalledWith(["office_head", "head_office_admin", "caretaker"]);
     expect(buildUserRoleMatchFilterMock).toHaveBeenCalledWith(["org_admin"]);
     expect(userFindMock).toHaveBeenCalledWith(
       expect.objectContaining({

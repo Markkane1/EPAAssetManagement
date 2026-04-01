@@ -35,8 +35,11 @@ import { useLocations } from "@/hooks/useLocations";
 import { useOfficeSubLocations } from "@/hooks/useOfficeSubLocations";
 import { useAuth } from "@/contexts/AuthContext";
 import { buildApiUrl } from "@/lib/api";
+import { normalizeSearchText, normalizeWhitespace } from "@/lib/textNormalization";
+import { isAssetItemAssignable } from "@/lib/assetItemStatusRules";
 import type { AssetItem, Assignment, Asset, ConsumableItem, Office, RequisitionLine } from "@/types";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { isOfficeAdminRole } from "@/services/authService";
 
 const FULFILLABLE_STATUSES = new Set([
   "APPROVED",
@@ -55,9 +58,9 @@ function getWorkflowStateLabel(state: WorkflowState) {
 }
 
 function getWorkflowStateClassName(state: WorkflowState) {
-  if (state === "done") return "bg-emerald-100 text-emerald-800";
-  if (state === "in_progress") return "bg-blue-100 text-blue-800";
-  if (state === "blocked") return "bg-red-100 text-red-800";
+  if (state === "done") return "border border-[hsl(102_43%_50%/.18)] bg-[hsl(102_43%_50%/.14)] text-[hsl(100_98%_22%)]";
+  if (state === "in_progress") return "border border-[hsl(var(--accent)/.2)] bg-[hsl(var(--accent)/.12)] text-[hsl(var(--accent))]";
+  if (state === "blocked") return "border border-[hsl(var(--destructive)/.18)] bg-[hsl(var(--destructive)/.08)] text-[hsl(var(--destructive))]";
   return "bg-muted text-muted-foreground";
 }
 
@@ -161,9 +164,9 @@ export default function RequisitionDetail() {
     if (role === "org_admin") return true;
     const hqDirectorate = isHqDirectorateOffice(officeId, locationList);
     if (hqDirectorate) {
-      return role === "office_head";
+      return isOfficeAdminRole(role);
     }
-    return role === "office_head";
+    return isOfficeAdminRole(role);
   }, [officeId, locationList, role]);
 
   const canFulfillRole = useMemo(() => {
@@ -182,7 +185,7 @@ export default function RequisitionDetail() {
     canFulfillRole && FULFILLABLE_STATUSES.has(requisitionStatus);
   const canIssuerAct = canVerifyRole || canFulfillRole;
   const canManageAssignmentSlips =
-    role === "org_admin" || role === "office_head" || role === "caretaker";
+    role === "org_admin" || isOfficeAdminRole(role) || role === "caretaker";
   const canRequestReturn = role === "employee";
   const backToListPath = useMemo(() => {
     const navigationState = location.state as { from?: string } | null;
@@ -202,7 +205,7 @@ export default function RequisitionDetail() {
 
   const officeStockItems = useMemo(() => {
     const entries = assetItemsQuery.data || [];
-    return entries.filter((item) => item.assignment_status !== "Assigned");
+    return entries.filter((item) => isAssetItemAssignable(item));
   }, [assetItemsQuery.data]);
 
   const lineById = useMemo(() => {
@@ -245,6 +248,35 @@ export default function RequisitionDetail() {
     assetList.forEach((asset) => map.set(asset.id, asset));
     return map;
   }, [assetList]);
+
+  const officeMappedAssets = useMemo(() => {
+    const seen = new Set<string>();
+    const entries: Asset[] = [];
+
+    officeStockItems.forEach((item) => {
+      const asset = assetById.get(String(item.asset_id || ""));
+      if (!asset) return;
+
+      const normalizedName = normalizeSearchText(asset.name);
+      const optionKey = [
+        normalizedName,
+        String(asset.category_id || ""),
+        normalizeSearchText(asset.subcategory || ""),
+      ].join("::");
+
+      if (!normalizedName || seen.has(optionKey)) {
+        return;
+      }
+
+      seen.add(optionKey);
+      entries.push({
+        ...asset,
+        name: normalizeWhitespace(asset.name),
+      });
+    });
+
+    return entries.sort((left, right) => left.name.localeCompare(right.name));
+  }, [assetById, officeStockItems]);
 
   const consumableById = useMemo(() => {
     const map = new Map<string, ConsumableItem>();
@@ -784,8 +816,10 @@ export default function RequisitionDetail() {
 
                   const filteredMapOptions =
                     selectedMapType === "MOVEABLE"
-                      ? assetList.filter((asset) =>
-                          asset.name.toLowerCase().includes(mapDraft.search.trim().toLowerCase())
+                      ? officeMappedAssets.filter((asset) =>
+                          normalizeSearchText(asset.name).includes(
+                            normalizeSearchText(mapDraft.search)
+                          )
                         )
                       : consumableList.filter((item) =>
                           item.name.toLowerCase().includes(mapDraft.search.trim().toLowerCase())
@@ -808,7 +842,11 @@ export default function RequisitionDetail() {
                           <StatusBadge status={String(line.status || "UNKNOWN")} />
                           <Badge
                             variant="outline"
-                            className={lineReadyForSubmission ? "text-emerald-700" : "text-amber-700"}
+                            className={
+                              lineReadyForSubmission
+                                ? "border-[hsl(102_43%_50%/.2)] text-[hsl(100_98%_22%)]"
+                                : "border-[hsl(36_85%_52%/.22)] text-[hsl(30_92%_32%)]"
+                            }
                           >
                             {lineReadyForSubmission ? "Ready" : "Pending Input"}
                           </Badge>
@@ -905,11 +943,11 @@ export default function RequisitionDetail() {
                         </div>
                         <div className="rounded border bg-background p-2 text-sm">
                           {isMapped ? (
-                            <p className="text-emerald-700">
+                            <p className="text-[hsl(100_98%_22%)]">
                               Mapped to: <span className="font-medium">{mappedName || mappedId}</span>
                             </p>
                           ) : (
-                            <p className="text-amber-700">Map this line before fulfillment.</p>
+                            <p className="text-[hsl(30_92%_32%)]">Map this line before fulfillment.</p>
                           )}
                         </div>
                       </div>
@@ -1257,7 +1295,7 @@ export default function RequisitionDetail() {
         open={Boolean(pickerLineId)}
         onOpenChange={(open) => (!open ? setPickerLineId(null) : null)}
       >
-        <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
+      <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Select Asset Items</DialogTitle>
             <DialogDescription>

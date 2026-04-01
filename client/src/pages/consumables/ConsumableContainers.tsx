@@ -3,10 +3,9 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { MainLayout } from '@/components/layout/MainLayout';
-import { PageHeader } from '@/components/shared/PageHeader';
+import { CollectionWorkspace } from '@/components/shared/CollectionWorkspace';
 import { DataTable } from '@/components/shared/DataTable';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -30,7 +29,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Loader2, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
+import { Boxes, Loader2, MapPin, MoreHorizontal, Package, Pencil, Trash2 } from 'lucide-react';
 import type { ConsumableContainer } from '@/types';
 import { useConsumableLots } from '@/hooks/useConsumableLots';
 import { useConsumableItems } from '@/hooks/useConsumableItems';
@@ -43,6 +42,7 @@ import {
 } from '@/hooks/useConsumableContainers';
 import { useAuth } from '@/contexts/AuthContext';
 import { SearchableSelect } from '@/components/shared/SearchableSelect';
+import { isOfficeAdminRole } from '@/services/authService';
 
 const ALL_VALUE = '__all__';
 
@@ -94,13 +94,13 @@ function ContainerFormModal(props: {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[560px] max-h-[85vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-[560px]">
         <DialogHeader>
           <DialogTitle>{editingContainer ? 'Edit Container' : 'Add Container'}</DialogTitle>
           <DialogDescription>Manage tracked consumable containers.</DialogDescription>
         </DialogHeader>
         <form onSubmit={form.handleSubmit(submit)} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label>Lot *</Label>
               <Select value={form.watch('lotId')} onValueChange={(value) => form.setValue('lotId', value)}>
@@ -124,7 +124,7 @@ function ContainerFormModal(props: {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="initialQtyBase">Initial Qty (base) *</Label>
               <Input id="initialQtyBase" type="number" min={0} step="0.01" {...form.register('initialQtyBase')} />
@@ -135,7 +135,7 @@ function ContainerFormModal(props: {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label>Location *</Label>
               <SearchableSelect
@@ -211,11 +211,14 @@ export default function ConsumableContainers() {
   const updateContainer = useUpdateConsumableContainer();
   const deleteContainer = useDeleteConsumableContainer();
   const canCreateOrDelete = isOrgAdmin || role === 'caretaker';
-  const canUpdate = canCreateOrDelete || role === 'office_head';
+  const canUpdate = canCreateOrDelete || isOfficeAdminRole(role);
 
   const lotMap = useMemo(() => new Map(lots.map((lot) => [lot.id, lot])), [lots]);
   const itemMap = useMemo(() => new Map(items.map((item) => [item.id, item])), [items]);
   const locationMap = useMemo(() => new Map(locations.map((location) => [location.id, location.name])), [locations]);
+  const inStockCount = containers.filter((container) => container.status === 'IN_STOCK').length;
+  const emptyCount = containers.filter((container) => container.status === 'EMPTY').length;
+  const locationCoverage = new Set(containers.map((container) => container.current_location_id).filter(Boolean)).size;
 
   const columns = [
     { key: 'container_code', label: 'Container' },
@@ -310,9 +313,17 @@ export default function ConsumableContainers() {
 
   return (
     <MainLayout title="Consumable Containers" description="Manage tracked containers">
-      <PageHeader
+      <CollectionWorkspace
         title="Containers"
         description="Create, update, and remove tracked lot containers"
+        eyebrow="Consumables workspace"
+        meta={
+          <>
+            <span>{containers.length} tracked containers in scope</span>
+            <span className="hidden h-1 w-1 rounded-full bg-border sm:inline-block" />
+            <span>{canCreateOrDelete ? 'Operational container management' : 'Read-only tracking view'}</span>
+          </>
+        }
         action={
           canCreateOrDelete
             ? {
@@ -324,11 +335,14 @@ export default function ConsumableContainers() {
               }
             : undefined
         }
-      />
-
-      <Card className="mb-6">
-        <CardContent className="pt-6">
-          <div className="grid grid-cols-2 gap-4">
+        metrics={[
+          { label: 'Tracked containers', value: containers.length, helper: 'Container rows matching the active filters', icon: Boxes, tone: 'primary' },
+          { label: 'In stock', value: inStockCount, helper: 'Containers currently available with stock', icon: Package, tone: 'success' },
+          { label: 'Empty', value: emptyCount, helper: 'Containers recorded as depleted', icon: Trash2 },
+          { label: 'Locations', value: locationCoverage, helper: 'Distinct locations currently holding containers', icon: MapPin, tone: 'warning' },
+        ]}
+        filterBar={
+          <div className="grid w-full grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label>Location</Label>
               <SearchableSelect
@@ -357,21 +371,23 @@ export default function ConsumableContainers() {
               </Select>
             </div>
           </div>
-        </CardContent>
-      </Card>
-
-      {isLoading ? (
-        <div className="flex items-center justify-center h-56">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        </div>
-      ) : (
-        <DataTable
-          columns={columns}
-          data={containers as any[]}
-          searchPlaceholder="Search containers..."
-          actions={canUpdate || canCreateOrDelete ? actions : undefined}
-        />
-      )}
+        }
+        panelTitle="Container registry"
+        panelDescription="Keep tracked containers visible in the same dashboard-style workspace shell used across the inventory flows."
+      >
+        {isLoading ? (
+          <div className="flex items-center justify-center h-56">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          </div>
+        ) : (
+          <DataTable
+            columns={columns}
+            data={containers as any[]}
+            searchPlaceholder="Search containers..."
+            actions={canUpdate || canCreateOrDelete ? actions : undefined}
+          />
+        )}
+      </CollectionWorkspace>
 
       <ContainerFormModal
         open={formOpen}
@@ -384,3 +400,4 @@ export default function ConsumableContainers() {
     </MainLayout>
   );
 }
+

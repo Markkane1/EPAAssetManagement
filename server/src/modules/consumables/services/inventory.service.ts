@@ -11,6 +11,10 @@ import { CategoryModel } from '../../../models/category.model';
 import { VendorModel } from '../../../models/vendor.model';
 import { ProjectModel } from '../../../models/project.model';
 import { SchemeModel } from '../../../models/scheme.model';
+import {
+  assertPurchaseOrderAllowedForSource,
+  resolveProcurementPurchaseOrderBinding,
+} from '../../../utils/purchaseOrderBinding';
 import { ConsumableItemModel } from '../models/consumableItem.model';
 import { ConsumableLotModel } from '../models/consumableLot.model';
 import { ConsumableContainerModel } from '../models/consumableContainer.model';
@@ -784,14 +788,28 @@ async function resolveReceiveSource(
   options?: {
     officeScopeId?: string | null;
   }
-): Promise<{ sourceType: 'procurement' | 'project'; vendorId: string | null; projectId: string | null; schemeId: string | null }> {
+): Promise<{
+  sourceType: 'procurement' | 'project';
+  vendorId: string | null;
+  purchaseOrderId: string | null;
+  projectId: string | null;
+  schemeId: string | null;
+}> {
   const sourceType = String(lotPayload?.source || '').trim().toLowerCase();
   if (sourceType !== 'procurement' && sourceType !== 'project') {
     throw createHttpError(400, 'Lot source must be procurement or project');
   }
+  assertPurchaseOrderAllowedForSource(sourceType, lotPayload?.purchaseOrderId, 'Purchase order');
 
   if (sourceType === 'procurement') {
-    const vendorId = String(lotPayload?.vendorId || '').trim();
+    const purchaseOrderBinding = await resolveProcurementPurchaseOrderBinding({
+      purchaseOrderId: lotPayload?.purchaseOrderId,
+      vendorId: lotPayload?.vendorId,
+      session,
+    });
+    const vendorId = String(
+      purchaseOrderBinding.vendorId || lotPayload?.vendorId || ''
+    ).trim();
     if (!vendorId) throw createHttpError(400, 'vendorId is required for procurement source');
     const vendor: any = await VendorModel.findById(vendorId, { office_id: 1 }).session(session);
     if (!vendor) throw createHttpError(400, 'Selected vendor does not exist');
@@ -805,6 +823,7 @@ async function resolveReceiveSource(
     return {
       sourceType: 'procurement',
       vendorId: vendor.id,
+      purchaseOrderId: purchaseOrderBinding.purchaseOrderId,
       projectId: null,
       schemeId: null,
     };
@@ -828,6 +847,7 @@ async function resolveReceiveSource(
   return {
     sourceType: 'project',
     vendorId: null,
+    purchaseOrderId: null,
     projectId: project.id,
     schemeId: scheme.id,
   };
@@ -882,6 +902,7 @@ export const inventoryService = {
                 batch_no: payload.lot.lotNumber,
                 source_type: sourceMeta.sourceType,
                 vendor_id: sourceMeta.vendorId,
+                purchase_order_id: sourceMeta.purchaseOrderId,
                 project_id: sourceMeta.projectId,
                 scheme_id: sourceMeta.schemeId,
                 received_at: new Date(payload.lot.receivedDate || nowIso()),
@@ -1077,6 +1098,7 @@ export const inventoryService = {
                 batch_no: lotPayload.lotNumber,
                 source_type: sourceMeta.sourceType,
                 vendor_id: sourceMeta.vendorId,
+                purchase_order_id: sourceMeta.purchaseOrderId,
                 project_id: null,
                 scheme_id: null,
                 received_at: new Date(lotPayload.receivedDate || nowIso()),

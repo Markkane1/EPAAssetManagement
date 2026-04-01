@@ -10,6 +10,7 @@ type CommandContextValue = {
   setItemMatch: (id: string, matches: boolean) => void;
   removeItemMatch: (id: string) => void;
   visibleItemCount: number;
+  registeredItemCount: number;
 };
 
 const CommandContext = React.createContext<CommandContextValue | null>(null);
@@ -26,32 +27,35 @@ const Command = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivEle
   ({ className, ...props }, ref) => {
     const [query, setQuery] = React.useState("");
     const [itemMatches, setItemMatches] = React.useState<Record<string, boolean>>({});
+    const setItemMatch = React.useCallback((id: string, matches: boolean) => {
+      setItemMatches((current) => {
+        if (current[id] === matches) {
+          return current;
+        }
+        return { ...current, [id]: matches };
+      });
+    }, []);
+    const removeItemMatch = React.useCallback((id: string) => {
+      setItemMatches((current) => {
+        if (!(id in current)) {
+          return current;
+        }
+        const next = { ...current };
+        delete next[id];
+        return next;
+      });
+    }, []);
 
     const contextValue = React.useMemo<CommandContextValue>(
       () => ({
         query,
         setQuery,
-        setItemMatch: (id, matches) => {
-          setItemMatches((current) => {
-            if (current[id] === matches) {
-              return current;
-            }
-            return { ...current, [id]: matches };
-          });
-        },
-        removeItemMatch: (id) => {
-          setItemMatches((current) => {
-            if (!(id in current)) {
-              return current;
-            }
-            const next = { ...current };
-            delete next[id];
-            return next;
-          });
-        },
+        setItemMatch,
+        removeItemMatch,
         visibleItemCount: Object.values(itemMatches).filter(Boolean).length,
+        registeredItemCount: Object.keys(itemMatches).length,
       }),
-      [itemMatches, query]
+      [itemMatches, query, removeItemMatch, setItemMatch]
     );
 
     return (
@@ -84,9 +88,21 @@ const CommandDialog = ({ children, ...props }: CommandDialogProps) => {
   );
 };
 
-const CommandInput = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(
-  ({ className, onChange, ...props }, ref) => {
+type CommandInputProps = Omit<React.InputHTMLAttributes<HTMLInputElement>, "onChange"> & {
+  onChange?: React.ChangeEventHandler<HTMLInputElement>;
+  onValueChange?: (value: string) => void;
+};
+
+const CommandInput = React.forwardRef<HTMLInputElement, CommandInputProps>(
+  ({ className, onChange, onValueChange, value, ...props }, ref) => {
     const { query, setQuery } = useCommandContext();
+    const controlledValue = typeof value === "string" ? value : undefined;
+
+    React.useEffect(() => {
+      if (controlledValue !== undefined && controlledValue !== query) {
+        setQuery(controlledValue);
+      }
+    }, [controlledValue, query, setQuery]);
 
     return (
       <div className="flex items-center border-b px-3" data-command-input-wrapper="">
@@ -98,9 +114,10 @@ const CommandInput = React.forwardRef<HTMLInputElement, React.InputHTMLAttribute
             "flex h-11 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50",
             className
           )}
-          value={query}
+          value={controlledValue ?? query}
           onChange={(event) => {
             setQuery(event.target.value);
+            onValueChange?.(event.target.value);
             onChange?.(event);
           }}
           {...props}
@@ -115,7 +132,7 @@ const CommandList = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDi
   ({ className, ...props }, ref) => (
     <div
       ref={ref}
-      className={cn("max-h-[300px] overflow-y-auto overflow-x-hidden", className)}
+      className={cn("max-h-[min(20rem,50vh)] overflow-y-auto overflow-x-hidden scrollbar-thin", className)}
       {...props}
     />
   )
@@ -124,9 +141,9 @@ CommandList.displayName = "CommandList";
 
 const CommandEmpty = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
   ({ className, ...props }, ref) => {
-    const { visibleItemCount } = useCommandContext();
+    const { registeredItemCount, visibleItemCount } = useCommandContext();
 
-    if (visibleItemCount > 0) {
+    if (registeredItemCount === 0 || visibleItemCount > 0) {
       return null;
     }
 
@@ -186,7 +203,7 @@ const CommandItem = React.forwardRef<HTMLDivElement, CommandItemProps>(
         data-command-item=""
         data-disabled={disabled || undefined}
         className={cn(
-          "relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50",
+          "relative flex min-w-0 cursor-default select-none items-start gap-2 rounded-sm px-2 py-2 text-sm whitespace-normal break-words outline-none [overflow-wrap:anywhere] data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50",
           !disabled && "hover:bg-accent hover:text-accent-foreground",
           className
         )}

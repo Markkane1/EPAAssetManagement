@@ -29,7 +29,7 @@ export function PageHeader({ title, description, eyebrow, meta, action, extra }:
         {description && <p className="page-description">{description}</p>}
         {meta && <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">{meta}</div>}
       </div>
-      <div className="flex w-full flex-col gap-3 sm:w-auto sm:min-w-[220px] sm:items-end">
+      <div className="flex w-full flex-col gap-3 sm:w-auto sm:min-w-0 sm:items-end lg:min-w-[220px]">
         {extra}
         {action && (
           <Button onClick={action.onClick} variant={action.variant} className="w-full gap-2 sm:w-auto">

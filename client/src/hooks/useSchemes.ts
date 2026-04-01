@@ -3,8 +3,37 @@ import { schemeService } from '@/services/schemeService';
 import type { SchemeCreateDto, SchemeUpdateDto } from '@/services/schemeService';
 import { toast } from 'sonner';
 import { API_CONFIG } from '@/config/api.config';
+import type { Scheme } from '@/types';
+import {
+  refreshActiveQueries,
+  removeEntityFromQueryCaches,
+  syncEntityInQueryCaches,
+} from '@/lib/queryRefresh';
 
 const { queryKeys, query } = API_CONFIG;
+
+function sortSchemes(items: Scheme[]) {
+  return [...items].sort((left, right) => {
+    const leftTime = new Date(left.created_at || 0).getTime();
+    const rightTime = new Date(right.created_at || 0).getTime();
+    if (leftTime !== rightTime) return rightTime - leftTime;
+    return String(left.name || '').localeCompare(String(right.name || ''));
+  });
+}
+
+function syncSchemeCaches(queryClient: ReturnType<typeof useQueryClient>, scheme: Scheme) {
+  syncEntityInQueryCaches(queryClient, {
+    queryKey: queryKeys.schemes,
+    entity: scheme,
+    matchesQuery: (queryKey, entity) => {
+      if (queryKey[1] === 'byProject') {
+        return String(entity.project_id || '') === String(queryKey[2] || '');
+      }
+      return true;
+    },
+    sortItems: sortSchemes,
+  });
+}
 
 export const useSchemes = () => {
   return useQuery({
@@ -37,8 +66,12 @@ export const useCreateScheme = () => {
 
   return useMutation({
     mutationFn: (data: SchemeCreateDto) => schemeService.create(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.schemes });
+    onSuccess: async (scheme) => {
+      if (scheme?.id) {
+        queryClient.setQueryData([...queryKeys.schemes, scheme.id], scheme);
+        syncSchemeCaches(queryClient, scheme);
+      }
+      await refreshActiveQueries(queryClient, [queryKeys.schemes]);
       toast.success('Scheme created successfully');
     },
     onError: (error: Error) => {
@@ -52,8 +85,10 @@ export const useUpdateScheme = () => {
 
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: SchemeUpdateDto }) => schemeService.update(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.schemes });
+    onSuccess: async (scheme, variables) => {
+      queryClient.setQueryData([...queryKeys.schemes, variables.id], scheme);
+      syncSchemeCaches(queryClient, scheme);
+      await refreshActiveQueries(queryClient, [queryKeys.schemes]);
       toast.success('Scheme updated successfully');
     },
     onError: (error: Error) => {
@@ -67,8 +102,10 @@ export const useDeleteScheme = () => {
 
   return useMutation({
     mutationFn: (id: string) => schemeService.delete(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.schemes });
+    onSuccess: async (_data, id) => {
+      queryClient.removeQueries({ queryKey: [...queryKeys.schemes, id], exact: true });
+      removeEntityFromQueryCaches(queryClient, queryKeys.schemes, id);
+      await refreshActiveQueries(queryClient, [queryKeys.schemes]);
       toast.success('Scheme deleted successfully');
     },
     onError: (error: Error) => {

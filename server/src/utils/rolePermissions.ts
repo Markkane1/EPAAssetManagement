@@ -1,4 +1,9 @@
 import { SystemSettingsModel } from '../models/systemSettings.model';
+import {
+  AUTHORIZATION_PAGE_KEY_SET,
+  AUTHORIZATION_PERMISSION_ACTIONS,
+  AUTHORIZATION_ROLE_ID_SET,
+} from '../config/authorizationCatalog';
 
 export type PermissionAction = 'view' | 'create' | 'edit' | 'delete';
 
@@ -12,7 +17,7 @@ type StoredRolePermissionsContext = {
   roles: StoredRolePermission[];
 };
 
-const PERMISSION_ACTION_SET = new Set<PermissionAction>(['view', 'create', 'edit', 'delete']);
+const PERMISSION_ACTION_SET = new Set<PermissionAction>(AUTHORIZATION_PERMISSION_ACTIONS);
 
 function sanitizePermissionActions(raw: unknown): PermissionAction[] {
   if (!Array.isArray(raw)) return [];
@@ -28,7 +33,7 @@ function sanitizeSourceRoles(raw: unknown) {
     new Set(
       raw
         .map((entry) => String(entry || '').trim().toLowerCase())
-        .filter(Boolean)
+        .filter((entry) => AUTHORIZATION_ROLE_ID_SET.has(entry))
     )
   );
 }
@@ -39,7 +44,7 @@ function sanitizePermissions(raw: unknown) {
     return permissions;
   }
   for (const [pageKey, actions] of Object.entries(raw as Record<string, unknown>)) {
-    if (!pageKey) continue;
+    if (!pageKey || !AUTHORIZATION_PAGE_KEY_SET.has(pageKey)) continue;
     permissions[pageKey] = sanitizePermissionActions(actions);
   }
   return permissions;

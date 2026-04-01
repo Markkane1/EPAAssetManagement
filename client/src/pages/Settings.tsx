@@ -311,6 +311,10 @@ export default function Settings() {
                   <Separator />
                   <div className="flex items-center justify-between"><Label>Warranty Expiry Alerts</Label><Switch checked={formState.notifications.warranty_expiry_alerts} onCheckedChange={(checked) => setFormState((prev) => prev ? { ...prev, notifications: { ...prev.notifications, warranty_expiry_alerts: checked } } : prev)} /></div>
                   <Separator />
+                  <div className="flex items-center justify-between"><Label>Consumable Notifications</Label><Switch checked={formState.notifications.consumable_notifications} onCheckedChange={(checked) => setFormState((prev) => prev ? { ...prev, notifications: { ...prev.notifications, consumable_notifications: checked } } : prev)} /></div>
+                  <Separator />
+                  <div className="flex items-center justify-between"><Label>Purchase Order Notifications</Label><Switch checked={formState.notifications.purchase_order_notifications} onCheckedChange={(checked) => setFormState((prev) => prev ? { ...prev, notifications: { ...prev.notifications, purchase_order_notifications: checked } } : prev)} /></div>
+                  <Separator />
                   <div className="space-y-2">
                     {NOTIFICATION_AREA_DEFINITIONS.map((area) => (
                       <div key={area.id} className="rounded-md border p-3">

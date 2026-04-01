@@ -7,7 +7,7 @@ const testCacheRoot = path.resolve(workspaceRoot, "..", ".ams-test-cache", path.
 const runtimeDir = path.join(testCacheRoot, "integration");
 const stateFile = path.join(runtimeDir, "mongo-state.json");
 const mongoCacheDir = path.join(testCacheRoot, "mongodb-binaries");
-const mongoDbPath = path.join(runtimeDir, "mongo-db");
+const mongoDbRoot = path.join(runtimeDir, "mongo-db");
 function resolveBinaryConfig() {
   const systemBinary = process.env.MONGOMS_SYSTEM_BINARY;
 
@@ -22,6 +22,8 @@ function resolveBinaryConfig() {
 
 module.exports = async () => {
   fs.mkdirSync(runtimeDir, { recursive: true });
+  fs.mkdirSync(mongoDbRoot, { recursive: true });
+  const mongoDbPath = path.join(mongoDbRoot, `server-${process.pid}`);
   fs.mkdirSync(mongoDbPath, { recursive: true });
   const binaryConfig = resolveBinaryConfig();
 

@@ -5,7 +5,12 @@ import { UserModel } from '../models/user.model';
 import { createBulkNotifications } from './notification.service';
 import { getWorkflowConfigSnapshot, type ApprovalMatrixRule } from './workflowConfig.service';
 import { createHttpError } from '../utils/httpError';
-import { buildUserRoleMatchFilter, hasRoleCapability } from '../utils/roles';
+import {
+  OFFICE_ADMIN_ROLE_VALUES,
+  buildUserRoleMatchFilter,
+  hasRoleCapability,
+  normalizeRoles as normalizeKnownRoles,
+} from '../utils/roles';
 import type { RequestContext } from '../utils/scope';
 
 type ApprovalGateInput = {
@@ -26,13 +31,19 @@ type ApprovalGateResult =
   | { status: 'pending'; rule: ApprovalMatrixRule; request: any; workflowIdToExecute: null }
   | { status: 'approved'; rule: ApprovalMatrixRule; request: any; workflowIdToExecute: string };
 
-function normalizeRoles(input: unknown) {
+function normalizeApproverRoles(input: unknown) {
   if (!Array.isArray(input)) return [] as string[];
+  return normalizeKnownRoles(input, null, { allowEmpty: true });
+}
+
+function expandApproverRoles(roles: string[]) {
   return Array.from(
     new Set(
-      input
-        .map((entry) => String(entry || '').trim().toLowerCase())
-        .filter(Boolean)
+      roles.flatMap((role) =>
+        role === 'office_head' || role === 'head_office_admin'
+          ? [...OFFICE_ADMIN_ROLE_VALUES]
+          : [role]
+      )
     )
   );
 }
@@ -97,7 +108,7 @@ function buildPayloadDigest(payloadDigestInput: unknown) {
 }
 
 async function resolveApproverUserIds(rule: ApprovalMatrixRule, officeId: string | null, makerUserId: string) {
-  const roleList = normalizeRoles(rule.approver_roles);
+  const roleList = expandApproverRoles(normalizeApproverRoles(rule.approver_roles));
   if (roleList.length === 0) return [] as string[];
 
   const query: Record<string, unknown> = {
@@ -292,7 +303,7 @@ export async function enforceApprovalMatrix(input: ApprovalGateInput): Promise<A
 function canDecideApproval(ctx: RequestContext, request: any) {
   if (ctx.isOrgAdmin) return true;
   const rule = request.rule_snapshot || {};
-  const approverRoles = normalizeRoles(rule.approver_roles);
+  const approverRoles = normalizeApproverRoles(rule.approver_roles);
   if (approverRoles.length === 0) return false;
   if (!hasRoleCapability(ctx.roles || [ctx.role], approverRoles)) return false;
 

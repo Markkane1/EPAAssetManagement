@@ -29,6 +29,7 @@ import { useConsumableMode } from '@/hooks/useConsumableMode';
 import { filterItemsByMode, filterLocationsByMode } from '@/lib/consumableMode';
 import { ConsumableModeToggle } from '@/components/consumables/ConsumableModeToggle';
 import { SearchableSelect } from '@/components/shared/SearchableSelect';
+import { MetricCard, WorkflowPanel } from '@/components/shared/workflow';
 
 const returnSchema = z.object({
   fromLocationId: z.string().min(1, 'From location is required'),
@@ -158,6 +159,8 @@ export default function ConsumableReturns() {
 
   const { data: balances = [] } = useConsumableBalances(balanceFilters);
   const availableQty = balances.reduce((total, balance) => total + (balance.qty_on_hand_base || 0), 0);
+  const locationCount = filteredLocations.length;
+  const itemCount = filteredItems.length;
 
   const handleSubmit = async (data: ReturnFormData) => {
     if (requiresContainer && !data.containerId) {
@@ -185,13 +188,27 @@ export default function ConsumableReturns() {
       <PageHeader
         title="Returns"
         description="Return lab stock to Head Office Store"
+        eyebrow="Consumables workspace"
+        meta={
+          <>
+            <span>{locationCount} eligible return locations</span>
+            <span className="hidden h-1 w-1 rounded-full bg-border sm:inline-block" />
+            <span>{itemCount} consumable items in the current mode</span>
+          </>
+        }
         extra={<ConsumableModeToggle mode={mode} onChange={setMode} />}
       />
 
-      <Card>
-        <CardContent className="pt-6">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <MetricCard label="Return locations" value={locationCount} helper="Locations available for stock return" icon={Loader2} tone="primary" />
+        <MetricCard label="Item options" value={itemCount} helper="Consumable items available in this mode" icon={Loader2} tone="success" />
+        <MetricCard label="Containers" value={containersForItem.length} helper="Open tracked containers for the selected item" icon={Loader2} />
+        <MetricCard label="Available qty" value={availableQty} helper={selectedUom || "Base unit"} icon={Loader2} tone="warning" />
+      </div>
+
+      <WorkflowPanel title="Return workflow" description="Record returns from field or lab locations back into the Head Office Store using the same operational shell as the dashboard.">
           <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label>From Location *</Label>
                 <SearchableSelect
@@ -251,7 +268,7 @@ export default function ConsumableReturns() {
             </div>
 
             {requiresContainer && (
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label>Container *</Label>
                   <Select
@@ -325,9 +342,9 @@ export default function ConsumableReturns() {
               </Button>
             </div>
           </form>
-        </CardContent>
-      </Card>
+      </WorkflowPanel>
     </MainLayout>
   );
 }
+
 

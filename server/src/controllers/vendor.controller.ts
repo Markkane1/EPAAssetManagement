@@ -5,9 +5,12 @@ import { VendorModel } from '../models/vendor.model';
 import { OfficeModel } from '../models/office.model';
 import { createHttpError } from '../utils/httpError';
 import { getRequestContext } from '../utils/scope';
-import { isOfficeManager } from '../utils/accessControl';
+import { logAudit } from '../modules/records/services/audit.service';
 import { readPagination } from '../utils/requestParsing';
 import { buildSearchTerms, buildSearchTermsQuery } from '../utils/searchTerms';
+import { hasRoleCapability } from '../utils/roles';
+
+const VENDOR_ALLOWED_ROLES = ['org_admin', 'office_head', 'caretaker', 'procurement_officer'];
 
 function sanitizeVendorText(value: unknown) {
   return String(value || '')
@@ -51,10 +54,9 @@ async function ensureOfficeExists(officeId: string) {
   }
 }
 
-function ensureCanManageVendors(role: string, isOrgAdmin: boolean) {
-  if (isOrgAdmin) return;
-  if (isOfficeManager(role)) return;
-  throw createHttpError(403, 'Not permitted to manage vendors');
+function ensureVendorAccess(roles: string[] | undefined, action: 'read' | 'manage') {
+  if (hasRoleCapability(roles || [], VENDOR_ALLOWED_ROLES)) return;
+  throw createHttpError(403, action === 'manage' ? 'Not permitted to manage vendors' : 'Not permitted to view vendors');
 }
 
 function ensureVendorOfficeScope(options: {
@@ -75,6 +77,7 @@ export const vendorController = {
   list: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const ctx = await getRequestContext(req);
+      ensureVendorAccess(ctx.roles || [ctx.role], 'read');
       const query = req.query as Record<string, unknown>;
       const { page, limit, skip } = readPagination(query, { defaultLimit: 200, maxLimit: 1000 });
       const meta = String(query.meta || '').trim() === '1';
@@ -131,6 +134,7 @@ export const vendorController = {
   getById: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const ctx = await getRequestContext(req);
+      ensureVendorAccess(ctx.roles || [ctx.role], 'read');
       const vendor: any = await VendorModel.findById(req.params?.id).lean();
       if (!vendor) {
         return res.status(404).json({ message: 'Not found' });
@@ -149,7 +153,7 @@ export const vendorController = {
   create: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const ctx = await getRequestContext(req);
-      ensureCanManageVendors(ctx.role, ctx.isOrgAdmin);
+      ensureVendorAccess(ctx.roles || [ctx.role], 'manage');
 
       const body = (req.body || {}) as Record<string, unknown>;
       const requestedOfficeId = readOfficeIdFromBody(body);
@@ -174,6 +178,7 @@ export const vendorController = {
       payload.search_terms = resolveVendorSearchTerms(payload);
 
       const vendor = await VendorModel.create(payload);
+      try { await logAudit({ ctx, action: 'VENDOR_CREATED', entityType: 'Vendor', entityId: String(vendor._id), officeId: targetOfficeId }); } catch { /* audit failures must not surface */ }
       return res.status(201).json(vendor);
     } catch (error) {
       next(error);
@@ -183,7 +188,7 @@ export const vendorController = {
   update: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const ctx = await getRequestContext(req);
-      ensureCanManageVendors(ctx.role, ctx.isOrgAdmin);
+      ensureVendorAccess(ctx.roles || [ctx.role], 'manage');
 
       const existing: any = await VendorModel.findById(req.params?.id);
       if (!existing) {
@@ -216,6 +221,10 @@ export const vendorController = {
       if (!updated) {
         return res.status(404).json({ message: 'Not found' });
       }
+      const updatedOfficeId = String((updated as any).office_id || existingOfficeId || '');
+      if (updatedOfficeId) {
+        try { await logAudit({ ctx, action: 'VENDOR_UPDATED', entityType: 'Vendor', entityId: String(req.params?.id), officeId: updatedOfficeId }); } catch { /* audit failures must not surface */ }
+      }
       return res.json(updated);
     } catch (error) {
       next(error);
@@ -225,7 +234,7 @@ export const vendorController = {
   remove: async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const ctx = await getRequestContext(req);
-      ensureCanManageVendors(ctx.role, ctx.isOrgAdmin);
+      ensureVendorAccess(ctx.roles || [ctx.role], 'manage');
 
       const vendor: any = await VendorModel.findById(req.params?.id).lean();
       if (!vendor) {
@@ -238,6 +247,10 @@ export const vendorController = {
       });
 
       await VendorModel.findByIdAndDelete(req.params?.id);
+      const deleteOfficeId = vendor.office_id ? String(vendor.office_id) : null;
+      if (deleteOfficeId) {
+        try { await logAudit({ ctx, action: 'VENDOR_DELETED', entityType: 'Vendor', entityId: String(req.params?.id), officeId: deleteOfficeId }); } catch { /* audit failures must not surface */ }
+      }
       return res.status(204).send();
     } catch (error) {
       next(error);

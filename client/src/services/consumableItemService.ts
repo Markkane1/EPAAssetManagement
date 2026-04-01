@@ -7,6 +7,7 @@ export interface ConsumableItemCreateDto {
   name: string;
   casNumber?: string;
   categoryId?: string;
+  subcategory?: string;
   baseUom: ConsumableBaseUom;
   isHazardous?: boolean;
   isControlled?: boolean;

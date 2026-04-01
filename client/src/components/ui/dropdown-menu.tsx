@@ -128,7 +128,7 @@ const DropdownMenuContent = React.forwardRef<HTMLDivElement, DropdownMenuContent
       <div
         ref={mergedRef}
         className={cn(
-          "z-50 min-w-[8rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md",
+          "z-50 min-w-[12rem] max-w-[min(24rem,calc(100vw-1rem))] max-h-[min(24rem,calc(100vh-1rem))] overflow-y-auto overflow-x-hidden rounded-2xl border border-border/80 bg-popover p-1.5 text-popover-foreground shadow-[0_20px_48px_-28px_rgba(26,28,24,0.18)] scrollbar-thin",
           className
         )}
         style={style}
@@ -154,7 +154,7 @@ const DropdownMenuItem = React.forwardRef<HTMLButtonElement, DropdownMenuItemPro
         type="button"
         ref={ref}
         className={cn(
-          "relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-left text-sm outline-none transition-colors hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50",
+          "relative flex w-full min-w-0 cursor-default select-none items-start gap-2 rounded-xl px-2.5 py-2 text-left text-sm leading-5 outline-none transition-colors hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50 whitespace-normal break-words [overflow-wrap:anywhere]",
           inset && "pl-8",
           className
         )}

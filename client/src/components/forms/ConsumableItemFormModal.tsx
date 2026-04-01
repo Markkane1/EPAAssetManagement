@@ -28,6 +28,7 @@ const itemSchema = z.object({
   name: z.string().min(1, 'Name is required').max(120),
   casNumber: z.string().max(64).optional(),
   categoryId: z.string().optional(),
+  subcategory: z.string().optional(),
   baseUom: z.string().min(1, 'Base UoM is required'),
   isHazardous: z.boolean().optional(),
   isControlled: z.boolean().optional(),
@@ -72,6 +73,7 @@ export function ConsumableItemFormModal({
       name: item?.name || '',
       casNumber: isChemicalMode ? item?.cas_number || '' : '',
       categoryId: item?.category_id || '',
+      subcategory: item?.subcategory || '',
       baseUom: item?.base_uom || fallbackUom,
       isHazardous: isChemicalMode ? item?.is_hazardous || false : false,
       isControlled: isChemicalMode ? item?.is_controlled || false : false,
@@ -90,6 +92,7 @@ export function ConsumableItemFormModal({
         name: item.name,
         casNumber: isChemicalMode ? item.cas_number || '' : '',
         categoryId: item.category_id || '',
+        subcategory: item.subcategory || '',
         baseUom: item.base_uom,
         isHazardous: isChemicalMode ? item.is_hazardous : false,
         isControlled: isChemicalMode ? item.is_controlled : false,
@@ -106,6 +109,7 @@ export function ConsumableItemFormModal({
       name: '',
       casNumber: '',
       categoryId: '',
+      subcategory: '',
       baseUom: fallbackUom,
       isHazardous: false,
       isControlled: false,
@@ -135,6 +139,24 @@ export function ConsumableItemFormModal({
     }
   }, [filteredCategories, form]);
 
+  const selectedCategoryId = form.watch('categoryId');
+  const selectedCategory = useMemo(
+    () => filteredCategories.find((category) => category.id === selectedCategoryId) || null,
+    [filteredCategories, selectedCategoryId]
+  );
+  const availableSubcategories = useMemo(
+    () => selectedCategory?.subcategories || [],
+    [selectedCategory]
+  );
+
+  useEffect(() => {
+    const currentSubcategory = form.getValues('subcategory') || '';
+    if (!currentSubcategory) return;
+    if (!availableSubcategories.includes(currentSubcategory)) {
+      form.setValue('subcategory', '');
+    }
+  }, [availableSubcategories, form]);
+
   const handleSubmit = async (data: ConsumableItemFormData) => {
     setIsSubmitting(true);
     try {
@@ -147,6 +169,7 @@ export function ConsumableItemFormModal({
         requiresContainerTracking: isChemicalMode ? Boolean(data.requiresContainerTracking) : false,
         requiresLotTracking,
         categoryId: data.categoryId || undefined,
+        subcategory: data.subcategory || undefined,
         casNumber: isChemicalMode ? data.casNumber || undefined : undefined,
         storageCondition: isChemicalMode ? data.storageCondition || undefined : undefined,
       });
@@ -166,7 +189,7 @@ export function ConsumableItemFormModal({
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="name">Name *</Label>
               <Input id="name" {...form.register('name')} placeholder="e.g., Sodium Chloride" />
@@ -182,14 +205,37 @@ export function ConsumableItemFormModal({
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label>Category</Label>
-              <Select value={form.watch('categoryId') || ''} onValueChange={(v) => form.setValue('categoryId', v)}>
+              <Select
+                value={form.watch('categoryId') || ''}
+                onValueChange={(v) => {
+                  form.setValue('categoryId', v);
+                  form.setValue('subcategory', '');
+                }}
+              >
                 <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
                 <SelectContent>
                   {filteredCategories.map((cat) => (
                     <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Subcategory</Label>
+              <Select
+                value={form.watch('subcategory') || undefined}
+                onValueChange={(v) => form.setValue('subcategory', v)}
+                disabled={!selectedCategoryId || availableSubcategories.length === 0}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={selectedCategoryId ? 'Select subcategory' : 'Select category first'} />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableSubcategories.map((subcategory) => (
+                    <SelectItem key={subcategory} value={subcategory}>{subcategory}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -214,7 +260,7 @@ export function ConsumableItemFormModal({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="defaultMinStock">Default Min Stock (base)</Label>
               <Input id="defaultMinStock" type="number" min={0} step="0.01" {...form.register('defaultMinStock')} />
@@ -226,7 +272,7 @@ export function ConsumableItemFormModal({
           </div>
 
           {isChemicalMode && (
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="flex items-center gap-2">
                 <Checkbox checked disabled />
                 <Label>Chemical item</Label>
@@ -249,7 +295,7 @@ export function ConsumableItemFormModal({
           )}
 
           {isChemicalMode && (
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="flex items-center gap-2">
                 <Checkbox
                   checked={form.watch('requiresLotTracking')}
@@ -284,3 +330,4 @@ export function ConsumableItemFormModal({
     </Dialog>
   );
 }
+

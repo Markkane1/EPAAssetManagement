@@ -1,6 +1,7 @@
 import { AuthPayload } from '../middleware/auth';
 import { UserModel } from '../models/user.model';
 import { createHttpError } from './httpError';
+import { OFFICE_MANAGER_ROLE_VALUES } from './roles';
 
 export type AccessContext = {
   userId: string;
@@ -9,12 +10,7 @@ export type AccessContext = {
   isOrgAdmin: boolean;
 };
 
-const OFFICE_MANAGER_ROLES = new Set([
-  'office_head',
-  'caretaker',
-  'inventory_controller',
-  'storekeeper',
-]);
+const OFFICE_MANAGER_ROLES = new Set<string>(OFFICE_MANAGER_ROLE_VALUES);
 
 export function isOfficeManager(role: string) {
   return OFFICE_MANAGER_ROLES.has(role);
@@ -22,16 +18,18 @@ export function isOfficeManager(role: string) {
 
 export async function resolveAccessContext(user?: AuthPayload): Promise<AccessContext> {
   if (!user) throw createHttpError(401, 'Unauthorized');
-  const userDoc = await UserModel.findById(user.userId);
+  const userDoc = await UserModel.findById(user.userId, { location_id: 1 }).lean() as
+    | { _id: unknown; location_id?: unknown }
+    | null;
   if (!userDoc) throw createHttpError(401, 'Unauthorized');
 
   const officeId: string | null = userDoc.location_id
-    ? userDoc.location_id.toString()
+    ? String(userDoc.location_id)
     : user.locationId || null;
   const isOrgAdmin = Boolean(user.isOrgAdmin || user.role === 'org_admin');
 
   return {
-    userId: userDoc.id,
+    userId: String(userDoc._id),
     role: user.role,
     officeId,
     isOrgAdmin,
@@ -45,4 +43,3 @@ export function ensureOfficeScope(ctx: AccessContext, officeId: string) {
     throw createHttpError(403, 'Access restricted to assigned office');
   }
 }
-
